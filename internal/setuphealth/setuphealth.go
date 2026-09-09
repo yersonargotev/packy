@@ -82,6 +82,7 @@ type ReadinessCondition struct {
 }
 
 type Observation struct {
+	CatalogFailure      string
 	ActivePacks         []ActivePack
 	FailedStateSurfaces []string
 }
@@ -99,6 +100,12 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 			Severity: Pass,
 			Detail:   "Packy core is available; no capability-pack activation is implied",
 		}},
+	}
+	if observation.CatalogFailure != "" {
+		report.Checks = append(report.Checks, Check{
+			Name: "pack-catalog", Scope: CheckScopeGlobal, Severity: Fail,
+			Detail: observation.CatalogFailure,
+		})
 	}
 	for _, surface := range observation.FailedStateSurfaces {
 		report.Checks = append(report.Checks, Check{

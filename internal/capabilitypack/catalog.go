@@ -431,6 +431,7 @@ type Catalog struct {
 	entries               []catalogEntry
 	deferSourceValidation bool
 	transactionHeld       bool
+	validateSource        func(context.Context) error
 }
 
 type catalogEntry struct {
@@ -446,20 +447,29 @@ type CatalogDetail struct {
 
 // Discover loads the strict initial catalog from a Packy-owned bundle root.
 func Discover(ctx context.Context, bundleRoot string) (Catalog, error) {
-	return discoverProductionCatalog(ctx, bundleRoot, true)
+	return discoverProductionCatalog(ctx, bundleRoot, true, nil)
 }
 
 // DiscoverForDurableIntents retains the lifecycle-facing name while loading
 // only the current manifest generation.
 func DiscoverForDurableIntents(ctx context.Context, bundleRoot string) (Catalog, error) {
-	return discoverProductionCatalog(ctx, bundleRoot, false)
+	return discoverProductionCatalog(ctx, bundleRoot, false, nil)
 }
 
-func discoverProductionCatalog(ctx context.Context, bundleRoot string, validateSources bool) (Catalog, error) {
+// DiscoverValidatedForDurableIntents validates the selected source under the
+// bundle transaction before discovery and every subsequent catalog observation.
+// Validation must be read-only and must not acquire the bundle lock itself.
+func DiscoverValidatedForDurableIntents(ctx context.Context, bundleRoot string, validate func(context.Context) error) (Catalog, error) {
+	return discoverProductionCatalog(ctx, bundleRoot, false, validate)
+}
+
+func discoverProductionCatalog(ctx context.Context, bundleRoot string, validateSources bool, validate func(context.Context) error) (Catalog, error) {
 	var catalog Catalog
-	err := bundletransaction.WithExclusive(ctx, filepath.Dir(filepath.Clean(bundleRoot)), func() error {
+	source := Catalog{bundleRoot: bundleRoot, validateSource: validate}
+	err := source.withBundleLock(ctx, func(locked Catalog) error {
 		var err error
 		catalog, err = discoverCurrentCatalogUnlocked(bundleRoot, validateSources)
+		catalog.validateSource = locked.validateSource
 		return err
 	})
 	return catalog, err
@@ -504,6 +514,7 @@ func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
 		var err error
 		refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
+		refreshed.validateSource = locked.validateSource
 		return err
 	})
 	return refreshed, err
@@ -515,6 +526,11 @@ func (c Catalog) withBundleLock(ctx context.Context, observe func(Catalog) error
 	}
 	return bundletransaction.WithExclusive(ctx, filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
 		c.transactionHeld = true
+		if c.validateSource != nil {
+			if err := c.validateSource(ctx); err != nil {
+				return err
+			}
+		}
 		return observe(c)
 	})
 }
@@ -580,7 +596,7 @@ func (c Catalog) ListCurrent(ctx context.Context) ([]Pack, error) {
 }
 
 func (c Catalog) Show(ctx context.Context, id string) (Pack, error) {
-	if !c.deferSourceValidation {
+	if !c.deferSourceValidation && c.validateSource == nil {
 		return c.showUnlocked(id)
 	}
 	var pack Pack

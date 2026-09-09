@@ -18,7 +18,10 @@ func ValidateRepositoryIntegrity(ctx context.Context, repositoryRoot string) err
 	if err := rejectRetiredRepositoryPaths(repositoryRoot); err != nil {
 		return err
 	}
+	return validateRepositoryCatalogIntegrity(ctx, repositoryRoot)
+}
 
+func validateRepositoryCatalogIntegrity(ctx context.Context, repositoryRoot string) error {
 	managedPacksRoot := filepath.Join(repositoryRoot, "managed-packs")
 	registry, err := LoadRegistry(filepath.Join(managedPacksRoot, "registry.json"))
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,10 +15,12 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
+	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
@@ -2089,11 +2092,8 @@ func resolvePackComposition(ctx context.Context, opts Options, workstationResolv
 	if err != nil {
 		return packComposition{}, err
 	}
-	if err := skillbundle.ValidateSource(ctx, sources.skills.Root, sources.skills.MissingHint); err != nil {
-		return packComposition{}, err
-	}
 	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
-	catalog, err := capabilitypack.DiscoverForDurableIntents(ctx, bundleRoot)
+	catalog, err := loadInvocationCatalog(ctx, sources)
 	if err != nil {
 		return packComposition{}, err
 	}
@@ -2118,6 +2118,37 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 	return map[capabilitypack.SurfaceCapabilityType]capabilitypack.ExecutableAcquirer{
 		capabilitypack.SurfaceCapabilityExternalExecutableAcquisition: engram,
 	}
+}
+
+// loadInvocationCatalog preserves source selection intent while the catalog owns
+// the transaction spanning validation, discovery, and later resource reads.
+func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
+	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
+	if !sources.skills.IsDefault {
+		if err := skillbundle.ValidateSource(ctx, sources.skills.Root, sources.skills.MissingHint); err != nil {
+			return capabilitypack.Catalog{}, err
+		}
+		return capabilitypack.DiscoverForDurableIntents(ctx, bundleRoot)
+	}
+	validate := func(ctx context.Context) error {
+		if err := bootstrap.ValidateInstalledSourceRef(ctx, bootstrap.BootstrapOptions{
+			InstalledSource: sources.installed,
+			RepositoryRef:   defaultInitRepositoryRef("", packyversion.Value),
+		}); err != nil {
+			return err
+		}
+		if err := managedpack.ValidateInstalledRepositoryIntegrity(ctx, sources.installed.Root()); err != nil {
+			return fmt.Errorf("default Installed Source at %s failed admission integrity: %w; move the checkout aside to preserve local changes, then run packy init", sources.installed.Root(), err)
+		}
+		return nil
+	}
+	// Missing roots cannot be locked; let the source owner provide remediation.
+	if info, err := os.Stat(sources.installed.Root()); err != nil || !info.IsDir() {
+		if err := validate(ctx); err != nil {
+			return capabilitypack.Catalog{}, err
+		}
+	}
+	return capabilitypack.DiscoverValidatedForDurableIntents(ctx, bundleRoot, validate)
 }
 
 func discoverPackCatalog(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {
