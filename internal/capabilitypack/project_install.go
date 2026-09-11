@@ -43,7 +43,9 @@ type ProjectUpdateRequest struct {
 	PackID      string
 	Surface     Surface
 	ProjectRoot string
-	Force       bool
+	// Selection replaces the selected surface's resource intent; nil preserves it.
+	Selection *ResourceSelection
+	Force     bool
 }
 
 type ProjectInstallBlocker struct {
@@ -206,7 +208,7 @@ func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstal
 }
 
 // PreviewProjectUpdate updates one project Pack surface to the current bundled
-// version while preserving its selected intent.
+// version, preserving its selected intent unless a replacement is supplied.
 func (f Facade) PreviewProjectUpdate(ctx context.Context, request ProjectUpdateRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
 	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
 		return locked.previewProjectUpdate(ctx, request, adapter)
@@ -216,6 +218,13 @@ func (f Facade) PreviewProjectUpdate(ctx context.Context, request ProjectUpdateR
 func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
 	if request.ProjectRoot == "" || request.PackID == "" || request.Surface == "" {
 		return JSONProjectInstallPreview{}, errors.New("project update requires the project root, Pack, and surface")
+	}
+	if request.Selection != nil {
+		selection, err := canonicalSelection(*request.Selection)
+		if err != nil {
+			return JSONProjectInstallPreview{}, err
+		}
+		request.Selection = &selection
 	}
 	installation, err := LoadProjectInstallation(request.ProjectRoot)
 	if err != nil {
@@ -236,11 +245,16 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 	var report JSONProjectInstallPreview
 	foundSurface := false
 	selectedVersion := ""
+	selectionChanged := false
 	for _, intent := range intents {
 		if intent.Surface != request.Surface {
 			continue
 		}
 		selectedVersion = intent.Version
+		if request.Selection != nil {
+			selectionChanged = digestJSON(intent.Selection) != digestJSON(*request.Selection)
+			intent.Selection = cloneSelection(*request.Selection)
+		}
 		intent.Version = targetPack.Version
 		target := withProjectSurfaceIntent(prior, intent)
 		surfaceReport, previewErr := f.previewProjectInstall(ctx, ProjectInstallRequest{
@@ -257,7 +271,7 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 	if !foundSurface {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project does not install capability Pack %q on %s", request.PackID, request.Surface)
 	}
-	if selectedVersion == targetPack.Version {
+	if selectedVersion == targetPack.Version && !selectionChanged {
 		report.updateRequest = request
 		return report, nil
 	}
@@ -533,7 +547,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	selectedPack = composition.combinedPack()
 	compositionBlockers := projectCompositionBlockers(composition.blockers)
-	graph := mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, resourceGraphForSurface(pack, selection, request.Surface, false))
+	graph := mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, ResourceGraphForSurface(pack, selection, request.Surface, false))
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: selectedPack, ProjectRoot: request.ProjectRoot})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
@@ -711,7 +725,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		Projections: projections, Requirements: append([]string{}, requirements...), Blockers: append([]ProjectInstallBlocker{}, blockers...), Disposition: disposition,
 		ExpectedReadiness: expectedReadiness, Conditions: readinessConditions,
 	}
-	report.Lock.Receipts = replaceProjectReceipt(existingLock.Receipts, projectReceipt(selectedPack, request.Surface, selection, aliases, resourceGraphForSurface(pack, selection, request.Surface, false), projections))
+	report.Lock.Receipts = replaceProjectReceipt(existingLock.Receipts, projectReceipt(selectedPack, request.Surface, selection, aliases, ResourceGraphForSurface(pack, selection, request.Surface, false), projections))
 	manifestBytes, err := marshalProjectManifest(report.Manifest)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err

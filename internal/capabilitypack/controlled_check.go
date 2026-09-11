@@ -218,7 +218,7 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}
-	resources := controlledCheckResources(resourceGraphForSurface(pack, selection, request.Surface, false))
+	resources := controlledCheckResources(ResourceGraphForSurface(pack, selection, request.Surface, false))
 	descriptor := normalizedControlledCheckDescriptor(request.Surface, observation.ControlledCheck)
 	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckGlobal, "", resources, observation, descriptor), descriptor.Instructions, nil
 }

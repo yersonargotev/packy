@@ -43,6 +43,20 @@ available only through focused controls and immutable previews; no global
 single-key shortcut applies a change. During Apply, ordinary exit is deferred
 until Packy finishes and reloads observed state.
 
+To edit an active Pack, open its actions and choose **Configure resources**.
+For a project, choose **Configure project resources**; **Activate for me** and
+**Deactivate for me** control personal activation separately. Activations and
+installations open the resource checklist directly. Use Space or Enter to toggle
+skills and other resources, `/` to search, and PgUp/PgDn to change pages. Search
+preserves selections outside the results; `a` selects all resources and `n`
+clears them. Tab focuses the fixed **Apply changes** control to preview the
+result. Green marks enabled resources, yellow marks pending changes, and a blue
+row marks keyboard focus; labels and checkboxes preserve the same information
+without color. Deselecting a required resource also deselects its
+consumers; supporting files and legal notices follow their resources. Clearing
+the selection deactivates the global Pack or uninstalls the project's selected
+surface, after preview and consent.
+
 The interface uses a one-column layout on narrow terminals and shows a minimum
 size message when it cannot safely display review details. Text and structure
 carry the meaning of every status and control, so color, icons, animation, and
