@@ -955,6 +955,53 @@ func TestDashboardNavigationKeyMapAndNarrowLayout(t *testing.T) {
 	}
 }
 
+func TestDashboardScrollRevealsPacksBelowWrappedHealth(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Warnings: 1, Checks: []tui.HealthCheck{{
+			Name:     "long-health-check",
+			Severity: "INFO",
+			Detail:   strings.Repeat("runtime and historical evidence is unavailable; ", 38),
+		}}},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.3"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "engram", Version: "3.3.1"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	initial := ansi.Strip(current.View().Content)
+	if lines := strings.Count(initial, "\n") + 1; lines > 30 {
+		t.Fatalf("dashboard height = %d lines, want <= 30:\n%s", lines, initial)
+	}
+	if strings.Contains(initial, "argote") || strings.Contains(initial, "engram") {
+		t.Fatalf("fixture did not place Pack scopes below wrapped health:\n%s", initial)
+	}
+	if !strings.Contains(initial, "PgUp/PgDn scroll") {
+		t.Fatalf("clipped dashboard did not advertise scrolling:\n%s", initial)
+	}
+
+	seen := initial
+	for range 3 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+		view := ansi.Strip(current.View().Content)
+		if lines := strings.Count(view, "\n") + 1; lines > 30 {
+			t.Fatalf("scrolled dashboard height = %d lines, want <= 30:\n%s", lines, view)
+		}
+		seen += "\n" + view
+	}
+	for _, want := range []string{"Workstation · global", "argote", "Current project", "engram", "↑/k up"} {
+		if !strings.Contains(seen, want) {
+			t.Fatalf("scrollable dashboard never exposed %q:\n%s", want, seen)
+		}
+	}
+	for range 3 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
+	}
+	returned := ansi.Strip(current.View().Content)
+	if !strings.Contains(returned, "System health") || strings.Contains(returned, "argote") {
+		t.Fatalf("PageUp did not return to wrapped health at the top:\n%s", returned)
+	}
+}
+
 func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "healthy"},
