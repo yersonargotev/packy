@@ -993,12 +993,52 @@ func TestDashboardScrollRevealsPacksBelowWrappedHealth(t *testing.T) {
 			t.Fatalf("scrollable dashboard never exposed %q:\n%s", want, seen)
 		}
 	}
-	for range 3 {
+	for range 20 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+	}
+	bottom := current.View().Content
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
+	if current.View().Content == bottom {
+		t.Fatal("PageUp did not move immediately after repeated PageDown at the bottom")
+	}
+	for range 20 {
 		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
 	}
 	returned := ansi.Strip(current.View().Content)
 	if !strings.Contains(returned, "System health") || strings.Contains(returned, "argote") {
 		t.Fatalf("PageUp did not return to wrapped health at the top:\n%s", returned)
+	}
+}
+
+func TestDashboardPagingKeepsPacksReachableWithWrappedFooter(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Warnings: 1, Checks: []tui.HealthCheck{{
+			Name: "long-health-check", Severity: "INFO", Detail: strings.Repeat("wrapped health detail ", 20),
+		}}},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.3"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "engram", Version: "3.3.1"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "?", Code: '?'}))
+
+	seen := ""
+	for range 40 {
+		view := ansi.Strip(current.View().Content)
+		if lines := strings.Count(view, "\n") + 1; lines > 14 {
+			t.Fatalf("narrow dashboard height = %d lines, want <= 14:\n%s", lines, view)
+		}
+		seen += "\n" + view
+		previous := current.View().Content
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+		if current.View().Content == previous {
+			break
+		}
+	}
+	for _, want := range []string{"PgUp/PgDn scroll", "Workstation · global", "argote", "Current project", "engram", "Ctrl+C quit"} {
+		if !strings.Contains(seen, want) {
+			t.Fatalf("narrow dashboard paging never exposed %q:\n%s", want, seen)
+		}
 	}
 }
 

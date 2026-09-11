@@ -447,7 +447,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.Code == tea.KeyPgDown {
 			if m.dashboardActive() {
-				m.dashboardScroll += max(m.height-2, 1)
+				page, maxOffset := m.dashboardScrollMetrics()
+				m.dashboardScroll = min(min(m.dashboardScroll, maxOffset)+page, maxOffset)
 			} else {
 				m.pagedScreenScroll += max(m.height-10, 1)
 			}
@@ -455,7 +456,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.Code == tea.KeyPgUp {
 			if m.dashboardActive() {
-				m.dashboardScroll = max(m.dashboardScroll-max(m.height-2, 1), 0)
+				page, maxOffset := m.dashboardScrollMetrics()
+				m.dashboardScroll = max(min(m.dashboardScroll, maxOffset)-page, 0)
 			} else {
 				m.pagedScreenScroll = max(m.pagedScreenScroll-max(m.height-10, 1), 0)
 			}
@@ -1175,6 +1177,11 @@ func (m Model) render() string {
 }
 
 func (m Model) renderDashboard() string {
+	content, help := m.dashboardContent()
+	return m.renderDashboardViewport(content, help)
+}
+
+func (m Model) dashboardContent() (string, string) {
 	globalEmpty := "No reviewed Packs are available"
 	projectEmpty := "No reviewed Packs are available in this project scope"
 	if strings.TrimSpace(m.filter) != "" {
@@ -1219,12 +1226,18 @@ func (m Model) renderDashboard() string {
 		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
 	}
 	content := strings.Join([]string{header, "", health + setup, "", scopes + filter}, "\n")
-	return m.renderDashboardViewport(content, help)
+	return content, help
 }
 
 func (m Model) dashboardActive() bool {
 	return m.loaded && m.err == nil && !m.applying && !m.showingApplyResult && !m.initializing && !m.initializationResult &&
 		!m.previewing && !m.choosingAction && m.previewErr == nil && m.preview == nil && !m.selecting && !m.inspecting
+}
+
+func (m Model) dashboardScrollMetrics() (int, int) {
+	content, footer := m.dashboardContent()
+	layout := m.dashboardViewportLayout(content, footer)
+	return layout.visible, layout.maxOffset
 }
 
 func (m Model) renderDashboardHeader(width int) string {
