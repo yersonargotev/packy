@@ -13,9 +13,11 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const postApplyInspectionTimeout = 30 * time.Second
+const dashboardWheelDelta = 3
 
 // Backend is the presentation-neutral seam through which the TUI loads Packy
 // state, initializes Packy's Installed Source, and applies consented previews.
@@ -289,6 +291,7 @@ type Model struct {
 	resultDetailsExpanded  bool
 	filtering              bool
 	filter                 string
+	healthExpanded         bool
 	dashboardScroll        int
 	detailScroll           int
 	pagedScreenScroll      int
@@ -357,6 +360,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = message.err
 		m.globalRow = boundedRow(m.globalRow, len(m.dashboard.Global.Packs))
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
+		m.revealDashboardSelection()
 		if m.showingApplyResult {
 			m.applyReloadComplete = true
 			m.applyReloaded = message.err == nil
@@ -377,6 +381,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
 		m.help.SetWidth(max(message.Width-4, 0))
+		m.revealDashboardSelection()
 	case initializationProgress:
 		m.initializationProgress = append(m.initializationProgress, message.detail)
 		return m, waitForInitialization(m.ctx, m.initializationEvents)
@@ -420,6 +425,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySpinner, command = m.applySpinner.Update(message)
 			return m, command
 		}
+	case tea.MouseWheelMsg:
+		if !m.dashboardActive() || m.terminalUndersized() {
+			return m, nil
+		}
+		_, maxOffset := m.dashboardScrollMetrics()
+		switch message.Button {
+		case tea.MouseWheelDown:
+			m.dashboardScroll = min(min(m.dashboardScroll, maxOffset)+dashboardWheelDelta, maxOffset)
+		case tea.MouseWheelUp:
+			m.dashboardScroll = max(min(m.dashboardScroll, maxOffset)-dashboardWheelDelta, 0)
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		if m.applying {
 			if key.Matches(message, dashboardKeys.Quit) || key.Matches(message, dashboardKeys.Back) {
@@ -623,6 +640,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.globalRow = boundedRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)))
 			m.projectRow = boundedRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)))
+			m.revealDashboardSelection()
 			return m, nil
 		}
 		if m.selecting && m.preview == nil && m.previewErr == nil {
@@ -639,16 +657,21 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.Init()
 		case key.Matches(message, dashboardKeys.Help):
 			m.showHelp = !m.showHelp
+		case key.Matches(message, dashboardKeys.Health):
+			m.healthExpanded = !m.healthExpanded
+			m.dashboardScroll = 0
 		case key.Matches(message, dashboardKeys.Filter):
 			m.filtering, m.inspecting = true, false
 		case key.Matches(message, dashboardKeys.NextScope):
 			if m.dashboard.Project.Available {
 				m.project = true
 				m.inspecting = false
+				m.revealDashboardSelection()
 			}
 		case key.Matches(message, dashboardKeys.PreviousScope):
 			m.project = false
 			m.inspecting = false
+			m.revealDashboardSelection()
 		case key.Matches(message, dashboardKeys.Back):
 			if m.preview != nil || m.previewErr != nil {
 				m.preview, m.previewErr = nil, nil
@@ -714,6 +737,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.globalRow = nextRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)), 1)
 			}
+			m.revealDashboardSelection()
 		case key.Matches(message, dashboardKeys.Up):
 			if m.inspecting {
 				m.detailScroll = max(m.detailScroll-1, 0)
@@ -725,6 +749,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.globalRow = nextRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)), -1)
 			}
+			m.revealDashboardSelection()
 		}
 	}
 	return m, nil
@@ -1090,7 +1115,7 @@ func nextRow(row, length, direction int) int {
 }
 
 type keyMap struct {
-	Up, Down, NextScope, PreviousScope, Inspect, Back, Filter, Help, Reload, Quit key.Binding
+	Up, Down, NextScope, PreviousScope, Inspect, Back, Filter, Health, Help, Reload, Quit key.Binding
 }
 
 var dashboardKeys = keyMap{
@@ -1101,6 +1126,7 @@ var dashboardKeys = keyMap{
 	Inspect:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "inspect")),
 	Back:          key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 	Filter:        key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	Health:        key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "health")),
 	Help:          key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -1109,6 +1135,7 @@ var dashboardKeys = keyMap{
 func (m Model) View() tea.View {
 	view := tea.NewView(m.render())
 	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
 	view.WindowTitle = "Packy"
 	view.BackgroundColor = mochaBase
 	view.ForegroundColor = mochaText
@@ -1223,7 +1250,7 @@ func (m Model) dashboardContent() (string, string) {
 		help = m.help.ShortHelpView(setupHelpBindings())
 	}
 	if m.showHelp {
-		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
+		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter inspect · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · q/Ctrl+C quit"
 	}
 	content := strings.Join([]string{header, "", health + setup, "", scopes + filter}, "\n")
 	return content, help
@@ -1238,6 +1265,32 @@ func (m Model) dashboardScrollMetrics() (int, int) {
 	content, footer := m.dashboardContent()
 	layout := m.dashboardViewportLayout(content, footer)
 	return layout.visible, layout.maxOffset
+}
+
+func (m *Model) revealDashboardSelection() {
+	if !m.dashboardActive() {
+		return
+	}
+	content, footer := m.dashboardContent()
+	layout := m.dashboardViewportLayout(content, footer)
+	m.dashboardScroll = min(max(m.dashboardScroll, 0), layout.maxOffset)
+	pack := m.selectedPack()
+	if pack == nil {
+		return
+	}
+	needle := "› " + pack.ID + "  "
+	for line, rendered := range layout.bodyLines {
+		if !strings.Contains(ansi.Strip(rendered), needle) {
+			continue
+		}
+		if line < m.dashboardScroll {
+			m.dashboardScroll = line
+		} else if line >= m.dashboardScroll+layout.visible {
+			m.dashboardScroll = line - layout.visible + 1
+		}
+		m.dashboardScroll = min(max(m.dashboardScroll, 0), layout.maxOffset)
+		return
+	}
 }
 
 func (m Model) renderDashboardHeader(width int) string {
@@ -1255,7 +1308,14 @@ func (m Model) renderHealth() string {
 		metric(m.dashboard.Health.Warnings, "warnings", mochaYellow),
 		metric(m.dashboard.Health.Failures, "failures", mochaRed),
 	}, "   ")
-	lines := []string{sectionTitleStyle.Render("◆ System health") + "  " + metrics}
+	disclosure := "s details"
+	if m.healthExpanded {
+		disclosure = "s collapse"
+	}
+	lines := []string{sectionTitleStyle.Render("◆ System health") + "  " + metrics + "  " + dimStyle.Render("· "+disclosure)}
+	if !m.healthExpanded {
+		return strings.Join(lines, "\n")
+	}
 	checks := m.dashboard.Health.Checks
 	limit := len(checks)
 	if m.height > 0 && m.height <= 26 {

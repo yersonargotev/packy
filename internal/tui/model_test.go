@@ -948,9 +948,129 @@ func TestDashboardNavigationKeyMapAndNarrowLayout(t *testing.T) {
 
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "?", Code: '?'}))
 	view = ansi.Strip(current.View().Content)
-	for _, want := range []string{"arrows/j/k", "Tab/Shift+Tab", "Enter", "Esc", "Ctrl+C", "r reload", "q quit"} {
-		if !strings.Contains(view, want) {
+	help := strings.Join(strings.Fields(view), " ")
+	for _, want := range []string{"j/k or arrows", "Tab/Shift+Tab", "Enter", "s health", "wheel or PgUp/PgDn", "Esc", "r reload", "q/Ctrl+C quit"} {
+		if !strings.Contains(help, want) {
 			t.Fatalf("expanded key help missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestDashboardHealthDefaultsCompactAndTogglesDetails(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Passes: 4, Warnings: 2, Checks: []tui.HealthCheck{
+			{Name: "first-check", Severity: "WARN", Detail: strings.Repeat("wrapped health detail ", 20)},
+			{Name: "second-check", Severity: "INFO", Detail: "runtime usability cannot be observed"},
+		}},
+		Global: tui.Scope{Packs: []tui.Pack{
+			{ID: "argote", Version: "1.0.3", Description: "Agent guidance"},
+			{ID: "matty", Version: "1.0.0", Description: "Product review"},
+		}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "engram", Version: "3.3.1"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	compact := ansi.Strip(current.View().Content)
+	for _, want := range []string{"System health", "4 passing", "2 warnings", "s details", "argote", "engram"} {
+		if !strings.Contains(compact, want) {
+			t.Fatalf("compact dashboard missing %q:\n%s", want, compact)
+		}
+	}
+	if strings.Contains(compact, "first-check") {
+		t.Fatalf("compact dashboard exposed health details:\n%s", compact)
+	}
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+	narrow := ansi.Strip(current.View().Content)
+	if lines := strings.Count(narrow, "\n") + 1; lines > 14 {
+		t.Fatalf("compact dashboard height = %d lines, want <= 14:\n%s", lines, narrow)
+	}
+	if !strings.Contains(narrow, "› argote") || strings.Contains(narrow, "first-check") {
+		t.Fatalf("compact narrow dashboard did not keep the selected Pack visible:\n%s", narrow)
+	}
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
+	expanded := ansi.Strip(current.View().Content)
+	for _, want := range []string{"first-check", "second-check", "s collapse"} {
+		if !strings.Contains(expanded, want) {
+			t.Fatalf("expanded dashboard missing %q:\n%s", want, expanded)
+		}
+	}
+
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	detail := ansi.Strip(current.View().Content)
+	if !strings.Contains(detail, "Product review") {
+		t.Fatalf("health toggle changed selected Pack:\n%s", detail)
+	}
+}
+
+func TestDashboardMouseWheelScrollsAndClamps(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Warnings: 1, Checks: []tui.HealthCheck{{
+			Name: "long-health-check", Severity: "WARN", Detail: strings.Repeat("wrapped health detail ", 30),
+		}}},
+		Global:  tui.Scope{Packs: []tui.Pack{{ID: "argote", Version: "1.0.3"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "engram", Version: "3.3.1"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
+
+	if mode := current.View().MouseMode; mode != tea.MouseModeCellMotion {
+		t.Fatalf("mouse mode = %v, want cell motion", mode)
+	}
+	initial := current.View().Content
+	current, _ = current.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelRight}))
+	if got := current.View().Content; got != initial {
+		t.Fatalf("horizontal wheel changed dashboard:\n%s", ansi.Strip(got))
+	}
+	current, _ = current.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown}))
+	if got := current.View().Content; got == initial {
+		t.Fatal("wheel down did not scroll dashboard")
+	}
+	for range 100 {
+		current, _ = current.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown}))
+	}
+	bottom := current.View().Content
+	current, _ = current.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown}))
+	if got := current.View().Content; got != bottom {
+		t.Fatalf("wheel down did not clamp at bottom:\n%s", ansi.Strip(got))
+	}
+	current, _ = current.Update(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+	if got := current.View().Content; got == bottom {
+		t.Fatal("wheel up did not move immediately from bottom")
+	}
+}
+
+func TestDashboardPackNavigationRevealsSelection(t *testing.T) {
+	globalPacks := make([]tui.Pack, 8)
+	for index := range globalPacks {
+		globalPacks[index] = tui.Pack{ID: fmt.Sprintf("pack-%02d", index+1), Version: "1.0.0"}
+	}
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health:  tui.Health{Status: "healthy", Passes: 1},
+		Global:  tui.Scope{Packs: globalPacks},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "project-pack", Version: "1.0.0"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+
+	for range 6 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
+	}
+	view := ansi.Strip(current.View().Content)
+	if !strings.Contains(view, "› pack-07") {
+		t.Fatalf("j navigation did not reveal selected Pack:\n%s", view)
+	}
+
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	view = ansi.Strip(current.View().Content)
+	for _, want := range []string{"Current project · selected", "› project-pack"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("scope navigation did not reveal %q:\n%s", want, view)
 		}
 	}
 }
@@ -967,6 +1087,7 @@ func TestDashboardScrollRevealsPacksBelowWrappedHealth(t *testing.T) {
 	}}
 	current := loadModel(t, backend)
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
 
 	initial := ansi.Strip(current.View().Content)
 	if lines := strings.Count(initial, "\n") + 1; lines > 30 {
@@ -975,7 +1096,7 @@ func TestDashboardScrollRevealsPacksBelowWrappedHealth(t *testing.T) {
 	if strings.Contains(initial, "argote") || strings.Contains(initial, "engram") {
 		t.Fatalf("fixture did not place Pack scopes below wrapped health:\n%s", initial)
 	}
-	if !strings.Contains(initial, "PgUp/PgDn scroll") {
+	if !strings.Contains(initial, "Scroll for more") {
 		t.Fatalf("clipped dashboard did not advertise scrolling:\n%s", initial)
 	}
 
@@ -1020,6 +1141,7 @@ func TestDashboardPagingKeepsPacksReachableWithWrappedFooter(t *testing.T) {
 	}}
 	current := loadModel(t, backend)
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "?", Code: '?'}))
 
 	seen := ""
@@ -1035,8 +1157,9 @@ func TestDashboardPagingKeepsPacksReachableWithWrappedFooter(t *testing.T) {
 			break
 		}
 	}
-	for _, want := range []string{"PgUp/PgDn scroll", "Workstation · global", "argote", "Current project", "engram", "Ctrl+C quit"} {
-		if !strings.Contains(seen, want) {
+	compactSeen := strings.Join(strings.Fields(seen), " ")
+	for _, want := range []string{"Scroll for more", "wheel or PgUp/PgDn", "Workstation · global", "argote", "Current project", "engram", "q/Ctrl+C quit"} {
+		if !strings.Contains(compactSeen, want) {
 			t.Fatalf("narrow dashboard paging never exposed %q:\n%s", want, seen)
 		}
 	}
@@ -1579,6 +1702,7 @@ func TestDashboardLoadsThroughInjectedBackendOutsideUpdate(t *testing.T) {
 		t.Fatalf("backend loads = %d, want 1", backend.loads)
 	}
 	updated, _ := model.Update(message)
+	updated, _ = updated.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
 	view := updated.View().Content
 	for _, want := range []string{"Packy health", "healthy", "packy-core", "PASS", "Packy core is available", "Workstation", "matty", "1.0.0"} {
 		if !strings.Contains(view, want) {
@@ -1604,6 +1728,7 @@ func TestDashboardUsesMochaPanelsAndAccessibleStatusLabels(t *testing.T) {
 	}}
 	current := loadModel(t, backend)
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "s", Code: 's'}))
 	view := current.View()
 	plain := ansi.Strip(view.Content)
 
