@@ -124,7 +124,7 @@ func (m Model) dashboardViewportLayout(content, footer string) dashboardViewport
 	visible := max(m.height-len(footerLines)-1, 1)
 	maxOffset := max(len(bodyLines)-visible, 0)
 	if maxOffset > 0 {
-		footerBlock = m.renderDashboardFooter("PgUp/PgDn scroll  ·  " + footer)
+		footerBlock = m.renderDashboardFooter("Scroll for more  ·  " + footer)
 		footerLines = strings.Split(footerBlock, "\n")
 		visible = max(m.height-len(footerLines)-1, 1)
 		maxOffset = max(len(bodyLines)-visible, 0)
@@ -229,6 +229,7 @@ func dashboardHelpBindings() []key.Binding {
 		dashboardKeys.NextScope,
 		dashboardKeys.Inspect,
 		dashboardKeys.Filter,
+		dashboardKeys.Health,
 		dashboardKeys.Help,
 		dashboardKeys.Reload,
 		dashboardKeys.Quit,
