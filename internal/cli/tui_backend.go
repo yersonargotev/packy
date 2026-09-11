@@ -151,6 +151,12 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 
 func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (tui.Preview, error) {
 	operation := request.Operation
+	if operation == "configure" && request.Selection.Mode == "custom" && len(request.Selection.Roots) == 0 {
+		operation = "deactivate"
+		if request.Scope == "project" {
+			operation = "uninstall"
+		}
+	}
 	surface := capabilitypack.Surface(request.Surface)
 	if request.Scope == "project" {
 		if request.ProjectRoot == "" {
@@ -183,13 +189,25 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 				return tui.Preview{}, previewErr
 			}
 			return projectPreviewForTUI(preview, projectRoot, "install"), nil
-		case "update":
+		case "update", "configure":
+			var selection *capabilitypack.ResourceSelection
+			if operation == "configure" {
+				selected, selectionErr := selectionForTUI(request.Selection)
+				if selectionErr != nil {
+					return tui.Preview{}, selectionErr
+				}
+				selection = &selected
+			}
 			adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot}, adapter)
+			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, Selection: selection}, adapter)
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
 			}
-			return projectPreviewForTUI(preview, projectRoot, "update"), nil
+			view := projectPreviewForTUI(preview, projectRoot, operation)
+			if operation == "configure" {
+				view.Selection = tui.Selection{Mode: request.Selection.Mode, Roots: slices.Clone(request.Selection.Roots)}
+			}
+			return view, nil
 		case "activate":
 			preview, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{
 				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot),
@@ -251,8 +269,9 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		return tui.Preview{}, err
 	}
 	preview := globalPreviewForTUI(plan.JSONReport(true))
-	if operation == string(capabilitypack.OperationDeactivate) {
-		preview.Selection = request.Selection
+	preview.Operation = operation
+	if operation == string(capabilitypack.OperationDeactivate) || operation == "configure" {
+		preview.Selection = tui.Selection{Mode: request.Selection.Mode, Roots: slices.Clone(request.Selection.Roots)}
 	}
 	return preview, nil
 }
@@ -386,13 +405,21 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			}
 		}
 		return result, nil
-	case "update":
+	case "update", "configure":
+		var selection *capabilitypack.ResourceSelection
+		if request.Preview.Operation == "configure" {
+			selected, selectionErr := selectionForTUI(request.Preview.Selection)
+			if selectionErr != nil {
+				return tui.ApplyResult{Stage: "revalidation"}, selectionErr
+			}
+			selection = &selected
+		}
 		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot}, adapter)
+		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot, Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
 		}
-		freshView := projectPreviewForTUI(fresh, projectRoot, "update")
+		freshView := projectPreviewForTUI(fresh, projectRoot, request.Preview.Operation)
 		if freshView.ID != request.Preview.ID || freshView.Digest != request.Preview.Digest {
 			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
 		}
@@ -408,7 +435,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			return tui.ApplyResult{Stage: "apply", Summary: "Project update stopped before verification"}, applyErr
 		}
 		progress(tui.ApplyProgress{Phase: "verification"})
-		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "verified" || applied.Status == "no-op", Summary: fmt.Sprintf("Updated %s in the current project", request.Preview.PackID), Details: []string{"Reviewed project intent and personal runtime activation remain separate"}}, nil
+		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "verified" || applied.Status == "no-op", Summary: fmt.Sprintf("%s %s in the current project", lifecyclePastTense(request.Preview.Operation), request.Preview.PackID), Details: []string{"Reviewed project intent and personal runtime activation remain separate"}}, nil
 	case "activate":
 		adapter := projectRuntimeAdapter(ctx, b.opts, surface, snapshot)
 		fresh, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
@@ -534,6 +561,12 @@ func globalPlanForTUI(ctx context.Context, facade capabilitypack.Facade, operati
 			return capabilitypack.ReconciliationPlan{}, err
 		}
 		return facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: packID, Surface: surface, Selection: selected})
+	case "configure":
+		selected, err := selectionForTUI(selection)
+		if err != nil {
+			return capabilitypack.ReconciliationPlan{}, err
+		}
+		return facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: packID, Surface: surface, Selection: &selected})
 	case string(capabilitypack.OperationUpdate):
 		return facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: packID, Surface: surface})
 	case string(capabilitypack.OperationDeactivate):
@@ -549,6 +582,8 @@ func globalPlanForTUI(ctx context.Context, facade capabilitypack.Facade, operati
 
 func lifecyclePastTense(operation string) string {
 	switch operation {
+	case "configure":
+		return "Configured"
 	case string(capabilitypack.OperationUpdate):
 		return "Updated"
 	case string(capabilitypack.OperationDeactivate):
@@ -933,11 +968,23 @@ func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
 			requirements = append(requirements, notice.String())
 		}
 		manifestResource := raw[identity]
+		closures := make(map[string][]string)
+		if resource.Role == capabilitypack.ResourceInventoryRoleOperational {
+			for _, surface := range detail.Pack.Surfaces {
+				graph := capabilitypack.ResourceGraphForSurface(detail.Pack, capabilitypack.ResourceSelection{
+					Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{resource.Resource},
+				}, surface, false)
+				for _, fact := range graph.Resources {
+					closures[string(surface)] = append(closures[string(surface)], fact.Resource.String())
+				}
+			}
+		}
 		requirements = append(requirements, manifestResource.RequiresTools...)
 		result = append(result, tui.Resource{
 			Identity: identity, Description: resource.Description, Role: string(resource.Role),
 			Requirements: requirements, Conflicts: append([]string(nil), manifestResource.Conflicts...),
 			SurfaceCapabilities: surfaceCapabilitiesForTUI(manifestResource),
+			SelectionClosures:   closures,
 		})
 	}
 	return result
@@ -978,6 +1025,7 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
 			CatalogUpdateAvailable:         entry.UpdateAvailable,
 			InstalledVersion:               entry.Intent.Version,
+			Selection:                      tui.Selection{Mode: string(entry.Intent.Selection.Mode), Roots: resourceIdentitiesForTUI(entry.Intent.Selection.Roots)},
 			HistoricalEvidenceMessage:      entry.HistoricalEvidence.Message,
 			Configured:                     readinessForTUI(entry.Readiness.Configured),
 			Authorized:                     readinessForTUI(entry.Readiness.Authorized),
@@ -1006,10 +1054,18 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[string]map[string]tui.SurfaceStatus {
 	result := make(map[string]map[string]tui.SurfaceStatus)
 	for _, entry := range report.Packs {
+		selection := entry.Pack.Selection
+		for _, intent := range entry.Pack.SurfaceIntents {
+			if intent.Surface == entry.Surface {
+				selection = intent.Selection
+				break
+			}
+		}
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
 			InstalledVersion: entry.Pack.Version,
+			Selection:        tui.Selection{Mode: string(selection.Mode), Roots: resourceIdentitiesForTUI(selection.Roots)},
 			Configured:       string(entry.Readiness.Configured), Authorized: string(entry.Readiness.Authorized), Usable: string(entry.Readiness.Usable),
 			ControlledCheckActionAvailable: entry.ControlledCheckActionAvailable,
 			ControlledCheckState:           string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,

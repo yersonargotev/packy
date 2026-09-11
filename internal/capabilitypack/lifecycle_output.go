@@ -129,7 +129,7 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []LifecycleExclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
-		ResourceGraph:       resourceGraphForSurface(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, surface, true),
+		ResourceGraph:       ResourceGraphForSurface(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, surface, true),
 		SelectionValidity:   SelectionValidityFor(pack, surface),
 	}
 	authorities := []string{}
@@ -241,7 +241,9 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 	return ResourceGraph{Resources: facts}
 }
 
-func resourceGraphForSurface(pack Pack, selection ResourceSelection, surface Surface, inventory bool) ResourceGraph {
+// ResourceGraphForSurface includes dependencies contributed by the selected
+// surface capabilities in the resource closure.
+func ResourceGraphForSurface(pack Pack, selection ResourceSelection, surface Surface, inventory bool) ResourceGraph {
 	return ResourceGraphFor(withSurfaceCapabilityDependencies(pack, surface), selection, inventory)
 }
 
@@ -529,7 +531,7 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
 	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
-	contract.ResourceGraph = resourceGraphForSurface(p.pack, p.selection, p.surface, false)
+	contract.ResourceGraph = ResourceGraphForSurface(p.pack, p.selection, p.surface, false)
 	if p.selectionValidity.Roots != nil {
 		contract.SelectionValidity = p.selectionValidity
 	}
@@ -629,7 +631,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	selection, _ := canonicalSelection(p.selection)
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: resourceGraphForSurface(p.pack, selection, p.surface, false),
+		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: ResourceGraphForSurface(p.pack, selection, p.surface, false),
 		SensitiveEffects: p.SensitiveEffects(), Contract: contract, Aliases: contract.Aliases,
 		Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, Conditions: append([]ReadinessCondition{}, p.Conditions()...), Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),

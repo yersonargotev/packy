@@ -43,6 +43,16 @@ available only through focused controls and immutable previews; no global
 single-key shortcut applies a change. During Apply, ordinary exit is deferred
 until Packy finishes and reloads observed state.
 
+To edit an active Pack, open its actions and choose **Configure resources**.
+For a project, choose **Configure project resources**; **Activate for me** and
+**Deactivate for me** control personal activation separately. New activations
+and installations offer **Full Pack** or **Choose resources**. Use Space or
+Enter to toggle skills and other resources, then Tab to focus **Apply changes**
+and preview the result. Deselecting a required resource also deselects its
+consumers; supporting files and legal notices follow their resources. Clearing
+the selection deactivates the global Pack or uninstalls the project's selected
+surface, after preview and consent.
+
 The interface uses a one-column layout on narrow terminals and shows a minimum
 size message when it cannot safely display review details. Text and structure
 carry the meaning of every status and control, so color, icons, animation, and

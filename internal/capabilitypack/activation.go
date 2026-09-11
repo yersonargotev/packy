@@ -97,7 +97,9 @@ type UpdateRequest struct {
 	PackID  string
 	Surface Surface
 	Aliases []SurfaceAlias
-	Force   bool
+	// Selection replaces the current selection when supplied; nil preserves it.
+	Selection *ResourceSelection
+	Force     bool
 }
 
 type DeactivationRequest struct {
@@ -624,7 +626,11 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 	if err := f.catalog.validateUpdateRoute(request.PackID, intent.Version, current.Version, request.Surface); err != nil {
 		return ReconciliationPlan{}, err
 	}
-	activation.Selection, err = canonicalSelection(intent.Selection)
+	selection := intent.Selection
+	if request.Selection != nil {
+		selection = *request.Selection
+	}
+	activation.Selection, err = canonicalSelection(selection)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
