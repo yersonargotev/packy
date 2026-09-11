@@ -955,6 +955,93 @@ func TestDashboardNavigationKeyMapAndNarrowLayout(t *testing.T) {
 	}
 }
 
+func TestDashboardScrollRevealsPacksBelowWrappedHealth(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Warnings: 1, Checks: []tui.HealthCheck{{
+			Name:     "long-health-check",
+			Severity: "INFO",
+			Detail:   strings.Repeat("runtime and historical evidence is unavailable; ", 38),
+		}}},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.3"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "engram", Version: "3.3.1"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	initial := ansi.Strip(current.View().Content)
+	if lines := strings.Count(initial, "\n") + 1; lines > 30 {
+		t.Fatalf("dashboard height = %d lines, want <= 30:\n%s", lines, initial)
+	}
+	if strings.Contains(initial, "argote") || strings.Contains(initial, "engram") {
+		t.Fatalf("fixture did not place Pack scopes below wrapped health:\n%s", initial)
+	}
+	if !strings.Contains(initial, "PgUp/PgDn scroll") {
+		t.Fatalf("clipped dashboard did not advertise scrolling:\n%s", initial)
+	}
+
+	seen := initial
+	for range 3 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+		view := ansi.Strip(current.View().Content)
+		if lines := strings.Count(view, "\n") + 1; lines > 30 {
+			t.Fatalf("scrolled dashboard height = %d lines, want <= 30:\n%s", lines, view)
+		}
+		seen += "\n" + view
+	}
+	for _, want := range []string{"Workstation · global", "argote", "Current project", "engram", "↑/k up"} {
+		if !strings.Contains(seen, want) {
+			t.Fatalf("scrollable dashboard never exposed %q:\n%s", want, seen)
+		}
+	}
+	for range 20 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+	}
+	bottom := current.View().Content
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
+	if current.View().Content == bottom {
+		t.Fatal("PageUp did not move immediately after repeated PageDown at the bottom")
+	}
+	for range 20 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
+	}
+	returned := ansi.Strip(current.View().Content)
+	if !strings.Contains(returned, "System health") || strings.Contains(returned, "argote") {
+		t.Fatalf("PageUp did not return to wrapped health at the top:\n%s", returned)
+	}
+}
+
+func TestDashboardPagingKeepsPacksReachableWithWrappedFooter(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Warnings: 1, Checks: []tui.HealthCheck{{
+			Name: "long-health-check", Severity: "INFO", Detail: strings.Repeat("wrapped health detail ", 20),
+		}}},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.3"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "engram", Version: "3.3.1"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "?", Code: '?'}))
+
+	seen := ""
+	for range 40 {
+		view := ansi.Strip(current.View().Content)
+		if lines := strings.Count(view, "\n") + 1; lines > 14 {
+			t.Fatalf("narrow dashboard height = %d lines, want <= 14:\n%s", lines, view)
+		}
+		seen += "\n" + view
+		previous := current.View().Content
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+		if current.View().Content == previous {
+			break
+		}
+	}
+	for _, want := range []string{"PgUp/PgDn scroll", "Workstation · global", "argote", "Current project", "engram", "Ctrl+C quit"} {
+		if !strings.Contains(seen, want) {
+			t.Fatalf("narrow dashboard paging never exposed %q:\n%s", want, seen)
+		}
+	}
+}
+
 func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "healthy"},

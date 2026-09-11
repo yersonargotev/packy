@@ -289,6 +289,7 @@ type Model struct {
 	resultDetailsExpanded  bool
 	filtering              bool
 	filter                 string
+	dashboardScroll        int
 	detailScroll           int
 	pagedScreenScroll      int
 	initializing           bool
@@ -445,11 +446,21 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if message.Code == tea.KeyPgDown {
-			m.pagedScreenScroll += max(m.height-10, 1)
+			if m.dashboardActive() {
+				page, maxOffset := m.dashboardScrollMetrics()
+				m.dashboardScroll = min(min(m.dashboardScroll, maxOffset)+page, maxOffset)
+			} else {
+				m.pagedScreenScroll += max(m.height-10, 1)
+			}
 			return m, nil
 		}
 		if message.Code == tea.KeyPgUp {
-			m.pagedScreenScroll = max(m.pagedScreenScroll-max(m.height-10, 1), 0)
+			if m.dashboardActive() {
+				page, maxOffset := m.dashboardScrollMetrics()
+				m.dashboardScroll = max(min(m.dashboardScroll, maxOffset)-page, 0)
+			} else {
+				m.pagedScreenScroll = max(m.pagedScreenScroll-max(m.height-10, 1), 0)
+			}
 			return m, nil
 		}
 		if m.showingApplyResult {
@@ -1166,6 +1177,11 @@ func (m Model) render() string {
 }
 
 func (m Model) renderDashboard() string {
+	content, help := m.dashboardContent()
+	return m.renderDashboardViewport(content, help)
+}
+
+func (m Model) dashboardContent() (string, string) {
 	globalEmpty := "No reviewed Packs are available"
 	projectEmpty := "No reviewed Packs are available in this project scope"
 	if strings.TrimSpace(m.filter) != "" {
@@ -1209,9 +1225,19 @@ func (m Model) renderDashboard() string {
 	if m.showHelp {
 		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
 	}
-	footer := lipgloss.NewStyle().Foreground(mochaSubtext0).Render(help)
-	content := strings.Join([]string{header, "", health + setup, "", scopes + filter, "", footer}, "\n")
-	return m.renderBody(lipgloss.NewStyle().Padding(0, 2).Render(content))
+	content := strings.Join([]string{header, "", health + setup, "", scopes + filter}, "\n")
+	return content, help
+}
+
+func (m Model) dashboardActive() bool {
+	return m.loaded && m.err == nil && !m.applying && !m.showingApplyResult && !m.initializing && !m.initializationResult &&
+		!m.previewing && !m.choosingAction && m.previewErr == nil && m.preview == nil && !m.selecting && !m.inspecting
+}
+
+func (m Model) dashboardScrollMetrics() (int, int) {
+	content, footer := m.dashboardContent()
+	layout := m.dashboardViewportLayout(content, footer)
+	return layout.visible, layout.maxOffset
 }
 
 func (m Model) renderDashboardHeader(width int) string {

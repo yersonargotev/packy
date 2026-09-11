@@ -106,6 +106,49 @@ func (m Model) renderPagedScreen(title, subtitle, content, footer string) string
 	return m.renderFramedScreen(title, subtitle, content, footer, m.pagedScreenScroll, "PgUp/PgDn scroll")
 }
 
+type dashboardViewportLayout struct {
+	bodyLines []string
+	footer    string
+	visible   int
+	maxOffset int
+}
+
+func (m Model) dashboardViewportLayout(content, footer string) dashboardViewportLayout {
+	body := lipgloss.NewStyle().Padding(0, 2).Render(content)
+	bodyLines := strings.Split(body, "\n")
+	if m.height <= 0 {
+		return dashboardViewportLayout{bodyLines: bodyLines, footer: m.renderDashboardFooter(footer), visible: len(bodyLines)}
+	}
+	footerBlock := m.renderDashboardFooter(footer)
+	footerLines := strings.Split(footerBlock, "\n")
+	visible := max(m.height-len(footerLines)-1, 1)
+	maxOffset := max(len(bodyLines)-visible, 0)
+	if maxOffset > 0 {
+		footerBlock = m.renderDashboardFooter("PgUp/PgDn scroll  ·  " + footer)
+		footerLines = strings.Split(footerBlock, "\n")
+		visible = max(m.height-len(footerLines)-1, 1)
+		maxOffset = max(len(bodyLines)-visible, 0)
+	}
+	return dashboardViewportLayout{bodyLines: bodyLines, footer: footerBlock, visible: visible, maxOffset: maxOffset}
+}
+
+func (m Model) renderDashboardViewport(content, footer string) string {
+	layout := m.dashboardViewportLayout(content, footer)
+	offset := min(max(m.dashboardScroll, 0), layout.maxOffset)
+	end := min(offset+layout.visible, len(layout.bodyLines))
+	return m.renderBody(strings.Join([]string{strings.Join(layout.bodyLines[offset:end], "\n"), "", layout.footer}, "\n"))
+}
+
+func (m Model) renderDashboardFooter(footer string) string {
+	width := m.width
+	if width <= 0 {
+		width = 100
+	}
+	return lipgloss.NewStyle().Padding(0, 2).Render(
+		lipgloss.NewStyle().Width(max(width-4, 44)).Foreground(mochaSubtext0).Render(footer),
+	)
+}
+
 func (m Model) renderFramedScreen(title, subtitle, content, footer string, offset int, scrollHint string) string {
 	width := m.width
 	if width <= 0 {
