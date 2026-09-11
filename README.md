@@ -45,10 +45,14 @@ until Packy finishes and reloads observed state.
 
 To edit an active Pack, open its actions and choose **Configure resources**.
 For a project, choose **Configure project resources**; **Activate for me** and
-**Deactivate for me** control personal activation separately. New activations
-and installations offer **Full Pack** or **Choose resources**. Use Space or
-Enter to toggle skills and other resources, then Tab to focus **Apply changes**
-and preview the result. Deselecting a required resource also deselects its
+**Deactivate for me** control personal activation separately. Activations and
+installations open the resource checklist directly. Use Space or Enter to toggle
+skills and other resources, `/` to search, and PgUp/PgDn to change pages. Search
+preserves selections outside the results; `a` selects all resources and `n`
+clears them. Tab focuses the fixed **Apply changes** control to preview the
+result. Green marks enabled resources, yellow marks pending changes, and a blue
+row marks keyboard focus; labels and checkboxes preserve the same information
+without color. Deselecting a required resource also deselects its
 consumers; supporting files and legal notices follow their resources. Clearing
 the selection deactivates the global Pack or uninstalls the project's selected
 surface, after preview and consent.

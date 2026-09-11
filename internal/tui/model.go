@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -260,11 +261,9 @@ type Model struct {
 	operation              string
 	actionChoice           int
 	selecting              bool
-	advancedSelection      bool
-	selectionChoice        int
-	selectionRoot          int
 	selectionPreviewFocus  bool
-	followSelectionFocus   bool
+	resourceList           list.Model
+	initialSelected        map[string]bool
 	selectedRoots          map[string]bool
 	selectionNotice        string
 	surfaceIndex           int
@@ -449,13 +448,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.selecting && !m.previewing && m.preview == nil && m.previewErr == nil && !m.showingApplyResult {
+			return m.updateSelection(message)
+		}
 		if message.Code == tea.KeyPgDown {
-			m.followSelectionFocus = false
 			m.pagedScreenScroll += max(m.height-10, 1)
 			return m, nil
 		}
 		if message.Code == tea.KeyPgUp {
-			m.followSelectionFocus = false
 			m.pagedScreenScroll = max(m.pagedScreenScroll-max(m.height-10, 1), 0)
 			return m, nil
 		}
@@ -621,9 +621,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.projectRow = boundedRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)))
 			return m, nil
 		}
-		if m.selecting && m.preview == nil && m.previewErr == nil {
-			return m.updateSelection(message)
-		}
 		if m.choosingAction {
 			return m.updateActionChoice(message)
 		}
@@ -723,6 +720,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+	if m.selecting && !m.previewing && m.preview == nil && m.previewErr == nil && !m.applying && !m.showingApplyResult {
+		return m.updateResourceList(message)
+	}
 	return m, nil
 }
 
@@ -783,14 +783,20 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 	if m.operation != "update" && !(m.project && (m.operation == "activate" || m.operation == "deactivate" || m.operation == "uninstall")) {
 		selection = Selection{Mode: "all", Roots: []string{}}
 	}
-	if m.selecting && m.advancedSelection {
+	if m.selecting {
 		selection.Mode = "custom"
 		for _, resource := range operationalRoots(*pack) {
 			if m.selectedRoots[resource.Identity] {
 				selection.Roots = append(selection.Roots, resource.Identity)
 			}
 		}
-		if len(selection.Roots) == 0 {
+		preserveCustom := false
+		if status := m.selectedSurfaceStatus(); m.operation == "configure" && status != nil {
+			preserveCustom = status.Selection.Mode == "custom"
+		}
+		if !preserveCustom && len(selection.Roots) > 0 && len(selection.Roots) == len(operationalRoots(*pack)) {
+			selection = Selection{Mode: "all", Roots: []string{}}
+		} else if len(selection.Roots) == 0 {
 			if m.operation == "configure" {
 				operation = "deactivate"
 				if m.project {
@@ -817,29 +823,6 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		preview, err := m.backend.Preview(m.ctx, request)
 		return previewResult{preview: preview, err: err}
-	}
-}
-
-func (m *Model) beginSelection() {
-	m.selecting = true
-	m.advancedSelection = m.operation == "configure"
-	m.selectionChoice = 0
-	m.selectionRoot = 0
-	m.selectionPreviewFocus = false
-	m.followSelectionFocus = true
-	m.selectionNotice = ""
-	m.pagedScreenScroll = 0
-	m.selectedRoots = make(map[string]bool)
-	for _, resource := range operationalRoots(*m.selectedPack()) {
-		m.selectedRoots[resource.Identity] = true
-	}
-	if m.operation == "configure" {
-		if status := m.selectedSurfaceStatus(); status != nil && status.Selection.Mode == "custom" {
-			m.selectedRoots = make(map[string]bool)
-			for _, identity := range status.Selection.Roots {
-				m.selectedRoots[identity] = true
-			}
-		}
 	}
 }
 
@@ -969,88 +952,6 @@ func (m Model) selectedSurfaceStatus() *SurfaceStatus {
 		}
 	}
 	return nil
-}
-
-func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	pack := m.selectedPack()
-	if pack == nil {
-		return m, nil
-	}
-	if key.Matches(message, dashboardKeys.Quit) {
-		return m.quit()
-	}
-	if key.Matches(message, dashboardKeys.Back) {
-		if m.advancedSelection && m.operation != "configure" {
-			m.advancedSelection, m.selectionPreviewFocus, m.selectionNotice = false, false, ""
-			return m, nil
-		}
-		m.selecting = false
-		return m, nil
-	}
-	surfaces := supportedSurfaces(*pack)
-	if (message.Code == tea.KeyRight || message.Code == tea.KeyLeft) && len(surfaces) > 0 {
-		direction := 1
-		if message.Code == tea.KeyLeft {
-			direction = -1
-		}
-		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), direction)
-		if m.project {
-			m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
-			m.selecting, m.choosingAction, m.actionChoice = false, true, 0
-			return m, nil
-		}
-		if status := m.selectedSurfaceStatus(); status != nil && status.Active {
-			m.selecting, m.choosingAction, m.actionChoice = false, true, 0
-			m.operation = firstLifecycleAction(*status)
-		} else {
-			m.operation = "activate"
-			m.beginSelection()
-		}
-		return m, nil
-	}
-	if !m.advancedSelection {
-		switch {
-		case key.Matches(message, dashboardKeys.Down), key.Matches(message, dashboardKeys.Up):
-			m.selectionChoice = 1 - m.selectionChoice
-		case key.Matches(message, dashboardKeys.Inspect):
-			if m.selectionChoice == 0 {
-				return m.startPreview()
-			}
-			m.advancedSelection = true
-		}
-		return m, nil
-	}
-	roots := operationalRoots(*pack)
-	if message.Code == tea.KeyTab {
-		m.selectionPreviewFocus = !m.selectionPreviewFocus
-		m.followSelectionFocus = true
-		return m, nil
-	}
-	if key.Matches(message, dashboardKeys.Down) && !m.selectionPreviewFocus {
-		m.selectionRoot = nextRow(m.selectionRoot, len(roots), 1)
-		m.followSelectionFocus = true
-		return m, nil
-	}
-	if key.Matches(message, dashboardKeys.Up) && !m.selectionPreviewFocus {
-		m.selectionRoot = nextRow(m.selectionRoot, len(roots), -1)
-		m.followSelectionFocus = true
-		return m, nil
-	}
-	if message.Text == " " && !m.selectionPreviewFocus && len(roots) > 0 {
-		identity := roots[m.selectionRoot].Identity
-		m.toggleResource(identity)
-		return m, nil
-	}
-	if key.Matches(message, dashboardKeys.Inspect) {
-		if m.selectionPreviewFocus {
-			return m.startPreview()
-		}
-		if len(roots) > 0 {
-			identity := roots[m.selectionRoot].Identity
-			m.toggleResource(identity)
-		}
-	}
-	return m, nil
 }
 
 func (m Model) resourceSelected(identity string) bool {
@@ -1624,107 +1525,6 @@ func lifecycleActionLabel(action string) string {
 		return "Controlled runtime check"
 	}
 	return strings.ToUpper(action[:1]) + action[1:]
-}
-
-func (m Model) renderSelection() string {
-	pack := m.selectedPack()
-	if pack == nil {
-		return titleStyle.Render("Select Pack resources") + "\n\nNo Pack selected\n\nEsc back"
-	}
-	scope := "Workstation · global"
-	if m.project {
-		scope = "Current project"
-	}
-	surface := selectedSurface(*pack, m.surfaceIndex)
-	if surface == "" {
-		surface = "unavailable"
-	}
-	title := "Select Pack resources"
-	fullLabel, advancedLabel := "Full Pack", "Choose resources"
-	if m.advancedSelection {
-		advancedLabel += " · selected"
-	}
-	fullRow, advancedRow := "  "+fullLabel, "  "+advancedLabel
-	if !m.advancedSelection && m.selectionChoice == 0 {
-		fullRow = selectedRowStyle.Padding(0, 1).Render("› " + fullLabel + " · selected")
-	}
-	if m.selectionChoice == 1 || m.advancedSelection {
-		advancedRow = selectedRowStyle.Padding(0, 1).Render("› " + advancedLabel)
-	}
-	lines := []string{
-		"CLI surface: " + surface + " · selected (←/→ change surface)",
-		"",
-		sectionHeading("Selection mode", 0),
-		fullRow,
-		advancedRow,
-		"",
-		sectionHeading("Resource roles", len(pack.Resources)),
-	}
-	if m.operation == "configure" {
-		title = "Configure Pack resources"
-		lines = []string{"CLI surface: " + surface + " · selected (←/→ change surface)", "", "Edit the current selection. Changes take effect only after preview and consent.", ""}
-	}
-	focusLine := 0
-	if m.advancedSelection {
-		lines = append(lines, "  Skills and other resources")
-		for index, resource := range operationalRoots(*pack) {
-			focus := "  "
-			if !m.selectionPreviewFocus && index == m.selectionRoot {
-				focus = "› "
-				focusLine = len(lines)
-			}
-			checked := "[ ]"
-			if m.resourceSelected(resource.Identity) {
-				checked = "[x]"
-			}
-			lines = append(lines, "  "+focus+checked+" "+resource.Identity)
-		}
-	}
-	for _, resource := range pack.Resources {
-		role := resource.Role
-		switch role {
-		case "root", "operational":
-			role = "operational root"
-		case "dependency":
-			role = "operational resource"
-		case "asset", "supporting":
-			role = "asset · included by domain role"
-		case "notice":
-			role = "legal notice · included by domain role"
-		}
-		if !m.advancedSelection || !selectableResource(resource) {
-			lines = append(lines, "  "+resource.Identity+" ["+role+"]")
-		}
-	}
-	if m.selectionNotice != "" {
-		lines = append(lines, "", m.selectionNotice)
-	}
-	if m.advancedSelection {
-		marker := "  "
-		if m.selectionPreviewFocus {
-			marker = "› "
-			focusLine = len(lines) + 1
-		}
-		lines = append(lines, "", marker+"[ Apply changes · preview first ]")
-		if m.operation == "configure" && len(m.selectedRoots) == 0 {
-			consequence := "This will deactivate the complete Pack on this CLI surface."
-			if m.project {
-				consequence = "This will uninstall the Pack from this project's selected CLI surface."
-			}
-			lines = append(lines, "", consequence)
-		}
-	} else {
-		lines = append(lines, "")
-	}
-	footer := "Enter choose · Esc back · q quit"
-	if m.advancedSelection {
-		footer = "↑/↓ resource · Space/Enter toggle · Tab Apply changes · Esc back · q quit"
-	}
-	if m.advancedSelection && m.followSelectionFocus {
-		wrappedFocus := len(m.viewportLines(strings.Join(lines[:focusLine], "\n")))
-		m.pagedScreenScroll = max(0, wrappedFocus-m.viewportVisibleLines()+1)
-	}
-	return m.renderPagedScreen(title, pack.ID+" · "+surface+" · "+scope, strings.Join(lines, "\n"), footer)
 }
 
 func operationalRoots(pack Pack) []Resource {

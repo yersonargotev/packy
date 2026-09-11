@@ -33,12 +33,21 @@ Status: confirmed for implementation.
 
 Open a Pack with Enter, then open its lifecycle actions. Choose Configure
 resources for an active global Pack or Configure project resources for an
-installed project Pack. For a new activation or installation, choose Full Pack
-or Choose resources.
+installed project Pack. Activations and installations open the resource
+checklist directly, initially selecting the full Pack.
 
 Use the arrow keys to focus a resource and Space or Enter to toggle it. Tab
 focuses Apply changes, which creates a preview; the existing consent flow must
-complete before any mutation. Esc leaves the selection without applying it.
+complete before any mutation. The list uses Bubbles List for pagination and
+fuzzy search over resource identities and descriptions. `/` starts a search;
+Enter accepts it and Esc clears it before leaving selection. Filtering preserves
+hidden choices. PgUp/PgDn change pages. `a` selects all operational resources
+and `n` clears them, including resources outside the current search results.
+The selection count, pending change counts, and Apply control stay visible
+outside the paginated list. Supporting resources remain read-only list entries.
+Blue highlights keyboard focus, green indicates enabled resources, and yellow
+marks pending changes; text and checkboxes convey those states without color.
+Esc leaves an unfiltered selection without applying it.
 Left and right change CLI surface and load that surface's independent state.
 
 Resource configuration uses the current reviewed catalog and update lifecycle,

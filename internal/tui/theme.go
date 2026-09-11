@@ -37,9 +37,14 @@ var (
 			Foreground(mochaMantle).
 			Background(mochaMauve).
 			Padding(0, 1)
-	sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(mochaLavender)
-	selectedRowStyle  = lipgloss.NewStyle().Bold(true).Foreground(mochaBase).Background(mochaBlue)
-	versionStyle      = lipgloss.NewStyle().Foreground(mochaOverlay1)
+	sectionTitleStyle               = lipgloss.NewStyle().Bold(true).Foreground(mochaLavender)
+	selectedRowStyle                = lipgloss.NewStyle().Bold(true).Foreground(mochaBase).Background(mochaBlue)
+	versionStyle                    = lipgloss.NewStyle().Foreground(mochaOverlay1)
+	resourceEnabledStyle            = lipgloss.NewStyle().Foreground(mochaGreen)
+	resourcePendingStyle            = lipgloss.NewStyle().Foreground(mochaYellow)
+	resourceSurfaceStyle            = lipgloss.NewStyle().Bold(true).Foreground(mochaSapphire)
+	resourceActionStyle             = lipgloss.NewStyle().Bold(true).Foreground(mochaBlue).Background(mochaSurface0)
+	resourceFocusedDescriptionStyle = lipgloss.NewStyle().Foreground(mochaText).Background(mochaSurface1)
 )
 
 func newHelpModel() help.Model {

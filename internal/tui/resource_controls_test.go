@@ -23,6 +23,50 @@ func openResourceConfiguration(t *testing.T, backend *fakeBackend, project bool)
 	return model.(tui.Model)
 }
 
+func TestNewPackOpensResourceChecklistWithoutSelectionModeStep(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+		ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:review", Description: "Review proposed changes", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+	}}}}}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"[x] skill:review", "Review proposed changes", "Apply changes", "1 of 1 selected"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("direct checklist missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Selection mode") || len(backend.previewRequests) != 0 {
+		t.Fatal("new Pack still needs a mode-selection step or created a preview immediately")
+	}
+}
+
+func TestResourceConfigurationPreservesSelectionModeWithoutEdits(t *testing.T) {
+	for _, mode := range []string{"all", "custom"} {
+		for _, project := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/project=%t", mode, project), func(t *testing.T) {
+				selection := tui.Selection{Mode: mode}
+				if mode == "custom" {
+					selection.Roots = []string{"skill:a", "skill:b"}
+				}
+				pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Installation: "installed", Selection: selection}}}
+				scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
+				backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope}}
+				var model tea.Model = openResourceConfiguration(t, backend, project)
+				model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+				runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+				if len(backend.previewRequests) != 1 {
+					t.Fatalf("expected one preview: %#v", backend.previewRequests)
+				}
+				got := backend.previewRequests[0].Selection
+				if got.Mode != selection.Mode || !slices.Equal(got.Roots, selection.Roots) {
+					t.Fatalf("unedited selection changed: got %#v, want %#v", got, selection)
+				}
+			})
+		}
+	}
+}
+
 func TestResourceConfigurationStagesChangesAndDeselectsConsumers(t *testing.T) {
 	pack := tui.Pack{ID: "resource-controls", Version: "1.0.0", Resources: []tui.Resource{
 		{Identity: "skill:writer", Role: "operational", SelectionClosures: map[string][]string{"codex": {"skill:writer", "skill:helper", "notice:mit"}}},
@@ -144,9 +188,77 @@ func TestResourceConfigurationLoadsSelectionForChangedSurface(t *testing.T) {
 		t.Fatalf("surface selection leaked:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "activate" || backend.previewRequests[0].Surface != "claude" {
 		t.Fatalf("inactive surface did not use fresh activation: %#v", backend.previewRequests)
+	}
+}
+
+func TestResourceSearchPreservesHiddenSelectionsAndAcceptsQuitLetter(t *testing.T) {
+	pack := tui.Pack{ID: "resource-list", Resources: []tui.Resource{
+		{Identity: "skill:query", Role: "operational", Description: "Query the project"},
+		{Identity: "command:report", Role: "operational", Description: "Write a report"},
+	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
+	var model tea.Model = openResourceConfiguration(t, backend, false)
+	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: '/', Text: "/"}))
+	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: 'q', Text: "q"}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "skill:query") || strings.Contains(view, "command:report") {
+		t.Fatalf("resource search did not filter the list:\n%s", view)
+	}
+	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: ' ', Text: " "}))
+	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "[ ] skill:query") || !strings.Contains(view, "[x] command:report") || !strings.Contains(view, "1 of 2 selected") {
+		t.Fatalf("filtering lost or toggled a hidden selection:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || !slices.Equal(backend.previewRequests[0].Selection.Roots, []string{"command:report"}) {
+		t.Fatalf("filtered edit sent the wrong desired resources: %#v", backend.previewRequests)
+	}
+}
+
+// Deliver asynchronous list results without advancing recurring cursor timers.
+func resourceListMessage(t *testing.T, model tea.Model, message tea.Msg) tea.Model {
+	t.Helper()
+	model, command := model.Update(message)
+	queue := []tea.Cmd{command}
+	for len(queue) > 0 {
+		command, queue = queue[0], queue[1:]
+		if command == nil {
+			continue
+		}
+		message := command()
+		if batch, ok := message.(tea.BatchMsg); ok {
+			queue = append(queue, batch...)
+			continue
+		}
+		if _, quit := message.(tea.QuitMsg); quit {
+			t.Fatal("typing into the resource filter quit the application")
+		}
+		model, _ = model.Update(message)
+	}
+	return model
+}
+
+func TestResourceListKeepsActionsVisibleAtMinimumTerminalSize(t *testing.T) {
+	pack := tui.Pack{ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "notice:license", Role: "notice"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
+	var model tea.Model = openResourceConfiguration(t, backend, false)
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
+	for _, message := range []tea.Msg{tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd}), tea.KeyPressMsg(tea.Key{Code: tea.KeyTab})} {
+		model, _ = model.Update(message)
+		view := ansi.Strip(model.View().Content)
+		if len(strings.Split(view, "\n")) > 14 || !strings.Contains(view, "Apply changes") {
+			t.Fatalf("minimum-size selection lost its fixed actions:\n%s", view)
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if ansi.StringWidth(line) > 48 {
+				t.Fatalf("selection exceeds terminal width: %q", line)
+			}
+		}
 	}
 }
 

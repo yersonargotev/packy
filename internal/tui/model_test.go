@@ -87,6 +87,7 @@ func TestProjectInstallResultSeparatesAndOffersPersonalActivation(t *testing.T) 
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -352,7 +353,7 @@ func TestProjectStatusOmitsNoOpUpdateAndRequiresDestructiveConsentForPersonalDea
 func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
 		}}}},
 		preview: tui.Preview{ID: "install-cancel", Digest: "install-cancel", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
 	}
@@ -360,6 +361,7 @@ func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testin
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
@@ -375,7 +377,7 @@ func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testin
 func TestFailedProjectApplyReloadsStatusWithoutClaimingRollback(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
 		}}}},
 		preview:     tui.Preview{ID: "install-fail", Digest: "install-fail", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
 		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Project installation stopped before verification"},
@@ -385,6 +387,7 @@ func TestFailedProjectApplyReloadsStatusWithoutClaimingRollback(t *testing.T) {
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -620,6 +623,7 @@ func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -663,6 +667,7 @@ func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombinatio
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -706,6 +711,7 @@ func TestApplyShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T)
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, applyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -748,6 +754,7 @@ func TestQuitDuringApplyIsVisibleThenCompletesAfterApplyAndFreshStatusReload(t *
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, applyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -773,6 +780,7 @@ func TestApplyFailureReloadsStatusAndRetryCreatesANewPreview(t *testing.T) {
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -807,6 +815,7 @@ func TestActivationResultRemainsVisibleWhenFreshStatusReloadFails(t *testing.T) 
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -1100,13 +1109,13 @@ func TestCatalogFilterMatchesSearchableCatalogMetadata(t *testing.T) {
 	})
 }
 
-func TestPackLifecycleSelectionDefaultsToFullPackAndExplainsResourceRoles(t *testing.T) {
+func TestPackLifecycleSelectionDefaultsToAllResourcesAndExplainsResourceRoles(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "healthy"},
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 			ID: "argote", Version: "1.2.0", Description: "Agent guidance",
 			Resources: []tui.Resource{
-				{Identity: "skill:review", Role: "root", Description: "Review changes"},
+				{Identity: "skill:review", Role: "root", Description: "Review changes", SelectionClosures: map[string][]string{"codex": {"asset:template", "notice:mit"}}},
 				{Identity: "instruction:guidance", Role: "dependency", Description: "Shared guidance"},
 				{Identity: "asset:template", Role: "asset", Description: "Report template"},
 				{Identity: "notice:mit", Role: "notice", Description: "MIT notice"},
@@ -1121,13 +1130,15 @@ func TestPackLifecycleSelectionDefaultsToFullPackAndExplainsResourceRoles(t *tes
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{
 		"Select Pack resources", "argote · codex · Workstation · global",
-		"Full Pack · selected", "Choose resources",
-		"skill:review [operational root]", "instruction:guidance [operational resource]",
-		"asset:template [asset · included by domain role]", "notice:mit [legal notice · included by domain role]",
+		"[x] skill:review", "[x] instruction:guidance",
+		"asset:template", "notice:mit", "auto · on", "Included automatically",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("selection screen missing %q:\n%s", want, view)
 		}
+	}
+	if strings.Contains(view, "Full Pack") || strings.Contains(view, "Choose resources") || strings.Count(view, "auto · on") != 2 {
+		t.Fatalf("selection did not expose the direct checklist with both automatic resources:\n%s", view)
 	}
 }
 
@@ -1160,6 +1171,7 @@ func TestFullPackSelectionCreatesAndRendersCompleteImmutablePreview(t *testing.T
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	if len(backend.previewRequests) != 1 {
@@ -1183,14 +1195,14 @@ func TestFullPackSelectionCreatesAndRendersCompleteImmutablePreview(t *testing.T
 	}
 }
 
-func TestAdvancedSelectionExposesOperationalResourcesAndSendsExactCustomSelection(t *testing.T) {
+func TestResourceChecklistExposesOperationalResourcesAndSendsExactCustomSelection(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{
 			Health: tui.Health{Status: "healthy"},
 			Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 				ID: "argote", Version: "1.2.0",
 				Resources: []tui.Resource{
-					{Identity: "skill:review", Role: "root"},
+					{Identity: "skill:review", Role: "root", SelectionClosures: map[string][]string{"codex": {"asset:template", "notice:mit"}}},
 					{Identity: "agent:critic", Role: "root"},
 					{Identity: "instruction:guidance", Role: "dependency"},
 					{Identity: "asset:template", Role: "asset"},
@@ -1204,17 +1216,15 @@ func TestAdvancedSelectionExposesOperationalResourcesAndSendsExactCustomSelectio
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{
-		"Choose resources · selected", "[x] skill:review", "[x] agent:critic",
+		"[x] skill:review", "[x] agent:critic",
 		"[x] instruction:guidance",
-		"asset:template [asset · included by domain role]", "notice:mit [legal notice · included by domain role]",
+		"asset:template", "notice:mit", "auto · on", "Included automatically",
 	} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("advanced selection missing %q:\n%s", want, view)
+			t.Fatalf("resource checklist missing %q:\n%s", want, view)
 		}
 	}
 	if strings.Contains(view, "[x] asset:template") || strings.Contains(view, "[x] notice:mit") {
@@ -1229,7 +1239,7 @@ func TestAdvancedSelectionExposesOperationalResourcesAndSendsExactCustomSelectio
 	}
 	selection := backend.previewRequests[0].Selection
 	if selection.Mode != "custom" || !slices.Equal(selection.Roots, []string{"agent:critic", "instruction:guidance"}) {
-		t.Fatalf("advanced selection = %#v, want retained operational resources", selection)
+		t.Fatalf("resource checklist selection = %#v, want retained operational resources", selection)
 	}
 }
 
@@ -1266,6 +1276,7 @@ func TestBlockedNoOpAndStalePreviewsNeverOfferConsent(t *testing.T) {
 			model := loadModel(t, backend)
 			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 			model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 			view := ansi.Strip(model.View().Content)
 			for _, want := range test.wants {
@@ -1294,6 +1305,7 @@ func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 80})
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{"the complete blocker detail remains visible", "a long pending action whose complete meaning must remain visible"} {
@@ -1347,6 +1359,7 @@ func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
 	if !strings.Contains(view, "CLI surface: opencode · selected") || strings.Contains(view, "CLI surface: claude · selected") {
 		t.Fatalf("surface navigation did not choose the next supported surface:\n%s", view)
 	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Surface != "opencode" {
 		t.Fatalf("preview did not target the reviewed surface: %#v", backend.previewRequests)
@@ -1365,6 +1378,7 @@ func TestSelectionCannotPreviewAnExplicitlyUnsupportedCLISurface(t *testing.T) {
 	if !strings.Contains(view, "CLI surface: unavailable") {
 		t.Fatalf("incompatible Pack did not expose unavailable surface:\n%s", view)
 	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view = ansi.Strip(updated.View().Content)
 	if command != nil || len(backend.previewRequests) != 0 || !strings.Contains(view, "No supported CLI surface is available") {
