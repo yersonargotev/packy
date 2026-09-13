@@ -52,5 +52,32 @@ version. A new Pack may introduce any valid SemVer without changing unrelated
 Pack versions.
 
 Pull-request CI in the Catalog Project runs this same validator with read-only
-permissions. Automatic Catalog Snapshot publication is owned by separate
-delivery work and is not part of authoring validation.
+permissions. It cannot publish and receives no publication credentials.
+
+## Catalog Snapshots
+
+A successful validation of a reviewed merge on the Catalog Project's protected
+`main` branch starts publication automatically. The read-only preparation job
+uses Packy's pinned `catalogsnapshot` tool to build exactly two files:
+
+- `catalog-snapshot.tar.gz`, containing `catalog-index.json` and the complete
+  deterministic union of every declared Pack closure under `bundle/`; and
+- `SHA256SUMS`, containing the archive's SHA-256 digest.
+
+The index records the full Catalog Project commit, exact Packy builder commit,
+catalog digest, and every included Pack's ID, version, manifest digest, closure
+digest, and ordered path/mode/content-digest index. The immutable GitHub Release
+tag is `catalog-<full-catalog-commit>`.
+
+Only the final publication job receives `contents: write`, `id-token: write`,
+and `attestations: write`. It receives the already validated artifact rather
+than executing Catalog Project content, publishes a GitHub artifact attestation,
+and creates the release once. A retry accepts an existing byte-identical
+release; any attempt to reuse the tag with different target or asset bytes is
+rejected.
+
+Consumers verify the archive checksum and the GitHub artifact attestation for
+`yersonargotev/packy-catalog`. Together with the embedded source and builder
+commits, this proves the official publisher, artifact integrity, and exact Pack
+bytes. Catalog acquisition and local snapshot selection are implemented by the
+separate consumer lifecycle work.
