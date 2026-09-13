@@ -119,17 +119,20 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"GitHub App manifest", "does not define additional Pack behavior or contracts",
 	})
 	requireDocumentationText(t, root, "docs/capability-packs.md", []string{
-		"Managed Pack Project", "complete authoring contract", "pack-v<version>",
-		"Promotion independently", "reacquires, validates, and admits",
+		"Catalog Project", "Declared Pack Closure", "whole-catalog validation",
+		"exact-copy", "executing catalog content",
 	})
 	requireDocumentationText(t, root, "docs/managed-pack-projects.md", []string{
-		"one public repository that authors exactly one Pack", "root `pack.json`",
-		"reusable workflow", "Managed Pack Promotion",
+		"superseded", "ADR 0039", "Current Pack content", "historical guide",
 	})
 	requireDocumentationText(t, root, "README.md", []string{
-		"Managed Pack Project", "root schema v1", "preventive validation", "pack-v<version>",
+		"Catalog Project", "canonical authoring source", "Whole-catalog", "independent Pack version",
 	})
-	for _, path := range []string{"CONTEXT.md", "README.md", "docs/capability-packs.md", "docs/managed-pack-projects.md", "docs/release-notes/next.md"} {
+	requireDocumentationText(t, root, "docs/catalog-project.md", []string{
+		"yersonargotev/packy-catalog", "bundle/packs/*/pack.json", "Declared Pack Closure",
+		"catalogvalidate", "strictly greater SemVer", "inert data", "same validator",
+	})
+	for _, path := range []string{"CONTEXT.md", "README.md", "docs/capability-packs.md", "docs/catalog-project.md", "docs/release-notes/next.md"} {
 		requireDocumentationDoesNotContain(t, root, path, []string{
 			"Pack Source", "single-source Pack admission", "Composite Pack Source Bundle", "pack-template",
 		})

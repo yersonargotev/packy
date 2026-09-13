@@ -12,7 +12,7 @@ var (
 	staleCatalogClaim = regexp.MustCompile("(?i)only\\s+`?matty`?\\s+and\\s+`?engram`?")
 )
 
-const canonicalCatalogAuthority = "The bundled Pack manifests are the canonical selectable catalog."
+const canonicalCatalogAuthority = "Catalog Project is the canonical authoring source"
 
 func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 	root := repositoryRoot(t)
@@ -23,7 +23,7 @@ func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 	for path, catalogLink := range documents {
 		text := readFile(t, filepath.Join(root, filepath.FromSlash(path)))
 		if !strings.Contains(text, canonicalCatalogAuthority) {
-			t.Errorf("%s does not identify bundled Pack manifests as canonical catalog authority", path)
+			t.Errorf("%s does not identify the Catalog Project as canonical authoring authority", path)
 		}
 		if !strings.Contains(text, "packy list") {
 			t.Errorf("%s does not expose canonical runtime Pack discovery", path)

@@ -1,4 +1,13 @@
-# Managed Pack Projects
+# Managed Pack Projects (superseded)
+
+The one-repository-per-Pack authoring and promotion model described by this
+historical guide was superseded by [ADR 0039](adr/0039-publish-an-independent-canonical-pack-catalog.md).
+Current Pack content is authored in the public [Catalog
+Project](catalog-project.md). Independent upstream products keep their own
+repositories, but those repositories are no longer mandatory Pack publishers.
+
+The remaining material documents the prior contract while Packy's installed
+runtime source is replaced by the independent catalog in later delivery work.
 
 A Managed Pack Project is one public repository that authors exactly one Pack.
 Its root `pack.json` and the positively referenced resource roots are the full

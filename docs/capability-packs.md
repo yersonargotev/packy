@@ -5,12 +5,13 @@ inspection and `--dry-run` are read-only. Mutation requires an explicit Pack,
 CLI surface, and operation. Supported surfaces are Codex, OpenCode, and Claude
 Code.
 
-The bundled Pack manifests are the canonical selectable catalog. Use
-`packy list` for the Pack IDs and versions available in the current
-binary, and `packy show <pack>` for one Pack's purpose, supported surfaces,
-resources, and external requirements. The generated [Pack catalog](packs/index.md)
-provides the same manifest-backed inventory for browsing on GitHub. Pack
-versions are independent of the Packy binary version.
+The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
+Catalog Project is the canonical authoring source. Use `packy list` for the
+Pack IDs and versions embedded in the current binary, and `packy show <pack>`
+for one Pack's purpose, supported surfaces, resources, and external
+requirements. The generated [Pack catalog](packs/index.md) provides the same
+embedded manifest-backed inventory for browsing on GitHub. Pack versions are
+independent of the Packy binary version.
 
 ## Inspect and activate
 
@@ -72,26 +73,29 @@ resources, projected paths, and content digests. Packy uses that receipt to:
 Preview always runs before application. Use `--force` only after inspecting a
 drift report; its authority is limited to paths in the targeted receipt.
 
-## Authoring and promoting one Pack
+## Authoring the catalog
 
-Every Pack is authored in exactly one public, maintainer-controlled [Managed Pack Project](managed-pack-projects.md).
-Each project owns one `pack.json` manifest using schema v1, and its declared
-bundle-relative resource roots form the complete authoring contract;
-the bundled catalog is not an authoring location.
+The [Catalog Project](catalog-project.md) canonically authors every Pack at
+`bundle/packs/<pack-id>/pack.json` together with its reviewed bundle-relative
+resources. Each Pack keeps one `pack.json` manifest. There is no separately
+maintained Pack registry and ordinary content changes do not require per-Pack
+releases or promotion into Packy.
 
-1. Create or update the Managed Pack Project's reviewed resources and root
-   manifest.
-2. Choose the Pack SemVer and declare immutable external origins and notices
-   for every derived resource.
-3. Run the reusable Managed Pack validation workflow before publishing.
-4. Publish the complete immutable `pack-v<version>` release.
-5. Have Packy promote the registered release. Promotion independently
-   reacquires, validates, and admits it before proposing the catalog update.
+1. Change one or more Pack manifests and their reviewed resources in one
+   Catalog Project branch.
+2. Preserve exact upstream commits, exact-copy or adapted relationships, and
+   every required notice.
+3. Increase the SemVer of each changed Pack and retain every unchanged Pack's
+   version.
+4. Run whole-catalog validation against the target branch before review.
+5. Merge the reviewed content through the Catalog Project pull-request flow.
 
 The manifest declares Pack identity, version, description, selectability,
 surfaces, resources, bindings, intra-Pack dependencies, external requirements,
-and concrete conflicts. The [Managed Pack Project contract](managed-pack-projects.md)
-defines its schema, closure, validation, registry, and promotion details.
+origins, notices, and concrete conflicts. Validation discovers all manifests,
+builds every Declared Pack Closure deterministically, verifies exact copies and
+safe paths, and evaluates the complete typed runtime-fitness matrix without
+executing catalog content.
 
 Every binding declares a non-null `capabilities` array. Most bindings use an
 empty array. A binding that needs reusable host-native behavior selects only a
@@ -114,9 +118,8 @@ of tool readiness: every declared name is observed generically through PATH,
 and no tool receives acquisition merely because of its name. Acquisition never
 authorizes a tool-owned host setup command.
 
-The generated Pack catalog is derived from admitted Managed Pack releases; it
-is not a second authoring source or manually maintained snapshot. Review and
-merge promotion proposals through the normal GitHub pull-request flow.
+Catalog Snapshot publication remains a separate mechanical continuation of a
+reviewed content merge. It is not performed by local authoring validation.
 
 ## Project use
 
