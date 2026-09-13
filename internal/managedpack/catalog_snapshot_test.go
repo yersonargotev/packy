@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestBuildCatalogSnapshotIdentifiesAndPackagesExactValidatedContent(t *testi
 	for name := range files {
 		gotNames = append(gotNames, name)
 	}
-	slicesSort(gotNames)
+	sort.Strings(gotNames)
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("archive entries = %v, want %v", gotNames, wantNames)
 	}
@@ -210,12 +211,4 @@ func readSnapshotArchive(t *testing.T, data []byte) map[string][]byte {
 		result[header.Name] = contents
 	}
 	return result
-}
-
-func slicesSort(values []string) {
-	for i := 1; i < len(values); i++ {
-		for j := i; j > 0 && values[j] < values[j-1]; j-- {
-			values[j], values[j-1] = values[j-1], values[j]
-		}
-	}
 }

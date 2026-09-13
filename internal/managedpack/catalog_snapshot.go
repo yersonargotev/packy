@@ -144,41 +144,41 @@ func BuildCatalogSnapshot(ctx context.Context, projectRoot string, validation Ca
 		_ = closeArchive()
 		return CatalogSnapshotResult{}, err
 	}
-	entries := catalogSnapshotEntries(validation)
+	entries := catalogSnapshotFiles(validation)
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			_ = closeArchive()
 			return CatalogSnapshotResult{}, err
 		}
-		path := filepath.Join(projectRoot, "bundle", filepath.FromSlash(entry.record.Path))
+		path := filepath.Join(projectRoot, "bundle", filepath.FromSlash(entry.Path))
 		bundleRoot := filepath.Join(projectRoot, "bundle")
-		if err := rejectSymlinkComponents(ctx, bundleRoot, entry.record.Path); err != nil {
+		if err := rejectSymlinkComponents(ctx, bundleRoot, entry.Path); err != nil {
 			_ = closeArchive()
-			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: %w", entry.record.Path, err)
+			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: %w", entry.Path, err)
 		}
 		info, err := os.Lstat(path)
 		if err != nil {
 			_ = closeArchive()
-			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: %w", entry.record.Path, err)
+			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: %w", entry.Path, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			_ = closeArchive()
-			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: source is a symlink or is not regular", entry.record.Path)
+			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: source is a symlink or is not regular", entry.Path)
 		}
-		if canonicalMode(info.Mode()) != entry.record.Mode {
+		if canonicalMode(info.Mode()) != entry.Mode {
 			_ = closeArchive()
-			return CatalogSnapshotResult{}, fmt.Errorf("Catalog Snapshot source %q drifted from validated mode", entry.record.Path)
+			return CatalogSnapshotResult{}, fmt.Errorf("Catalog Snapshot source %q drifted from validated mode", entry.Path)
 		}
 		data, err := readFileBounded(ctx, path, info)
 		if err != nil {
 			_ = closeArchive()
-			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: %w", entry.record.Path, err)
+			return CatalogSnapshotResult{}, fmt.Errorf("read validated Catalog Snapshot file %q: %w", entry.Path, err)
 		}
-		if digestBytes(data) != entry.record.SHA256 {
+		if digestBytes(data) != entry.SHA256 {
 			_ = closeArchive()
-			return CatalogSnapshotResult{}, fmt.Errorf("Catalog Snapshot source %q drifted from validated SHA-256", entry.record.Path)
+			return CatalogSnapshotResult{}, fmt.Errorf("Catalog Snapshot source %q drifted from validated SHA-256", entry.Path)
 		}
-		if err := writeSnapshotBytes(tarWriter, "bundle/"+entry.record.Path, entry.record.Mode, data); err != nil {
+		if err := writeSnapshotBytes(tarWriter, "bundle/"+entry.Path, entry.Mode, data); err != nil {
 			_ = closeArchive()
 			return CatalogSnapshotResult{}, err
 		}
@@ -205,18 +205,14 @@ func BuildCatalogSnapshot(ctx context.Context, projectRoot string, validation Ca
 	}, nil
 }
 
-type catalogSnapshotEntry struct {
-	record FileRecord
-}
-
-func catalogSnapshotEntries(validation CatalogValidation) []catalogSnapshotEntry {
-	entries := make([]catalogSnapshotEntry, 0)
+func catalogSnapshotFiles(validation CatalogValidation) []FileRecord {
+	entries := make([]FileRecord, 0)
 	for _, pack := range validation.Packs {
 		for _, file := range pack.Files {
-			entries = append(entries, catalogSnapshotEntry{record: file})
+			entries = append(entries, file)
 		}
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].record.Path < entries[j].record.Path })
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	return entries
 }
 

@@ -44,8 +44,10 @@ gh_bin="${GH_BIN:-gh}"
 tag="catalog-$commit"
 release_json="$(mktemp "${TMPDIR:-/tmp}/packy-catalog-release.XXXXXX")"
 published="$(mktemp -d "${TMPDIR:-/tmp}/packy-catalog-published.XXXXXX")"
+expected_assets="$(mktemp "${TMPDIR:-/tmp}/packy-catalog-expected.XXXXXX")"
+actual_assets="$(mktemp "${TMPDIR:-/tmp}/packy-catalog-actual.XXXXXX")"
 cleanup() {
-  find "$release_json" -delete
+  find "$release_json" "$expected_assets" "$actual_assets" -delete
   find "$published" -depth -delete
 }
 trap cleanup EXIT
@@ -72,9 +74,31 @@ fi
 [[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
 
 "$gh_bin" release download "$tag" --repo "$repository" --dir "$published"
-printf '%s\n' SHA256SUMS catalog-snapshot.tar.gz | sort > "$published/expected-assets"
-find "$published" -mindepth 1 -maxdepth 1 ! -name expected-assets ! -name actual-assets -exec basename {} \; | sort > "$published/actual-assets"
-cmp "$published/expected-assets" "$published/actual-assets" >/dev/null || {
+printf '%s\n' SHA256SUMS catalog-snapshot.tar.gz | sort > "$expected_assets"
+find "$published" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort > "$actual_assets"
+while IFS= read -r asset; do
+  if ! grep -Fxq "$asset" "$expected_assets"; then
+    echo "published Catalog Snapshot contains unexpected asset $asset" >&2
+    exit 1
+  fi
+done < "$actual_assets"
+resumed=false
+for asset in SHA256SUMS catalog-snapshot.tar.gz; do
+  if [[ -e "$published/$asset" ]]; then
+    cmp "$dist/$asset" "$published/$asset" >/dev/null || {
+      echo "published Catalog Snapshot bytes differ for $asset" >&2
+      exit 1
+    }
+  else
+    "$gh_bin" release upload "$tag" "$dist/$asset" --repo "$repository"
+    resumed=true
+  fi
+done
+
+find "$published" -mindepth 1 -depth -delete
+"$gh_bin" release download "$tag" --repo "$repository" --dir "$published"
+find "$published" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort > "$actual_assets"
+cmp "$expected_assets" "$actual_assets" >/dev/null || {
   echo "published Catalog Snapshot assets differ" >&2
   exit 1
 }
@@ -85,7 +109,9 @@ for asset in SHA256SUMS catalog-snapshot.tar.gz; do
   }
 done
 
-if [[ "$release_exists" == true ]]; then
+if [[ "$resumed" == true ]]; then
+  echo "completed interrupted Catalog Snapshot publication: $tag"
+elif [[ "$release_exists" == true ]]; then
   echo "Catalog Snapshot already published unchanged: $tag"
 else
   echo "published Catalog Snapshot: $tag"

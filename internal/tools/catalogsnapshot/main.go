@@ -14,13 +14,17 @@ import (
 )
 
 func main() {
+	os.Exit(execute())
+}
+
+func execute() int {
 	resolver, err := catalogorigin.New()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
 	}
 	defer resolver.Close()
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, resolver))
+	return run(os.Args[1:], os.Stdout, os.Stderr, resolver)
 }
 
 func run(args []string, stdout, stderr io.Writer, resolver managedpack.OriginResolver) int {

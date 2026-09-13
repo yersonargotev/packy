@@ -46,8 +46,11 @@ case "$1 $2" in
       if [[ "$1" == --dir ]]; then destination="$2"; break; fi
       shift
     done
-    cp "$release/catalog-snapshot.tar.gz" "$destination/"
-    cp "$release/SHA256SUMS" "$destination/"
+    [[ ! -f "$release/catalog-snapshot.tar.gz" ]] || cp "$release/catalog-snapshot.tar.gz" "$destination/"
+    [[ ! -f "$release/SHA256SUMS" ]] || cp "$release/SHA256SUMS" "$destination/"
+    ;;
+  "release upload")
+    cp "$4" "$release/$(basename "$4")"
     ;;
   *) exit 2 ;;
 esac
@@ -75,6 +78,13 @@ esac
 	output, err = run()
 	if err != nil || !strings.Contains(output, "already published unchanged") {
 		t.Fatalf("idempotent retry: output=%q err=%v", output, err)
+	}
+	if err := os.Remove(filepath.Join(releaseRoot, "release", "SHA256SUMS")); err != nil {
+		t.Fatal(err)
+	}
+	output, err = run()
+	if err != nil || !strings.Contains(output, "completed interrupted") {
+		t.Fatalf("interrupted retry: output=%q err=%v", output, err)
 	}
 	if err := os.WriteFile(filepath.Join(releaseRoot, "release", "catalog-snapshot.tar.gz"), []byte("replaced bytes\n"), 0o644); err != nil {
 		t.Fatal(err)
