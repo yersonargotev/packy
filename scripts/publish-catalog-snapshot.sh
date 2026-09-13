@@ -52,8 +52,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+fetch_release() {
+  if "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json" 2>/dev/null; then
+    return 0
+  fi
+  "$gh_bin" api --paginate "repos/$repository/releases?per_page=100" \
+    --jq ".[] | select(.tag_name == \"$tag\")" > "$release_json"
+  [[ -s "$release_json" ]]
+}
+
 release_exists=false
-if "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json" 2>/dev/null; then
+if fetch_release; then
   release_exists=true
 fi
 
@@ -65,11 +74,11 @@ if [[ "$release_exists" == false ]]; then
     --notes "Immutable Catalog Snapshot for reviewed commit $commit." \
     --draft \
     --latest=false; then
-    "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json"
+    fetch_release
   fi
 fi
 
-"$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json"
+fetch_release
 [[ "$(jq -r .tag_name "$release_json")" == "$tag" ]] || { echo "published Catalog Snapshot tag differs" >&2; exit 1; }
 [[ "$(jq -r .target_commitish "$release_json")" == "$commit" ]] || { echo "published Catalog Snapshot commit differs" >&2; exit 1; }
 draft="$(jq -r .draft "$release_json")"
@@ -127,7 +136,7 @@ done
 
 if [[ "$draft" == true ]]; then
   "$gh_bin" release edit "$tag" --repo "$repository" --draft=false
-  "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json"
+  fetch_release
   [[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
   [[ "$(jq -r .immutable "$release_json")" == true ]] || { echo "published Catalog Snapshot is not immutable" >&2; exit 1; }
 fi

@@ -26,18 +26,26 @@ func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
 	fake := `#!/usr/bin/env bash
 set -euo pipefail
 release="$FAKE_RELEASE_ROOT/release"
+emit_release() {
+  asset_count="$(find "$release" -type f ! -name target ! -name draft ! -name immutable | wc -l | tr -d ' ')"
+  case "$asset_count" in
+    0) assets='[]' ;;
+    1) assets='[{}]' ;;
+    2) assets='[{},{}]' ;;
+    *) exit 2 ;;
+  esac
+  printf '{"tag_name":"catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_commitish":"%s","draft":%s,"immutable":%s,"assets":%s}\n' \
+    "$(<"$release/target")" "$(<"$release/draft")" "$(<"$release/immutable")" "$assets"
+}
 case "$1 $2" in
   "api repos/example/catalog/releases/tags/catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     [[ -d "$release" ]] || exit 1
-    asset_count="$(find "$release" -type f ! -name target ! -name draft ! -name immutable | wc -l | tr -d ' ')"
-    case "$asset_count" in
-      0) assets='[]' ;;
-      1) assets='[{}]' ;;
-      2) assets='[{},{}]' ;;
-      *) exit 2 ;;
-    esac
-    printf '{"tag_name":"catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_commitish":"%s","draft":%s,"immutable":%s,"assets":%s}\n' \
-      "$(<"$release/target")" "$(<"$release/draft")" "$(<"$release/immutable")" "$assets"
+    [[ "$(<"$release/draft")" == false ]] || exit 1
+    emit_release
+    ;;
+  "api --paginate")
+    [[ -d "$release" ]] || exit 1
+    emit_release
     ;;
   "release create")
     [[ ! -e "$release" ]] || exit 1
