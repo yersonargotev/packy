@@ -58,11 +58,12 @@ if "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json" 2>/dev
 fi
 
 if [[ "$release_exists" == false ]]; then
-  if ! "$gh_bin" release create "$tag" "$archive" "$checksums" \
+  if ! "$gh_bin" release create "$tag" \
     --repo "$repository" \
     --target "$commit" \
     --title "$tag" \
     --notes "Immutable Catalog Snapshot for reviewed commit $commit." \
+    --draft \
     --latest=false; then
     "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json"
   fi
@@ -71,7 +72,14 @@ fi
 "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json"
 [[ "$(jq -r .tag_name "$release_json")" == "$tag" ]] || { echo "published Catalog Snapshot tag differs" >&2; exit 1; }
 [[ "$(jq -r .target_commitish "$release_json")" == "$commit" ]] || { echo "published Catalog Snapshot commit differs" >&2; exit 1; }
-[[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
+draft="$(jq -r .draft "$release_json")"
+immutable="$(jq -r .immutable "$release_json")"
+[[ "$draft" == true || "$draft" == false ]] || { echo "published Catalog Snapshot draft state is malformed" >&2; exit 1; }
+[[ "$immutable" == true || "$immutable" == false ]] || { echo "published Catalog Snapshot immutable state is malformed" >&2; exit 1; }
+if [[ "$draft" == false && "$immutable" != true ]]; then
+  echo "published Catalog Snapshot is mutable" >&2
+  exit 1
+fi
 
 published_asset_count="$(jq -r '(.assets // []) | length' "$release_json")"
 [[ "$published_asset_count" =~ ^[0-9]+$ ]] || { echo "published Catalog Snapshot asset metadata is malformed" >&2; exit 1; }
@@ -87,6 +95,9 @@ while IFS= read -r asset; do
   fi
 done < "$actual_assets"
 resumed=false
+if [[ "$release_exists" == true && "$draft" == true ]]; then
+  resumed=true
+fi
 for asset in SHA256SUMS catalog-snapshot.tar.gz; do
   if [[ -e "$published/$asset" ]]; then
     cmp "$dist/$asset" "$published/$asset" >/dev/null || {
@@ -94,6 +105,7 @@ for asset in SHA256SUMS catalog-snapshot.tar.gz; do
       exit 1
     }
   else
+    [[ "$draft" == true ]] || { echo "immutable Catalog Snapshot is missing $asset" >&2; exit 1; }
     "$gh_bin" release upload "$tag" "$dist/$asset" --repo "$repository"
     resumed=true
   fi
@@ -113,10 +125,17 @@ for asset in SHA256SUMS catalog-snapshot.tar.gz; do
   }
 done
 
-if [[ "$resumed" == true ]]; then
+if [[ "$draft" == true ]]; then
+  "$gh_bin" release edit "$tag" --repo "$repository" --draft=false
+  "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json"
+  [[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
+  [[ "$(jq -r .immutable "$release_json")" == true ]] || { echo "published Catalog Snapshot is not immutable" >&2; exit 1; }
+fi
+
+if [[ "$release_exists" == false ]]; then
+  echo "published immutable Catalog Snapshot: $tag"
+elif [[ "$resumed" == true ]]; then
   echo "completed interrupted Catalog Snapshot publication: $tag"
-elif [[ "$release_exists" == true ]]; then
-  echo "Catalog Snapshot already published unchanged: $tag"
 else
-  echo "published Catalog Snapshot: $tag"
+  echo "Catalog Snapshot already published unchanged: $tag"
 fi

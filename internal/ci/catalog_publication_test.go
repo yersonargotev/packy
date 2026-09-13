@@ -29,24 +29,28 @@ release="$FAKE_RELEASE_ROOT/release"
 case "$1 $2" in
   "api repos/example/catalog/releases/tags/catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     [[ -d "$release" ]] || exit 1
-    asset_count="$(find "$release" -type f ! -name target | wc -l | tr -d ' ')"
+    asset_count="$(find "$release" -type f ! -name target ! -name draft ! -name immutable | wc -l | tr -d ' ')"
     case "$asset_count" in
       0) assets='[]' ;;
       1) assets='[{}]' ;;
       2) assets='[{},{}]' ;;
       *) exit 2 ;;
     esac
-    printf '{"tag_name":"catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_commitish":"%s","draft":false,"assets":%s}\n' "$(<"$release/target")" "$assets"
+    printf '{"tag_name":"catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_commitish":"%s","draft":%s,"immutable":%s,"assets":%s}\n' \
+      "$(<"$release/target")" "$(<"$release/draft")" "$(<"$release/immutable")" "$assets"
     ;;
   "release create")
     [[ ! -e "$release" ]] || exit 1
     mkdir "$release"
-    cp "$4" "$release/catalog-snapshot.tar.gz"
-    cp "$5" "$release/SHA256SUMS"
+    saw_draft=false
     while (($#)); do
-      if [[ "$1" == --target ]]; then printf '%s\n' "$2" > "$release/target"; break; fi
+      if [[ "$1" == --target ]]; then printf '%s\n' "$2" > "$release/target"; fi
+      if [[ "$1" == --draft ]]; then saw_draft=true; fi
       shift
     done
+    [[ "$saw_draft" == true ]]
+    printf 'true\n' > "$release/draft"
+    printf 'false\n' > "$release/immutable"
     ;;
   "release download")
     while (($#)); do
@@ -58,6 +62,11 @@ case "$1 $2" in
     ;;
   "release upload")
     cp "$4" "$release/$(basename "$4")"
+    ;;
+  "release edit")
+    [[ " $* " == *" --draft=false "* ]]
+    printf 'false\n' > "$release/draft"
+    printf 'true\n' > "$release/immutable"
     ;;
   *) exit 2 ;;
 esac
@@ -79,15 +88,38 @@ esac
 	}
 
 	output, err := run()
-	if err != nil || !strings.Contains(output, "published Catalog Snapshot") {
+	if err != nil || !strings.Contains(output, "published immutable Catalog Snapshot") {
 		t.Fatalf("first publication: output=%q err=%v", output, err)
+	}
+	for name, want := range map[string]string{"draft": "false\n", "immutable": "true\n"} {
+		got, readErr := os.ReadFile(filepath.Join(releaseRoot, "release", name))
+		if readErr != nil || string(got) != want {
+			t.Fatalf("published %s state: got=%q err=%v", name, got, readErr)
+		}
 	}
 	output, err = run()
 	if err != nil || !strings.Contains(output, "already published unchanged") {
 		t.Fatalf("idempotent retry: output=%q err=%v", output, err)
 	}
-	for _, asset := range []string{"SHA256SUMS", "catalog-snapshot.tar.gz"} {
-		if err := os.Remove(filepath.Join(releaseRoot, "release", asset)); err != nil {
+	if err := os.WriteFile(filepath.Join(releaseRoot, "release", "immutable"), []byte("false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output, err = run()
+	if err == nil || !strings.Contains(output, "published Catalog Snapshot is mutable") {
+		t.Fatalf("mutable publication: output=%q err=%v", output, err)
+	}
+	if err := os.RemoveAll(filepath.Join(releaseRoot, "release")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(releaseRoot, "release"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string]string{
+		"target":    strings.Repeat("a", 40) + "\n",
+		"draft":     "true\n",
+		"immutable": "false\n",
+	} {
+		if err := os.WriteFile(filepath.Join(releaseRoot, "release", name), []byte(contents), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
