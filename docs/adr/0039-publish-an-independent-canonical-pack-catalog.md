@@ -102,11 +102,14 @@ difficult to reproduce through this observable seam.
 
 ## Consequences
 
-This decision supersedes ADR 0038's one-repository-per-Pack
-authoring, registry, and promotion model. It preserves the reviewed resource
-contract, provenance and notices, Pack ownership, and the capability/readiness
-principles of ADR 0035. This is the accepted target architecture; implementation
-and repository integration remain separate delivery work.
+This decision supersedes ADR 0031's fixed four-Pack catalog and its coupling of
+Pack authoring to Packy releases. It also supersedes ADR 0038's
+one-repository-per-Pack authoring, registry, and promotion model. It preserves
+ADR 0031's installed-receipt, ownership, and protected-integration contracts,
+along with the reviewed resource contract, provenance and notices, Pack
+ownership, and the capability/readiness principles of ADR 0035. This is the
+accepted target architecture; implementation and repository integration remain
+separate delivery work.
 
 ## Final confirmation
 
