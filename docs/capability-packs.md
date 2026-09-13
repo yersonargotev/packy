@@ -77,8 +77,9 @@ drift report; its authority is limited to paths in the targeted receipt.
 
 The [Catalog Project](catalog-project.md) canonically authors every Pack at
 `bundle/packs/<pack-id>/pack.json` together with its reviewed bundle-relative
-resources. There is no separately maintained Pack registry and ordinary
-content changes do not require per-Pack releases or promotion into Packy.
+resources. Each Pack keeps one `pack.json` manifest. There is no separately
+maintained Pack registry and ordinary content changes do not require per-Pack
+releases or promotion into Packy.
 
 1. Change one or more Pack manifests and their reviewed resources in one
    Catalog Project branch.
