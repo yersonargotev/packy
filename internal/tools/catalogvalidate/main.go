@@ -4,47 +4,14 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 )
-
-type resolver struct {
-	temporary string
-	resolved  map[string]string
-}
-
-func (r *resolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
-	key := origin.Repository + "\x00" + origin.Commit
-	if root := r.resolved[key]; root != "" {
-		return root, nil
-	}
-	target := filepath.Join(r.temporary, fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
-	repository, err := git.PlainCloneContext(ctx, target, false, &git.CloneOptions{
-		URL:      "https://github.com/" + origin.Repository + ".git",
-		Tags:     git.AllTags,
-		Progress: io.Discard,
-	})
-	if err != nil {
-		return "", fmt.Errorf("clone public origin %s: %w", origin.Repository, err)
-	}
-	worktree, err := repository.Worktree()
-	if err != nil {
-		return "", fmt.Errorf("open origin worktree: %w", err)
-	}
-	if err := worktree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(origin.Commit)}); err != nil {
-		return "", fmt.Errorf("checkout origin commit %s: %w", origin.Commit, err)
-	}
-	r.resolved[key] = target
-	return target, nil
-}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -63,16 +30,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	temporary, err := os.MkdirTemp("", "packy-catalog-origins-")
+	resolver, err := catalogorigin.New()
 	if err != nil {
-		fmt.Fprintf(stderr, "create temporary origin directory: %v\n", err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	defer os.RemoveAll(temporary)
+	defer resolver.Close()
 
 	validation, err := managedpack.ValidateCatalogProject(
 		context.Background(), *project, *baseline,
-		&resolver{temporary: temporary, resolved: map[string]string{}},
+		resolver,
 	)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
