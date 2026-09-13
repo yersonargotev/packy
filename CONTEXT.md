@@ -1,10 +1,11 @@
 # Context
 
-This glossary is the current domain language for Packy `v0.2.0`. The accepted
+This glossary defines Packy's domain language. The accepted
 architecture is recorded in [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md)
 and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
 Readiness architecture is recorded in [ADR 0035](docs/adr/0035-make-pack-readiness-capability-driven.md).
-Managed Pack authoring and promotion are recorded in [ADR 0038](docs/adr/0038-promote-releases-from-managed-pack-projects.md).
+Independent catalog authoring and publication are recorded in
+[ADR 0039](docs/adr/0039-publish-an-independent-canonical-pack-catalog.md).
 
 ## Glossary
 
@@ -21,57 +22,63 @@ declared supported surfaces, and a maintainer-selected SemVer.
 
 ### Reviewed Pack catalog
 
-The current set of selectable bundled Pack manifests. Each manifest owns its
-Pack version and supported surfaces, and each Pack is independently selectable.
+A reviewed collection of independently selectable Pack versions. Each Pack
+declares its own resources and supported surfaces.
+
+### Catalog Project
+
+The maintainer-controlled project that canonically authors the reviewed Pack
+catalog's manifests, resources, adaptations, and provenance.
+
+### Catalog Snapshot
+
+An immutable, complete publication of the reviewed Pack catalog, identifying
+the exact included Pack versions and content.
+
+### Catalog Publication
+
+The release of a reviewed Catalog Snapshot for consumption independently of a
+Packy release.
+
+### Catalog Refresh
+
+The explicit selection of a newly acquired, validated Catalog Snapshot as the
+available reviewed Pack catalog. It does not update installed Packs.
+
+### Pack Import
+
+The explicit introduction of selected external resources at a pinned revision
+into the Catalog Project, with their provenance and notices.
+
+### Upstream Refresh
+
+A reviewed change to imported Pack resources against a selected newer upstream
+revision. Exact copies and maintained adaptations retain distinct relationships
+to their external sources.
 
 ### Orchestrate Pack
 
-The accepted Codex-only Pack that contributes the exact upstream
-`$orchestrate` coordination skill, its MIT notice, and the Pack-authored
-`coordinate-session` lifecycle. The public `yersonargotev/orchestrate-skill`
-Managed Pack Project releases the complete Pack and declares the exact external
-origin revision for the derived skill and notice. Its Pack Admission Record is
-Packy's provenance authority. Packy preserves Eric Provencher's attribution and
-treats configured projection separately from runtime usability.
+The Codex-only Pack that contributes the reviewed `$orchestrate` coordination
+skill, its MIT notice, and the Pack-authored `coordinate-session` lifecycle.
+It preserves Eric Provencher's attribution and distinguishes configured
+projection from runtime usability.
 
 ### Pack manifest
 
 The single `pack.json` contract for a Pack. It declares identity, version,
 description, selectability, supported surfaces, resources, bindings,
 intra-Pack dependencies, external requirements, readiness obligations,
-conflicts, and Managed Pack provenance.
-
-### Managed Pack Project
-
-The one public, maintainer-controlled repository that authors one Pack through
-a root schema v1 `pack.json`, canonical bundle-relative resources, declared
-origins, and immutable self-contained Pack releases.
+conflicts, and resource provenance.
 
 ### External Source Project
 
-A public repository named by a Managed Pack origin at one exact commit. It
-contributes provenance bytes but does not authorize a Pack identity or release.
-
-### Managed Pack Registry
-
-Packy's reviewed one-to-one mapping from each Pack ID to its canonical Managed
-Pack Project. It lives outside the end-user bundle.
+A public repository contributing selected Pack resources at an exact upstream
+commit. It establishes their provenance without authorizing catalog publication.
 
 ### Declared Pack Closure
 
-The root `pack.json` plus the deterministic union of every resource and typed
-surface-capability source root declared by the manifest.
-
-### Pack Admission Record
-
-The append-only, Packy-owned record for one admitted Pack version. It pins the
-immutable project release and Git identities plus manifest, closure, file mode,
-and content digests, and is not part of the end-user bundle.
-
-### Managed Pack Promotion
-
-Packy's private operation that validates one registered immutable Managed Pack
-release and returns no change, a typed rejection, or one protected proposal.
+A Pack manifest and the deterministic union of its declared resource and typed
+surface-capability source roots.
 
 ### Pack resource
 
@@ -161,13 +168,10 @@ a non-zero status after the complete report is emitted.
 An attempted operation in which distinct Pack resources target the same path.
 It fails before mutation, even when the proposed bytes match.
 
-### Managed Pack authoring workflow
+### Catalog authoring workflow
 
-Author exactly one Pack in its public Managed Pack Project: maintain the root
-schema v1 `pack.json`, its final bundle-relative reviewed resources, and any
-immutable external origins. Run preventive validation, publish an immutable
-`pack-v<version>` release, then let Packy promote that registered release into
-the reviewed catalog.
+The maintainer's preparation, validation, and review of Pack content changes in
+the Catalog Project, followed by Catalog Publication of the reviewed result.
 
 ### External requirement
 

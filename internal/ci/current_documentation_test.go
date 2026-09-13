@@ -26,6 +26,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0036-separate-executable-acquisition-from-host-setup.md"),
 		filepath.Join(root, "docs", "adr", "0037-source-issue-delivery-from-an-independent-release.md"),
 		filepath.Join(root, "docs", "adr", "0038-promote-releases-from-managed-pack-projects.md"),
+		filepath.Join(root, "docs", "adr", "0039-publish-an-independent-canonical-pack-catalog.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
@@ -64,6 +65,11 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Declared Pack Closure", "Managed Pack Registry", "Admission Records",
 		"yersonargotev/skills-addy", "yersonargotev/pstack", "supersedes ADR 0032", "ADR 0035",
 	})
+	requireDocumentationText(t, root, "docs/adr/0039-publish-an-independent-canonical-pack-catalog.md", []string{
+		"Catalog Project", "complete immutable Catalog Snapshot", "Catalog Publication",
+		"explicit action", "rejected as a whole", "supersedes ADR 0038", "supporting evidence",
+		"implicitly accepted",
+	})
 	requireDocumentationText(t, root, "docs/adr/0033-make-the-tui-the-primary-interactive-interface.md", []string{
 		"Bubble Tea v2 TUI", "minimum Go version to 1.25", "same `internal/capabilitypack` behavior",
 		"one Pack, surface", "global or project", "preview, phase consent", "verification boundary",
@@ -85,8 +91,23 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Readiness obligation", "Readiness condition", "Readiness dimensions", "Controlled runtime check",
 		"configured, authorized, or usable", "true, false, or unknown", "Issue delivery policy",
 		"qualification, proof, protected review and merge, closure, and cleanup",
-		"Managed Pack Project", "External Source Project", "Managed Pack Registry",
-		"Declared Pack Closure", "Pack Admission Record", "Managed Pack Promotion",
+		"Catalog Project", "Catalog Snapshot", "Catalog Publication", "Catalog Refresh",
+		"Pack Import", "Upstream Refresh", "External Source Project", "Declared Pack Closure",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/packy-catalog-architecture-proposal-2026-09-13.md", []string{
+		"proposal for discussion", "not an accepted ADR or implementation", "40a4e93661ed2a94582d35a6d0936177c7b81ded",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/packy-catalog-distribution-options-2026-09-13.md", []string{
+		"Date: 2026-09-13", "research and proposal", "not an accepted architectural decision",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/packy-future-ecosystem-2026-09-13.md", []string{
+		"non-normative evidence", "September 13, 2026", "not demonstrated demand",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/packy-future-strategy-2026-09-13.md", []string{
+		"recommendation to validate", "not an accepted product or architectural decision", "September 13, 2026",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/packy-future-trust-and-sustainability-2026-09-13.md", []string{
+		"Date: 2026-09-13", "non-normative research evidence", "not an architecture decision or approved roadmap",
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/engram-setup-codex-audit-2026-08-13.md", []string{
 		"engram 1.20.0", "fresh temporary", "the real", "`~/.codex` was never modified",
