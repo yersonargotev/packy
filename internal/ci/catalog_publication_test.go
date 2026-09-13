@@ -27,7 +27,7 @@ func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
 set -euo pipefail
 release="$FAKE_RELEASE_ROOT/release"
 emit_release() {
-  asset_count="$(find "$release" -type f ! -name target ! -name draft ! -name immutable | wc -l | tr -d ' ')"
+  asset_count="$(find "$release" -type f ! -name target ! -name draft ! -name immutable ! -name listed | wc -l | tr -d ' ')"
   case "$asset_count" in
     0) assets='[]' ;;
     1) assets='[{}]' ;;
@@ -45,6 +45,10 @@ case "$1 $2" in
     ;;
   "api --paginate")
     [[ -d "$release" ]] || exit 1
+    if [[ "$(<"$release/draft")" == true && ! -e "$release/listed" ]]; then
+      touch "$release/listed"
+      exit 1
+    fi
     emit_release
     ;;
   "release create")

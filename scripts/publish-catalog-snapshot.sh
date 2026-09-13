@@ -61,8 +61,18 @@ fetch_release() {
   [[ -s "$release_json" ]]
 }
 
+fetch_release_with_retry() {
+  for _ in 1 2 3 4 5; do
+    if fetch_release; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 release_exists=false
-if fetch_release; then
+if fetch_release_with_retry; then
   release_exists=true
 fi
 
@@ -74,11 +84,11 @@ if [[ "$release_exists" == false ]]; then
     --notes "Immutable Catalog Snapshot for reviewed commit $commit." \
     --draft \
     --latest=false; then
-    fetch_release
+    fetch_release_with_retry
   fi
 fi
 
-fetch_release
+fetch_release_with_retry
 [[ "$(jq -r .tag_name "$release_json")" == "$tag" ]] || { echo "published Catalog Snapshot tag differs" >&2; exit 1; }
 [[ "$(jq -r .target_commitish "$release_json")" == "$commit" ]] || { echo "published Catalog Snapshot commit differs" >&2; exit 1; }
 draft="$(jq -r .draft "$release_json")"
@@ -136,7 +146,7 @@ done
 
 if [[ "$draft" == true ]]; then
   "$gh_bin" release edit "$tag" --repo "$repository" --draft=false
-  fetch_release
+  fetch_release_with_retry
   [[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
   [[ "$(jq -r .immutable "$release_json")" == true ]] || { echo "published Catalog Snapshot is not immutable" >&2; exit 1; }
 fi
