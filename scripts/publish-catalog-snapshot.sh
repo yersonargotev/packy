@@ -73,7 +73,11 @@ fi
 [[ "$(jq -r .target_commitish "$release_json")" == "$commit" ]] || { echo "published Catalog Snapshot commit differs" >&2; exit 1; }
 [[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
 
-"$gh_bin" release download "$tag" --repo "$repository" --dir "$published"
+published_asset_count="$(jq -r '(.assets // []) | length' "$release_json")"
+[[ "$published_asset_count" =~ ^[0-9]+$ ]] || { echo "published Catalog Snapshot asset metadata is malformed" >&2; exit 1; }
+if ((published_asset_count > 0)); then
+  "$gh_bin" release download "$tag" --repo "$repository" --dir "$published"
+fi
 printf '%s\n' SHA256SUMS catalog-snapshot.tar.gz | sort > "$expected_assets"
 find "$published" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort > "$actual_assets"
 while IFS= read -r asset; do

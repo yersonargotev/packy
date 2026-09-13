@@ -29,7 +29,14 @@ release="$FAKE_RELEASE_ROOT/release"
 case "$1 $2" in
   "api repos/example/catalog/releases/tags/catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     [[ -d "$release" ]] || exit 1
-    printf '{"tag_name":"catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_commitish":"%s","draft":false}\n' "$(<"$release/target")"
+    asset_count="$(find "$release" -type f ! -name target | wc -l | tr -d ' ')"
+    case "$asset_count" in
+      0) assets='[]' ;;
+      1) assets='[{}]' ;;
+      2) assets='[{},{}]' ;;
+      *) exit 2 ;;
+    esac
+    printf '{"tag_name":"catalog-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target_commitish":"%s","draft":false,"assets":%s}\n' "$(<"$release/target")" "$assets"
     ;;
   "release create")
     [[ ! -e "$release" ]] || exit 1
@@ -79,8 +86,10 @@ esac
 	if err != nil || !strings.Contains(output, "already published unchanged") {
 		t.Fatalf("idempotent retry: output=%q err=%v", output, err)
 	}
-	if err := os.Remove(filepath.Join(releaseRoot, "release", "SHA256SUMS")); err != nil {
-		t.Fatal(err)
+	for _, asset := range []string{"SHA256SUMS", "catalog-snapshot.tar.gz"} {
+		if err := os.Remove(filepath.Join(releaseRoot, "release", asset)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	output, err = run()
 	if err != nil || !strings.Contains(output, "completed interrupted") {
