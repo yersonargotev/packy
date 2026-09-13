@@ -4,10 +4,11 @@ Packy is a lightweight installer and configurator for reviewed capability
 Packs. It installs selected Pack resources for Codex, OpenCode, and Claude Code
 without becoming an agent runtime.
 
-The bundled Pack manifests are the canonical selectable catalog. Run
-`packy list` to inspect the Pack IDs and versions available in the current
-binary; each Pack uses one current manifest. Browse the generated
-[Pack catalog](docs/packs/index.md) for purpose and resource details.
+The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
+Catalog Project is the canonical authoring source for reviewed Packs. The
+current binary still exposes its embedded reviewed snapshot: run `packy list`
+to inspect those Pack IDs and versions, or browse the generated [Pack
+catalog](docs/packs/index.md) for purpose and resource details.
 
 ## Quickstart
 
@@ -155,13 +156,13 @@ configuration. Tests and manual verification must sandbox `HOME` and
 
 ## Pack authoring
 
-To add or update a Pack, author it in its public [Managed Pack Project](docs/managed-pack-projects.md):
-maintain the root schema v1 `pack.json`, reviewed bundle-relative resources,
-and immutable origins; run
-preventive validation; and publish an immutable `pack-v<version>` release.
-Packy then independently validates and promotes the registered release into
-the bundled catalog. Full lifecycle details are in [Capability
-Packs](docs/capability-packs.md).
+Add and update Packs in the public [Catalog Project](docs/catalog-project.md).
+It canonically owns all seven current manifests and reviewed resources while
+independent upstream products keep their repositories. Whole-catalog
+validation checks typed vocabulary, deterministic closures, safe paths,
+exact-copy provenance, notices, runtime fitness, and independent Pack version
+changes without executing catalog content. Full lifecycle details are in
+[Capability Packs](docs/capability-packs.md).
 
 ## Verification
 
