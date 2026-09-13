@@ -209,29 +209,50 @@ type OriginResolver interface {
 // ValidateProject validates one root pack.json, its Declared Pack Closure,
 // and every declared provenance relationship.
 func ValidateProject(ctx context.Context, projectRoot string, resolver OriginResolver) (Validation, error) {
+	return validatePack(ctx, projectRoot, "pack.json", resolver)
+}
+
+// ValidateCatalogPack validates one Pack manifest in a Catalog Project against
+// the shared bundle that owns its Declared Pack Closure.
+func ValidateCatalogPack(ctx context.Context, bundleRoot, packID string, resolver OriginResolver) (Validation, error) {
+	if !idPattern.MatchString(packID) {
+		return Validation{}, fmt.Errorf("Catalog Project Pack directory %q must be lowercase kebab-case", packID)
+	}
+	manifestPath := filepath.ToSlash(filepath.Join("packs", packID, "pack.json"))
+	validation, err := validatePack(ctx, bundleRoot, manifestPath, resolver)
+	if err != nil {
+		return Validation{}, err
+	}
+	if validation.Manifest.ID != packID {
+		return Validation{}, fmt.Errorf("Catalog Project Pack directory %q contains manifest id %q", packID, validation.Manifest.ID)
+	}
+	return validation, nil
+}
+
+func validatePack(ctx context.Context, contentRoot, manifestRelative string, resolver OriginResolver) (Validation, error) {
 	if err := ctx.Err(); err != nil {
 		return Validation{}, err
 	}
-	manifestPath := filepath.Join(projectRoot, "pack.json")
+	manifestPath := filepath.Join(contentRoot, filepath.FromSlash(manifestRelative))
 	manifestInfo, err := os.Lstat(manifestPath)
 	if err != nil {
-		return Validation{}, fmt.Errorf("read root pack.json: %w", err)
+		return Validation{}, fmt.Errorf("read %s: %w", manifestRelative, err)
 	}
 	if !manifestInfo.Mode().IsRegular() || manifestInfo.Mode()&os.ModeSymlink != 0 {
-		return Validation{}, fmt.Errorf("root pack.json must be a regular file")
+		return Validation{}, fmt.Errorf("%s must be a regular file", manifestRelative)
 	}
 	if manifestInfo.Size() > maxIndexedFileBytes {
-		return Validation{}, fmt.Errorf("root pack.json exceeds maximum file size of %d bytes", maxIndexedFileBytes)
+		return Validation{}, fmt.Errorf("%s exceeds maximum file size of %d bytes", manifestRelative, maxIndexedFileBytes)
 	}
 	manifestData, err := readFileBounded(ctx, manifestPath, manifestInfo)
 	if err != nil {
-		return Validation{}, fmt.Errorf("read root pack.json: %w", err)
+		return Validation{}, fmt.Errorf("read %s: %w", manifestRelative, err)
 	}
 	manifest, err := decodeManifest(manifestData)
 	if err != nil {
 		return Validation{}, err
 	}
-	if err := validateManifest(manifest, projectRoot); err != nil {
+	if err := validateManifest(manifest, contentRoot); err != nil {
 		return Validation{}, err
 	}
 
@@ -267,17 +288,17 @@ func ValidateProject(ctx context.Context, projectRoot string, resolver OriginRes
 			}
 			resolved[origin.ID] = originRoot
 		}
-		if err := validateOriginRelationship(ctx, projectRoot, resource, originRoot, originBudget, comparisonBudget); err != nil {
+		if err := validateOriginRelationship(ctx, contentRoot, resource, originRoot, originBudget, comparisonBudget); err != nil {
 			return Validation{}, err
 		}
 	}
 
-	files, err := declaredClosure(ctx, projectRoot, manifest, manifestInfo.Size())
+	files, err := declaredClosure(ctx, contentRoot, manifest, manifestInfo.Size())
 	if err != nil {
 		return Validation{}, err
 	}
 	manifestDigest := digestBytes(manifestData)
-	files = append(files, FileRecord{Path: "pack.json", Mode: canonicalMode(manifestInfo.Mode()), SHA256: manifestDigest})
+	files = append(files, FileRecord{Path: manifestRelative, Mode: canonicalMode(manifestInfo.Mode()), SHA256: manifestDigest})
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return Validation{
 		Manifest:       manifest,
