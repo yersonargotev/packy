@@ -72,9 +72,12 @@ tag is `catalog-<full-catalog-commit>`.
 Only the final publication job receives `contents: write`, `id-token: write`,
 and `attestations: write`. It receives the already validated artifact rather
 than executing Catalog Project content, publishes a GitHub artifact attestation,
-and creates the release once. A retry accepts an existing byte-identical
-release; any attempt to reuse the tag with different target or asset bytes is
-rejected.
+and creates a draft release before uploading and verifying its complete asset
+set. Publishing the draft activates the Catalog Project repository's native
+release-immutability control; the publisher requires GitHub to report the
+result as immutable. A retry accepts an existing immutable, byte-identical
+release or completes a matching draft. A published mutable release, a different
+target, an unexpected asset, or changed bytes are rejected.
 
 Consumers verify the archive checksum and the GitHub artifact attestation for
 `yersonargotev/packy-catalog`. Together with the embedded source and builder
