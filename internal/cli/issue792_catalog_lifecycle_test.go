@@ -34,7 +34,7 @@ func (r catalogOriginFixture) Resolve(_ context.Context, origin managedpack.Orig
 	return r[origin.ID], nil
 }
 
-func TestIssue792CatalogRefreshKeepsActivationsOnRetainedSnapshotsUntilSelectedUpdate(t *testing.T) {
+func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t *testing.T) {
 	first := testsupport.PortableAllSurfaces("catalog-first")
 	second := testsupport.PortableAllSurfaces("catalog-second")
 	initialCommit := strings.Repeat("a", 40)
@@ -97,6 +97,9 @@ func TestIssue792CatalogRefreshKeepsActivationsOnRetainedSnapshotsUntilSelectedU
 	if out, err := executeCommand(t, NewRootCommand(opts), "update", first.ID(), "--surface", "codex"); err != nil {
 		t.Fatalf("selected update: %v\n%s", err, out)
 	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", newPack.ID(), "--surface", "opencode"); err != nil {
+		t.Fatalf("new Pack activation: %v\n%s", err, out)
+	}
 	receipts, err := os.ReadFile(filepath.Join(env["HOME"], ".packy", "packs.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -114,8 +117,9 @@ func TestIssue792CatalogRefreshKeepsActivationsOnRetainedSnapshotsUntilSelectedU
 		t.Fatal(err)
 	}
 	want := map[string][2]string{
-		first.ID():  {updatedFirst.CurrentVersion(), updatedCommit},
-		second.ID(): {second.CurrentVersion(), initialCommit},
+		first.ID():   {updatedFirst.CurrentVersion(), updatedCommit},
+		second.ID():  {second.CurrentVersion(), initialCommit},
+		newPack.ID(): {newPack.CurrentVersion(), updatedCommit},
 	}
 	for _, receipt := range state.Receipts {
 		identity, ok := want[receipt.Pack.ID]
@@ -172,16 +176,13 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	}
 }
 
-func TestIssue792InstalledCLIConsumesAcquiredSnapshotOffline(t *testing.T) {
+func TestIssue798SameInstalledCLIConsumesContentOnlyPublicationsOffline(t *testing.T) {
 	pack := testsupport.PortableAllSurfaces("catalog-installed")
-	commit := strings.Repeat("e", 40)
+	newPack := testsupport.PortableAllSurfaces("catalog-installed-new")
+	initialCommit := strings.Repeat("e", 40)
+	updatedCommit := strings.Repeat("2", 40)
 	environment := testprocess.Env(t)
 	home := environmentValue(t, environment, "HOME")
-	store := catalogstore.New(catalogstore.DefaultDataRoot(home), &catalogSourceFixture{release: catalogReleaseFixture(t, commit, pack)})
-	if _, err := store.AcquireLatest(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
 	executable := filepath.Join(t.TempDir(), "packy")
 	build := exec.Command("go", "build", "-o", executable, "./cmd/packy")
 	build.Dir = filepath.Join("..", "..")
@@ -189,14 +190,53 @@ func TestIssue792InstalledCLIConsumesAcquiredSnapshotOffline(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build installed CLI: %v\n%s", err, output)
 	}
+	executableBytes, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executableDigest := catalogFixtureDigest(executableBytes)
+	source := &catalogSourceFixture{release: catalogReleaseFixture(t, initialCommit, pack)}
+	store := catalogstore.New(catalogstore.DefaultDataRoot(home), source)
+	if _, err := store.AcquireLatest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{{"list"}, {"show", pack.ID()}, {"activate", pack.ID(), "--surface", "codex", "--dry-run"}} {
-		command := exec.Command(executable, args...)
-		command.Dir = t.TempDir()
-		command.Env = append([]string(nil), environment...)
-		output, err := command.CombinedOutput()
-		if err != nil || !strings.Contains(string(output), pack.ID()) {
-			t.Fatalf("installed CLI %v: %v\n%s", args, err, output)
-		}
+		runInstalledCLI(t, executable, environment, pack.ID(), args...)
+	}
+
+	updated := pack.Candidate().WithExactCopyBytes("instruction:guidance", ".", []byte("# Content-only publication update\n"))
+	source.release = catalogReleaseFixture(t, updatedCommit, updated, newPack)
+	if _, err := store.AcquireLatest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		want string
+		args []string
+	}{
+		{pack.ID(), []string{"show", pack.ID()}},
+		{updated.CurrentVersion(), []string{"activate", pack.ID(), "--surface", "codex", "--dry-run"}},
+		{newPack.ID(), []string{"show", newPack.ID()}},
+		{newPack.ID(), []string{"activate", newPack.ID(), "--surface", "opencode", "--dry-run"}},
+	} {
+		runInstalledCLI(t, executable, environment, check.want, check.args...)
+	}
+	finalExecutableBytes, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalDigest := catalogFixtureDigest(finalExecutableBytes); finalDigest != executableDigest {
+		t.Fatalf("installed Packy executable changed across content publications: %s -> %s", executableDigest, finalDigest)
+	}
+}
+
+func runInstalledCLI(t *testing.T, executable string, environment []string, want string, args ...string) {
+	t.Helper()
+	command := exec.Command(executable, args...)
+	command.Dir = t.TempDir()
+	command.Env = append([]string(nil), environment...)
+	output, err := command.CombinedOutput()
+	if err != nil || !strings.Contains(string(output), want) {
+		t.Fatalf("installed CLI %v: %v\n%s", args, err, output)
 	}
 }
 

@@ -10,6 +10,10 @@ Catalog Project is the canonical authoring source. Use `packy list` for the
 Pack IDs and versions in the selected Catalog Snapshot, and `packy show <pack>`
 for one Pack's purpose, supported surfaces, resources, and external
 requirements. Pack versions are independent of the Packy binary version.
+Once a Packy version with Catalog Snapshot support is installed, compatible
+content-only publications require no Packy upgrade: `packy catalog refresh`
+discovers them without changing active Packs. Update or activate one Pack
+explicitly to apply newly available content.
 
 ## Inspect and activate
 
