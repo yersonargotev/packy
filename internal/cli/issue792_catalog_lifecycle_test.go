@@ -174,18 +174,6 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	}
 }
 
-func environmentValue(t *testing.T, environment []string, key string) string {
-	t.Helper()
-	prefix := key + "="
-	for _, entry := range environment {
-		if strings.HasPrefix(entry, prefix) {
-			return strings.TrimPrefix(entry, prefix)
-		}
-	}
-	t.Fatalf("environment is missing %s", key)
-	return ""
-}
-
 func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.Fixture) catalogstore.Release {
 	t.Helper()
 	projectRoot := t.TempDir()
