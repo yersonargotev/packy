@@ -75,8 +75,8 @@ func TestOperationWaitReturnsCancellationWithoutAnEvent(t *testing.T) {
 	events := make(chan tea.Msg)
 	cancel()
 
-	message := waitForInitialization(ctx, events)()
-	finished, ok := message.(initializationFinished)
+	message := waitForCatalogOperation(ctx, events)()
+	finished, ok := message.(catalogOperationFinished)
 	if !ok || !errors.Is(finished.err, context.Canceled) {
 		t.Fatalf("wait result = %#v; want initialization cancellation", message)
 	}
@@ -89,7 +89,7 @@ func TestCanceledOperationSenderDoesNotBlock(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		sendOperationEvent(ctx, events, initializationProgress{detail: "late"})
+		sendOperationEvent(ctx, events, catalogOperationProgress{detail: "late"})
 		close(done)
 	}()
 
@@ -133,7 +133,7 @@ func TestInitializationAndPreviewObserveModelCancellation(t *testing.T) {
 	go func() { initializeDone <- initializeBatch[0]() }()
 	<-backend.initializeStarted
 	cancel()
-	finished := initializeBatch[1]().(initializationFinished)
+	finished := initializeBatch[1]().(catalogOperationFinished)
 	if !errors.Is(finished.err, context.Canceled) {
 		t.Fatalf("initialization error = %v; want cancellation", finished.err)
 	}
