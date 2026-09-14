@@ -44,10 +44,11 @@ case "$1 $2" in
     emit_release
     ;;
   "api --paginate")
-    [[ -d "$release" ]] || exit 1
+    [[ "${FAKE_API_FAILURE:-false}" != true ]] || exit 2
+    [[ -d "$release" ]] || exit 0
     if [[ "$(<"$release/draft")" == true && ! -e "$release/listed" ]]; then
       touch "$release/listed"
-      exit 1
+      exit 0
     fi
     emit_release
     ;;
@@ -145,5 +146,20 @@ esac
 	output, err = run()
 	if err == nil || !strings.Contains(output, "published Catalog Snapshot bytes differ") {
 		t.Fatalf("conflicting retry: output=%q err=%v", output, err)
+	}
+
+	failureRoot := t.TempDir()
+	command := exec.Command(script,
+		"--repository", "example/catalog",
+		"--commit", strings.Repeat("a", 40),
+		"--dist", dist,
+	)
+	command.Env = testprocess.Env(t, "GH_BIN="+fakeGH, "FAKE_RELEASE_ROOT="+failureRoot, "FAKE_API_FAILURE=true")
+	outputBytes, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(outputBytes), "could not determine Catalog Snapshot release state") {
+		t.Fatalf("failed lookup: output=%q err=%v", outputBytes, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(failureRoot, "release")); !os.IsNotExist(statErr) {
+		t.Fatalf("failed lookup created release: err=%v", statErr)
 	}
 }
