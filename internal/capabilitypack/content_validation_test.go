@@ -76,6 +76,23 @@ func TestValidatePackContentAcceptsCurrentManifest(t *testing.T) {
 	}
 }
 
+func TestValidatePackContentAcceptsExplicitlyEmptyResources(t *testing.T) {
+	bundle := t.TempDir()
+	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
+	path := filepath.Join(packDir, "pack.json")
+	manifest := decodeManifestMap(t, path)
+	manifest["resources"] = []any{}
+	writeManifestMap(t, path, manifest)
+
+	pack, err := ValidatePackContent(bundle, packDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Resources == nil || len(pack.Resources) != 0 {
+		t.Fatalf("resources = %#v, want explicit empty array", pack.Resources)
+	}
+}
+
 func TestLoadCurrentManifestRejectsInvalidSurfaceCapabilities(t *testing.T) {
 	for _, test := range []struct {
 		name, replace, want string

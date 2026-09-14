@@ -607,6 +607,7 @@ func validateManifest(manifest Manifest, projectRoot string) error {
 		Selectable: manifest.Selectable, Surfaces: manifest.Surfaces,
 		ReadinessObligations: manifest.ReadinessObligations,
 		Requires:             capabilitypack.Requirements{Tools: manifest.ExternalRequirements},
+		Resources:            make([]capabilitypack.Resource, 0, len(manifest.Resources)),
 	}
 	for _, resource := range manifest.Resources {
 		pack.Resources = append(pack.Resources, capabilitypack.Resource{

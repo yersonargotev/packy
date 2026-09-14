@@ -117,6 +117,9 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 	if raw.Selectable == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field selectable is required", path)
 	}
+	if raw.Resources == nil {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field resources is a required non-null array", path)
+	}
 	pack := Pack{
 		ID:                   raw.ID,
 		Version:              raw.Version,
@@ -126,6 +129,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 		ReadinessObligations: raw.ReadinessObligations,
 		Requires:             Requirements{Tools: raw.ExternalRequirements},
 		Contract:             Contract{OptionalModes: []OptionalMode{}},
+		Resources:            make([]Resource, 0, len(raw.Resources)),
 	}
 	for i, encoded := range raw.Resources {
 		wire, err := decodeCurrentResource(encoded)

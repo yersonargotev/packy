@@ -23,6 +23,51 @@ no handwritten registry. Each manifest and the deterministic union of its
 resource and typed capability source roots form its Declared Pack Closure.
 Distinct Packs cannot own the same closure path.
 
+## CLI authoring
+
+Create a Pack from the supported empty template by naming its initial contract
+explicitly:
+
+```sh
+packy catalog create example-pack \
+  --project /path/to/packy-catalog \
+  --template empty \
+  --version 0.1.0 \
+  --description "Example reviewed workflows" \
+  --surface codex
+```
+
+Import one selected resource from an exact public upstream commit. Destinations,
+relationships, and every Pack host are explicit; Packy does not classify or
+convert the upstream repository:
+
+```sh
+packy catalog import example-pack \
+  --project /path/to/packy-catalog \
+  --repository example/upstream \
+  --commit 0123456789abcdef0123456789abcdef01234567 \
+  --origin-id upstream \
+  --origin-path skills/example \
+  --destination skills/example-pack/example \
+  --relationship exact-copy \
+  --kind skill \
+  --resource-id example \
+  --description "Runs the reviewed example workflow" \
+  --host codex \
+  --notice notice:upstream-mit
+```
+
+The supported imported kinds are `instruction`, `notice`, and `skill`. Import
+a notice with explicit `--license` and `--attribution`; a notice records its
+own attribution, while every other imported resource must name at least one
+existing notice with `--notice`. Standard upstream notice filenames are
+detected only to improve missing-information diagnostics. They are never used
+to infer licensing, resource kinds, destinations, hosts, or relationships.
+
+Each operation stages the complete `bundle/`, validates the resulting Catalog
+Project, and only then writes reviewable files. A rejected operation leaves the
+project unchanged. These commands never publish a Catalog Snapshot.
+
 ## Validation
 
 From a Packy checkout, validate a candidate Catalog Project with:

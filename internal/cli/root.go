@@ -13,11 +13,14 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/catalogauthor"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/engrambin"
+	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/skillbundle"
+	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -39,6 +42,7 @@ type Options struct {
 	ClaudeRuntimeEvidence  claudecode.RuntimeEvidenceObserver
 	TUIRunner              func(context.Context, Options, io.Reader, io.Writer) error
 	CatalogSource          catalogstore.Source
+	CatalogOriginResolver  managedpack.OriginResolver
 }
 
 func (o Options) withDefaults() Options {
@@ -211,6 +215,88 @@ func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Comm
 			}})
 		},
 	})
+	command.AddCommand(newCatalogCreateCommand(opts), newCatalogImportCommand(opts))
+	return command
+}
+
+func newCatalogCreateCommand(opts Options) *cobra.Command {
+	var request catalogauthor.CreateRequest
+	var surfaces []string
+	command := &cobra.Command{
+		Use: "create <pack>", Short: "Create a Pack from a supported Catalog Project template", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			request.PackID = args[0]
+			request.Surfaces = surfaces
+			result, err := catalogauthor.Create(cmd.Context(), request, opts.CatalogOriginResolver)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "created %s@%s from template %s; validated Catalog Project packs=%d; publication not performed\n", result.PackID, result.Version, request.Template, result.Packs)
+			return err
+		},
+	}
+	command.Flags().StringVar(&request.ProjectRoot, "project", ".", "Catalog Project root")
+	command.Flags().StringVar(&request.Template, "template", "", "supported Pack template (empty)")
+	command.Flags().StringVar(&request.Version, "version", "", "initial Pack SemVer")
+	command.Flags().StringVar(&request.Description, "description", "", "Pack description")
+	command.Flags().StringSliceVar(&surfaces, "surface", nil, "supported CLI surface (repeatable)")
+	_ = command.MarkFlagRequired("template")
+	_ = command.MarkFlagRequired("version")
+	_ = command.MarkFlagRequired("description")
+	_ = command.MarkFlagRequired("surface")
+	return command
+}
+
+func newCatalogImportCommand(opts Options) *cobra.Command {
+	var request catalogauthor.ImportRequest
+	var hosts, notices, requires, conflicts []string
+	command := &cobra.Command{
+		Use: "import <pack>", Short: "Import one explicitly selected resource from an exact upstream commit", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			request.PackID = args[0]
+			request.Hosts, request.Notices = hosts, notices
+			request.Requires, request.Conflicts = requires, conflicts
+			originResolver := opts.CatalogOriginResolver
+			var closeResolver func() error
+			if originResolver == nil {
+				created, err := catalogorigin.New()
+				if err != nil {
+					return err
+				}
+				originResolver = created
+				closeResolver = created.Close
+			}
+			if closeResolver != nil {
+				defer closeResolver()
+			}
+			result, err := catalogauthor.Import(cmd.Context(), request, originResolver)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "imported %s from %s@%s as %s; validated Catalog Project packs=%d; publication not performed\n", result.Resource, result.Repository, result.Commit, result.Relationship, result.Packs)
+			return err
+		},
+	}
+	flags := command.Flags()
+	flags.StringVar(&request.ProjectRoot, "project", ".", "Catalog Project root")
+	flags.StringVar(&request.Repository, "repository", "", "upstream owner/name repository")
+	flags.StringVar(&request.Commit, "commit", "", "exact full upstream commit")
+	flags.StringVar(&request.OriginID, "origin-id", "", "Pack-local upstream origin id")
+	flags.StringVar(&request.OriginPath, "origin-path", "", "selected path within the upstream commit")
+	flags.StringVar(&request.Destination, "destination", "", "explicit bundle-relative destination")
+	flags.StringVar(&request.Relationship, "relationship", "", "exact-copy or adapted")
+	flags.StringVar(&request.Kind, "kind", "", "resource kind (instruction, notice, or skill)")
+	flags.StringVar(&request.ResourceID, "resource-id", "", "Pack-local resource id")
+	flags.StringVar(&request.Description, "description", "", "resource description")
+	flags.StringSliceVar(&hosts, "host", nil, "explicit CLI host for the resource (repeatable)")
+	flags.StringSliceVar(&notices, "notice", nil, "notice resource identity (repeatable)")
+	flags.StringSliceVar(&requires, "requires", nil, "resource dependency identity (repeatable)")
+	flags.StringSliceVar(&conflicts, "conflict", nil, "resource conflict identity (repeatable)")
+	flags.StringVar(&request.License, "license", "", "SPDX license for a notice resource")
+	flags.StringVar(&request.Attribution, "attribution", "", "attribution for a notice resource")
+	for _, name := range []string{"repository", "commit", "origin-id", "origin-path", "destination", "relationship", "kind", "resource-id", "description"} {
+		_ = command.MarkFlagRequired(name)
+	}
 	return command
 }
 
