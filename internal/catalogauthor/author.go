@@ -426,7 +426,14 @@ func adaptationChanges(oldPath, newPath string) (string, error) {
 		if oldExists && newExists && bytes.Equal(oldData, newData) {
 			continue
 		}
-		fmt.Fprintf(&report, "--- old/%s\n+++ new/%s\n", path, path)
+		oldLabel, newLabel := "old/"+path, "new/"+path
+		if !oldExists {
+			oldLabel = "/dev/null"
+		}
+		if !newExists {
+			newLabel = "/dev/null"
+		}
+		fmt.Fprintf(&report, "--- %s\n+++ %s\n", oldLabel, newLabel)
 		if textBytes(oldData) && textBytes(newData) {
 			writeChangedLines(&report, oldData, newData)
 		} else {

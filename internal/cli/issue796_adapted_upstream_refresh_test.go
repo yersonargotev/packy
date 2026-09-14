@@ -111,6 +111,49 @@ func TestCatalogUpstreamRefreshShowsChangedFinalNewline(t *testing.T) {
 	}
 }
 
+func TestCatalogUpstreamRefreshDistinguishesAddedAndRemovedEmptyUpstreamFiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(t *testing.T, fixture upstreamRefreshFixture)
+		wantOld string
+		wantNew string
+	}{
+		{
+			name: "added",
+			prepare: func(t *testing.T, fixture upstreamRefreshFixture) {
+				writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "empty"), "")
+			},
+			wantOld: "--- /dev/null",
+			wantNew: "+++ new/empty",
+		},
+		{
+			name: "removed",
+			prepare: func(t *testing.T, fixture upstreamRefreshFixture) {
+				writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "empty"), "")
+			},
+			wantOld: "--- old/empty",
+			wantNew: "+++ /dev/null",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+			test.prepare(t, fixture)
+			terminal := &fakeTerminal{interactive: true, approve: true}
+
+			out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver, Terminal: terminal}),
+				"catalog", "upstream-refresh", "seed", "--project", fixture.project,
+				"--origin-id", "upstream", "--commit", fixture.newCommit, "--version", "1.1.0")
+			if err != nil {
+				t.Fatalf("empty-file reconciliation: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, test.wantOld) || !strings.Contains(out, test.wantNew) {
+				t.Fatalf("empty-file diff does not identify presence: %s", out)
+			}
+		})
+	}
+}
+
 func TestCatalogUpstreamRefreshLeavesMixedRequestUnappliedOnFailure(t *testing.T) {
 	fixture := writeMixedUpstreamRefreshFixture(t, false)
 	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
