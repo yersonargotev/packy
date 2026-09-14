@@ -41,9 +41,10 @@ type packShowLifecycleAvailabilityJSON struct {
 }
 
 type packShowSurfaceJSON struct {
-	Surface  capabilitypack.Surface           `json:"surface"`
-	Contract capabilitypack.LifecycleContract `json:"contract"`
-	Intent   packShowIntentJSON               `json:"intent"`
+	Surface         capabilitypack.Surface           `json:"surface"`
+	CatalogIdentity packShowCatalogIdentityJSON      `json:"catalog_identity"`
+	Contract        capabilitypack.LifecycleContract `json:"contract"`
+	Intent          packShowIntentJSON               `json:"intent"`
 }
 
 type packShowRequirementsJSON struct {
@@ -74,7 +75,12 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 	for _, surface := range report.Surfaces {
 		surfaces = append(surfaces, surface.Surface)
 		contracts = append(contracts, packShowSurfaceJSON{
-			Surface: surface.Surface, Contract: surface.Contract, Intent: packShowIntentDocument(surface.Intent),
+			Surface: surface.Surface,
+			CatalogIdentity: packShowCatalogIdentityJSON{
+				PackID: surface.CatalogIdentity.PackID, Version: surface.CatalogIdentity.Version,
+				SchemaVersion: surface.CatalogIdentity.SchemaVersion, Limitation: surface.CatalogIdentity.Limitation,
+			},
+			Contract: surface.Contract, Intent: packShowIntentDocument(surface.Intent),
 		})
 	}
 	return packShowJSON{
@@ -144,7 +150,7 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		}
 	}
 	for _, surface := range report.Surfaces {
-		if _, err := fmt.Fprintf(w, "Surface contract: %s\n", surface.Surface); err != nil {
+		if _, err := fmt.Fprintf(w, "Surface contract: %s (pack=%s version=%s schema=%d)\n", surface.Surface, surface.CatalogIdentity.PackID, surface.CatalogIdentity.Version, surface.CatalogIdentity.SchemaVersion); err != nil {
 			return err
 		}
 		if err := renderPackShowContract(w, surface.Contract); err != nil {

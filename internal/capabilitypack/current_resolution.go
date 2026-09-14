@@ -54,6 +54,16 @@ func (c Catalog) ResolveIntentPackAt(ctx context.Context, id, version, snapshotI
 	return c.resolveIntentPackAt(ctx, id, version, snapshotID)
 }
 
+// ResolveIntentDetailAt describes the exact immutable source recorded by an
+// installed receipt, including a retained Catalog Snapshot.
+func (c Catalog) ResolveIntentDetailAt(ctx context.Context, id, version, snapshotID string) (CatalogDetail, error) {
+	pack, err := c.resolveIntentPackAt(ctx, id, version, snapshotID)
+	if err != nil {
+		return CatalogDetail{}, err
+	}
+	return catalogDetail(pack), nil
+}
+
 func (c Catalog) validateUpdateRoute(id, _, toVersion string, _ Surface) error {
 	pack, err := c.catalogMetadata(id)
 	if err != nil {

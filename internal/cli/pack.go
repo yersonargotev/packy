@@ -1089,28 +1089,7 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	store := capabilitypack.NewFileActivationStore(composition.state.File())
 	claudeLayout := composition.claude
 	claudeExecutable, _ := opts.ClaudeLookPath("claude")
-	claudePacks := make(map[string]capabilitypack.Pack)
-	for _, pack := range composition.catalog.List() {
-		if slices.Contains(pack.Surfaces, capabilitypack.SurfaceClaude) {
-			claudePacks[pack.ID] = pack
-			claudePacks[pack.ID+"@"+pack.Version] = pack
-		}
-	}
-	claudeState, err := store.LoadSnapshot(ctx, capabilitypack.SurfaceClaude)
-	if err != nil {
-		return capabilitypack.Facade{}, fmt.Errorf("load Claude installed Pack receipts: %w", err)
-	}
-	for _, intent := range claudeState.Intents {
-		if !intent.Active || intent.Surface != capabilitypack.SurfaceClaude || intent.CatalogSnapshot == "" {
-			continue
-		}
-		pack, resolveErr := composition.catalog.ResolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
-		if resolveErr != nil {
-			return capabilitypack.Facade{}, fmt.Errorf("resolve Claude installed Pack %s@%s: %w", intent.PackID, intent.Version, resolveErr)
-		}
-		claudePacks[pack.ID+"@"+pack.Version] = pack
-	}
-	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudePacks, claudeLayout, composition.bundleRoot)
+	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, composition.catalog.ResolveIntentPackAt, claudeLayout, composition.bundleRoot)
 	var claudeAdapter *claudecode.SurfaceAdapter
 	if opts.ClaudeAuthorization != nil {
 		claudeAdapter = claudecode.NewSurfaceAdapterWithAuthorization(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership, opts.ClaudeAuthorization)

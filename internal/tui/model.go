@@ -954,6 +954,16 @@ func firstLifecycleAction(status SurfaceStatus) string {
 func (m Model) lifecycleActions() []string {
 	if pack := m.selectedPack(); pack != nil && withdrawnPack(*pack) {
 		status := m.selectedSurfaceStatus()
+		if m.project {
+			if status == nil || status.Installation == "" || status.Installation == "absent" {
+				return nil
+			}
+			actions := []string{}
+			if status.Active {
+				actions = append(actions, "deactivate")
+			}
+			return append(actions, "uninstall")
+		}
 		if status != nil && status.Active {
 			return []string{"deactivate"}
 		}

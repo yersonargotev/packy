@@ -36,10 +36,34 @@
       "uniqueItems": true
     },
     "lifecycle_availability": { "type": "object" },
-    "surface_contracts": { "type": "array" },
+    "surface_contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["surface", "catalog_identity", "contract", "intent"],
+        "properties": {
+          "surface": { "enum": ["claude", "codex", "opencode"] },
+          "catalog_identity": { "$ref": "#/$defs/catalog_identity" },
+          "contract": { "type": "object" },
+          "intent": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
     "resource_graph": { "type": "object" }
   },
   "$defs": {
+    "catalog_identity": {
+      "type": "object",
+      "required": ["pack_id", "version", "schema_version", "limitation"],
+      "properties": {
+        "pack_id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "schema_version": { "type": "integer", "minimum": 1 },
+        "limitation": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
     "resource_identity": {
       "type": "object",
       "required": ["kind", "id"],

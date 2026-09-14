@@ -13,13 +13,13 @@ import (
 // into Claude host identities. The CLI only wires its immutable catalog view.
 type CapabilityPackOwnershipProvider struct {
 	store      capabilitypack.ActivationStore
-	packs      map[string]capabilitypack.Pack
+	resolve    func(context.Context, string, string, string) (capabilitypack.Pack, error)
 	layout     CanonicalLayout
 	bundleRoot string
 }
 
-func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, packs map[string]capabilitypack.Pack, layout CanonicalLayout, bundleRoot string) CapabilityPackOwnershipProvider {
-	return CapabilityPackOwnershipProvider{store: store, packs: packs, layout: layout, bundleRoot: bundleRoot}
+func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, resolve func(context.Context, string, string, string) (capabilitypack.Pack, error), layout CanonicalLayout, bundleRoot string) CapabilityPackOwnershipProvider {
+	return CapabilityPackOwnershipProvider{store: store, resolve: resolve, layout: layout, bundleRoot: bundleRoot}
 }
 
 func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (OwnershipSnapshot, error) {
@@ -49,12 +49,9 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 	records := []OwnershipRecord{}
 	recorded := map[string]bool{}
 	for _, intent := range intents {
-		pack, ok := o.packs[intent.PackID+"@"+intent.Version]
-		if !ok {
-			pack, ok = o.packs[intent.PackID]
-		}
-		if !ok || pack.Version != intent.Version {
-			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract", intent.PackID, intent.Version)
+		pack, err := o.resolve(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+		if err != nil {
+			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract: %w", intent.PackID, intent.Version, err)
 		}
 		for _, portableResource := range pack.Resources {
 			resource := resourceWithAliases(portableResource, intent.Aliases)

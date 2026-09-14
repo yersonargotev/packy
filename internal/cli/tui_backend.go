@@ -92,15 +92,15 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	for _, detail := range details {
 		currentPackIDs[detail.Pack.ID] = true
 	}
-	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
-	facade, err := activationFacade(ctx, b.opts, b.resolver)
-	if err != nil {
+	dashboard.Global.Packs = catalogPacksForTUI(details, nil, nil)
+	lifecycleFacade, lifecycleErr := activationFacade(ctx, b.opts, b.resolver)
+	if lifecycleErr != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
-			Cause:           fmt.Sprintf("compose global Pack status: %v", err),
+			Cause:           fmt.Sprintf("compose global Pack status: %v", lifecycleErr),
 			AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
 		})
 	} else {
-		globalStatus, statusErr := facade.Status(ctx, capabilitypack.StatusRequest{})
+		globalStatus, statusErr := lifecycleFacade.Status(ctx, capabilitypack.StatusRequest{})
 		if statusErr != nil {
 			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 				Cause:           fmt.Sprintf("inspect global Pack status: %v", statusErr),
@@ -113,7 +113,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 				if currentPackIDs[packID] {
 					continue
 				}
-				shown, showErr := facade.Show(ctx, packID)
+				shown, showErr := lifecycleFacade.Show(ctx, packID)
 				if showErr != nil {
 					dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 						Cause: fmt.Sprintf("inspect retained Pack %s: %v", packID, showErr), AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
@@ -153,7 +153,11 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		Adapters:    projectStatusAdapters(ctx, b.opts, snapshot),
 		Resolver:    projectExecutableResolver(b.opts, snapshot),
 	}
-	status, err := projectStatusFacade(ctx, b.opts, snapshot).InspectProjectStatus(ctx, request)
+	statusFacade := projectStatusFacade(ctx, b.opts, snapshot)
+	if lifecycleErr == nil {
+		statusFacade = lifecycleFacade
+	}
+	status, err := statusFacade.InspectProjectStatus(ctx, request)
 	if err != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 			Cause:           fmt.Sprintf("inspect current project: %v", err),
@@ -161,8 +165,38 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		})
 		return dashboard, nil
 	}
-	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(currentDetails, projectStatusesForTUI(status))}
+	projectDetails := append([]capabilitypack.CatalogDetail(nil), currentDetails...)
+	projectWithdrawn := make(map[string]bool)
+	installation, installationErr := capabilitypack.LoadProjectInstallation(projectRoot)
+	if installationErr == nil {
+		for _, packStatus := range status.Packs {
+			packID := packStatus.Pack.ID
+			if currentPackIDs[packID] || projectWithdrawn[packID] {
+				continue
+			}
+			snapshotID := projectReceiptSnapshot(installation.Lock, packID, packStatus.Surface)
+			detail, detailErr := catalog.ResolveIntentDetailAt(ctx, packID, packStatus.Pack.Version, snapshotID)
+			if detailErr != nil {
+				dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+					Cause: fmt.Sprintf("inspect retained project Pack %s: %v", packID, detailErr), AffectedActions: []string{"Current-project status", "Project Pack lifecycle actions"},
+				})
+				continue
+			}
+			projectDetails = append(projectDetails, detail)
+			projectWithdrawn[packID] = true
+		}
+	}
+	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(projectDetails, projectStatusesForTUI(status), projectWithdrawn)}
 	return dashboard, nil
+}
+
+func projectReceiptSnapshot(lock capabilitypack.ProjectLockProposal, packID string, surface capabilitypack.Surface) string {
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.ID == packID && receipt.Surface == surface {
+			return receipt.Pack.CatalogSnapshot
+		}
+	}
+	return ""
 }
 
 func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) error {
@@ -954,11 +988,7 @@ func healthForTUI(report setuphealth.Report) tui.Health {
 	return health
 }
 
-func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus, withdrawnSets ...map[string]bool) []tui.Pack {
-	withdrawn := map[string]bool{}
-	if len(withdrawnSets) > 0 {
-		withdrawn = withdrawnSets[0]
-	}
+func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus, withdrawn map[string]bool) []tui.Pack {
 	result := make([]tui.Pack, 0, len(details))
 	for _, detail := range details {
 		pack := detail.Pack

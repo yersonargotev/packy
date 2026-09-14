@@ -31,9 +31,10 @@ type ShowIntent struct {
 // ShowSurfaceReport contains the deterministic portable contract and durable
 // intent facts for one supported surface.
 type ShowSurfaceReport struct {
-	Surface  Surface
-	Contract LifecycleContract
-	Intent   ShowIntent
+	Surface         Surface
+	CatalogIdentity PackCatalogIdentity
+	Contract        LifecycleContract
+	Intent          ShowIntent
 }
 
 // ResourceInventoryRole describes how a resource contributes to a Pack,
@@ -200,14 +201,9 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 
 	pack := detail.Pack
 	report := ShowReport{
-		CatalogState: "current",
-		Detail:       detail,
-		CatalogIdentity: PackCatalogIdentity{
-			PackID:        pack.ID,
-			Version:       pack.Version,
-			SchemaVersion: 1,
-			Limitation:    packCatalogAuthority,
-		},
+		CatalogState:      "current",
+		Detail:            detail,
+		CatalogIdentity:   packCatalogIdentity(pack),
 		ResourceCounts:    pack.ResourceCounts(),
 		ResourceInventory: detail.ResourceInventory,
 		ResourceGraph:     ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
@@ -222,21 +218,50 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 	if !current {
 		report.CatalogState = "retained"
 	}
-	surfaces := append([]Surface(nil), pack.Surfaces...)
-	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i] < surfaces[j] })
-	for _, surface := range surfaces {
+	surfaceIntents := make(map[Surface]ActivationIntent)
+	surfacePacks := make(map[Surface]Pack)
+	surfaceSet := make(map[Surface]bool, len(pack.Surfaces))
+	for _, surface := range pack.Surfaces {
+		surfaceSet[surface] = true
+	}
+	for _, surface := range statusSurfaces() {
 		state, err := f.activation.store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			return ShowReport{}, fmt.Errorf("load %s surface intent: %w", surface, err)
 		}
 		intent, present := intentForPack(state, pack.ID, surface)
+		if !present {
+			continue
+		}
+		surfaceIntents[surface] = intent
+		surfaceSet[surface] = true
+		if !current && intent.Active {
+			retained, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+			if err != nil {
+				return ShowReport{}, fmt.Errorf("resolve %s retained surface contract: %w", surface, err)
+			}
+			surfacePacks[surface] = retained
+		}
+	}
+	surfaces := make([]Surface, 0, len(surfaceSet))
+	for surface := range surfaceSet {
+		surfaces = append(surfaces, surface)
+	}
+	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i] < surfaces[j] })
+	for _, surface := range surfaces {
+		intent, present := surfaceIntents[surface]
 		aliases := []SurfaceAlias{}
 		if present {
 			aliases = canonicalShowAliases(intent.Aliases)
 		}
+		contractPack := pack
+		if retained, ok := surfacePacks[surface]; ok {
+			contractPack = retained
+		}
 		report.Surfaces = append(report.Surfaces, ShowSurfaceReport{
-			Surface:  surface,
-			Contract: LifecycleContractFor(pack, surface, aliases),
+			Surface:         surface,
+			CatalogIdentity: packCatalogIdentity(contractPack),
+			Contract:        LifecycleContractFor(contractPack, surface, aliases),
 			Intent: ShowIntent{
 				Present:  present,
 				Active:   present && intent.Active,
@@ -247,6 +272,10 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 		})
 	}
 	return report, nil
+}
+
+func packCatalogIdentity(pack Pack) PackCatalogIdentity {
+	return PackCatalogIdentity{PackID: pack.ID, Version: pack.Version, SchemaVersion: 1, Limitation: packCatalogAuthority}
 }
 
 func (f Facade) showDetailForLifecycle(ctx context.Context, id string) (CatalogDetail, bool, error) {

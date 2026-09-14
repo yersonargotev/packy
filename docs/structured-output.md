@@ -65,7 +65,11 @@ representing work preserve execution order.
 Pack show v6 exposes `catalog_state` as `current` when describing a Pack in the
 selected Catalog Snapshot, or `retained` when an installed Pack is resolved
 from its retained snapshot after withdrawal from the selected catalog. Its
-`catalog_identity` identifies the Pack within that applicable snapshot, and
+`catalog_identity` identifies the representative Pack metadata within an
+applicable snapshot, while every `surface_contracts` entry carries the exact
+Pack identity for that surface's current or retained receipt. This keeps
+surface contracts truthful when retained surfaces reference different versions.
+The
 `resource_inventory` is the domain-owned descriptive list of every Pack
 resource. Each entry includes its identity, purpose, role, direct dependencies,
 and relevant notices; entries and relationships use canonical resource-identity

@@ -149,7 +149,7 @@ func TestOlderReceiptStatusPresentationsBeforeApply(t *testing.T) {
 
 func TestTUICatalogPreservesReceiptWhenCurrentSurfaceIsRemoved(t *testing.T) {
 	observed := tui.SurfaceStatus{Name: "claude", Supported: true, Active: true, InstalledVersion: "1.0.0", UpdateAvailable: true, HistoricalEvidenceMessage: "Historical manifest unavailable", Ownership: 2, Drift: 1}
-	packs := catalogPacksForTUI([]capabilitypack.CatalogDetail{{Pack: capabilitypack.Pack{ID: "removed-surface", Version: "1.0.1", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceCodex}}}}, map[string]map[string]tui.SurfaceStatus{"removed-surface": {"claude": observed}})
+	packs := catalogPacksForTUI([]capabilitypack.CatalogDetail{{Pack: capabilitypack.Pack{ID: "removed-surface", Version: "1.0.1", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceCodex}}}}, map[string]map[string]tui.SurfaceStatus{"removed-surface": {"claude": observed}}, nil)
 	for _, status := range packs[0].SurfaceStatuses {
 		if status.Name != "claude" {
 			continue

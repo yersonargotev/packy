@@ -29,3 +29,27 @@ func TestIssue797WithdrawnPackOffersOnlyDeactivation(t *testing.T) {
 		t.Fatalf("withdrawn Pack preview request = %#v", backend.previewRequests)
 	}
 }
+
+func TestIssue797WithdrawnProjectPackOffersOnlyPersonalDeactivationAndUninstall(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "withdrawn-runtime", Version: "1.0.0", Description: "Retained project Pack", CatalogState: "retained",
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Installation: "installed", Runtime: "active", Active: true, InstalledVersion: "1.0.0"}},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Choose project lifecycle action", "Deactivate for me", "Uninstall"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("withdrawn project Pack action menu missing %q:\n%s", want, view)
+		}
+	}
+	for _, forbidden := range []string{"Configure project resources", "Update", "Activate for me", "Install"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("withdrawn project Pack action menu contains %q:\n%s", forbidden, view)
+		}
+	}
+}

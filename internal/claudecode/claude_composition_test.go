@@ -352,7 +352,7 @@ func TestClaudeCompositeOwnershipProviderReconstructsAlias(t *testing.T) {
 			ID: "skill:synthetic-example", PackID: "synthetic-composite", Surface: capabilitypack.SurfaceClaude, Fingerprint: composite.TreeFingerprint,
 		}},
 	}
-	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"synthetic-composite": pack}, layout, bundle)
+	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, ownershipPackResolver(map[string]capabilitypack.Pack{"synthetic-composite": pack}), layout, bundle)
 	snapshot, err := provider.ObserveOwnership(context.Background())
 	if err != nil || len(snapshot.Records) != 1 {
 		t.Fatalf("snapshot=%+v err=%v", snapshot, err)
