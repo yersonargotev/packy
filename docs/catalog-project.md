@@ -5,6 +5,15 @@ is the canonical authoring repository for Addy, Argote, Engram, Issue Delivery,
 Matty, Orchestrate, and pstack. Independent upstream products retain their own
 repositories and release lifecycles.
 
+An initial Packy engine release must provide Catalog Snapshot support before
+users can consume this independent publication flow. After that prerequisite
+is installed, the same installed Packy executable can acquire compatible
+content-only publications with `packy catalog refresh`; no Packy release or
+binary upgrade is required. Refresh changes only the selected catalog
+availability. Existing activations keep their retained snapshot until the user
+explicitly runs `packy update <pack> --surface <surface>`, and newly published
+Packs remain inactive until explicitly activated.
+
 The project preserves Packy's bundle-relative layout:
 
 ```text

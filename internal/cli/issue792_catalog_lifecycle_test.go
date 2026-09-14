@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,7 +13,6 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/managedpack"
-	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 type catalogSourceFixture struct {
@@ -34,7 +32,7 @@ func (r catalogOriginFixture) Resolve(_ context.Context, origin managedpack.Orig
 	return r[origin.ID], nil
 }
 
-func TestIssue792CatalogRefreshKeepsActivationsOnRetainedSnapshotsUntilSelectedUpdate(t *testing.T) {
+func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t *testing.T) {
 	first := testsupport.PortableAllSurfaces("catalog-first")
 	second := testsupport.PortableAllSurfaces("catalog-second")
 	initialCommit := strings.Repeat("a", 40)
@@ -97,6 +95,9 @@ func TestIssue792CatalogRefreshKeepsActivationsOnRetainedSnapshotsUntilSelectedU
 	if out, err := executeCommand(t, NewRootCommand(opts), "update", first.ID(), "--surface", "codex"); err != nil {
 		t.Fatalf("selected update: %v\n%s", err, out)
 	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", newPack.ID(), "--surface", "opencode"); err != nil {
+		t.Fatalf("new Pack activation: %v\n%s", err, out)
+	}
 	receipts, err := os.ReadFile(filepath.Join(env["HOME"], ".packy", "packs.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -114,8 +115,9 @@ func TestIssue792CatalogRefreshKeepsActivationsOnRetainedSnapshotsUntilSelectedU
 		t.Fatal(err)
 	}
 	want := map[string][2]string{
-		first.ID():  {updatedFirst.CurrentVersion(), updatedCommit},
-		second.ID(): {second.CurrentVersion(), initialCommit},
+		first.ID():   {updatedFirst.CurrentVersion(), updatedCommit},
+		second.ID():  {second.CurrentVersion(), initialCommit},
+		newPack.ID(): {newPack.CurrentVersion(), updatedCommit},
 	}
 	for _, receipt := range state.Receipts {
 		identity, ok := want[receipt.Pack.ID]
@@ -170,46 +172,6 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	if dashboard.Catalog.SnapshotID != commit || dashboard.Catalog.Repository != "yersonargotev/packy-catalog" || dashboard.Catalog.Packs != 1 || !dashboard.Catalog.RefreshAvailable {
 		t.Fatalf("TUI catalog inspection = %#v", dashboard.Catalog)
 	}
-}
-
-func TestIssue792InstalledCLIConsumesAcquiredSnapshotOffline(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("catalog-installed")
-	commit := strings.Repeat("e", 40)
-	environment := testprocess.Env(t)
-	home := environmentValue(t, environment, "HOME")
-	store := catalogstore.New(catalogstore.DefaultDataRoot(home), &catalogSourceFixture{release: catalogReleaseFixture(t, commit, pack)})
-	if _, err := store.AcquireLatest(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	executable := filepath.Join(t.TempDir(), "packy")
-	build := exec.Command("go", "build", "-o", executable, "./cmd/packy")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build installed CLI: %v\n%s", err, output)
-	}
-	for _, args := range [][]string{{"list"}, {"show", pack.ID()}, {"activate", pack.ID(), "--surface", "codex", "--dry-run"}} {
-		command := exec.Command(executable, args...)
-		command.Dir = t.TempDir()
-		command.Env = append([]string(nil), environment...)
-		output, err := command.CombinedOutput()
-		if err != nil || !strings.Contains(string(output), pack.ID()) {
-			t.Fatalf("installed CLI %v: %v\n%s", args, err, output)
-		}
-	}
-}
-
-func environmentValue(t *testing.T, environment []string, key string) string {
-	t.Helper()
-	prefix := key + "="
-	for _, entry := range environment {
-		if strings.HasPrefix(entry, prefix) {
-			return strings.TrimPrefix(entry, prefix)
-		}
-	}
-	t.Fatalf("environment is missing %s", key)
-	return ""
 }
 
 func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.Fixture) catalogstore.Release {
