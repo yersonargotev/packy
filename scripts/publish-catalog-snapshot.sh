@@ -56,14 +56,33 @@ fetch_release() {
   if "$gh_bin" api "repos/$repository/releases/tags/$tag" > "$release_json" 2>/dev/null; then
     return 0
   fi
-  "$gh_bin" api --paginate "repos/$repository/releases?per_page=100" \
-    --jq ".[] | select(.tag_name == \"$tag\")" > "$release_json"
-  [[ -s "$release_json" ]]
+  if ! "$gh_bin" api --paginate "repos/$repository/releases?per_page=100" \
+    --jq ".[] | select(.tag_name == \"$tag\")" > "$release_json"; then
+    return 2
+  fi
+  [[ -s "$release_json" ]] && return 0
+  return 1
+}
+
+fetch_release_with_retry() {
+  status=1
+  for _ in 1 2 3 4 5; do
+    if fetch_release; then
+      return 0
+    else
+      status=$?
+    fi
+    sleep 1
+  done
+  return "$status"
 }
 
 release_exists=false
-if fetch_release; then
+if fetch_release_with_retry; then
   release_exists=true
+else
+  lookup_status=$?
+  [[ "$lookup_status" == 1 ]] || { echo "could not determine Catalog Snapshot release state" >&2; exit 1; }
 fi
 
 if [[ "$release_exists" == false ]]; then
@@ -74,11 +93,11 @@ if [[ "$release_exists" == false ]]; then
     --notes "Immutable Catalog Snapshot for reviewed commit $commit." \
     --draft \
     --latest=false; then
-    fetch_release
+    fetch_release_with_retry || { echo "could not resolve Catalog Snapshot draft" >&2; exit 1; }
   fi
 fi
 
-fetch_release
+fetch_release_with_retry || { echo "could not resolve Catalog Snapshot release" >&2; exit 1; }
 [[ "$(jq -r .tag_name "$release_json")" == "$tag" ]] || { echo "published Catalog Snapshot tag differs" >&2; exit 1; }
 [[ "$(jq -r .target_commitish "$release_json")" == "$commit" ]] || { echo "published Catalog Snapshot commit differs" >&2; exit 1; }
 draft="$(jq -r .draft "$release_json")"
@@ -136,7 +155,7 @@ done
 
 if [[ "$draft" == true ]]; then
   "$gh_bin" release edit "$tag" --repo "$repository" --draft=false
-  fetch_release
+  fetch_release_with_retry || { echo "could not verify published Catalog Snapshot" >&2; exit 1; }
   [[ "$(jq -r .draft "$release_json")" == false ]] || { echo "published Catalog Snapshot is still a draft" >&2; exit 1; }
   [[ "$(jq -r .immutable "$release_json")" == true ]] || { echo "published Catalog Snapshot is not immutable" >&2; exit 1; }
 fi
