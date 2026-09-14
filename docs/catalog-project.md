@@ -66,8 +66,9 @@ detected only to improve missing-information diagnostics. They are never used
 to infer licensing, resource kinds, destinations, hosts, or relationships.
 
 Each operation stages the complete `bundle/`, validates the resulting Catalog
-Project, and only then writes reviewable files. A rejected operation leaves the
-project unchanged. These commands never publish a Catalog Snapshot.
+Project, and only then atomically exchanges the complete prepared bundle into
+the Git worktree. A rejected or interrupted operation never exposes a partial
+Catalog Project. These commands never publish a Catalog Snapshot.
 
 ## Validation
 

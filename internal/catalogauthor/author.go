@@ -4,6 +4,7 @@ package catalogauthor
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,7 +103,7 @@ func create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 		ReadinessObligations: []capabilitypack.ReadinessObligation{},
 		ExternalRequirements: []string{}, Origins: []managedpack.Origin{}, Resources: []managedpack.Resource{},
 	}
-	stage, cleanup, err := stageBundle(request.ProjectRoot)
+	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
 	if err != nil {
 		return Result{}, err
 	}
@@ -121,8 +122,7 @@ func create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 	if err != nil {
 		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
-	destination := filepath.Join(request.ProjectRoot, manifestRelative)
-	if _, err := installNewPath(stagedManifest, destination, request.ProjectRoot); err != nil {
+	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
 		return Result{}, fmt.Errorf("write prepared Pack: %w", err)
 	}
 	return Result{PackID: manifest.ID, Version: manifest.Version, Packs: len(validation.Packs)}, nil
@@ -150,15 +150,14 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 	if err := validateImportRequest(request); err != nil {
 		return Result{}, err
 	}
-	stage, cleanup, err := stageBundle(request.ProjectRoot)
+	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
 	if err != nil {
 		return Result{}, err
 	}
 	defer cleanup()
 	manifestRelative := filepath.Join("bundle", "packs", request.PackID, "pack.json")
-	actualManifest := filepath.Join(request.ProjectRoot, manifestRelative)
 	stagedManifest := filepath.Join(stage, manifestRelative)
-	beforeManifest, manifest, err := readManifest(stagedManifest)
+	_, manifest, err := readManifest(stagedManifest)
 	if err != nil {
 		return Result{}, fmt.Errorf("read Pack %q: %w", request.PackID, err)
 	}
@@ -209,16 +208,8 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
 
-	actualDestination := filepath.Join(request.ProjectRoot, "bundle", filepath.FromSlash(request.Destination))
-	rollback, err := installNewPath(stagedDestination, actualDestination, filepath.Join(request.ProjectRoot, "bundle"))
-	if err != nil {
-		return Result{}, fmt.Errorf("write prepared resource: %w", err)
-	}
-	if err := replaceUnchangedFile(actualManifest, beforeManifest, stagedManifest); err != nil {
-		if rollbackErr := rollback(); rollbackErr != nil {
-			return Result{}, fmt.Errorf("write prepared manifest: %v; rollback failed: %w", err, rollbackErr)
-		}
-		return Result{}, fmt.Errorf("write prepared manifest: %w", err)
+	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+		return Result{}, fmt.Errorf("write prepared Catalog Project: %w", err)
 	}
 	return Result{
 		PackID: manifest.ID, Version: manifest.Version,
@@ -386,21 +377,122 @@ func addResource(manifest *managedpack.Manifest, resource managedpack.Resource) 
 	return nil
 }
 
-func stageBundle(projectRoot string) (string, func(), error) {
+func stageBundle(projectRoot string) (string, string, func(), error) {
 	info, err := os.Lstat(projectRoot)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", func() {}, fmt.Errorf("Catalog Project root must be an existing directory and not a symlink")
+		return "", "", func() {}, fmt.Errorf("Catalog Project root must be an existing directory and not a symlink")
 	}
-	stage, err := os.MkdirTemp("", "packy-catalog-author-")
+	metadataRoot, err := gitMetadataRoot(projectRoot)
 	if err != nil {
-		return "", func() {}, fmt.Errorf("create authoring stage: %w", err)
+		return "", "", func() {}, err
+	}
+	stage, err := os.MkdirTemp(metadataRoot, "packy-catalog-author-")
+	if err != nil {
+		return "", "", func() {}, fmt.Errorf("create authoring stage: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(stage) }
-	if err := copyPath(filepath.Join(projectRoot, "bundle"), filepath.Join(stage, "bundle")); err != nil {
+	bundleRoot := filepath.Join(projectRoot, "bundle")
+	original, err := treeIdentity(bundleRoot)
+	if err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("stage Catalog Project bundle: %w", err)
+		return "", "", func() {}, fmt.Errorf("inspect Catalog Project bundle: %w", err)
 	}
-	return stage, cleanup, nil
+	if err := copyPath(bundleRoot, filepath.Join(stage, "bundle")); err != nil {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("stage Catalog Project bundle: %w", err)
+	}
+	current, err := treeIdentity(bundleRoot)
+	if err != nil || current != original {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("Catalog Project changed while its bundle was staged")
+	}
+	return stage, original, cleanup, nil
+}
+
+func gitMetadataRoot(projectRoot string) (string, error) {
+	path := filepath.Join(projectRoot, ".git")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("Catalog Project must be a Git worktree: %w", err)
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+	if !info.Mode().IsRegular() || info.Size() > 4096 {
+		return "", fmt.Errorf("Catalog Project .git entry is invalid")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read Catalog Project .git entry: %w", err)
+	}
+	value := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(value, "gitdir: ") {
+		return "", fmt.Errorf("Catalog Project .git entry is invalid")
+	}
+	metadata := strings.TrimSpace(strings.TrimPrefix(value, "gitdir: "))
+	if !filepath.IsAbs(metadata) {
+		metadata = filepath.Join(projectRoot, metadata)
+	}
+	metadataInfo, err := os.Lstat(metadata)
+	if err != nil || !metadataInfo.IsDir() || metadataInfo.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("Catalog Project Git metadata directory is unavailable")
+	}
+	return metadata, nil
+}
+
+func treeIdentity(root string) (string, error) {
+	digest := sha256.New()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlinks are not allowed: %s", path)
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(digest, "%s\x00%s\x00", filepath.ToSlash(relative), info.Mode().Type()|info.Mode().Perm())
+		if info.Mode().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.Copy(digest, file)
+			closeErr := file.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil)), nil
+}
+
+func replaceBundleAtomically(projectRoot, stage, original string) error {
+	bundleRoot := filepath.Join(projectRoot, "bundle")
+	current, err := treeIdentity(bundleRoot)
+	if err != nil {
+		return err
+	}
+	if current != original {
+		return fmt.Errorf("Catalog Project changed during preparation")
+	}
+	if err := exchangePaths(bundleRoot, filepath.Join(stage, "bundle")); err != nil {
+		return fmt.Errorf("atomically exchange prepared bundle: %w", err)
+	}
+	return nil
 }
 
 func readManifest(path string) ([]byte, managedpack.Manifest, error) {
@@ -480,111 +572,6 @@ func copyPath(source, destination string) error {
 		return err
 	}
 	return nil
-}
-
-func installNewPath(source, destination, stopRoot string) (func() error, error) {
-	noRollback := func() error { return nil }
-	if _, err := os.Lstat(destination); err == nil {
-		return noRollback, fmt.Errorf("destination already exists: %s", destination)
-	} else if !os.IsNotExist(err) {
-		return noRollback, err
-	}
-	parent := filepath.Dir(destination)
-	createdParents, err := absentParents(parent, stopRoot)
-	if err != nil {
-		return noRollback, err
-	}
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return noRollback, err
-	}
-	cleanupParents := func() {
-		for _, path := range createdParents {
-			_ = os.Remove(path)
-		}
-	}
-	temporary, err := os.MkdirTemp(parent, ".packy-author-")
-	if err != nil {
-		cleanupParents()
-		return noRollback, err
-	}
-	defer os.RemoveAll(temporary)
-	payload := filepath.Join(temporary, "payload")
-	if err := copyPath(source, payload); err != nil {
-		cleanupParents()
-		return noRollback, err
-	}
-	if err := os.Rename(payload, destination); err != nil {
-		cleanupParents()
-		return noRollback, err
-	}
-	rollback := func() error {
-		if err := os.RemoveAll(destination); err != nil {
-			return err
-		}
-		for _, path := range createdParents {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				return err
-			}
-		}
-		return nil
-	}
-	return rollback, nil
-}
-
-func absentParents(parent, stopRoot string) ([]string, error) {
-	parent = filepath.Clean(parent)
-	stopRoot = filepath.Clean(stopRoot)
-	relative, err := filepath.Rel(stopRoot, parent)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return nil, fmt.Errorf("destination parent is outside the Catalog Project")
-	}
-	var result []string
-	for current := parent; current != stopRoot; current = filepath.Dir(current) {
-		info, err := os.Lstat(current)
-		if err == nil {
-			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return nil, fmt.Errorf("destination parent %s must be a directory and not a symlink", current)
-			}
-			break
-		}
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-		result = append(result, current)
-	}
-	return result, nil
-}
-
-func replaceUnchangedFile(destination string, before []byte, source string) error {
-	current, err := os.ReadFile(destination)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(current, before) {
-		return fmt.Errorf("Pack manifest changed during preparation")
-	}
-	data, err := os.ReadFile(source)
-	if err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(destination), ".packy-author-manifest-")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o644); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryPath, destination)
 }
 
 func detectNotice(originRoot string) string {

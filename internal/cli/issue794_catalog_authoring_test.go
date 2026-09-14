@@ -142,7 +142,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 		CatalogOriginResolver: authoringOriginResolver{"example/guide@" + commit: origin},
 	}
 
-	before := snapshotTree(t, project)
+	before := snapshotTree(t, filepath.Join(project, "bundle"))
 	out, err := executeCommand(t, NewRootCommand(opts),
 		"catalog", "import", "seed",
 		"--project", project,
@@ -166,7 +166,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 			t.Fatalf("diagnostic missing %q: %v", want, err)
 		}
 	}
-	if after := snapshotTree(t, project); after != before {
+	if after := snapshotTree(t, filepath.Join(project, "bundle")); after != before {
 		t.Fatalf("failed import changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 
@@ -189,7 +189,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 	if err == nil || !strings.Contains(err.Error(), `notice "notice:missing" does not exist`) {
 		t.Fatalf("invalid prepared import = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, project); after != before {
+	if after := snapshotTree(t, filepath.Join(project, "bundle")); after != before {
 		t.Fatalf("validation failure changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
@@ -228,7 +228,7 @@ func TestCatalogImportRollsBackAWriteWhenTheManifestChanges(t *testing.T) {
 		"--license", "MIT",
 		"--attribution", "Copyright (c) Example",
 	)
-	if err == nil || !strings.Contains(err.Error(), "Pack manifest changed during preparation") {
+	if err == nil || !strings.Contains(err.Error(), "Catalog Project changed during preparation") {
 		t.Fatalf("late write import = error %v, output %s", err, out)
 	}
 	if _, err := os.Stat(filepath.Join(project, "bundle", "notices")); !os.IsNotExist(err) {
@@ -242,7 +242,7 @@ func TestCatalogImportRollsBackAWriteWhenTheManifestChanges(t *testing.T) {
 
 func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
 	project := writeAuthoringCatalog(t)
-	before := snapshotTree(t, project)
+	before := snapshotTree(t, filepath.Join(project, "bundle"))
 	out, err := executeCommand(t, NewRootCommand(Options{}),
 		"catalog", "create", "../../escaped",
 		"--project", project,
@@ -254,7 +254,7 @@ func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Pack id must be lowercase kebab-case") {
 		t.Fatalf("path traversal create = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, project); after != before {
+	if after := snapshotTree(t, filepath.Join(project, "bundle")); after != before {
 		t.Fatalf("rejected creation changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
@@ -262,6 +262,9 @@ func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
 func writeAuthoringCatalog(t *testing.T) string {
 	t.Helper()
 	project := t.TempDir()
+	if err := os.Mkdir(filepath.Join(project, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	manifest := `{
   "schema_version": 1,
   "id": "seed",
