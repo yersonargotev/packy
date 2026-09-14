@@ -181,10 +181,10 @@ func TestIssue798SameInstalledCLIConsumesContentOnlyPublicationsOffline(t *testi
 	newPack := testsupport.PortableAllSurfaces("catalog-installed-new")
 	initialCommit := strings.Repeat("e", 40)
 	updatedCommit := strings.Repeat("2", 40)
-	environment := testprocess.Env(t)
-	home := environmentValue(t, environment, "HOME")
+	releasePath := filepath.Join(t.TempDir(), "catalog-release.json")
+	environment := testprocess.Env(t, "PACKY_CATALOG_RELEASE="+releasePath)
 	executable := filepath.Join(t.TempDir(), "packy")
-	build := exec.Command("go", "build", "-o", executable, "./cmd/packy")
+	build := exec.Command("go", "build", "-o", executable, "./internal/cli/testdata/issue798packy")
 	build.Dir = filepath.Join("..", "..")
 	build.Env = testprocess.GoOfflineEnv(t)
 	if output, err := build.CombinedOutput(); err != nil {
@@ -195,18 +195,16 @@ func TestIssue798SameInstalledCLIConsumesContentOnlyPublicationsOffline(t *testi
 		t.Fatal(err)
 	}
 	executableDigest := catalogFixtureDigest(executableBytes)
-	source := &catalogSourceFixture{release: catalogReleaseFixture(t, initialCommit, pack)}
-	store := catalogstore.New(catalogstore.DefaultDataRoot(home), source)
-	if _, err := store.AcquireLatest(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	writeCatalogRelease(t, releasePath, catalogReleaseFixture(t, initialCommit, pack))
+	runInstalledCLI(t, executable, environment, initialCommit, "init")
 	for _, args := range [][]string{{"list"}, {"show", pack.ID()}, {"activate", pack.ID(), "--surface", "codex", "--dry-run"}} {
 		runInstalledCLI(t, executable, environment, pack.ID(), args...)
 	}
 
 	updated := pack.Candidate().WithExactCopyBytes("instruction:guidance", ".", []byte("# Content-only publication update\n"))
-	source.release = catalogReleaseFixture(t, updatedCommit, updated, newPack)
-	if _, err := store.AcquireLatest(context.Background()); err != nil {
+	writeCatalogRelease(t, releasePath, catalogReleaseFixture(t, updatedCommit, updated, newPack))
+	runInstalledCLI(t, executable, environment, updatedCommit, "catalog", "refresh")
+	if err := os.Remove(releasePath); err != nil {
 		t.Fatal(err)
 	}
 	for _, check := range []struct {
@@ -226,6 +224,17 @@ func TestIssue798SameInstalledCLIConsumesContentOnlyPublicationsOffline(t *testi
 	}
 	if finalDigest := catalogFixtureDigest(finalExecutableBytes); finalDigest != executableDigest {
 		t.Fatalf("installed Packy executable changed across content publications: %s -> %s", executableDigest, finalDigest)
+	}
+}
+
+func writeCatalogRelease(t *testing.T, path string, release catalogstore.Release) {
+	t.Helper()
+	data, err := json.Marshal(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
