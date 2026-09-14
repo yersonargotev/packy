@@ -4,14 +4,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/setuphealth"
@@ -36,6 +38,7 @@ type Options struct {
 	ClaudeAuthorization    claudecode.AuthorizationObserver
 	ClaudeRuntimeEvidence  claudecode.RuntimeEvidenceObserver
 	TUIRunner              func(context.Context, Options, io.Reader, io.Writer) error
+	CatalogSource          catalogstore.Source
 }
 
 func (o Options) withDefaults() Options {
@@ -125,6 +128,7 @@ and receive a new Preview. Packy never retries it automatically.
 	root.AddCommand(
 		newVersionCommand(),
 		newInitCommand(opts, workstationResolver),
+		newCatalogCommand(opts, workstationResolver),
 		newDoctorCommand(opts, workstationResolver),
 		newAuditCommand(opts, workstationResolver),
 		newPackListCommand(opts, workstationResolver),
@@ -155,23 +159,15 @@ func newVersionCommand() *cobra.Command {
 }
 
 func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var (
-		homeFlag      string
-		sourceRoot    string
-		repositoryURL string
-		repositoryRef string
-	)
+	var homeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize Packy's package-installed source checkout",
+		Short: "Initialize Packy's official Catalog Snapshot",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return initializeInstalledSource(cmd.Context(), workstationResolver, initializationRequest{
-				Home:          strings.TrimSpace(homeFlag),
-				SourceRoot:    sourceRoot,
-				RepositoryURL: repositoryURL,
-				RepositoryRef: defaultInitRepositoryRef(repositoryRef, packyversion.Value),
+			return initializeCatalog(cmd.Context(), opts, workstationResolver, initializationRequest{
+				Home: strings.TrimSpace(homeFlag),
 				ReportProgress: func(message string) error {
 					_, err := fmt.Fprintf(cmd.OutOrStdout(), "packy init: %s\n", message)
 					return err
@@ -180,51 +176,51 @@ func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *co
 		},
 	}
 
-	cmd.Flags().StringVar(&homeFlag, "home", "", "home directory used to resolve the default Installed Source")
-	cmd.Flags().StringVar(&sourceRoot, "source-root", "", "Installed Source root (default ~/.local/share/packy)")
-	cmd.Flags().StringVar(&repositoryURL, "repository-url", bootstrap.DefaultRepositoryURL, "Packy Source of Truth Git URL")
-	cmd.Flags().StringVar(&repositoryRef, "repository-ref", "", "optional Packy Source of Truth Git ref to clone or check out")
+	cmd.Flags().StringVar(&homeFlag, "home", "", "home directory used to store the official Catalog Snapshot")
 	return cmd
 }
 
 type initializationRequest struct {
 	Home           string
-	SourceRoot     string
-	RepositoryURL  string
-	RepositoryRef  string
 	ReportProgress func(string) error
 }
 
-func initializeInstalledSource(ctx context.Context, resolver *workstation.Resolver, request initializationRequest) error {
+func initializeCatalog(ctx context.Context, opts Options, resolver *workstation.Resolver, request initializationRequest) error {
 	snapshot, err := resolver.Resolve(workstation.Options{Home: request.Home})
 	if err != nil {
 		return err
 	}
-	installedSource, err := bootstrap.ResolveInstalledSource(snapshot, request.SourceRoot)
+	result, err := newCatalogStore(opts, snapshot).AcquireLatest(ctx)
 	if err != nil {
 		return err
-	}
-	result, err := bootstrap.EnsureInstalledSource(ctx, bootstrap.BootstrapOptions{
-		InstalledSource: installedSource,
-		RepositoryURL:   request.RepositoryURL,
-		RepositoryRef:   request.RepositoryRef,
-		HomeDir:         snapshot.Home(),
-		ConfigHome:      snapshot.ConfigurationHome(),
-		ReportProgress:  request.ReportProgress,
-	})
-	if err != nil {
-		return err
-	}
-	message := "Installed Source already initialized at " + installedSource.Root()
-	if result.Cloned {
-		message = "initialized Installed Source at " + installedSource.Root()
-	} else if result.Updated {
-		message = "updated Installed Source at " + installedSource.Root()
 	}
 	if request.ReportProgress != nil {
-		return request.ReportProgress(message)
+		return request.ReportProgress(fmt.Sprintf("selected official Catalog Snapshot %s", result.ID))
 	}
 	return nil
+}
+
+func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
+	command := &cobra.Command{Use: "catalog", Short: "Manage the official reviewed Pack catalog", Args: cobra.NoArgs}
+	command.AddCommand(&cobra.Command{
+		Use: "refresh", Short: "Acquire and select the latest official Catalog Snapshot", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return initializeCatalog(cmd.Context(), opts, resolver, initializationRequest{ReportProgress: func(message string) error {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "packy catalog refresh: %s\n", message)
+				return err
+			}})
+		},
+	})
+	return command
+}
+
+func newCatalogStore(opts Options, snapshot workstation.Snapshot) *catalogstore.Store {
+	source := opts.CatalogSource
+	if source == nil {
+		client := &http.Client{Timeout: 2 * time.Minute}
+		source = catalogstore.NewGitHubSource(client, catalogstore.NewGitHubAttestationVerifier(client))
+	}
+	return catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), source)
 }
 
 func newWorkstationResolver(opts Options) *workstation.Resolver {
@@ -239,16 +235,6 @@ func newWorkstationResolver(opts Options) *workstation.Resolver {
 			CurrentDirectoryErr:  err,
 		}, nil
 	})
-}
-
-func defaultInitRepositoryRef(explicitRef, currentVersion string) string {
-	if strings.TrimSpace(explicitRef) != "" {
-		return explicitRef
-	}
-	if strings.HasPrefix(currentVersion, "v") {
-		return currentVersion
-	}
-	return ""
 }
 
 func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
@@ -359,26 +345,31 @@ func failedActivePackObservations(intents []capabilitypack.ActivationIntent) []s
 }
 
 type invocationSources struct {
-	installed bootstrap.InstalledSource
-	skills    skillbundle.Source
+	skills   skillbundle.Source
+	snapshot catalogstore.Snapshot
+	store    *catalogstore.Store
 }
 
 func resolveInvocationSources(ctx context.Context, opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
-	installed, err := bootstrap.ResolveInstalledSource(snapshot, "")
-	if err != nil {
-		return invocationSources{}, err
-	}
 	currentDirectory, err := snapshot.CurrentDirectory()
 	if err != nil {
 		return invocationSources{}, fmt.Errorf("resolve skill source root: %w", err)
 	}
-	skills, err := skillbundle.ResolveSource(ctx, skillbundle.SourceOptions{
-		ExplicitRoot:    opts.Env.Getenv("PACKY_SKILLS_SOURCE"),
-		RepositoryStart: currentDirectory,
-		InstalledSource: installed,
-	})
-	if err != nil {
-		return invocationSources{}, err
+	explicit := strings.TrimSpace(opts.Env.Getenv("PACKY_SKILLS_SOURCE"))
+	if explicit != "" {
+		if !filepath.IsAbs(explicit) {
+			explicit = filepath.Join(currentDirectory, explicit)
+		}
+		return invocationSources{skills: skillbundle.Source{Root: filepath.Clean(explicit)}}, nil
 	}
-	return invocationSources{installed: installed, skills: skills}, nil
+	store := newCatalogStore(opts, snapshot)
+	selected, err := store.Selected()
+	if err != nil {
+		return invocationSources{}, fmt.Errorf("official Catalog Snapshot is unavailable; run `packy init`: %w", err)
+	}
+	return invocationSources{
+		skills:   skillbundle.Source{Root: selected.SkillRoot(), IsDefault: true},
+		snapshot: selected,
+		store:    store,
+	}, nil
 }

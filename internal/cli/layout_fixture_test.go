@@ -1,10 +1,8 @@
 package cli
 
 import (
-	"context"
 	"testing"
 
-	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/opencode"
@@ -15,13 +13,11 @@ import (
 // cliTestFixture gathers owner-derived layout values for CLI integration tests.
 // It deliberately contains no path derivation of its own.
 type cliTestFixture struct {
-	workstation     workstation.Snapshot
-	installedSource bootstrap.InstalledSource
-	skillSource     skillbundle.Source
-	packState       capabilitypack.StateLayout
-	skills          skillbundle.GlobalLayout
-	codex           codex.CanonicalLayout
-	opencode        opencode.CanonicalLayout
+	workstation workstation.Snapshot
+	packState   capabilitypack.StateLayout
+	skills      skillbundle.GlobalLayout
+	codex       codex.CanonicalLayout
+	opencode    opencode.CanonicalLayout
 }
 
 func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
@@ -39,26 +35,11 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 	if err != nil {
 		t.Fatalf("resolve workstation fixture: %v", err)
 	}
-	installedSource, err := bootstrap.ResolveInstalledSource(snapshot, "")
-	if err != nil {
-		t.Fatalf("resolve Installed Source fixture: %v", err)
-	}
-	skillSource, err := skillbundle.ResolveSource(context.Background(), skillbundle.SourceOptions{
-		ExplicitRoot:    opts.Env.Getenv("PACKY_SKILLS_SOURCE"),
-		RepositoryStart: currentDirectory,
-		InstalledSource: installedSource,
-	})
-	if err != nil {
-		t.Fatalf("resolve Skill Source fixture: %v", err)
-	}
-
 	return cliTestFixture{
-		workstation:     snapshot,
-		installedSource: installedSource,
-		skillSource:     skillSource,
-		packState:       capabilitypack.NewStateLayout(snapshot.PackyHome()),
-		skills:          skillbundle.NewGlobalLayout(snapshot.Home()),
-		codex:           codex.NewCanonicalLayout(snapshot.Home()),
-		opencode:        opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
+		workstation: snapshot,
+		packState:   capabilitypack.NewStateLayout(snapshot.PackyHome()),
+		skills:      skillbundle.NewGlobalLayout(snapshot.Home()),
+		codex:       codex.NewCanonicalLayout(snapshot.Home()),
+		opencode:    opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 	}
 }

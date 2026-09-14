@@ -6,8 +6,8 @@ without becoming an agent runtime.
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source for reviewed Packs. The
-current binary still exposes its embedded reviewed snapshot: run `packy list`
-to inspect those Pack IDs and versions, or browse the generated [Pack
+Packy engine downloads and verifies immutable releases from that project:
+run `packy list` to inspect the locally selected snapshot, or browse the generated [Pack
 catalog](docs/packs/index.md) for purpose and resource details.
 
 ## Quickstart
@@ -104,6 +104,7 @@ packy activate <pack> --surface codex \
 
 ```text
 packy init
+packy catalog refresh
 packy doctor
 packy audit
 packy list
@@ -118,8 +119,10 @@ packy uninstall <pack> [--surface <surface>]
 ```
 
 Inspection and `--dry-run` do not mutate Pack state or CLI surfaces. Lifecycle
-commands operate on one Pack and receipt at a time. Update targets the current
-bundled Pack version; arbitrary versions and downgrades are unsupported.
+commands operate on one Pack and receipt at a time. `packy catalog refresh`
+explicitly downloads and selects the newest compatible immutable snapshot;
+ordinary inspection and lifecycle commands stay offline. Update targets the
+selected snapshot's Pack version; arbitrary versions and downgrades are unsupported.
 
 From a Git worktree, `packy verify` is the portable CI gate for the committed
 project Pack contract. It checks `packy.json`, `packy.lock.json`, required

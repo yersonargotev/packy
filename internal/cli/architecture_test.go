@@ -90,19 +90,15 @@ func TestCLIWorkstationLayoutOwnershipIsContracted(t *testing.T) {
 }
 
 func TestCLISourceSelectionHasOneSharedProductionRoute(t *testing.T) {
-	var installedSourceResolutions, skillSourceResolutions int
+	var catalogStoreResolutions int
 	for _, source := range cliGoSources(t) {
 		if strings.HasSuffix(source.name, "_test.go") {
 			continue
 		}
-		installedSourceResolutions += strings.Count(source.text, "bootstrap.ResolveInstalledSource(")
-		skillSourceResolutions += strings.Count(source.text, "skillbundle.ResolveSource(")
+		catalogStoreResolutions += strings.Count(source.text, "newCatalogStore(")
 	}
-	if installedSourceResolutions != 2 {
-		t.Fatalf("CLI has %d Installed Source resolution routes, want init plus one shared command route", installedSourceResolutions)
-	}
-	if skillSourceResolutions != 1 {
-		t.Fatalf("CLI has %d Skill Source selection routes, want one shared command route", skillSourceResolutions)
+	if catalogStoreResolutions != 3 {
+		t.Fatalf("CLI has %d Catalog Store resolution routes, want constructor plus acquisition and one shared command route", catalogStoreResolutions)
 	}
 }
 

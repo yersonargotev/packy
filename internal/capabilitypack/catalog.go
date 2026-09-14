@@ -380,6 +380,7 @@ type OptionalMode struct {
 type Pack struct {
 	ID                   string
 	Version              string
+	CatalogSnapshot      string
 	Description          string
 	Selectable           bool
 	Surfaces             []Surface
@@ -428,6 +429,8 @@ func (p Pack) ResourceCounts() ResourceCounts {
 type Catalog struct {
 	packs                 []Pack
 	bundleRoot            string
+	snapshotID            string
+	resolveSnapshot       func(context.Context, string) (string, error)
 	entries               []catalogEntry
 	deferSourceValidation bool
 	transactionHeld       bool
@@ -461,6 +464,22 @@ func DiscoverForDurableIntents(ctx context.Context, bundleRoot string) (Catalog,
 // Validation must be read-only and must not acquire the bundle lock itself.
 func DiscoverValidatedForDurableIntents(ctx context.Context, bundleRoot string, validate func(context.Context) error) (Catalog, error) {
 	return discoverProductionCatalog(ctx, bundleRoot, false, validate)
+}
+
+// DiscoverRetainedForDurableIntents loads one immutable retained Catalog
+// Snapshot. Historical lifecycle reads resolve through the supplied snapshot
+// resolver instead of following the currently selected catalog.
+func DiscoverRetainedForDurableIntents(ctx context.Context, bundleRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
+	catalog, err := discoverProductionCatalog(ctx, bundleRoot, false, nil)
+	if err != nil {
+		return Catalog{}, err
+	}
+	catalog.snapshotID = snapshotID
+	catalog.resolveSnapshot = resolveSnapshot
+	for i := range catalog.packs {
+		catalog.packs[i].CatalogSnapshot = snapshotID
+	}
+	return catalog, nil
 }
 
 func discoverProductionCatalog(ctx context.Context, bundleRoot string, validateSources bool, validate func(context.Context) error) (Catalog, error) {
@@ -515,6 +534,11 @@ func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
 		refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
 		refreshed.validateSource = locked.validateSource
+		refreshed.snapshotID = locked.snapshotID
+		refreshed.resolveSnapshot = locked.resolveSnapshot
+		for i := range refreshed.packs {
+			refreshed.packs[i].CatalogSnapshot = locked.snapshotID
+		}
 		return err
 	})
 	return refreshed, err

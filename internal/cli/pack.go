@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -15,12 +14,10 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
-	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
@@ -2130,25 +2127,9 @@ func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capa
 		}
 		return capabilitypack.DiscoverForDurableIntents(ctx, bundleRoot)
 	}
-	validate := func(ctx context.Context) error {
-		if err := bootstrap.ValidateInstalledSourceRef(ctx, bootstrap.BootstrapOptions{
-			InstalledSource: sources.installed,
-			RepositoryRef:   defaultInitRepositoryRef("", packyversion.Value),
-		}); err != nil {
-			return err
-		}
-		if err := managedpack.ValidateInstalledRepositoryIntegrity(ctx, sources.installed.Root()); err != nil {
-			return fmt.Errorf("default Installed Source at %s failed admission integrity: %w; move the checkout aside to preserve local changes, then run packy init", sources.installed.Root(), err)
-		}
-		return nil
-	}
-	// Missing roots cannot be locked; let the source owner provide remediation.
-	if info, err := os.Stat(sources.installed.Root()); err != nil || !info.IsDir() {
-		if err := validate(ctx); err != nil {
-			return capabilitypack.Catalog{}, err
-		}
-	}
-	return capabilitypack.DiscoverValidatedForDurableIntents(ctx, bundleRoot, validate)
+	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, bundleRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
+		return sources.store.Resolve(snapshotID)
+	})
 }
 
 func discoverPackCatalog(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {

@@ -5,6 +5,17 @@ searchable controls for each Pack's resource selection.
 
 ## Changes since the previous release
 
+- Packy now acquires the independent official Pack catalog as verified,
+  immutable snapshots. `packy init` performs the first acquisition and `packy
+  catalog refresh` explicitly selects newer content without changing existing
+  activations; inspection and lifecycle operations otherwise remain offline.
+- Active and project Pack receipts retain the exact Catalog Snapshot they were
+  applied from. Updating one Pack moves only that receipt to the selected
+  snapshot, while other activations keep resolving their retained immutable
+  content.
+- The old release-coupled Installed Source Git checkout, repository-ancestor
+  discovery, and bootstrap flags have been removed. `PACKY_SKILLS_SOURCE`
+  remains available only as an explicit development and test override.
 - The dashboard now stays within the terminal's visible rows. When content is
   clipped, PageUp and PageDown scroll through the bounded viewport so wrapped
   health checks cannot hide the global or current-project Pack scopes.

@@ -10,11 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/tui"
-	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -26,19 +24,12 @@ func RunTUI(ctx context.Context, opts Options, input io.Reader, output io.Writer
 }
 
 type tuiBackend struct {
-	opts          Options
-	resolver      *workstation.Resolver
-	repositoryURL string
-	repositoryRef string
+	opts     Options
+	resolver *workstation.Resolver
 }
 
 func newTUIBackend(opts Options, resolver *workstation.Resolver) *tuiBackend {
-	return &tuiBackend{
-		opts:          opts,
-		resolver:      resolver,
-		repositoryURL: bootstrap.DefaultRepositoryURL,
-		repositoryRef: defaultInitRepositoryRef("", packyversion.Value),
-	}
+	return &tuiBackend{opts: opts, resolver: resolver}
 }
 
 func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
@@ -139,9 +130,7 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 		return ctx.Err()
 	default:
 	}
-	return initializeInstalledSource(ctx, b.resolver, initializationRequest{
-		RepositoryURL: b.repositoryURL,
-		RepositoryRef: b.repositoryRef,
+	return initializeCatalog(ctx, b.opts, b.resolver, initializationRequest{
 		ReportProgress: func(detail string) error {
 			progress(detail)
 			return nil

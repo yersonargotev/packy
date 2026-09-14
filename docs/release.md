@@ -19,15 +19,16 @@ packy init
 Direct-download users choose the archive matching their OS and architecture,
 verify it with `SHA256SUMS`, extract `packy` onto `PATH`, and run `packy init`.
 
-Catalog operations validate the default Installed Source at
-`~/.local/share/packy` offline before consuming it: its Git checkout must match
-the running release, and its manifests and resource closures must match the
-release's Managed Pack Registry and Admission Records. These checks never
-repair or change the checkout. Run `packy init` to align a clean older source;
-for an invalid or modified checkout, move it aside to preserve local changes,
-then run `packy init` to create a fresh copy. Repository-ancestor sources and
-explicit `PACKY_SKILLS_SOURCE` overrides remain editable development sources;
-`packy init --source-root <path>` can initialize such a separate checkout.
+`packy init` acquires the latest immutable Catalog Snapshot published by
+`yersonargotev/packy-catalog`, verifies its release metadata, checksums,
+build-provenance attestation, complete file index, and every Pack manifest,
+then selects it under `~/.local/share/packy/catalog`. Later network acquisition
+is explicit with `packy catalog refresh`. Inspection, status, and lifecycle
+commands consume retained snapshots offline; existing receipts keep their
+snapshot identity until that Pack is explicitly updated. The
+`PACKY_SKILLS_SOURCE` environment variable remains an explicit development and
+test override, but Packy no longer discovers repository ancestors or maintains
+a release-coupled Git checkout.
 
 Users moving from `v0.1.x` first follow the
 [one-time v0.2 reset](reset-v0.2.md).

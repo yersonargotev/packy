@@ -873,7 +873,7 @@ func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {
 
 func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, aliases []SurfaceAlias, graph ResourceGraph, projections []ProjectProjectionPlan) installedPackReceipt {
 	receipt := installedPackReceipt{
-		Pack: installedPackIdentity{ID: pack.ID, Version: pack.Version}, Surface: surface,
+		Pack: installedPackIdentity{ID: pack.ID, Version: pack.Version, CatalogSnapshot: pack.CatalogSnapshot}, Surface: surface,
 		ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...),
 		ExternalRequirements: append([]string{}, pack.Requires.Tools...),
 		Selection:            cloneSelection(selection), Aliases: cloneAliases(aliases), Resources: []ResourceIdentity{}, Projections: []installedProjection{},
@@ -904,6 +904,15 @@ func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, ali
 		}
 	}
 	return receipt
+}
+
+func projectReceiptCatalogSnapshot(lock ProjectLockProposal, packID string, surface Surface) string {
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.ID == packID && receipt.Surface == surface {
+			return receipt.Pack.CatalogSnapshot
+		}
+	}
+	return ""
 }
 
 func projectNoticeProjectionID(packID string, surface Surface) string {

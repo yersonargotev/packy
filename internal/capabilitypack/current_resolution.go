@@ -6,6 +6,34 @@ import (
 )
 
 func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pack, error) {
+	return c.resolveIntentPackAt(ctx, id, version, "")
+}
+
+func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotID string) (Pack, error) {
+	if c.snapshotID != "" && snapshotID == "" {
+		return Pack{}, fmt.Errorf("capability pack %q receipt predates Catalog Snapshots; complete the documented one-time v0.2 reset before using the independent catalog", id)
+	}
+	if snapshotID != "" && snapshotID != c.snapshotID {
+		if c.resolveSnapshot == nil {
+			return Pack{}, fmt.Errorf("capability pack %q receipt references unavailable Catalog Snapshot %s", id, snapshotID)
+		}
+		bundleRoot, err := c.resolveSnapshot(ctx, snapshotID)
+		if err != nil {
+			return Pack{}, fmt.Errorf("resolve Catalog Snapshot %s for capability pack %q: %w", snapshotID, id, err)
+		}
+		historical, err := DiscoverRetainedForDurableIntents(ctx, bundleRoot, snapshotID, c.resolveSnapshot)
+		if err != nil {
+			return Pack{}, fmt.Errorf("load retained Catalog Snapshot %s: %w", snapshotID, err)
+		}
+		pack, err := historical.Show(ctx, id)
+		if err != nil {
+			return Pack{}, err
+		}
+		if version != "" && version != pack.Version {
+			return Pack{}, fmt.Errorf("capability pack %q receipt version %s does not match retained Catalog Snapshot %s version %s", id, version, snapshotID, pack.Version)
+		}
+		return pack, nil
+	}
 	pack, err := c.Show(ctx, id)
 	if err != nil {
 		return Pack{}, err

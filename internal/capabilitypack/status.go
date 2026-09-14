@@ -449,7 +449,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, pack.ID, pack.Version)
 		}
 		if intent.Active || ownedResidual {
-			evidencePack, err = f.catalog.resolveIntentPack(ctx, pack.ID, intent.Version)
+			evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
 		} else {
 			evidencePack, err = f.catalog.Show(ctx, pack.ID)
 		}
