@@ -1089,7 +1089,7 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	store := capabilitypack.NewFileActivationStore(composition.state.File())
 	claudeLayout := composition.claude
 	claudeExecutable, _ := opts.ClaudeLookPath("claude")
-	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, composition.catalog.ResolveIntentPackAt, claudeLayout, composition.bundleRoot)
+	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudeOwnershipResolver(composition.catalog), claudeLayout, composition.bundleRoot)
 	var claudeAdapter *claudecode.SurfaceAdapter
 	if opts.ClaudeAuthorization != nil {
 		claudeAdapter = claudecode.NewSurfaceAdapterWithAuthorization(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership, opts.ClaudeAuthorization)
@@ -1116,6 +1116,19 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 			runnerExternalExecutor{runner: opts.Runner},
 		),
 	), nil
+}
+
+func claudeOwnershipResolver(catalog capabilitypack.Catalog) func(context.Context, string, string, string) (capabilitypack.Pack, error) {
+	current := make(map[string]capabilitypack.Pack)
+	for _, pack := range catalog.List() {
+		current[pack.ID+"\x00"+pack.Version+"\x00"+pack.CatalogSnapshot] = pack
+	}
+	return func(ctx context.Context, id, version, snapshotID string) (capabilitypack.Pack, error) {
+		if pack, ok := current[id+"\x00"+version+"\x00"+snapshotID]; ok {
+			return pack, nil
+		}
+		return catalog.ResolveIntentPackAt(ctx, id, version, snapshotID)
+	}
 }
 
 func withControlledCheckFacts(ctx context.Context, opts Options, surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter) capabilitypack.SurfaceAdapter {
