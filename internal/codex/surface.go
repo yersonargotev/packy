@@ -126,7 +126,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 	for _, resource := range pack.Resources {
 		switch resource.Kind {
 		case "skill":
-			source := filepath.Join(a.bundleRoot, filepath.Clean(resource.Source))
+			source := filepath.Join(catalogRoot(resource, a.bundleRoot), filepath.Clean(resource.Source))
 			desired, err := localprojection.FingerprintTree(source)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint skill %q: %w", resource.ID, err)
@@ -144,7 +144,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 			projections = append(projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillLink, Source: source, Target: target, Description: fmt.Sprintf("link skill %s at %s", resource.ID, target)}})
 			revisionParts = append(revisionParts, id+"="+observed)
 		case "instruction":
-			source := filepath.Join(a.bundleRoot, filepath.Clean(resource.Source))
+			source := filepath.Join(catalogRoot(resource, a.bundleRoot), filepath.Clean(resource.Source))
 			content, err := os.ReadFile(source)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read instruction %q: %w", resource.ID, err)
@@ -194,7 +194,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 			if !ok {
 				continue
 			}
-			source := filepath.Join(a.bundleRoot, filepath.Clean(resource.Source))
+			source := filepath.Join(catalogRoot(resource, a.bundleRoot), filepath.Clean(resource.Source))
 			prompt, err := os.ReadFile(source)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read agent %q: %w", resource.ID, err)
@@ -212,7 +212,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 			if !ok {
 				continue
 			}
-			source := filepath.Join(a.bundleRoot, filepath.Clean(resource.Source))
+			source := filepath.Join(catalogRoot(resource, a.bundleRoot), filepath.Clean(resource.Source))
 			prompt, err := os.ReadFile(source)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read command %q: %w", resource.ID, err)
@@ -615,7 +615,7 @@ func (a *SurfaceAdapter) consumerAssetProjections(pack capabilitypack.Pack, cons
 	sort.Slice(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
 	result := make([]capabilitypack.ObservedProjection, 0, len(assets))
 	for _, asset := range assets {
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, filepath.Clean(asset.Source)))
+		content, err := os.ReadFile(filepath.Join(catalogRoot(asset, a.bundleRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return nil, fmt.Errorf("read asset %q for %s: %w", asset.ID, consumerID, err)
 		}
@@ -628,6 +628,13 @@ func (a *SurfaceAdapter) consumerAssetProjections(pack capabilitypack.Pack, cons
 		result = append(result, projection)
 	}
 	return result, nil
+}
+
+func catalogRoot(resource capabilitypack.Resource, fallback string) string {
+	if root := resource.CatalogRoot(); root != "" {
+		return root
+	}
+	return fallback
 }
 
 func fileProjection(id string, kind capabilitypack.ProjectionActionKind, target, content, description string) (capabilitypack.ObservedProjection, string, error) {

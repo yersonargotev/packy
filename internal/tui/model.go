@@ -120,6 +120,7 @@ type Pack struct {
 	ID              string
 	Version         string
 	Description     string
+	CatalogState    string
 	Surfaces        []string
 	Requirements    []string
 	Resources       []Resource
@@ -951,7 +952,13 @@ func firstLifecycleAction(status SurfaceStatus) string {
 }
 
 func (m Model) lifecycleActions() []string {
-	if pack := m.selectedPack(); pack != nil && len(supportedSurfaces(*pack)) == 0 && hasInstalledSurface(*pack) {
+	if pack := m.selectedPack(); pack != nil && withdrawnPack(*pack) {
+		status := m.selectedSurfaceStatus()
+		if status != nil && status.Active {
+			return []string{"deactivate"}
+		}
+		return nil
+	} else if pack != nil && len(supportedSurfaces(*pack)) == 0 && hasInstalledSurface(*pack) {
 		return nil
 	}
 	status := m.selectedSurfaceStatus()
@@ -1721,7 +1728,18 @@ func supportedSurfaces(pack Pack) []string {
 	if len(pack.SurfaceStatuses) == 0 {
 		result = append(result, pack.Surfaces...)
 	}
+	if len(result) == 0 && withdrawnPack(pack) {
+		for _, status := range pack.SurfaceStatuses {
+			if status.Active || status.InstalledVersion != "" {
+				result = append(result, status.Name)
+			}
+		}
+	}
 	return result
+}
+
+func withdrawnPack(pack Pack) bool {
+	return pack.CatalogState == "retained" && hasInstalledSurface(pack)
 }
 
 func selectedSurface(pack Pack, index int) string {

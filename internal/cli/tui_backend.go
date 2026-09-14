@@ -87,6 +87,11 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 			RefreshAvailable: true,
 		}
 	}
+	currentDetails := append([]capabilitypack.CatalogDetail(nil), details...)
+	currentPackIDs := make(map[string]bool, len(details))
+	for _, detail := range details {
+		currentPackIDs[detail.Pack.ID] = true
+	}
 	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
 	facade, err := activationFacade(ctx, b.opts, b.resolver)
 	if err != nil {
@@ -102,7 +107,23 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 				AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
 			})
 		} else {
-			dashboard.Global.Packs = catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))
+			statuses := globalStatusesForTUI(globalStatus)
+			withdrawn := make(map[string]bool)
+			for packID := range statuses {
+				if currentPackIDs[packID] {
+					continue
+				}
+				shown, showErr := facade.Show(ctx, packID)
+				if showErr != nil {
+					dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+						Cause: fmt.Sprintf("inspect retained Pack %s: %v", packID, showErr), AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
+					})
+					continue
+				}
+				details = append(details, shown.Detail)
+				withdrawn[packID] = true
+			}
+			dashboard.Global.Packs = catalogPacksForTUI(details, statuses, withdrawn)
 		}
 	}
 	currentDirectory, err := snapshot.CurrentDirectory()
@@ -140,7 +161,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		})
 		return dashboard, nil
 	}
-	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(details, projectStatusesForTUI(status))}
+	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(currentDetails, projectStatusesForTUI(status))}
 	return dashboard, nil
 }
 
@@ -933,18 +954,26 @@ func healthForTUI(report setuphealth.Report) tui.Health {
 	return health
 }
 
-func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus) []tui.Pack {
+func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus, withdrawnSets ...map[string]bool) []tui.Pack {
+	withdrawn := map[string]bool{}
+	if len(withdrawnSets) > 0 {
+		withdrawn = withdrawnSets[0]
+	}
 	result := make([]tui.Pack, 0, len(details))
 	for _, detail := range details {
 		pack := detail.Pack
 		view := tui.Pack{
 			ID: pack.ID, Version: pack.Version, Description: pack.Description,
+			CatalogState: "current",
 			Requirements: append([]string(nil), pack.Requires.Tools...),
 			Resources:    resourcesForTUI(detail),
 			Exclusions:   exclusionsForTUI(pack),
 		}
+		if withdrawn[pack.ID] {
+			view.CatalogState = "retained"
+		}
 		for _, surface := range capabilitypack.SupportedSurfaces() {
-			supported := slices.Contains(pack.Surfaces, surface)
+			supported := !withdrawn[pack.ID] && slices.Contains(pack.Surfaces, surface)
 			status := tui.SurfaceStatus{Name: string(surface), Supported: supported}
 			if supported {
 				status.Configured, status.Authorized, status.Usable = "no", "no", "no"

@@ -16,6 +16,13 @@ searchable controls for each Pack's resource selection.
 - The old release-coupled Installed Source Git checkout, repository-ancestor
   discovery, and bootstrap flags have been removed. `PACKY_SKILLS_SOURCE`
   remains available only as an explicit development and test override.
+- Existing release-coupled installations have an explicit
+  [clean adoption procedure](../catalog-adoption.md). The previous Packy first
+  inventories, previews, deactivates, and uninstalls its own receipts while
+  their sources remain available; only then is the binary replaced and the
+  current catalog initialized for explicit reinstall and reactivation. Packy
+  does not convert state or delete old sources, personal data, credentials,
+  Memory, or foreign host configuration.
 - The dashboard now stays within the terminal's visible rows. When content is
   clipped, PageUp and PageDown scroll through the bounded viewport so wrapped
   health checks cannot hide the global or current-project Pack scopes.

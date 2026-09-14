@@ -62,10 +62,13 @@ secret material are never recorded or emitted.
 Arrays representing sets use their schema-defined deterministic order. Arrays
 representing work preserve execution order.
 
-Pack show v6 exposes the current Managed Pack as `catalog_identity` and includes
-`resource_inventory`, the domain-owned descriptive list of every Pack resource.
-Each entry includes its identity, purpose, role, direct dependencies, and
-relevant notices; entries and relationships use canonical resource-identity
+Pack show v6 exposes `catalog_state` as `current` when describing a Pack in the
+selected Catalog Snapshot, or `retained` when an installed Pack is resolved
+from its retained snapshot after withdrawal from the selected catalog. Its
+`catalog_identity` identifies the Pack within that applicable snapshot, and
+`resource_inventory` is the domain-owned descriptive list of every Pack
+resource. Each entry includes its identity, purpose, role, direct dependencies,
+and relevant notices; entries and relationships use canonical resource-identity
 order. Lifecycle and status resource graphs retain their operational selection
 semantics.
 

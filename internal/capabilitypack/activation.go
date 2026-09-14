@@ -1654,10 +1654,6 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation does not support CLI surface %q", request.Surface)
 	}
-	pack, err := f.catalog.catalogMetadata(request.PackID)
-	if err != nil {
-		return Pack{}, nil, ActivationState{}, err
-	}
 	adapter := f.activation.adapters[request.Surface]
 	if adapter == nil {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("no activation adapter configured for CLI surface %q", request.Surface)
@@ -1667,6 +1663,17 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 		return Pack{}, nil, ActivationState{}, err
 	}
 	intent, hasIntent := intentForPack(state, request.PackID, request.Surface)
+	if operation == OperationDeactivate && hasIntent {
+		pack, err := f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogSnapshot)
+		if err != nil {
+			return Pack{}, nil, ActivationState{}, err
+		}
+		return pack, adapter, state, nil
+	}
+	pack, current := f.catalog.catalogMetadataIfPresent(request.PackID)
+	if !current {
+		return Pack{}, nil, ActivationState{}, fmt.Errorf("unknown capability pack %q in the current catalog; run `packy list` to see available packs", request.PackID)
+	}
 	if operation == OperationActivate && hasIntent && intent.Active && intent.Version != pack.Version {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q is active at %s on %s; use explicit pack update to target catalog current %s", request.PackID, intent.Version, request.Surface, pack.Version)
 	}

@@ -80,7 +80,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" || binding.Name == "" {
 		return compositeSkill{}, errors.New("invalid Claude Claude skill binding")
 	}
-	source, err := safeBundlePath(bundleRoot, resource.Source)
+	source, err := safeBundlePath(catalogRoot(resource, bundleRoot), resource.Source)
 	if err != nil {
 		return compositeSkill{}, err
 	}
@@ -120,7 +120,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 		if err != nil {
 			return compositeSkill{}, err
 		}
-		path, err := safeBundlePath(bundleRoot, asset.Source)
+		path, err := safeBundlePath(catalogRoot(asset, bundleRoot), asset.Source)
 		if err != nil {
 			return compositeSkill{}, err
 		}

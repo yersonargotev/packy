@@ -78,7 +78,7 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 		})
 	}
 	return packShowJSON{
-		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: "current",
+		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: report.CatalogState,
 		ID: pack.ID, Version: pack.Version, Description: pack.Description,
 		CatalogIdentity: packShowCatalogIdentityJSON{
 			PackID: report.CatalogIdentity.PackID, Version: report.CatalogIdentity.Version,
@@ -124,7 +124,7 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(w,
-		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nProvenance authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
+		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nCatalog authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
 		document.CatalogIdentity.PackID, document.CatalogIdentity.Version, document.CatalogIdentity.SchemaVersion,
 		document.CatalogIdentity.Limitation, joinSurfaces(document.Surfaces), joinOrNone(document.Requires.Tools),

@@ -7,8 +7,9 @@ without becoming an agent runtime.
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source for reviewed Packs. The
 Packy engine downloads and verifies immutable releases from that project:
-run `packy list` to inspect the locally selected snapshot, or browse the generated [Pack
-catalog](docs/packs/index.md) for purpose and resource details.
+run `packy list` and `packy show <pack>` to inspect the locally selected
+snapshot, or read the [Catalog Project guide](docs/catalog-project.md) for its
+authoring and publication contract.
 
 ## Quickstart
 
@@ -67,6 +68,12 @@ accessible alternative in terminals that cannot run the full-screen view.
 Before replacing a `v0.1.x` installation, follow the warning-first
 [one-time v0.2 reset](docs/reset-v0.2.md). Packy intentionally provides no
 automatic migration or cleanup command.
+
+For installations created by the release-coupled Installed Source model,
+follow the [clean Catalog adoption procedure](docs/catalog-adoption.md): use
+the previous Packy to inventory, preview, deactivate, and uninstall its
+receipts before replacing the binary, then initialize and explicitly reinstall
+with the current Catalog Snapshot model.
 
 ## Project installation
 
@@ -169,10 +176,11 @@ changes without executing catalog content. Full lifecycle details are in
 
 ## Verification
 
-Run focused tests for touched behavior while iterating. Validate one Pack with:
+Run focused tests for touched behavior while iterating. Validate a Catalog
+Project checkout with:
 
 ```sh
-./scripts/validate-pack-content.sh <pack-id>
+go run ./internal/tools/catalogvalidate --project <catalog-project-root>
 ```
 
 Run the sandboxed general repository check with:

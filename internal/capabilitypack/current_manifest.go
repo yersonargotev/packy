@@ -71,8 +71,8 @@ type managedResourceOriginWire struct {
 	Relationship string `json:"relationship"`
 }
 
-// LoadCurrentManifest loads a materialized Managed Pack Project schema v1
-// contract. It rejects manifests outside the current authoring model.
+// LoadCurrentManifest loads one materialized Pack schema v1 contract from a
+// Catalog Snapshot. It rejects manifests outside the current catalog model.
 func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -144,6 +144,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 			Requires: wire.Requires, Conflicts: wire.Conflicts, Notices: wire.Notices,
 			Bindings: wire.Bindings, SurfaceExclusions: wire.SurfaceExclusions,
 			RequiresTools: []string{},
+			catalogRoot:   bundleRoot,
 		})
 	}
 	if err := validateCurrentPack(pack); err != nil {

@@ -479,7 +479,7 @@ func (f Fixture) WriteBundle(root string) error {
 	return writeFile(root, filepath.ToSlash(filepath.Join("packs", f.manifest.ID, "pack.json")), data)
 }
 
-// WriteProject materializes a Managed Pack Project and its independent origin
+// WriteProject materializes one Catalog Project Pack and its independent origin
 // trees. The returned map implements the data needed by a managedpack origin
 // resolver without placing undeclared provenance bytes in the project closure.
 func (f Fixture) WriteProject(projectRoot, originsRoot string) (map[string]string, error) {

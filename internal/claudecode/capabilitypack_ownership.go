@@ -140,7 +140,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				record.Command, record.Args, record.EnvironmentKeys, record.EnvironmentFingerprint = identity.Command, identity.Args, identity.EnvironmentKeys, identity.EnvironmentFingerprint
 			} else {
 				record.Kind, record.Target = string(ActionSkillLink), filepath.Join(o.layout.SkillsDir, name)
-				source := filepath.Join(o.bundleRoot, filepath.FromSlash(resource.Source))
+				source := filepath.Join(catalogRoot(resource, o.bundleRoot), filepath.FromSlash(resource.Source))
 				expectedSource, err := filepath.EvalSymlinks(source)
 				if err != nil {
 					return OwnershipSnapshot{}, fmt.Errorf("resolve Claude skill source %s: %w", resource.ID, err)
