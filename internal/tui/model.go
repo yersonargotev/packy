@@ -730,7 +730,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.project {
 					actions := m.lifecycleActions()
-					m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
+					m.operation = ""
+					if len(actions) > 0 {
+						m.operation = actions[0]
+					}
 					if len(actions) > 1 {
 						m.choosingAction = true
 						m.actionChoice = 0
@@ -952,24 +955,27 @@ func firstLifecycleAction(status SurfaceStatus) string {
 }
 
 func (m Model) lifecycleActions() []string {
-	if pack := m.selectedPack(); pack != nil && withdrawnPack(*pack) {
+	if pack := m.selectedPack(); pack != nil {
 		status := m.selectedSurfaceStatus()
-		if m.project {
-			if status == nil || status.Installation == "" || status.Installation == "absent" {
-				return nil
+		if status != nil && !status.Supported && (status.Active || status.InstalledVersion != "") {
+			if m.project {
+				if status.Installation == "" || status.Installation == "absent" {
+					return nil
+				}
+				actions := []string{}
+				if status.Active {
+					actions = append(actions, "deactivate")
+				}
+				return append(actions, "uninstall")
 			}
-			actions := []string{}
-			if status.Active {
-				actions = append(actions, "deactivate")
+			if status != nil && status.Active {
+				return []string{"deactivate"}
 			}
-			return append(actions, "uninstall")
+			return nil
 		}
-		if status != nil && status.Active {
-			return []string{"deactivate"}
+		if len(supportedSurfaces(*pack)) == 0 && hasInstalledSurface(*pack) {
+			return nil
 		}
-		return nil
-	} else if pack != nil && len(supportedSurfaces(*pack)) == 0 && hasInstalledSurface(*pack) {
-		return nil
 	}
 	status := m.selectedSurfaceStatus()
 	if m.project {
@@ -1629,10 +1635,12 @@ func (m Model) detailAction() string {
 			action = "Enter choose lifecycle action"
 		} else if len(actions) == 1 && actions[0] == "check" {
 			action = "Enter select resources for controlled runtime check"
+		} else if len(actions) == 1 && actions[0] == "deactivate" {
+			action = "Enter choose lifecycle action"
 		}
 	}
 	if m.project {
-		actions := projectLifecycleActionsForStatus(m.selectedSurfaceStatus())
+		actions := m.lifecycleActions()
 		switch {
 		case len(actions) > 1:
 			action = "Enter choose project lifecycle action"
@@ -1731,25 +1739,14 @@ func hasInstalledSurface(pack Pack) bool {
 func supportedSurfaces(pack Pack) []string {
 	result := []string{}
 	for _, status := range pack.SurfaceStatuses {
-		if status.Supported {
+		if status.Supported || status.Active || status.InstalledVersion != "" {
 			result = append(result, status.Name)
 		}
 	}
 	if len(pack.SurfaceStatuses) == 0 {
 		result = append(result, pack.Surfaces...)
 	}
-	if len(result) == 0 && withdrawnPack(pack) {
-		for _, status := range pack.SurfaceStatuses {
-			if status.Active || status.InstalledVersion != "" {
-				result = append(result, status.Name)
-			}
-		}
-	}
 	return result
-}
-
-func withdrawnPack(pack Pack) bool {
-	return pack.CatalogState == "retained" && hasInstalledSurface(pack)
 }
 
 func selectedSurface(pack Pack, index int) string {
@@ -1762,6 +1759,13 @@ func selectedSurface(pack Pack, index int) string {
 
 func preferredSurfaceIndex(pack Pack, project bool) int {
 	if !project {
+		for index, surface := range supportedSurfaces(pack) {
+			for _, status := range pack.SurfaceStatuses {
+				if status.Name == surface && !status.Supported && status.Active {
+					return index
+				}
+			}
+		}
 		return 0
 	}
 	for index, surface := range supportedSurfaces(pack) {

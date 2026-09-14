@@ -53,3 +53,71 @@ func TestIssue797WithdrawnProjectPackOffersOnlyPersonalDeactivationAndUninstall(
 		}
 	}
 }
+
+func TestIssue797RemovedSurfaceOfCurrentPackOffersOnlyDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"opencode"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
+				{Name: "opencode", Supported: true},
+			},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Choose lifecycle action") || !strings.Contains(view, "Deactivate") {
+		t.Fatalf("removed Claude surface did not offer deactivation:\n%s", view)
+	}
+	for _, forbidden := range []string{"Configure", "Update", "Activate"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("removed Claude surface offered %q:\n%s", forbidden, view)
+		}
+	}
+}
+
+func TestIssue797RemovedSurfaceAfterCurrentSurfaceOffersOnlyDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"claude"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: true},
+				{Name: "opencode", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
+			},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: opencode") || !strings.Contains(view, "Deactivate") {
+		t.Fatalf("removed active surface was not preferred for deactivation:\n%s", view)
+	}
+	for _, forbidden := range []string{"Configure", "Update", "Activate"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("removed active surface offered %q:\n%s", forbidden, view)
+		}
+	}
+}
+
+func TestIssue797InactiveRemovedProjectSurfaceUninstallsDirectly(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"opencode"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: false, Installation: "installed", Runtime: "pending", InstalledVersion: "1.0.0"},
+				{Name: "opencode", Supported: true, Installation: "absent"},
+			},
+		}}}},
+		preview: tui.Preview{ID: "removed-uninstall", Digest: "digest", Operation: "uninstall", Disposition: "previewable", PackID: "mixed-surface", PackVersion: "1.0.0", Surface: "claude", Scope: "project"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "uninstall" || backend.previewRequests[0].Surface != "claude" {
+		t.Fatalf("inactive removed project surface preview request = %#v", backend.previewRequests)
+	}
+}

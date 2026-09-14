@@ -22,19 +22,25 @@ func TestOlderReceiptDetailDisplaysUpdateAndUnavailableEvidence(t *testing.T) {
 	}
 }
 
-func TestRemovedSurfaceRetainsVisibleReceiptWithoutEnablingLifecycle(t *testing.T) {
+func TestRemovedSurfaceRetainsVisibleReceiptWithDeactivationOnly(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "older", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "claude", Active: true, CatalogUpdateAvailable: true, InstalledVersion: "1.0.0", Ownership: 2, Drift: 1, HistoricalEvidenceMessage: "Historical manifest is unavailable"}}}}}}}
 	model := tui.NewModel(backend)
 	current, _ := model.Update(model.Init()())
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(current.View().Content)
-	for _, want := range []string{"claude: unsupported", "Update available", "Current catalog does not support this surface", "Installed version: 1.0.0", "Historical evidence: unavailable", "Ownership: 2 projected paths", "Drift: 1 projections", "No applicable global action"} {
+	for _, want := range []string{"claude: unsupported", "Update available", "Current catalog does not support this surface", "Installed version: 1.0.0", "Historical evidence: unavailable", "Ownership: 2 projected paths", "Drift: 1 projections", "Enter choose lifecycle action"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q:\n%s", want, view)
 		}
 	}
 	current, cmd := current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if cmd != nil || !strings.Contains(ansi.Strip(current.View().Content), "Pack details") {
-		t.Fatal("unsupported catalog surface enabled lifecycle selection")
+	view = ansi.Strip(current.View().Content)
+	if cmd != nil || !strings.Contains(view, "Choose lifecycle action") || !strings.Contains(view, "Deactivate") {
+		t.Fatalf("unsupported active surface did not offer deactivation:\n%s", view)
+	}
+	for _, forbidden := range []string{"Configure", "Update", "Activate"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("unsupported active surface offered %q:\n%s", forbidden, view)
+		}
 	}
 }
