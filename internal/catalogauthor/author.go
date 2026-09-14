@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/managedpack"
 )
@@ -39,6 +40,7 @@ type CreateRequest struct {
 type ImportRequest struct {
 	ProjectRoot  string
 	PackID       string
+	Version      string
 	Repository   string
 	Commit       string
 	OriginID     string
@@ -70,11 +72,24 @@ type Result struct {
 // Create prepares and validates a new Pack before atomically installing its
 // manifest in the Catalog Project. The only supported template is empty.
 func Create(ctx context.Context, request CreateRequest, resolver managedpack.OriginResolver) (Result, error) {
+	var result Result
+	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+		var err error
+		result, err = create(ctx, request, resolver)
+		return err
+	})
+	return result, err
+}
+
+func create(ctx context.Context, request CreateRequest, resolver managedpack.OriginResolver) (Result, error) {
 	if request.Template != "empty" {
 		return Result{}, fmt.Errorf("unsupported Pack template %q; supported templates: empty", request.Template)
 	}
 	if strings.TrimSpace(request.ProjectRoot) == "" {
 		return Result{}, fmt.Errorf("Catalog Project path is required")
+	}
+	if !authoringIDPattern.MatchString(request.PackID) {
+		return Result{}, fmt.Errorf("Pack id must be lowercase kebab-case")
 	}
 	surfaces, err := parseSurfaces(request.Surfaces)
 	if err != nil {
@@ -107,7 +122,7 @@ func Create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
 	destination := filepath.Join(request.ProjectRoot, manifestRelative)
-	if err := installNewPath(stagedManifest, destination); err != nil {
+	if _, err := installNewPath(stagedManifest, destination, request.ProjectRoot); err != nil {
 		return Result{}, fmt.Errorf("write prepared Pack: %w", err)
 	}
 	return Result{PackID: manifest.ID, Version: manifest.Version, Packs: len(validation.Packs)}, nil
@@ -116,6 +131,16 @@ func Create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 // Import prepares one explicitly selected resource, validates the complete
 // Catalog Project, and only then applies the resource and manifest together.
 func Import(ctx context.Context, request ImportRequest, resolver managedpack.OriginResolver) (Result, error) {
+	var result Result
+	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+		var err error
+		result, err = importResource(ctx, request, resolver)
+		return err
+	})
+	return result, err
+}
+
+func importResource(ctx context.Context, request ImportRequest, resolver managedpack.OriginResolver) (Result, error) {
 	if resolver == nil {
 		return Result{}, fmt.Errorf("Pack Import requires an exact-origin resolver")
 	}
@@ -137,6 +162,7 @@ func Import(ctx context.Context, request ImportRequest, resolver managedpack.Ori
 	if err != nil {
 		return Result{}, fmt.Errorf("read Pack %q: %w", request.PackID, err)
 	}
+	manifest.Version = request.Version
 
 	origin := managedpack.Origin{ID: request.OriginID, Repository: request.Repository, Commit: request.Commit}
 	originRoot, err := resolver.Resolve(ctx, origin)
@@ -178,17 +204,20 @@ func Import(ctx context.Context, request ImportRequest, resolver managedpack.Ori
 	if err := writeManifest(stagedManifest, manifest); err != nil {
 		return Result{}, err
 	}
-	validation, err := managedpack.ValidateCatalogProject(ctx, stage, "", resolver)
+	validation, err := managedpack.ValidateCatalogProject(ctx, stage, request.ProjectRoot, resolver)
 	if err != nil {
 		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
 
 	actualDestination := filepath.Join(request.ProjectRoot, "bundle", filepath.FromSlash(request.Destination))
-	if err := installNewPath(stagedDestination, actualDestination); err != nil {
+	rollback, err := installNewPath(stagedDestination, actualDestination, filepath.Join(request.ProjectRoot, "bundle"))
+	if err != nil {
 		return Result{}, fmt.Errorf("write prepared resource: %w", err)
 	}
 	if err := replaceUnchangedFile(actualManifest, beforeManifest, stagedManifest); err != nil {
-		_ = os.RemoveAll(actualDestination)
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return Result{}, fmt.Errorf("write prepared manifest: %v; rollback failed: %w", err, rollbackErr)
+		}
 		return Result{}, fmt.Errorf("write prepared manifest: %w", err)
 	}
 	return Result{
@@ -214,6 +243,9 @@ func validateImportRequest(request ImportRequest) error {
 	}
 	if !authoringIDPattern.MatchString(request.ResourceID) {
 		return fmt.Errorf("resource id must be lowercase kebab-case")
+	}
+	if strings.TrimSpace(request.Version) == "" {
+		return fmt.Errorf("new Pack version is required")
 	}
 	if strings.TrimSpace(request.Description) == "" {
 		return fmt.Errorf("resource description is required")
@@ -450,26 +482,77 @@ func copyPath(source, destination string) error {
 	return nil
 }
 
-func installNewPath(source, destination string) error {
+func installNewPath(source, destination, stopRoot string) (func() error, error) {
+	noRollback := func() error { return nil }
 	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("destination already exists: %s", destination)
+		return noRollback, fmt.Errorf("destination already exists: %s", destination)
 	} else if !os.IsNotExist(err) {
-		return err
+		return noRollback, err
 	}
 	parent := filepath.Dir(destination)
+	createdParents, err := absentParents(parent, stopRoot)
+	if err != nil {
+		return noRollback, err
+	}
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
+		return noRollback, err
+	}
+	cleanupParents := func() {
+		for _, path := range createdParents {
+			_ = os.Remove(path)
+		}
 	}
 	temporary, err := os.MkdirTemp(parent, ".packy-author-")
 	if err != nil {
-		return err
+		cleanupParents()
+		return noRollback, err
 	}
 	defer os.RemoveAll(temporary)
 	payload := filepath.Join(temporary, "payload")
 	if err := copyPath(source, payload); err != nil {
-		return err
+		cleanupParents()
+		return noRollback, err
 	}
-	return os.Rename(payload, destination)
+	if err := os.Rename(payload, destination); err != nil {
+		cleanupParents()
+		return noRollback, err
+	}
+	rollback := func() error {
+		if err := os.RemoveAll(destination); err != nil {
+			return err
+		}
+		for _, path := range createdParents {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return nil
+	}
+	return rollback, nil
+}
+
+func absentParents(parent, stopRoot string) ([]string, error) {
+	parent = filepath.Clean(parent)
+	stopRoot = filepath.Clean(stopRoot)
+	relative, err := filepath.Rel(stopRoot, parent)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("destination parent is outside the Catalog Project")
+	}
+	var result []string
+	for current := parent; current != stopRoot; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("destination parent %s must be a directory and not a symlink", current)
+			}
+			break
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		result = append(result, current)
+	}
+	return result, nil
 }
 
 func replaceUnchangedFile(destination string, before []byte, source string) error {

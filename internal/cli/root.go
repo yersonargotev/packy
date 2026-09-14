@@ -227,19 +227,11 @@ func newCatalogCreateCommand(opts Options) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request.PackID = args[0]
 			request.Surfaces = surfaces
-			originResolver := opts.CatalogOriginResolver
-			var closeResolver func() error
-			if originResolver == nil {
-				created, err := catalogorigin.New()
-				if err != nil {
-					return err
-				}
-				originResolver = created
-				closeResolver = created.Close
+			originResolver, cleanup, err := resolveCatalogOrigins(opts)
+			if err != nil {
+				return err
 			}
-			if closeResolver != nil {
-				defer closeResolver()
-			}
+			defer cleanup()
 			result, err := catalogauthor.Create(cmd.Context(), request, originResolver)
 			if err != nil {
 				return err
@@ -269,19 +261,11 @@ func newCatalogImportCommand(opts Options) *cobra.Command {
 			request.PackID = args[0]
 			request.Hosts, request.Notices = hosts, notices
 			request.Requires, request.Conflicts = requires, conflicts
-			originResolver := opts.CatalogOriginResolver
-			var closeResolver func() error
-			if originResolver == nil {
-				created, err := catalogorigin.New()
-				if err != nil {
-					return err
-				}
-				originResolver = created
-				closeResolver = created.Close
+			originResolver, cleanup, err := resolveCatalogOrigins(opts)
+			if err != nil {
+				return err
 			}
-			if closeResolver != nil {
-				defer closeResolver()
-			}
+			defer cleanup()
 			result, err := catalogauthor.Import(cmd.Context(), request, originResolver)
 			if err != nil {
 				return err
@@ -292,6 +276,7 @@ func newCatalogImportCommand(opts Options) *cobra.Command {
 	}
 	flags := command.Flags()
 	flags.StringVar(&request.ProjectRoot, "project", ".", "Catalog Project root")
+	flags.StringVar(&request.Version, "version", "", "new Pack SemVer")
 	flags.StringVar(&request.Repository, "repository", "", "upstream owner/name repository")
 	flags.StringVar(&request.Commit, "commit", "", "exact full upstream commit")
 	flags.StringVar(&request.OriginID, "origin-id", "", "Pack-local upstream origin id")
@@ -307,10 +292,21 @@ func newCatalogImportCommand(opts Options) *cobra.Command {
 	flags.StringSliceVar(&conflicts, "conflict", nil, "resource conflict identity (repeatable)")
 	flags.StringVar(&request.License, "license", "", "SPDX license for a notice resource")
 	flags.StringVar(&request.Attribution, "attribution", "", "attribution for a notice resource")
-	for _, name := range []string{"repository", "commit", "origin-id", "origin-path", "destination", "relationship", "kind", "resource-id", "description"} {
+	for _, name := range []string{"version", "repository", "commit", "origin-id", "origin-path", "destination", "relationship", "kind", "resource-id", "description"} {
 		_ = command.MarkFlagRequired(name)
 	}
 	return command
+}
+
+func resolveCatalogOrigins(opts Options) (managedpack.OriginResolver, func() error, error) {
+	if opts.CatalogOriginResolver != nil {
+		return opts.CatalogOriginResolver, func() error { return nil }, nil
+	}
+	resolver, err := catalogorigin.New()
+	if err != nil {
+		return nil, nil, err
+	}
+	return resolver, resolver.Close, nil
 }
 
 func newCatalogStore(opts Options, snapshot workstation.Snapshot) *catalogstore.Store {

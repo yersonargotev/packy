@@ -16,6 +16,21 @@ func (r authoringOriginResolver) Resolve(_ context.Context, origin managedpack.O
 	return r[origin.Repository+"@"+origin.Commit], nil
 }
 
+type mutatingAuthoringResolver struct {
+	root     string
+	calls    int
+	mutateAt int
+	mutate   func()
+}
+
+func (r *mutatingAuthoringResolver) Resolve(_ context.Context, _ managedpack.Origin) (string, error) {
+	r.calls++
+	if r.calls == r.mutateAt {
+		r.mutate()
+	}
+	return r.root, nil
+}
+
 func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 	project := writeAuthoringCatalog(t)
 	origin := t.TempDir()
@@ -44,6 +59,7 @@ func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 	out, err = executeCommand(t, NewRootCommand(opts),
 		"catalog", "import", "focus-pack",
 		"--project", project,
+		"--version", "0.1.1",
 		"--repository", "example/upstream",
 		"--commit", commit,
 		"--origin-id", "upstream",
@@ -63,6 +79,7 @@ func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 	out, err = executeCommand(t, NewRootCommand(opts),
 		"catalog", "import", "focus-pack",
 		"--project", project,
+		"--version", "0.1.2",
 		"--repository", "example/upstream",
 		"--commit", commit,
 		"--origin-id", "upstream",
@@ -129,6 +146,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 	out, err := executeCommand(t, NewRootCommand(opts),
 		"catalog", "import", "seed",
 		"--project", project,
+		"--version", "1.0.1",
 		"--repository", "example/guide",
 		"--commit", commit,
 		"--origin-id", "guide",
@@ -155,6 +173,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 	out, err = executeCommand(t, NewRootCommand(opts),
 		"catalog", "import", "seed",
 		"--project", project,
+		"--version", "1.0.1",
 		"--repository", "example/guide",
 		"--commit", commit,
 		"--origin-id", "guide",
@@ -172,6 +191,71 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 	}
 	if after := snapshotTree(t, project); after != before {
 		t.Fatalf("validation failure changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestCatalogImportRollsBackAWriteWhenTheManifestChanges(t *testing.T) {
+	project := writeAuthoringCatalog(t)
+	origin := t.TempDir()
+	writeAuthoringFile(t, filepath.Join(origin, "LICENSE"), "MIT License\n")
+	manifestPath := filepath.Join(project, "bundle", "packs", "seed", "pack.json")
+	resolver := &mutatingAuthoringResolver{root: origin, mutateAt: 2}
+	resolver.mutate = func() {
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit := strings.Repeat("c", 40)
+	opts := Options{CatalogOriginResolver: resolver}
+
+	out, err := executeCommand(t, NewRootCommand(opts),
+		"catalog", "import", "seed",
+		"--project", project,
+		"--version", "1.0.1",
+		"--repository", "example/late-write",
+		"--commit", commit,
+		"--origin-id", "late-write",
+		"--origin-path", "LICENSE",
+		"--destination", "notices/late/failure",
+		"--relationship", "exact-copy",
+		"--kind", "notice",
+		"--resource-id", "late-write",
+		"--description", "Late write failure fixture",
+		"--license", "MIT",
+		"--attribution", "Copyright (c) Example",
+	)
+	if err == nil || !strings.Contains(err.Error(), "Pack manifest changed during preparation") {
+		t.Fatalf("late write import = error %v, output %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(project, "bundle", "notices")); !os.IsNotExist(err) {
+		t.Fatalf("rollback left imported resource or parent directories: %v", err)
+	}
+	data, err := os.ReadFile(manifestPath)
+	if err != nil || !strings.HasSuffix(string(data), "\n\n") {
+		t.Fatalf("rollback did not preserve concurrent manifest change: %q, %v", data, err)
+	}
+}
+
+func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
+	project := writeAuthoringCatalog(t)
+	before := snapshotTree(t, project)
+	out, err := executeCommand(t, NewRootCommand(Options{}),
+		"catalog", "create", "../../escaped",
+		"--project", project,
+		"--template", "empty",
+		"--version", "0.1.0",
+		"--description", "Must fail",
+		"--surface", "codex",
+	)
+	if err == nil || !strings.Contains(err.Error(), "Pack id must be lowercase kebab-case") {
+		t.Fatalf("path traversal create = error %v, output %s", err, out)
+	}
+	if after := snapshotTree(t, project); after != before {
+		t.Fatalf("rejected creation changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 

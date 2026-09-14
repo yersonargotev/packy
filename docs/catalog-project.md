@@ -44,6 +44,7 @@ convert the upstream repository:
 ```sh
 packy catalog import example-pack \
   --project /path/to/packy-catalog \
+  --version 0.1.1 \
   --repository example/upstream \
   --commit 0123456789abcdef0123456789abcdef01234567 \
   --origin-id upstream \
