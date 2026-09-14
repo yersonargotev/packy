@@ -15,6 +15,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -59,13 +61,21 @@ type ImportRequest struct {
 	Conflicts    []string
 }
 
-// RefreshRequest describes one exact-copy Upstream Refresh.
+// RefreshRequest describes one Upstream Refresh.
 type RefreshRequest struct {
 	ProjectRoot string
 	PackID      string
 	Version     string
 	OriginID    string
 	Commit      string
+	Reconcile   func(AdaptationDiff) (bool, error)
+}
+
+// AdaptationDiff presents the upstream changes that a maintainer must
+// explicitly reconcile with one maintained adaptation.
+type AdaptationDiff struct {
+	Resource string
+	Changes  string
 }
 
 // Result identifies the validated reviewable content left by an operation.
@@ -79,7 +89,7 @@ type Result struct {
 	Packs        int
 }
 
-// RefreshResult identifies one validated exact-copy Upstream Refresh.
+// RefreshResult identifies one validated Upstream Refresh.
 type RefreshResult struct {
 	PackID      string
 	Version     string
@@ -87,6 +97,7 @@ type RefreshResult struct {
 	OldCommit   string
 	Commit      string
 	ExactCopies int
+	Adaptations int
 	Packs       int
 }
 
@@ -239,10 +250,9 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 	}, nil
 }
 
-// RefreshExactCopies verifies the current exact copies against their pinned
-// origin, prepares them from a selected newer commit, validates the complete
-// Catalog Project, and only then applies the prepared bundle.
-func RefreshExactCopies(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
+// RefreshUpstream verifies exact copies and explicitly reconciles maintained
+// adaptations before validating and atomically applying the prepared bundle.
+func RefreshUpstream(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
 	var result RefreshResult
 	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
 		var err error
@@ -299,20 +309,20 @@ func refreshExactCopies(ctx context.Context, request RefreshRequest, resolver ma
 		return RefreshResult{}, fmt.Errorf("selected upstream commit is already pinned for origin %q", request.OriginID)
 	}
 
-	var exactCopies []managedpack.Resource
+	var exactCopies, adaptations []managedpack.Resource
 	for _, resource := range manifest.Resources {
 		if resource.Origin == nil || resource.Origin.ID != request.OriginID {
 			continue
 		}
 		if resource.Origin.Relationship == managedpack.RelationshipAdapted {
-			return RefreshResult{}, fmt.Errorf("origin %q includes adapted resource %q; Upstream Refresh requires explicit reconciliation", request.OriginID, resource.Kind+":"+resource.ID)
+			adaptations = append(adaptations, resource)
 		}
 		if resource.Origin.Relationship == managedpack.RelationshipExactCopy {
 			exactCopies = append(exactCopies, resource)
 		}
 	}
-	if len(exactCopies) == 0 {
-		return RefreshResult{}, fmt.Errorf("origin %q has no exact-copy resources", request.OriginID)
+	if len(exactCopies) == 0 && len(adaptations) == 0 {
+		return RefreshResult{}, fmt.Errorf("origin %q has no resources", request.OriginID)
 	}
 
 	if _, err := managedpack.ValidateCatalogProject(ctx, request.ProjectRoot, "", resolver); err != nil {
@@ -327,6 +337,34 @@ func refreshExactCopies(ctx context.Context, request RefreshRequest, resolver ma
 	}
 	if strings.TrimSpace(newRoot) == "" {
 		return RefreshResult{}, fmt.Errorf("resolve selected upstream commit: empty local root")
+	}
+	oldRoot, err := resolver.Resolve(ctx, oldOrigin)
+	if err != nil {
+		return RefreshResult{}, fmt.Errorf("resolve previously pinned upstream commit: %w", err)
+	}
+	if strings.TrimSpace(oldRoot) == "" {
+		return RefreshResult{}, fmt.Errorf("resolve previously pinned upstream commit: empty local root")
+	}
+
+	for _, resource := range adaptations {
+		identity := resource.Kind + ":" + resource.ID
+		changes, err := adaptationChanges(
+			filepath.Join(oldRoot, filepath.FromSlash(resource.Origin.Path)),
+			filepath.Join(newRoot, filepath.FromSlash(resource.Origin.Path)),
+		)
+		if err != nil {
+			return RefreshResult{}, fmt.Errorf("compare adapted resource %q upstream revisions: %w", identity, err)
+		}
+		if request.Reconcile == nil {
+			return RefreshResult{}, fmt.Errorf("origin %q includes adapted resource %q; Upstream Refresh requires explicit reconciliation", request.OriginID, identity)
+		}
+		accepted, err := request.Reconcile(AdaptationDiff{Resource: identity, Changes: changes})
+		if err != nil {
+			return RefreshResult{}, fmt.Errorf("reconcile adapted resource %q: %w", identity, err)
+		}
+		if !accepted {
+			return RefreshResult{}, fmt.Errorf("adapted resource %q remains unresolved; Upstream Refresh requires explicit reconciliation and was not applied", identity)
+		}
 	}
 
 	for _, resource := range exactCopies {
@@ -353,8 +391,129 @@ func refreshExactCopies(ctx context.Context, request RefreshRequest, resolver ma
 	}
 	return RefreshResult{
 		PackID: manifest.ID, Version: manifest.Version, Repository: newOrigin.Repository,
-		Commit: newOrigin.Commit, OldCommit: oldOrigin.Commit, ExactCopies: len(exactCopies), Packs: len(validation.Packs),
+		Commit: newOrigin.Commit, OldCommit: oldOrigin.Commit, ExactCopies: len(exactCopies), Adaptations: len(adaptations), Packs: len(validation.Packs),
 	}, nil
+}
+
+const maximumAdaptationDiffBytes = 64 * 1024
+
+func adaptationChanges(oldPath, newPath string) (string, error) {
+	oldFiles, err := adaptationFiles(oldPath)
+	if err != nil {
+		return "", fmt.Errorf("read old upstream: %w", err)
+	}
+	newFiles, err := adaptationFiles(newPath)
+	if err != nil {
+		return "", fmt.Errorf("read new upstream: %w", err)
+	}
+	paths := make([]string, 0, len(oldFiles)+len(newFiles))
+	seen := map[string]bool{}
+	for path := range oldFiles {
+		seen[path] = true
+		paths = append(paths, path)
+	}
+	for path := range newFiles {
+		if !seen[path] {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	var report strings.Builder
+	for _, path := range paths {
+		oldData, oldExists := oldFiles[path]
+		newData, newExists := newFiles[path]
+		if oldExists && newExists && bytes.Equal(oldData, newData) {
+			continue
+		}
+		fmt.Fprintf(&report, "--- old/%s\n+++ new/%s\n", path, path)
+		if textBytes(oldData) && textBytes(newData) {
+			writeDiffLines(&report, "-", oldData)
+			writeDiffLines(&report, "+", newData)
+		} else {
+			fmt.Fprintf(&report, "-sha256:%x\n+sha256:%x\n", sha256.Sum256(oldData), sha256.Sum256(newData))
+		}
+		if report.Len() > maximumAdaptationDiffBytes {
+			changes := report.String()
+			limit := maximumAdaptationDiffBytes
+			for !utf8.ValidString(changes[:limit]) {
+				limit--
+			}
+			return changes[:limit] + "\n... upstream diff truncated\n", nil
+		}
+	}
+	if report.Len() == 0 {
+		return "(no upstream changes)\n", nil
+	}
+	return report.String(), nil
+}
+
+func adaptationFiles(root string) (map[string][]byte, error) {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("symlinks are not allowed: %s", root)
+	}
+	files := map[string][]byte{}
+	if info.Mode().IsRegular() {
+		data, err := os.ReadFile(root)
+		if err != nil {
+			return nil, err
+		}
+		files[filepath.Base(root)] = data
+		return files, nil
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("only regular files and directories are supported: %s", root)
+	}
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("only regular files and directories are supported: %s", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files[filepath.ToSlash(relative)] = data
+		return nil
+	})
+	return files, err
+}
+
+func textBytes(data []byte) bool {
+	return utf8.Valid(data) && !bytes.ContainsRune(data, 0)
+}
+
+func writeDiffLines(report *strings.Builder, prefix string, data []byte) {
+	for _, line := range strings.SplitAfter(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		report.WriteString(prefix)
+		for _, char := range strings.TrimSuffix(line, "\n") {
+			if char == '\t' || !unicode.IsControl(char) {
+				report.WriteRune(char)
+				continue
+			}
+			fmt.Fprintf(report, "\\u%04x", char)
+		}
+		report.WriteByte('\n')
+	}
 }
 
 func validateImportRequest(request ImportRequest) error {

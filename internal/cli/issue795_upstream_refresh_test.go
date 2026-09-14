@@ -122,6 +122,11 @@ func TestCatalogUpstreamRefreshRejectsAdaptedResourcesWithoutChanges(t *testing.
 	if err == nil || !strings.Contains(err.Error(), "requires explicit reconciliation") {
 		t.Fatalf("adapted refresh = error %v, output %s", err, out)
 	}
+	for _, want := range []string{"adapted resource skill:seed upstream changes", "-# Old upstream", "+# New upstream"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("unresolved adaptation output missing %q: %s", want, out)
+		}
+	}
 	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
 		t.Fatalf("adapted rejection changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
