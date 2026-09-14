@@ -27,7 +27,7 @@ func TestFacadeShowReturnsCanonicalDescriptiveResourceInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAuthority := "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
+	wantAuthority := "The selected or retained immutable Catalog Snapshot is the Pack content and provenance authority."
 	if report.CatalogIdentity.Limitation != wantAuthority {
 		t.Fatalf("catalog identity authority = %q, want %q", report.CatalogIdentity.Limitation, wantAuthority)
 	}

@@ -11,7 +11,7 @@ func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pac
 
 func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotID string) (Pack, error) {
 	if c.snapshotID != "" && snapshotID == "" {
-		return Pack{}, fmt.Errorf("capability pack %q receipt predates Catalog Snapshots; complete the documented one-time v0.2 reset before using the independent catalog", id)
+		return Pack{}, fmt.Errorf("capability pack %q receipt predates Catalog Snapshots; follow the adoption procedure in docs/catalog-adoption.md before using the independent catalog", id)
 	}
 	if snapshotID != "" && snapshotID != c.snapshotID {
 		if c.resolveSnapshot == nil {
@@ -46,6 +46,22 @@ func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotI
 
 func (c Catalog) ResolveIntentPack(ctx context.Context, id, version string) (Pack, error) {
 	return c.resolveIntentPack(ctx, id, version)
+}
+
+// ResolveIntentPackAt resolves the exact immutable source recorded by an
+// installed receipt, including a retained Catalog Snapshot.
+func (c Catalog) ResolveIntentPackAt(ctx context.Context, id, version, snapshotID string) (Pack, error) {
+	return c.resolveIntentPackAt(ctx, id, version, snapshotID)
+}
+
+// ResolveIntentDetailAt describes the exact immutable source recorded by an
+// installed receipt, including a retained Catalog Snapshot.
+func (c Catalog) ResolveIntentDetailAt(ctx context.Context, id, version, snapshotID string) (CatalogDetail, error) {
+	pack, err := c.resolveIntentPackAt(ctx, id, version, snapshotID)
+	if err != nil {
+		return CatalogDetail{}, err
+	}
+	return catalogDetail(pack), nil
 }
 
 func (c Catalog) validateUpdateRoute(id, _, toVersion string, _ Surface) error {

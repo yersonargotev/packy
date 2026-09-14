@@ -379,6 +379,42 @@ func (f Fixture) WithVersion(version string) Fixture {
 	return result
 }
 
+// WithSurfaces returns an independent fixture restricted to the supplied
+// non-empty surface set, including only bindings and exclusions in that set.
+func (f Fixture) WithSurfaces(surfaces ...Surface) Fixture {
+	if len(surfaces) == 0 {
+		panic("synthetic Pack surfaces must not be empty")
+	}
+	result := f.clone()
+	retained := make(map[Surface]bool, len(surfaces))
+	result.manifest.Surfaces = append([]Surface(nil), surfaces...)
+	sort.Slice(result.manifest.Surfaces, func(i, j int) bool { return result.manifest.Surfaces[i] < result.manifest.Surfaces[j] })
+	for _, surface := range result.manifest.Surfaces {
+		if retained[surface] {
+			panic(fmt.Sprintf("synthetic Pack repeats surface %q", surface))
+		}
+		retained[surface] = true
+	}
+	for index := range result.manifest.Resources {
+		resource := &result.manifest.Resources[index]
+		bindings := resource.Bindings[:0]
+		for _, binding := range resource.Bindings {
+			if retained[binding.Surface] {
+				bindings = append(bindings, binding)
+			}
+		}
+		resource.Bindings = bindings
+		exclusions := resource.SurfaceExclusions[:0]
+		for _, exclusion := range resource.SurfaceExclusions {
+			if retained[exclusion.Surface] {
+				exclusions = append(exclusions, exclusion)
+			}
+		}
+		resource.SurfaceExclusions = exclusions
+	}
+	return result
+}
+
 // WithRetainedRequirements returns an independent fixture whose resource keeps
 // only the supplied requirements from its existing closure. Capability-specific
 // resource references are pruned to the same subset so the portable manifest
@@ -479,7 +515,7 @@ func (f Fixture) WriteBundle(root string) error {
 	return writeFile(root, filepath.ToSlash(filepath.Join("packs", f.manifest.ID, "pack.json")), data)
 }
 
-// WriteProject materializes a Managed Pack Project and its independent origin
+// WriteProject materializes one Catalog Project Pack and its independent origin
 // trees. The returned map implements the data needed by a managedpack origin
 // resolver without placing undeclared provenance bytes in the project closure.
 func (f Fixture) WriteProject(projectRoot, originsRoot string) (map[string]string, error) {

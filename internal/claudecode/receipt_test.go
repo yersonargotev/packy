@@ -114,7 +114,7 @@ func TestStatusObservationDoesNotResolveUnrelatedHistoricalMutationOwnership(t *
 	if err := os.WriteFile(layout.SettingsFile, settings, 0600); err != nil {
 		t.Fatal(err)
 	}
-	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"older": {ID: "older", Version: "2.0.0"}, "other": current}, layout, t.TempDir())
+	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, ownershipPackResolver(map[string]capabilitypack.Pack{"older": {ID: "older", Version: "2.0.0"}, "other": current}), layout, t.TempDir())
 	adapter := NewSurfaceAdapter("", layout, "", "", nil, provider)
 	observation, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ObservationOnly: true, Desired: current})
 	if err != nil {

@@ -133,6 +133,7 @@ type HistoricalEvidenceStatus struct {
 }
 
 type StatusEntry struct {
+	CatalogCurrent                 bool
 	HistoricalEvidence             HistoricalEvidenceStatus
 	Pack                           Pack
 	Surface                        Surface
@@ -275,15 +276,24 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 	})
 
 	for _, target := range targets {
-		pack, err := f.catalog.catalogMetadata(target.intent.PackID)
-		if err != nil {
-			report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
-			continue
+		pack, current := f.catalog.catalogMetadataIfPresent(target.intent.PackID)
+		var err error
+		if !current {
+			pack, err = f.catalog.resolveIntentPackAt(ctx, target.intent.PackID, target.intent.Version, target.intent.CatalogSnapshot)
+			if err != nil {
+				report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
+				continue
+			}
 		}
 		entry, err := f.statusEntryWithState(ctx, pack, target.surface, activeOnlyStatusState(target.state))
 		if err != nil {
 			report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
 			continue
+		}
+		entry.CatalogCurrent = current
+		if !current {
+			entry.UpdateAvailable = false
+			entry.UpdateActionAvailable = false
 		}
 		report.Entries = append(report.Entries, entry)
 	}
@@ -340,46 +350,105 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 		}
 	}
 	packs := f.catalog.List()
+	currentPacks := make(map[string]bool, len(packs))
+	knownPacks := make(map[string]bool, len(packs))
+	for _, pack := range packs {
+		currentPacks[pack.ID] = true
+		knownPacks[pack.ID] = true
+	}
+	states := map[Surface]ActivationState{}
+	loadState := func(surface Surface) (ActivationState, error) {
+		if state, ok := states[surface]; ok {
+			return state, nil
+		}
+		if f.activation == nil || f.activation.store == nil {
+			return ActivationState{}, fmt.Errorf("surface inspection is not configured")
+		}
+		state, err := f.activation.store.LoadSnapshot(ctx, surface)
+		if err == nil {
+			states[surface] = state
+		}
+		return state, err
+	}
 	if request.PackID != "" {
 		if request.Surface == "" {
 			return StatusReport{}, fmt.Errorf("--surface is required when a pack is specified")
 		}
-		pack, err := f.catalog.catalogMetadata(request.PackID)
-		if err != nil {
-			return StatusReport{}, err
+		pack, current := f.catalog.catalogMetadataIfPresent(request.PackID)
+		if !current {
+			state, err := loadState(request.Surface)
+			if err != nil {
+				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", request.PackID, request.Surface, err)
+			}
+			intent, installed := intentForPack(state, request.PackID, request.Surface)
+			if !installed || !intent.Active {
+				return StatusReport{}, fmt.Errorf("unknown capability pack %q in the current catalog; run `packy list` to see available packs", request.PackID)
+			}
+			pack, err = f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogSnapshot)
+			if err != nil {
+				return StatusReport{}, err
+			}
+			currentPacks[pack.ID] = false
+			knownPacks[pack.ID] = true
 		}
 		packs = []Pack{pack}
 	} else if request.Surface != "" {
 		return StatusReport{}, fmt.Errorf("a pack is required when --surface is specified")
+	} else {
+		for _, surface := range statusSurfaces() {
+			state, err := loadState(surface)
+			if err != nil {
+				return StatusReport{}, fmt.Errorf("inspect installed packs on %s: %w", surface, err)
+			}
+			for _, intent := range activeIntents(state) {
+				if !intent.Active || knownPacks[intent.PackID] {
+					continue
+				}
+				pack, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+				if err != nil {
+					return StatusReport{}, fmt.Errorf("inspect withdrawn pack %q on %s: %w", intent.PackID, surface, err)
+				}
+				packs = append(packs, pack)
+				currentPacks[intent.PackID] = false
+				knownPacks[intent.PackID] = true
+			}
+		}
 	}
 	var report StatusReport
-	states := map[Surface]ActivationState{}
 	for _, pack := range packs {
 		for _, surface := range statusSurfaces() {
 			if request.Surface != "" && request.Surface != surface {
 				continue
 			}
-			if f.activation == nil || f.activation.store == nil {
-				return StatusReport{}, fmt.Errorf("surface inspection is not configured")
+			state, err := loadState(surface)
+			if err != nil {
+				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
 			}
-			state, loaded := states[surface]
-			if !loaded {
-				var err error
-				state, err = f.activation.store.LoadSnapshot(ctx, surface)
-				if err != nil {
-					return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
-				}
-				states[surface] = state
-			}
-			if !slices.Contains(pack.Surfaces, surface) {
+			inspectionPack := pack
+			if !currentPacks[pack.ID] {
 				intent, installed := intentForPack(state, pack.ID, surface)
 				if !installed || !intent.Active {
 					continue
 				}
+				inspectionPack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+				if err != nil {
+					return StatusReport{}, fmt.Errorf("inspect withdrawn pack %q on %s: %w", pack.ID, surface, err)
+				}
 			}
-			entry, err := f.statusEntryWithStateAt(ctx, pack, surface, state, request.PackyHome)
+			if !slices.Contains(inspectionPack.Surfaces, surface) {
+				intent, installed := intentForPack(state, inspectionPack.ID, surface)
+				if !installed || !intent.Active {
+					continue
+				}
+			}
+			entry, err := f.statusEntryWithStateAt(ctx, inspectionPack, surface, state, request.PackyHome)
 			if err != nil {
-				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
+				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", inspectionPack.ID, surface, err)
+			}
+			entry.CatalogCurrent = currentPacks[pack.ID]
+			if !entry.CatalogCurrent {
+				entry.UpdateAvailable = false
+				entry.UpdateActionAvailable = false
 			}
 			report.Entries = append(report.Entries, entry)
 		}
@@ -443,15 +512,25 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active && intent.Version != pack.Version {
-			return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
-		}
-		if intent.Active && !slices.Contains(pack.Surfaces, surface) {
-			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, pack.ID, pack.Version)
-		}
-		if intent.Active || ownedResidual {
 			evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
-		} else {
-			evidencePack, err = f.catalog.Show(ctx, pack.ID)
+			if err != nil {
+				return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
+			}
+			entry.Contract = LifecycleContractFor(evidencePack, surface, intent.Aliases)
+		}
+		contractPack := pack
+		if evidencePack.ID != "" {
+			contractPack = evidencePack
+		}
+		if intent.Active && !slices.Contains(contractPack.Surfaces, surface) {
+			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, contractPack.ID, contractPack.Version)
+		}
+		if evidencePack.ID == "" {
+			if intent.Active || ownedResidual {
+				evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
+			} else {
+				evidencePack, err = f.catalog.Show(ctx, pack.ID)
+			}
 		}
 		if err != nil {
 			return StatusEntry{}, err
@@ -511,7 +590,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	}
 	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
-	entry.UpdateActionAvailable = entry.UpdateAvailable || entry.Intent.Active && entry.Projections.requiresReconciliation()
+	entry.UpdateActionAvailable = slices.Contains(entry.Pack.Surfaces, surface) && (entry.UpdateAvailable || entry.Intent.Active && entry.Projections.requiresReconciliation())
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	for _, detail := range entry.ProjectionDetails {
 		entry.Evidence = append(entry.Evidence, fmt.Sprintf("%s: %s observed=%s desired=%s target=%s", detail.ID, detail.Health, detail.ObservedFingerprint, detail.DesiredFingerprint, detail.Target))

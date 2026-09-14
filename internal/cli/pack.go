@@ -262,7 +262,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock), capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.tools, nil, nil))
 			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, Selection: selection, Aliases: aliases}, adapter)
+			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection, Aliases: aliases}, adapter)
 			if err != nil {
 				return err
 			}
@@ -650,7 +650,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 	}
 	facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock))
 	adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: projectRoot, Force: force}, adapter)
+	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Force: force}, adapter)
 	if err != nil {
 		return err
 	}
@@ -1089,14 +1089,7 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	store := capabilitypack.NewFileActivationStore(composition.state.File())
 	claudeLayout := composition.claude
 	claudeExecutable, _ := opts.ClaudeLookPath("claude")
-	claudePacks := make(map[string]capabilitypack.Pack)
-	for _, pack := range composition.catalog.List() {
-		if slices.Contains(pack.Surfaces, capabilitypack.SurfaceClaude) {
-			claudePacks[pack.ID] = pack
-			claudePacks[pack.ID+"@"+pack.Version] = pack
-		}
-	}
-	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudePacks, claudeLayout, composition.bundleRoot)
+	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudeOwnershipResolver(composition.catalog), claudeLayout, composition.bundleRoot)
 	var claudeAdapter *claudecode.SurfaceAdapter
 	if opts.ClaudeAuthorization != nil {
 		claudeAdapter = claudecode.NewSurfaceAdapterWithAuthorization(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership, opts.ClaudeAuthorization)
@@ -1123,6 +1116,29 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 			runnerExternalExecutor{runner: opts.Runner},
 		),
 	), nil
+}
+
+func claudeOwnershipResolver(catalog capabilitypack.Catalog) func(context.Context, string, string, string) (capabilitypack.Pack, error) {
+	current := make(map[string]capabilitypack.Pack)
+	currentByID := make(map[string]capabilitypack.Pack)
+	currentSnapshots := make(map[string]bool)
+	for _, pack := range catalog.List() {
+		current[pack.ID+"\x00"+pack.Version+"\x00"+pack.CatalogSnapshot] = pack
+		currentByID[pack.ID] = pack
+		currentSnapshots[pack.CatalogSnapshot] = true
+	}
+	return func(ctx context.Context, id, version, snapshotID string) (capabilitypack.Pack, error) {
+		if pack, ok := current[id+"\x00"+version+"\x00"+snapshotID]; ok {
+			return pack, nil
+		}
+		if pack, ok := currentByID[id]; ok && (snapshotID == "" || pack.CatalogSnapshot == snapshotID) {
+			return pack, nil
+		}
+		if snapshotID == "" || currentSnapshots[snapshotID] {
+			return capabilitypack.Pack{}, fmt.Errorf("capability pack %q has no catalog-current ownership contract", id)
+		}
+		return catalog.ResolveIntentPackAt(ctx, id, version, snapshotID)
+	}
 }
 
 func withControlledCheckFacts(ctx context.Context, opts Options, surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter) capabilitypack.SurfaceAdapter {

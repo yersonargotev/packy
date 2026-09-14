@@ -16,11 +16,7 @@ const canonicalCatalogAuthority = "Catalog Project is the canonical authoring so
 
 func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 	root := repositoryRoot(t)
-	documents := map[string]string{
-		"README.md":                "(docs/packs/index.md)",
-		"docs/capability-packs.md": "(packs/index.md)",
-	}
-	for path, catalogLink := range documents {
+	for _, path := range []string{"README.md", "docs/capability-packs.md"} {
 		text := readFile(t, filepath.Join(root, filepath.FromSlash(path)))
 		if !strings.Contains(text, canonicalCatalogAuthority) {
 			t.Errorf("%s does not identify the Catalog Project as canonical authoring authority", path)
@@ -34,8 +30,8 @@ func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 		if staleCatalogClaim.MatchString(text) {
 			t.Errorf("%s retains stale only-Matty-and-Engram catalog claim", path)
 		}
-		if strings.Count(text, catalogLink) != 1 {
-			t.Errorf("%s must contain one generated Pack catalog link %q", path, catalogLink)
+		if strings.Contains(text, "docs/packs/") || strings.Contains(text, "packs/index.md") {
+			t.Errorf("%s links to removed generated Pack documentation", path)
 		}
 	}
 }

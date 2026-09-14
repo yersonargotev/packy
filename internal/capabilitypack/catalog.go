@@ -66,7 +66,13 @@ type Resource struct {
 	License           string
 	Attribution       string
 	RuntimeModes      []RuntimeMode
+	catalogRoot       string
 }
+
+// CatalogRoot identifies the immutable Catalog Snapshot root that owns this
+// resource. Runtime adapters use it when an installed Pack is no longer in the
+// selected snapshot; synthetic and authoring Packs may leave it empty.
+func (r Resource) CatalogRoot() string { return r.catalogRoot }
 
 type RuntimeModeRole string
 type RuntimeRequirementKind string
@@ -650,12 +656,19 @@ func (c Catalog) showUnlocked(id string) (Pack, error) {
 }
 
 func (c Catalog) catalogMetadata(id string) (Pack, error) {
-	for _, pack := range c.packs {
-		if pack.ID == id {
-			return clonePack(pack), nil
-		}
+	if pack, ok := c.catalogMetadataIfPresent(id); ok {
+		return pack, nil
 	}
 	return Pack{}, fmt.Errorf("unknown capability pack %q; run `packy list` to see available packs", id)
+}
+
+func (c Catalog) catalogMetadataIfPresent(id string) (Pack, bool) {
+	for _, pack := range c.packs {
+		if pack.ID == id {
+			return clonePack(pack), true
+		}
+	}
+	return Pack{}, false
 }
 
 func clonePack(pack Pack) Pack {

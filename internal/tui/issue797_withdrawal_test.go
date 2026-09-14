@@ -1,0 +1,213 @@
+package tui_test
+
+import (
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/yersonargotev/packy/internal/tui"
+)
+
+func TestIssue797WithdrawnPackOffersOnlyDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "withdrawn-runtime", Version: "1.0.0", Description: "Retained installed Pack", CatalogState: "retained",
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Active: true, InstalledVersion: "1.0.0"}},
+		}}}},
+		preview: tui.Preview{ID: "withdrawn-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-runtime", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Choose lifecycle action") || !strings.Contains(view, "Deactivate") || strings.Contains(view, "Configure") || strings.Contains(view, "Update") || strings.Contains(view, "Activate") {
+		t.Fatalf("withdrawn Pack actions are not deactivation-only:\n%s", view)
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "codex" {
+		t.Fatalf("withdrawn Pack preview request = %#v", backend.previewRequests)
+	}
+}
+
+func TestIssue797WithdrawnProjectPackOffersOnlyPersonalDeactivationAndUninstall(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "withdrawn-runtime", Version: "1.0.0", Description: "Retained project Pack", CatalogState: "retained",
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Installation: "installed", Runtime: "active", Active: true, InstalledVersion: "1.0.0"}},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Choose project lifecycle action", "Deactivate for me", "Uninstall"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("withdrawn project Pack action menu missing %q:\n%s", want, view)
+		}
+	}
+	for _, forbidden := range []string{"Configure project resources", "Update", "Activate for me", "Install"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("withdrawn project Pack action menu contains %q:\n%s", forbidden, view)
+		}
+	}
+}
+
+func TestIssue797RemovedSurfaceOfCurrentPackOffersOnlyDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"opencode"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
+				{Name: "opencode", Supported: true},
+			},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Choose lifecycle action") || !strings.Contains(view, "Deactivate") {
+		t.Fatalf("removed Claude surface did not offer deactivation:\n%s", view)
+	}
+	for _, forbidden := range []string{"Configure", "Update", "Activate"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("removed Claude surface offered %q:\n%s", forbidden, view)
+		}
+	}
+}
+
+func TestIssue797RemovedSurfaceAfterCurrentSurfaceOffersOnlyDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"claude"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: true},
+				{Name: "opencode", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
+			},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: opencode") || !strings.Contains(view, "Deactivate") {
+		t.Fatalf("removed active surface was not preferred for deactivation:\n%s", view)
+	}
+	for _, forbidden := range []string{"Configure", "Update", "Activate"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("removed active surface offered %q:\n%s", forbidden, view)
+		}
+	}
+}
+
+func TestIssue797InactiveRemovedProjectSurfaceUninstallsDirectly(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"opencode"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: false, Installation: "installed", Runtime: "pending", InstalledVersion: "1.0.0"},
+				{Name: "opencode", Supported: true, Installation: "absent"},
+			},
+		}}}},
+		preview: tui.Preview{ID: "removed-uninstall", Digest: "digest", Operation: "uninstall", Disposition: "previewable", PackID: "mixed-surface", PackVersion: "1.0.0", Surface: "claude", Scope: "project"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "uninstall" || backend.previewRequests[0].Surface != "claude" {
+		t.Fatalf("inactive removed project surface preview request = %#v", backend.previewRequests)
+	}
+}
+
+func TestIssue797OrphanedWithdrawnProjectSurfaceDeactivatesDirectly(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "withdrawn-orphan", Version: "1.0.0", CatalogState: "retained",
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Installation: "absent", Runtime: "orphaned", InstalledVersion: "1.0.0"}},
+		}}}},
+		preview: tui.Preview{ID: "orphan-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-orphan", PackVersion: "1.0.0", Surface: "codex", Scope: "project"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Choose project lifecycle action") || !strings.Contains(view, "Deactivate for me") {
+		t.Fatalf("orphaned withdrawn project action is not deactivation-only:\n%s", view)
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "codex" {
+		t.Fatalf("orphaned withdrawn project surface preview request = %#v", backend.previewRequests)
+	}
+}
+
+func TestIssue797OrphanedCurrentProjectSurfaceOffersDeactivationNotInstall(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "current-orphan", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"codex"},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "absent", Runtime: "orphaned", InstalledVersion: "2.0.0"}},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Deactivate for me") || strings.Contains(view, "Install") {
+		t.Fatalf("current orphan did not offer deactivation-only:\n%s", view)
+	}
+}
+
+func TestIssue797CurrentPackPrioritizesOrphanAndBlocksOtherSurfaceInstall(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "current-mixed-orphan", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"claude", "opencode"},
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "claude", Supported: true, Installation: "absent"},
+				{Name: "opencode", Supported: true, Installation: "absent", Runtime: "orphaned", InstalledVersion: "2.0.0"},
+			},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: opencode") || !strings.Contains(view, "Deactivate for me") || strings.Contains(view, "Install") {
+		t.Fatalf("current Pack did not prioritize orphaned surface:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: claude") || strings.Contains(view, "Install") {
+		t.Fatalf("current Pack allowed installation while orphan remains:\n%s", view)
+	}
+}
+
+func TestIssue797MultipleOrphanedWithdrawnSurfacesRemainSelectable(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "withdrawn-orphans", Version: "1.0.0", CatalogState: "retained",
+			SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "codex", Supported: false, Installation: "absent", Runtime: "blocked", InstalledVersion: "1.0.0"},
+				{Name: "opencode", Supported: false, Installation: "absent", Runtime: "orphaned", InstalledVersion: "1.0.0"},
+			},
+		}}}},
+		preview: tui.Preview{ID: "orphan-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-orphans", PackVersion: "1.0.0", Surface: "opencode", Scope: "project"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: opencode") || !strings.Contains(view, "Deactivate for me") {
+		t.Fatalf("second orphaned surface is not selectable:\n%s", view)
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "opencode" {
+		t.Fatalf("second orphaned surface preview request = %#v", backend.previewRequests)
+	}
+}

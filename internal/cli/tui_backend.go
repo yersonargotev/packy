@@ -87,22 +87,43 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 			RefreshAvailable: true,
 		}
 	}
-	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
-	facade, err := activationFacade(ctx, b.opts, b.resolver)
-	if err != nil {
+	currentDetails := append([]capabilitypack.CatalogDetail(nil), details...)
+	currentPackIDs := make(map[string]bool, len(details))
+	for _, detail := range details {
+		currentPackIDs[detail.Pack.ID] = true
+	}
+	dashboard.Global.Packs = catalogPacksForTUI(details, nil, nil)
+	lifecycleFacade, lifecycleErr := activationFacade(ctx, b.opts, b.resolver)
+	if lifecycleErr != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
-			Cause:           fmt.Sprintf("compose global Pack status: %v", err),
+			Cause:           fmt.Sprintf("compose global Pack status: %v", lifecycleErr),
 			AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
 		})
 	} else {
-		globalStatus, statusErr := facade.Status(ctx, capabilitypack.StatusRequest{})
+		globalStatus, statusErr := lifecycleFacade.Status(ctx, capabilitypack.StatusRequest{})
 		if statusErr != nil {
 			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 				Cause:           fmt.Sprintf("inspect global Pack status: %v", statusErr),
 				AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
 			})
 		} else {
-			dashboard.Global.Packs = catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))
+			statuses := globalStatusesForTUI(globalStatus)
+			withdrawn := make(map[string]bool)
+			for packID := range statuses {
+				if currentPackIDs[packID] {
+					continue
+				}
+				shown, showErr := lifecycleFacade.Show(ctx, packID)
+				if showErr != nil {
+					dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+						Cause: fmt.Sprintf("inspect retained Pack %s: %v", packID, showErr), AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
+					})
+					continue
+				}
+				details = append(details, shown.Detail)
+				withdrawn[packID] = true
+			}
+			dashboard.Global.Packs = catalogPacksForTUI(details, statuses, withdrawn)
 		}
 	}
 	currentDirectory, err := snapshot.CurrentDirectory()
@@ -132,7 +153,11 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		Adapters:    projectStatusAdapters(ctx, b.opts, snapshot),
 		Resolver:    projectExecutableResolver(b.opts, snapshot),
 	}
-	status, err := projectStatusFacade(ctx, b.opts, snapshot).InspectProjectStatus(ctx, request)
+	statusFacade := projectStatusFacade(ctx, b.opts, snapshot)
+	if lifecycleErr == nil {
+		statusFacade = lifecycleFacade
+	}
+	status, err := statusFacade.InspectProjectStatus(ctx, request)
 	if err != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 			Cause:           fmt.Sprintf("inspect current project: %v", err),
@@ -140,8 +165,41 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		})
 		return dashboard, nil
 	}
-	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(details, projectStatusesForTUI(status))}
+	projectDetails := append([]capabilitypack.CatalogDetail(nil), currentDetails...)
+	projectWithdrawn := make(map[string]bool)
+	installation, installationErr := capabilitypack.LoadProjectInstallation(projectRoot)
+	for _, packStatus := range status.Packs {
+		packID := packStatus.Pack.ID
+		if currentPackIDs[packID] || projectWithdrawn[packID] {
+			continue
+		}
+		snapshotID := packStatus.Pack.CatalogSnapshot
+		if installationErr == nil {
+			if installedSnapshot := projectReceiptSnapshot(installation.Lock, packID, packStatus.Surface); installedSnapshot != "" {
+				snapshotID = installedSnapshot
+			}
+		}
+		detail, detailErr := catalog.ResolveIntentDetailAt(ctx, packID, packStatus.Pack.Version, snapshotID)
+		if detailErr != nil {
+			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+				Cause: fmt.Sprintf("inspect retained project Pack %s: %v", packID, detailErr), AffectedActions: []string{"Current-project status", "Project Pack lifecycle actions"},
+			})
+			continue
+		}
+		projectDetails = append(projectDetails, detail)
+		projectWithdrawn[packID] = true
+	}
+	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(projectDetails, projectStatusesForTUI(status), projectWithdrawn)}
 	return dashboard, nil
+}
+
+func projectReceiptSnapshot(lock capabilitypack.ProjectLockProposal, packID string, surface capabilitypack.Surface) string {
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.ID == packID && receipt.Surface == surface {
+			return receipt.Pack.CatalogSnapshot
+		}
+	}
+	return ""
 }
 
 func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) error {
@@ -196,7 +254,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			}
 			adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			preview, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{
-				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, Selection: selection,
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection,
 			}, adapter)
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
@@ -212,7 +270,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 				selection = &selected
 			}
 			adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, Selection: selection}, adapter)
+			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
 			}
@@ -382,7 +440,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			return tui.ApplyResult{Stage: "revalidation"}, selectionErr
 		}
 		adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-		fresh, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, Selection: selection}, adapter)
+		fresh, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
 		}
@@ -428,7 +486,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			selection = &selected
 		}
 		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot, Selection: selection}, adapter)
+		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
 		}
@@ -933,18 +991,22 @@ func healthForTUI(report setuphealth.Report) tui.Health {
 	return health
 }
 
-func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus) []tui.Pack {
+func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus, withdrawn map[string]bool) []tui.Pack {
 	result := make([]tui.Pack, 0, len(details))
 	for _, detail := range details {
 		pack := detail.Pack
 		view := tui.Pack{
 			ID: pack.ID, Version: pack.Version, Description: pack.Description,
+			CatalogState: "current",
 			Requirements: append([]string(nil), pack.Requires.Tools...),
 			Resources:    resourcesForTUI(detail),
 			Exclusions:   exclusionsForTUI(pack),
 		}
+		if withdrawn[pack.ID] {
+			view.CatalogState = "retained"
+		}
 		for _, surface := range capabilitypack.SupportedSurfaces() {
-			supported := slices.Contains(pack.Surfaces, surface)
+			supported := !withdrawn[pack.ID] && slices.Contains(pack.Surfaces, surface)
 			status := tui.SurfaceStatus{Name: string(surface), Supported: supported}
 			if supported {
 				status.Configured, status.Authorized, status.Usable = "no", "no", "no"

@@ -116,7 +116,7 @@ func TestFacadeControlledCheckPreviewNormalizesInstructionsForGlobalAndProject(t
 						request.Adapter = adapter
 						request.ProjectRoot = project
 						facade = NewFacade(Catalog{packs: []Pack{pack}})
-						install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+						install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: home, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
 						if err != nil {
 							t.Fatal(err)
 						}

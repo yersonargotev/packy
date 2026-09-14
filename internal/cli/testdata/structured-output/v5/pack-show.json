@@ -9,7 +9,7 @@
     "pack_id": "engram",
     "version": "1.0.1",
     "schema_version": 1,
-    "limitation": "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
+    "limitation": "The selected or retained immutable Catalog Snapshot is the Pack content and provenance authority."
   },
   "surfaces": ["claude", "codex", "opencode"],
   "requires": { "tools": ["engram"] },

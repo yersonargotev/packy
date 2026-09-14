@@ -122,9 +122,6 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Catalog Project", "Declared Pack Closure", "whole-catalog validation",
 		"exact-copy", "executing catalog content",
 	})
-	requireDocumentationText(t, root, "docs/managed-pack-projects.md", []string{
-		"superseded", "ADR 0039", "Current Pack content", "historical guide",
-	})
 	requireDocumentationText(t, root, "README.md", []string{
 		"Catalog Project", "canonical authoring source", "Whole-catalog", "independent Pack version",
 	})
@@ -152,6 +149,51 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"packy.json", "packy.lock.json", "PACKY-NOTICES.md", "brew install yersonargotev/tap/packy",
 		"packy init", "packy install", "no automatic", "migration command",
 	})
+}
+
+func TestObsoleteManagedPackPromotionSurfaceIsRemoved(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, path := range []string{
+		".github/workflows/managed-pack-validation.yml",
+		"docs/managed-pack-projects.md",
+		"internal/managedpack/admission.go",
+		"internal/managedpack/installed_integrity.go",
+		"internal/managedpack/integrity.go",
+		"internal/managedpack/preflight.go",
+		"internal/managedpack/registry.go",
+		"schemas/managed-pack/v1/admission-record.schema.json",
+		"schemas/managed-pack/v1/registry.schema.json",
+		"scripts/validate-pack-content.sh",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); !os.IsNotExist(err) {
+			t.Errorf("obsolete Managed Pack promotion path remains: %s", path)
+		}
+	}
+	for _, path := range []string{
+		"docs/packs",
+		"internal/managedpackpromotion",
+		"internal/tools/managedpackvalidate",
+		"internal/tools/packcontentvalidate",
+		"internal/tools/packdocs",
+		"internal/tools/promotepack",
+		"managed-packs",
+	} {
+		absolute := filepath.Join(root, filepath.FromSlash(path))
+		if err := filepath.WalkDir(absolute, func(entryPath string, entry os.DirEntry, err error) error {
+			if os.IsNotExist(err) {
+				return filepath.SkipDir
+			}
+			if err != nil {
+				return err
+			}
+			if !entry.IsDir() {
+				t.Errorf("obsolete Managed Pack promotion artifact remains: %s", relativePath(root, entryPath))
+			}
+			return nil
+		}); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestCurrentDocumentationLocalLinksResolve(t *testing.T) {

@@ -121,6 +121,7 @@ type projectActivationState struct {
 	SchemaVersion         int     `json:"schema_version"`
 	PackID                string  `json:"pack_id"`
 	Version               string  `json:"version"`
+	CatalogSnapshot       string  `json:"catalog_snapshot,omitempty"`
 	Surface               Surface `json:"surface"`
 	ProjectRootDigest     string  `json:"project_root_digest"`
 	SensitiveLockIdentity string  `json:"sensitive_lock_identity"`
@@ -180,6 +181,14 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if !installed || !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return report, fmt.Errorf("capability pack %q is not installed for CLI surface %q", request.PackID, request.Surface)
 	}
+	orphanBlockers, err := projectOrphanedActivationBlockers(request.PackyHome, request.ProjectRoot, pack.ID, installation, true)
+	if err != nil {
+		return report, err
+	}
+	if len(orphanBlockers) > 0 {
+		return report, errors.New(orphanBlockers[0].Detail + "; " + orphanBlockers[0].Remediation)
+	}
+	pack.CatalogSnapshot = projectReceiptCatalogSnapshot(installation.Lock, pack.ID, request.Surface)
 	var resolver ExecutableResolver
 	if f.activation != nil {
 		resolver = f.activation.resolver
@@ -301,7 +310,7 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	if err != nil {
 		return ProjectActivationApplyResult{}, err
 	}
-	state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: preview.Pack.ID, Version: preview.Pack.Version, Surface: preview.Surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: preview.SensitiveLockIdentity}
+	state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: preview.Pack.ID, Version: preview.Pack.Version, CatalogSnapshot: preview.Pack.CatalogSnapshot, Surface: preview.Surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: preview.SensitiveLockIdentity}
 	receipts := make([]projectActivationReceipt, 0, len(preview.Categories))
 	for _, category := range preview.Categories {
 		receipts = append(receipts, projectActivationReceipt{Category: category.Kind, Digest: preview.Digest, Details: append([]ProjectSensitiveDisclosure(nil), category.Details...)})
@@ -520,9 +529,13 @@ func projectProjectionOwnedBySurface(projection ProjectProjectionPlan, surface S
 }
 
 func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
+	catalogSnapshot := preview.Pack.CatalogSnapshot
 	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request, preview.actions = "", "", "", "", ProjectActivationRequest{}, nil
 	preview.ExpectedReadiness, preview.Conditions = ReadinessStatus{}, nil
-	data, _ := json.Marshal(preview)
+	data, _ := json.Marshal(struct {
+		Preview         JSONProjectActivationPreview `json:"preview"`
+		CatalogSnapshot string                       `json:"catalog_snapshot,omitempty"`
+	}{Preview: preview, CatalogSnapshot: catalogSnapshot})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

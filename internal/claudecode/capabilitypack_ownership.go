@@ -13,13 +13,13 @@ import (
 // into Claude host identities. The CLI only wires its immutable catalog view.
 type CapabilityPackOwnershipProvider struct {
 	store      capabilitypack.ActivationStore
-	packs      map[string]capabilitypack.Pack
+	resolve    func(context.Context, string, string, string) (capabilitypack.Pack, error)
 	layout     CanonicalLayout
 	bundleRoot string
 }
 
-func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, packs map[string]capabilitypack.Pack, layout CanonicalLayout, bundleRoot string) CapabilityPackOwnershipProvider {
-	return CapabilityPackOwnershipProvider{store: store, packs: packs, layout: layout, bundleRoot: bundleRoot}
+func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, resolve func(context.Context, string, string, string) (capabilitypack.Pack, error), layout CanonicalLayout, bundleRoot string) CapabilityPackOwnershipProvider {
+	return CapabilityPackOwnershipProvider{store: store, resolve: resolve, layout: layout, bundleRoot: bundleRoot}
 }
 
 func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (OwnershipSnapshot, error) {
@@ -49,11 +49,11 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 	records := []OwnershipRecord{}
 	recorded := map[string]bool{}
 	for _, intent := range intents {
-		pack, ok := o.packs[intent.PackID+"@"+intent.Version]
-		if !ok {
-			pack, ok = o.packs[intent.PackID]
+		pack, err := o.resolve(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+		if err != nil {
+			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract: %w", intent.PackID, intent.Version, err)
 		}
-		if !ok || pack.Version != intent.Version {
+		if pack.Version != intent.Version {
 			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract", intent.PackID, intent.Version)
 		}
 		for _, portableResource := range pack.Resources {
@@ -140,7 +140,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				record.Command, record.Args, record.EnvironmentKeys, record.EnvironmentFingerprint = identity.Command, identity.Args, identity.EnvironmentKeys, identity.EnvironmentFingerprint
 			} else {
 				record.Kind, record.Target = string(ActionSkillLink), filepath.Join(o.layout.SkillsDir, name)
-				source := filepath.Join(o.bundleRoot, filepath.FromSlash(resource.Source))
+				source := filepath.Join(catalogRoot(resource, o.bundleRoot), filepath.FromSlash(resource.Source))
 				expectedSource, err := filepath.EvalSymlinks(source)
 				if err != nil {
 					return OwnershipSnapshot{}, fmt.Errorf("resolve Claude skill source %s: %w", resource.ID, err)

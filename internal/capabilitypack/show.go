@@ -3,14 +3,15 @@ package capabilitypack
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
 
-const packProvenanceLimitation = "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
+const packCatalogAuthority = "The selected or retained immutable Catalog Snapshot is the Pack content and provenance authority."
 
-// PackCatalogIdentity is the stable runtime identity whose immutable release
-// provenance is sealed by Packy's external Pack Admission Record.
+// PackCatalogIdentity is the stable runtime identity sealed by the immutable
+// selected or retained Catalog Snapshot.
 type PackCatalogIdentity struct {
 	PackID        string `json:"pack_id"`
 	Version       string `json:"version"`
@@ -31,9 +32,10 @@ type ShowIntent struct {
 // ShowSurfaceReport contains the deterministic portable contract and durable
 // intent facts for one supported surface.
 type ShowSurfaceReport struct {
-	Surface  Surface
-	Contract LifecycleContract
-	Intent   ShowIntent
+	Surface         Surface
+	CatalogIdentity PackCatalogIdentity
+	Contract        LifecycleContract
+	Intent          ShowIntent
 }
 
 // ResourceInventoryRole describes how a resource contributes to a Pack,
@@ -58,6 +60,7 @@ type DescriptiveResource struct {
 
 // ShowReport is the detached domain result used by pack show renderers.
 type ShowReport struct {
+	CatalogState          string
 	Detail                CatalogDetail
 	CatalogIdentity       PackCatalogIdentity
 	ResourceCounts        ResourceCounts
@@ -105,11 +108,11 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	for _, surface := range report.Surfaces {
 		intent := surface.Intent
 		switch {
-		case intent.Present && intent.Active && intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable:
+		case intent.Present && intent.Active && intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable && slices.Contains(pack.Surfaces, surface.Surface):
 			changes = append(changes, fmt.Sprintf("update %s from %s to %s", surface.Surface, intent.Version, pack.Version))
 		case intent.Present && intent.Active:
 			changes = append(changes, fmt.Sprintf("keep %s at %s", surface.Surface, intent.Version))
-		case intent.Present && report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available:
+		case intent.Present && report.LifecycleAvailability.FreshActivationAvailable && slices.Contains(pack.Surfaces, surface.Surface) && surface.Contract.SelectionValidity.All.Available:
 			changes = append(changes, fmt.Sprintf("activate inactive %s intent at %s", surface.Surface, intent.Version))
 		case intent.Present:
 			changes = append(changes, fmt.Sprintf("no activation is available for inactive %s intent", surface.Surface))
@@ -118,7 +121,7 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	if len(changes) == 0 {
 		available := make([]Surface, 0, len(report.Surfaces))
 		for _, surface := range report.Surfaces {
-			if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
+			if report.LifecycleAvailability.FreshActivationAvailable && slices.Contains(pack.Surfaces, surface.Surface) && surface.Contract.SelectionValidity.All.Available {
 				available = append(available, surface.Surface)
 			}
 		}
@@ -138,7 +141,7 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	nextCommand := "packy list"
 	for _, surface := range report.Surfaces {
 		if surface.Intent.Present && surface.Intent.Active &&
-			surface.Intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable {
+			surface.Intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable && slices.Contains(pack.Surfaces, surface.Surface) {
 			nextCommand = fmt.Sprintf("packy update %s --surface %s --dry-run", pack.ID, surface.Surface)
 			return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
 		}
@@ -150,7 +153,7 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 		}
 	}
 	for _, surface := range report.Surfaces {
-		if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
+		if report.LifecycleAvailability.FreshActivationAvailable && slices.Contains(pack.Surfaces, surface.Surface) && surface.Contract.SelectionValidity.All.Available {
 			nextCommand = fmt.Sprintf("packy activate %s --surface %s --dry-run", pack.ID, surface.Surface)
 			break
 		}
@@ -189,49 +192,77 @@ func (f Facade) Show(ctx context.Context, id string) (ShowReport, error) {
 }
 
 func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
-	detail, err := f.catalog.ShowDetail(ctx, id)
-	if err != nil {
-		return ShowReport{}, err
-	}
 	if f.activation == nil || f.activation.store == nil {
 		return ShowReport{}, fmt.Errorf("surface intent observation is not configured")
+	}
+	detail, current, err := f.showDetailForLifecycle(ctx, id)
+	if err != nil {
+		return ShowReport{}, err
 	}
 
 	pack := detail.Pack
 	report := ShowReport{
-		Detail: detail,
-		CatalogIdentity: PackCatalogIdentity{
-			PackID:        pack.ID,
-			Version:       pack.Version,
-			SchemaVersion: 1,
-			Limitation:    packProvenanceLimitation,
-		},
+		CatalogState:      "current",
+		Detail:            detail,
+		CatalogIdentity:   packCatalogIdentity(pack),
 		ResourceCounts:    pack.ResourceCounts(),
 		ResourceInventory: detail.ResourceInventory,
 		ResourceGraph:     ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
 		LifecycleAvailability: ShowLifecycleAvailability{
-			FreshActivationAvailable: true,
-			CatalogUpdateAvailable:   true,
+			FreshActivationAvailable: current,
+			CatalogUpdateAvailable:   current,
 			LifecycleVerbsAvailable:  true,
 			AutomaticDowngrade:       false,
 		},
 		Surfaces: make([]ShowSurfaceReport, 0, len(pack.Surfaces)),
 	}
-	surfaces := append([]Surface(nil), pack.Surfaces...)
-	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i] < surfaces[j] })
-	for _, surface := range surfaces {
+	if !current {
+		report.CatalogState = "retained"
+	}
+	surfaceIntents := make(map[Surface]ActivationIntent)
+	surfacePacks := make(map[Surface]Pack)
+	surfaceSet := make(map[Surface]bool, len(pack.Surfaces))
+	for _, surface := range pack.Surfaces {
+		surfaceSet[surface] = true
+	}
+	for _, surface := range statusSurfaces() {
 		state, err := f.activation.store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			return ShowReport{}, fmt.Errorf("load %s surface intent: %w", surface, err)
 		}
 		intent, present := intentForPack(state, pack.ID, surface)
+		if !present {
+			continue
+		}
+		surfaceIntents[surface] = intent
+		surfaceSet[surface] = true
+		if intent.Active {
+			retained, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+			if err != nil {
+				return ShowReport{}, fmt.Errorf("resolve %s retained surface contract: %w", surface, err)
+			}
+			surfacePacks[surface] = retained
+		}
+	}
+	surfaces := make([]Surface, 0, len(surfaceSet))
+	for surface := range surfaceSet {
+		surfaces = append(surfaces, surface)
+	}
+	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i] < surfaces[j] })
+	for _, surface := range surfaces {
+		intent, present := surfaceIntents[surface]
 		aliases := []SurfaceAlias{}
 		if present {
 			aliases = canonicalShowAliases(intent.Aliases)
 		}
+		contractPack := pack
+		if retained, ok := surfacePacks[surface]; ok {
+			contractPack = retained
+		}
 		report.Surfaces = append(report.Surfaces, ShowSurfaceReport{
-			Surface:  surface,
-			Contract: LifecycleContractFor(pack, surface, aliases),
+			Surface:         surface,
+			CatalogIdentity: packCatalogIdentity(contractPack),
+			Contract:        LifecycleContractFor(contractPack, surface, aliases),
 			Intent: ShowIntent{
 				Present:  present,
 				Active:   present && intent.Active,
@@ -242,6 +273,33 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 		})
 	}
 	return report, nil
+}
+
+func packCatalogIdentity(pack Pack) PackCatalogIdentity {
+	return PackCatalogIdentity{PackID: pack.ID, Version: pack.Version, SchemaVersion: 1, Limitation: packCatalogAuthority}
+}
+
+func (f Facade) showDetailForLifecycle(ctx context.Context, id string) (CatalogDetail, bool, error) {
+	if _, current := f.catalog.catalogMetadataIfPresent(id); current {
+		detail, err := f.catalog.ShowDetail(ctx, id)
+		return detail, true, err
+	}
+	for _, surface := range statusSurfaces() {
+		state, err := f.activation.store.LoadSnapshot(ctx, surface)
+		if err != nil {
+			return CatalogDetail{}, false, fmt.Errorf("load %s surface intent: %w", surface, err)
+		}
+		intent, installed := intentForPack(state, id, surface)
+		if !installed || !intent.Active {
+			continue
+		}
+		pack, err := f.catalog.resolveIntentPackAt(ctx, id, intent.Version, intent.CatalogSnapshot)
+		if err != nil {
+			return CatalogDetail{}, false, err
+		}
+		return catalogDetail(pack), false, nil
+	}
+	return CatalogDetail{}, false, fmt.Errorf("unknown capability pack %q in the current catalog; run `packy list` to see available packs", id)
 }
 
 func descriptiveResourceInventory(pack Pack) []DescriptiveResource {

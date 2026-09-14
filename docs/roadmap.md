@@ -3,16 +3,16 @@
 Packy `v0.2.0` establishes the current product: reviewed Packs, installed Pack
 receipts, Codex/OpenCode/Claude Code support, proportional validation, native
 GitHub integration controls, and an immutable binary release. Use the
-manifest-backed Pack catalog through `packy list` or the generated
-[Pack catalog](packs/index.md) for current membership and versions. Claude Code
-support requires stable version **2.1.203 or newer**.
+manifest-backed Pack catalog through `packy list` for current membership and
+versions. Claude Code support requires stable version **2.1.203 or newer**.
 
 ## Current checkpoint
 
-- Selectable Packs and their independent versions come from the bundled current
-  manifests.
+- Selectable Packs and their independent versions come from the selected
+  Catalog Snapshot.
 - Global and project lifecycles operate on independent installed Pack receipts.
-- Pack maintainers use the standard template and focused Pack validator.
+- Catalog maintainers use the supported authoring commands and whole-catalog
+  validator.
 - General CI uses formatting, vet, Packy-owned tests, and focused race coverage.
 - Version tags publish four platform archives, `SHA256SUMS`, one GitHub
   Release, and a matching Homebrew formula.

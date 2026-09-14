@@ -12,6 +12,19 @@ import (
 	"github.com/yersonargotev/packy/internal/claudecode"
 )
 
+func claudePackResolver(packs map[string]capabilitypack.Pack) func(context.Context, string, string, string) (capabilitypack.Pack, error) {
+	return func(_ context.Context, id, version, _ string) (capabilitypack.Pack, error) {
+		pack, ok := packs[id+"@"+version]
+		if !ok {
+			pack, ok = packs[id]
+		}
+		if !ok || pack.Version != version {
+			return capabilitypack.Pack{}, fmt.Errorf("Pack %s@%s is unavailable", id, version)
+		}
+		return pack, nil
+	}
+}
+
 func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLifecycle(t *testing.T) {
 	for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
 		t.Run(packID, func(t *testing.T) {
@@ -24,7 +37,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 			project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 			adapter := claudecode.NewSurfaceAdapter(bundle, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
 			facade := capabilitypack.NewFacade(catalog)
-			install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project}, adapter)
+			install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project, PackyHome: packyHome}, adapter)
 			if err != nil || install.Disposition != capabilitypack.ProjectInstallPreviewable {
 				t.Fatalf("install = %#v, err=%v", install, err)
 			}
@@ -47,7 +60,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 			}
 			updatedAdapter := claudecode.NewSurfaceAdapter(updatedBundle, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
 			updatedFacade := capabilitypack.NewFacade(updatedCatalog)
-			update, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project}, updatedAdapter)
+			update, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project, PackyHome: packyHome}, updatedAdapter)
 			if err != nil || update.Disposition != capabilitypack.ProjectInstallPreviewable {
 				t.Fatalf("update = %#v, err=%v", update, err)
 			}
@@ -101,7 +114,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughGlobalLif
 			root := t.TempDir()
 			layout := claudecode.NewCanonicalLayout(root)
 			store := &memoryActivationStore{}
-			ownership := claudecode.NewCapabilityPackOwnershipProvider(store, map[string]capabilitypack.Pack{packID: oldPack, packID + "@1.0.0": oldPack}, layout, bundle)
+			ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudePackResolver(map[string]capabilitypack.Pack{packID: oldPack, packID + "@1.0.0": oldPack}), layout, bundle)
 			adapter := claudecode.NewSurfaceAdapter(bundle, layout, filepath.Join(root, "state"), "claude", claudeCapabilityRunner{}, ownership)
 			facade := capabilitypack.NewFacade(catalog, capabilitypack.WithActivation(store, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceClaude: adapter}))
 
@@ -127,7 +140,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughGlobalLif
 				t.Fatal(err)
 			}
 			newPack := updatedCatalog.List()[0]
-			updatedOwnership := claudecode.NewCapabilityPackOwnershipProvider(store, map[string]capabilitypack.Pack{packID: newPack, packID + "@1.0.0": oldPack, packID + "@1.0.1": newPack}, layout, updatedBundle)
+			updatedOwnership := claudecode.NewCapabilityPackOwnershipProvider(store, claudePackResolver(map[string]capabilitypack.Pack{packID: newPack, packID + "@1.0.0": oldPack, packID + "@1.0.1": newPack}), layout, updatedBundle)
 			updatedAdapter := claudecode.NewSurfaceAdapter(updatedBundle, layout, filepath.Join(root, "state"), "claude", claudeCapabilityRunner{}, updatedOwnership)
 			updatedFacade := capabilitypack.NewFacade(updatedCatalog, capabilitypack.WithActivation(store, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceClaude: updatedAdapter}))
 			update, err := updatedFacade.PreviewUpdate(context.Background(), capabilitypack.UpdateRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude})

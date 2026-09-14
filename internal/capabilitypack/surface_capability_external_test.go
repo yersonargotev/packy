@@ -31,7 +31,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 					t.Fatal(err)
 				}
 				adapter := projectInstructionAdapter(t, bundle, surface)
-				preview, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: surface, ProjectRoot: project}, adapter)
+				preview, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: surface, ProjectRoot: project, PackyHome: packyHome}, adapter)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -81,7 +81,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 				}
 				adapter = projectInstructionAdapter(t, updatedBundle, surface)
 				facade = capabilitypack.NewFacade(updatedCatalog)
-				update, err := facade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: project}, adapter)
+				update, err := facade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: project, PackyHome: packyHome}, adapter)
 				if err != nil || update.Disposition != capabilitypack.ProjectInstallPreviewable {
 					t.Fatalf("%s update = %#v, err=%v", packID, update, err)
 				}

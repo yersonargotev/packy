@@ -32,6 +32,7 @@ type ProjectInstallRequest struct {
 	PackID       string
 	Surface      Surface
 	ProjectRoot  string
+	PackyHome    string
 	Selection    ResourceSelection
 	Aliases      []SurfaceAlias
 	manifestPack ProjectManifestPack
@@ -43,6 +44,7 @@ type ProjectUpdateRequest struct {
 	PackID      string
 	Surface     Surface
 	ProjectRoot string
+	PackyHome   string
 	// Selection replaces the selected surface's resource intent; nil preserves it.
 	Selection *ResourceSelection
 	Force     bool
@@ -63,12 +65,13 @@ type ProjectContractProposal struct {
 }
 
 type ProjectManifestPack struct {
-	ID             string                 `json:"id"`
-	Version        string                 `json:"version"`
-	Surfaces       []Surface              `json:"surfaces"`
-	Selection      ResourceSelection      `json:"selection"`
-	Aliases        []SurfaceAlias         `json:"aliases"`
-	SurfaceIntents []ProjectSurfaceIntent `json:"surface_intents,omitempty"`
+	ID              string                 `json:"id"`
+	Version         string                 `json:"version"`
+	CatalogSnapshot string                 `json:"-"`
+	Surfaces        []Surface              `json:"surfaces"`
+	Selection       ResourceSelection      `json:"selection"`
+	Aliases         []SurfaceAlias         `json:"aliases"`
+	SurfaceIntents  []ProjectSurfaceIntent `json:"surface_intents,omitempty"`
 }
 
 type ProjectSurfaceIntent struct {
@@ -216,8 +219,8 @@ func (f Facade) PreviewProjectUpdate(ctx context.Context, request ProjectUpdateR
 }
 
 func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
-	if request.ProjectRoot == "" || request.PackID == "" || request.Surface == "" {
-		return JSONProjectInstallPreview{}, errors.New("project update requires the project root, Pack, and surface")
+	if request.ProjectRoot == "" || request.PackyHome == "" || request.PackID == "" || request.Surface == "" {
+		return JSONProjectInstallPreview{}, errors.New("project update requires the project root, Packy Home, Pack, and surface")
 	}
 	if request.Selection != nil {
 		selection, err := canonicalSelection(*request.Selection)
@@ -258,7 +261,7 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 		intent.Version = targetPack.Version
 		target := withProjectSurfaceIntent(prior, intent)
 		surfaceReport, previewErr := f.previewProjectInstall(ctx, ProjectInstallRequest{
-			PackID: request.PackID, Surface: intent.Surface, ProjectRoot: request.ProjectRoot,
+			PackID: request.PackID, Surface: intent.Surface, ProjectRoot: request.ProjectRoot, PackyHome: request.PackyHome,
 			Selection: intent.Selection, Aliases: intent.Aliases,
 			manifestPack: target, update: true, force: request.Force,
 		}, adapter)
@@ -499,8 +502,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project installation preview does not support CLI surface %q", request.Surface)
 	}
-	if request.ProjectRoot == "" {
-		return JSONProjectInstallPreview{}, errors.New("project root is required")
+	if request.ProjectRoot == "" || request.PackyHome == "" {
+		return JSONProjectInstallPreview{}, errors.New("project root and Packy Home are required")
 	}
 	pack, err := f.resolveProjectPackUnlocked(request.PackID)
 	if err != nil {
@@ -570,6 +573,11 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			existingInstallation, existingContract = installation, true
 		}
 	}
+	orphanBlockers, orphanErr := projectOrphanedActivationBlockers(request.PackyHome, request.ProjectRoot, pack.ID, existingInstallation, existingContract)
+	if orphanErr != nil {
+		return JSONProjectInstallPreview{}, orphanErr
+	}
+	blockers = append(blockers, orphanBlockers...)
 	for _, resource := range observation.Unrepresentable {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: resource.Resource, Detail: resource.Reason, Remediation: "choose a surface with a declared project-native representation"})
 	}
@@ -777,6 +785,35 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	})
 	report.Observation = sealProjectInstallPreview(report, observationDigest(observation)+"\nnotices="+noticeBefore)
 	return report, nil
+}
+
+func projectOrphanedActivationBlockers(packyHome, projectRoot, packID string, installation ProjectInstallation, installed bool) ([]ProjectInstallBlocker, error) {
+	if packyHome == "" {
+		return nil, errors.New("Packy Home is required to inspect personal project activation receipts")
+	}
+	declaredSurfaces := map[Surface]bool{}
+	if installed {
+		if pack, found := findProjectManifestPack(installation.Manifest.Packs, packID); found {
+			for _, surface := range pack.Surfaces {
+				declaredSurfaces[surface] = true
+			}
+		}
+	}
+	blockers := []ProjectInstallBlocker{}
+	for _, surface := range SupportedSurfaces() {
+		document, exists, err := loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID, surface)
+		if err != nil {
+			return nil, err
+		}
+		if !exists || !document.State.Active || declaredSurfaces[surface] {
+			continue
+		}
+		blockers = append(blockers, ProjectInstallBlocker{
+			Code: "orphaned_personal_activation", Detail: fmt.Sprintf("personal project activation on %s remains after its shared project contract was removed", surface),
+			Remediation: fmt.Sprintf("run packy deactivate %s --surface %s --project before reinstalling the Pack", packID, surface),
+		})
+	}
+	return blockers, nil
 }
 
 func expectedProjectReadinessProjections(plans []ProjectProjectionPlan) []ProjectionStatus {

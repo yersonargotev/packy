@@ -27,7 +27,7 @@ func (f Facade) composeProjectRuntime(ctx context.Context, installation ProjectI
 	if !active || !intent.Active {
 		return result, nil
 	}
-	globalPack, err := f.catalog.ResolveIntentPack(ctx, intent.PackID, intent.Version)
+	globalPack, err := f.catalog.ResolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
 	if err != nil {
 		return result, fmt.Errorf("resolve global activation contract %s@%s: %w", intent.PackID, intent.Version, err)
 	}

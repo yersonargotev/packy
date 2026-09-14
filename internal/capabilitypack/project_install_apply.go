@@ -57,11 +57,13 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	freshRequest := preview.request
 	var fresh JSONProjectInstallPreview
 	if preview.updateRequest.PackID != "" {
+		preview.updateRequest.PackyHome = request.PackyHome
 		fresh, err = f.PreviewProjectUpdate(ctx, preview.updateRequest, request.Adapter)
 	} else {
 		if freshRequest.ProjectRoot == "" {
 			freshRequest = ProjectInstallRequest{PackID: preview.Pack.ID, Surface: preview.Surface, ProjectRoot: preview.projectRoot}
 		}
+		freshRequest.PackyHome = request.PackyHome
 		fresh, err = f.PreviewProjectInstall(ctx, freshRequest, request.Adapter)
 	}
 	if err != nil {

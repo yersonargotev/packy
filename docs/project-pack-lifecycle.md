@@ -43,7 +43,7 @@ project activations remain explicit and independently inspectable.
 
 ## Update and status
 
-Update one project Pack to the version in the running Packy's bundled catalog:
+Update one project Pack to the version in the selected Catalog Snapshot:
 
 ```sh
 packy update matty --surface codex --project --dry-run
@@ -101,7 +101,7 @@ preserved.
 
 Project JSON reports use the checked-in `schemas/project/v1.0.0/` suite. CI can
 verify the committed contract without using personal state, PATH, runtime
-evidence, or the bundled catalog:
+evidence, or the selected catalog:
 
 ```sh
 packy verify --json

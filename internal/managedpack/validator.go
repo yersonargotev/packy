@@ -1,4 +1,4 @@
-// Package managedpack owns the public Managed Pack Project contract.
+// Package managedpack owns Pack manifest and Catalog Project validation.
 package managedpack
 
 import (
@@ -60,7 +60,7 @@ type ResourceOrigin struct {
 	Relationship Relationship `json:"relationship"`
 }
 
-// Resource is one Pack resource plus its Managed Pack provenance.
+// Resource is one Pack resource plus its declared provenance.
 type Resource struct {
 	Kind              string                            `json:"kind"`
 	ID                string                            `json:"id"`
@@ -116,7 +116,7 @@ type FileRecord struct {
 	SHA256 string `json:"sha256"`
 }
 
-// Validation is the sealed result of validating one Managed Pack Project.
+// Validation is the sealed result of validating one Pack closure.
 type Validation struct {
 	Manifest       Manifest
 	ManifestSHA256 string
@@ -318,7 +318,7 @@ func MaterializeClosure(ctx context.Context, projectRoot, destinationRoot string
 	if err := validateMaterialization(validation); err != nil {
 		return err
 	}
-	if err := requireDirectory(projectRoot, "Managed Pack Project root"); err != nil {
+	if err := requireDirectory(projectRoot, "Pack content root"); err != nil {
 		return err
 	}
 
@@ -567,7 +567,7 @@ func decodeManifest(data []byte) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("decode root pack.json: %w", err)
 	}
 	if wire.Selectable == nil {
-		return Manifest{}, fmt.Errorf("invalid Managed Pack manifest: field selectable is required")
+		return Manifest{}, fmt.Errorf("invalid Pack manifest: field selectable is required")
 	}
 	return Manifest{
 		SchemaVersion: wire.SchemaVersion, ID: wire.ID, Version: wire.Version,
@@ -591,16 +591,16 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 
 func validateManifest(manifest Manifest, projectRoot string) error {
 	if manifest.SchemaVersion != SchemaVersion {
-		return fmt.Errorf("invalid Managed Pack manifest: schema_version must be %d", SchemaVersion)
+		return fmt.Errorf("invalid Pack manifest: schema_version must be %d", SchemaVersion)
 	}
 	if manifest.Origins == nil {
-		return fmt.Errorf("invalid Managed Pack manifest: field origins is a required non-null array")
+		return fmt.Errorf("invalid Pack manifest: field origins is a required non-null array")
 	}
 	if manifest.Resources == nil {
-		return fmt.Errorf("invalid Managed Pack manifest: field resources is a required non-null array")
+		return fmt.Errorf("invalid Pack manifest: field resources is a required non-null array")
 	}
 	if err := validateOrigins(manifest.Origins); err != nil {
-		return fmt.Errorf("invalid Managed Pack manifest: %w", err)
+		return fmt.Errorf("invalid Pack manifest: %w", err)
 	}
 	pack := capabilitypack.Pack{
 		ID: manifest.ID, Version: manifest.Version, Description: manifest.Description,
@@ -621,7 +621,7 @@ func validateManifest(manifest Manifest, projectRoot string) error {
 		})
 	}
 	if err := capabilitypack.ValidateProjectPack(pack, projectRoot); err != nil {
-		return fmt.Errorf("invalid Managed Pack manifest: %w", err)
+		return fmt.Errorf("invalid Pack manifest: %w", err)
 	}
 	return validateManagedResources(manifest)
 }
@@ -818,7 +818,7 @@ func declaredClosure(ctx context.Context, projectRoot string, manifest Manifest,
 		}
 		unique = append(unique, root)
 	}
-	if err := rejectGitlinks(ctx, projectRoot, unique, "Managed Pack Project"); err != nil {
+	if err := rejectGitlinks(ctx, projectRoot, unique, "Pack content root"); err != nil {
 		return nil, err
 	}
 	byPath := map[string]FileRecord{}

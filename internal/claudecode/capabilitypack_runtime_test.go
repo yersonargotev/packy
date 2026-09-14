@@ -2,6 +2,7 @@ package claudecode
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,19 @@ func TestClaudePersonalSkillTopologyDoesNotClaimSharedAgentsTarget(t *testing.T)
 
 type ownershipStore struct {
 	state capabilitypack.ActivationState
+}
+
+func ownershipPackResolver(packs map[string]capabilitypack.Pack) func(context.Context, string, string, string) (capabilitypack.Pack, error) {
+	return func(_ context.Context, id, version, _ string) (capabilitypack.Pack, error) {
+		pack, ok := packs[id+"@"+version]
+		if !ok {
+			pack, ok = packs[id]
+		}
+		if !ok || pack.Version != version {
+			return capabilitypack.Pack{}, fmt.Errorf("Pack %s@%s is unavailable", id, version)
+		}
+		return pack, nil
+	}
 }
 
 func (s ownershipStore) LoadSnapshot(context.Context, capabilitypack.Surface) (capabilitypack.ActivationState, error) {
@@ -114,7 +128,7 @@ func TestInspectionSealsExternalConsentAndExactCommandAssetCleanup(t *testing.T)
 	os.WriteFile(filepath.Join(layout.SkillsDir, "run", "SKILL.md"), []byte(claudeCommandSkill(pack.Resources[0], "run", []byte("Run $ARGUMENTS"))), 0600)
 	os.WriteFile(filepath.Join(layout.SkillsDir, "run", "guide.txt"), []byte("guide"), 0600)
 	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "p", Version: "1.0.0", Surface: capabilitypack.SurfaceClaude, Active: true}, Ownership: []capabilitypack.ProjectionOwnership{{ID: "command:run", PackID: "p", Surface: capabilitypack.SurfaceClaude}, {ID: "asset:command:run:guide", PackID: "p", Surface: capabilitypack.SurfaceClaude}}}
-	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"p": pack}, layout, bundle)
+	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, ownershipPackResolver(map[string]capabilitypack.Pack{"p": pack}), layout, bundle)
 	a := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, provider)
 	inspection, err := a.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
 	if err != nil {
@@ -180,7 +194,7 @@ func TestCapabilityPackOwnershipProviderReturnsHookAndMCPIdentity(t *testing.T) 
 	os.WriteFile(layout.UserMCPFile, []byte(`{"mcpServers":{"memory":{"command":"engram","args":["mcp"]}}}`), 0600)
 	pack := capabilitypack.Pack{ID: "p", Version: "1.0.0", Resources: []capabilitypack.Resource{{Kind: "lifecycle", ID: "start", Bindings: []capabilitypack.Binding{binding}}, {Kind: "mcp_server", ID: "memory", Command: "engram", Args: []string{"mcp"}, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "mcp_server", Name: "memory"}}}}}
 	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "p", Version: "1.0.0", Surface: capabilitypack.SurfaceClaude, Active: true}, Ownership: []capabilitypack.ProjectionOwnership{{ID: "lifecycle:start", Fingerprint: entry.Fingerprint(), PackID: "p", Surface: capabilitypack.SurfaceClaude}, {ID: "mcp_server:memory", PackID: "p", Surface: capabilitypack.SurfaceClaude}}}
-	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"p": pack}, layout, t.TempDir()).ObserveOwnership(context.Background())
+	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, ownershipPackResolver(map[string]capabilitypack.Pack{"p": pack}), layout, t.TempDir()).ObserveOwnership(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +243,7 @@ func TestCapabilityPackOwnershipProviderUsesAllActiveIntentsAndPersistedAliases(
 		},
 		Ownership: []capabilitypack.ProjectionOwnership{{ID: "command:one-run", PackID: "one", Surface: capabilitypack.SurfaceClaude}, {ID: "command:two-check", PackID: "two", Surface: capabilitypack.SurfaceClaude}},
 	}
-	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, packs, layout, t.TempDir()).ObserveOwnership(context.Background())
+	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, ownershipPackResolver(packs), layout, t.TempDir()).ObserveOwnership(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

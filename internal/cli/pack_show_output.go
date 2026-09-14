@@ -41,9 +41,10 @@ type packShowLifecycleAvailabilityJSON struct {
 }
 
 type packShowSurfaceJSON struct {
-	Surface  capabilitypack.Surface           `json:"surface"`
-	Contract capabilitypack.LifecycleContract `json:"contract"`
-	Intent   packShowIntentJSON               `json:"intent"`
+	Surface         capabilitypack.Surface           `json:"surface"`
+	CatalogIdentity packShowCatalogIdentityJSON      `json:"catalog_identity"`
+	Contract        capabilitypack.LifecycleContract `json:"contract"`
+	Intent          packShowIntentJSON               `json:"intent"`
 }
 
 type packShowRequirementsJSON struct {
@@ -69,16 +70,20 @@ type packShowJSON struct {
 
 func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 	pack := report.Detail.Pack
-	surfaces := make([]capabilitypack.Surface, 0, len(report.Surfaces))
+	surfaces := append([]capabilitypack.Surface(nil), report.Detail.Pack.Surfaces...)
 	contracts := make([]packShowSurfaceJSON, 0, len(report.Surfaces))
 	for _, surface := range report.Surfaces {
-		surfaces = append(surfaces, surface.Surface)
 		contracts = append(contracts, packShowSurfaceJSON{
-			Surface: surface.Surface, Contract: surface.Contract, Intent: packShowIntentDocument(surface.Intent),
+			Surface: surface.Surface,
+			CatalogIdentity: packShowCatalogIdentityJSON{
+				PackID: surface.CatalogIdentity.PackID, Version: surface.CatalogIdentity.Version,
+				SchemaVersion: surface.CatalogIdentity.SchemaVersion, Limitation: surface.CatalogIdentity.Limitation,
+			},
+			Contract: surface.Contract, Intent: packShowIntentDocument(surface.Intent),
 		})
 	}
 	return packShowJSON{
-		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: "current",
+		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: report.CatalogState,
 		ID: pack.ID, Version: pack.Version, Description: pack.Description,
 		CatalogIdentity: packShowCatalogIdentityJSON{
 			PackID: report.CatalogIdentity.PackID, Version: report.CatalogIdentity.Version,
@@ -124,7 +129,7 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(w,
-		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nProvenance authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
+		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nCatalog authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
 		document.CatalogIdentity.PackID, document.CatalogIdentity.Version, document.CatalogIdentity.SchemaVersion,
 		document.CatalogIdentity.Limitation, joinSurfaces(document.Surfaces), joinOrNone(document.Requires.Tools),
@@ -144,7 +149,7 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		}
 	}
 	for _, surface := range report.Surfaces {
-		if _, err := fmt.Fprintf(w, "Surface contract: %s\n", surface.Surface); err != nil {
+		if _, err := fmt.Fprintf(w, "Surface contract: %s (pack=%s version=%s schema=%d)\n", surface.Surface, surface.CatalogIdentity.PackID, surface.CatalogIdentity.Version, surface.CatalogIdentity.SchemaVersion); err != nil {
 			return err
 		}
 		if err := renderPackShowContract(w, surface.Contract); err != nil {

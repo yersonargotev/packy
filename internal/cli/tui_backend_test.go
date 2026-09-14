@@ -107,7 +107,7 @@ func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 		}},
 	}}
 
-	packs := catalogPacksForTUI(details, nil)
+	packs := catalogPacksForTUI(details, nil, nil)
 	if len(packs) != 1 || len(packs[0].Resources) != 1 {
 		t.Fatalf("adapted catalog = %#v", packs)
 	}

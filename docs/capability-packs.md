@@ -7,11 +7,9 @@ Code.
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source. Use `packy list` for the
-Pack IDs and versions embedded in the current binary, and `packy show <pack>`
+Pack IDs and versions in the selected Catalog Snapshot, and `packy show <pack>`
 for one Pack's purpose, supported surfaces, resources, and external
-requirements. The generated [Pack catalog](packs/index.md) provides the same
-embedded manifest-backed inventory for browsing on GitHub. Pack versions are
-independent of the Packy binary version.
+requirements. Pack versions are independent of the Packy binary version.
 
 ## Inspect and activate
 
@@ -66,7 +64,7 @@ resources, projected paths, and content digests. Packy uses that receipt to:
 
 - stop before changing drifted Pack-owned paths;
 - reject target collisions before mutation;
-- update only to the current bundled Pack version;
+- update only to the Pack version in the selected Catalog Snapshot;
 - remove only unchanged paths owned by the selected receipt; and
 - keep other Pack receipts independent.
 

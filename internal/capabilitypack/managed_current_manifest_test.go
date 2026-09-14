@@ -39,6 +39,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 	if got, want := pack.Resources, []Resource{
 		{
 			Kind: "instruction", ID: "guide", Source: "instructions/managed-loader.md",
+			catalogRoot: bundleRoot,
 			Description: "Projects the managed guidance", Requires: []string{}, Conflicts: []string{},
 			RequiresTools: []string{}, Notices: []string{"notice:upstream-license"},
 			Bindings: []Binding{{
@@ -52,6 +53,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 		},
 		{
 			Kind: "notice", ID: "upstream-license", Source: "notices/upstream-license",
+			catalogRoot: bundleRoot,
 			Description: "Preserves the upstream license", License: "MIT", Attribution: "Example Authors",
 			Requires: []string{}, Conflicts: []string{}, RequiresTools: []string{}, Bindings: []Binding{},
 			SurfaceExclusions: []SurfaceExclusion{},
