@@ -3,6 +3,7 @@ package capabilitypack
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -107,11 +108,11 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	for _, surface := range report.Surfaces {
 		intent := surface.Intent
 		switch {
-		case intent.Present && intent.Active && intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable:
+		case intent.Present && intent.Active && intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable && slices.Contains(pack.Surfaces, surface.Surface):
 			changes = append(changes, fmt.Sprintf("update %s from %s to %s", surface.Surface, intent.Version, pack.Version))
 		case intent.Present && intent.Active:
 			changes = append(changes, fmt.Sprintf("keep %s at %s", surface.Surface, intent.Version))
-		case intent.Present && report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available:
+		case intent.Present && report.LifecycleAvailability.FreshActivationAvailable && slices.Contains(pack.Surfaces, surface.Surface) && surface.Contract.SelectionValidity.All.Available:
 			changes = append(changes, fmt.Sprintf("activate inactive %s intent at %s", surface.Surface, intent.Version))
 		case intent.Present:
 			changes = append(changes, fmt.Sprintf("no activation is available for inactive %s intent", surface.Surface))
@@ -120,7 +121,7 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	if len(changes) == 0 {
 		available := make([]Surface, 0, len(report.Surfaces))
 		for _, surface := range report.Surfaces {
-			if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
+			if report.LifecycleAvailability.FreshActivationAvailable && slices.Contains(pack.Surfaces, surface.Surface) && surface.Contract.SelectionValidity.All.Available {
 				available = append(available, surface.Surface)
 			}
 		}
@@ -140,7 +141,7 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	nextCommand := "packy list"
 	for _, surface := range report.Surfaces {
 		if surface.Intent.Present && surface.Intent.Active &&
-			surface.Intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable {
+			surface.Intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable && slices.Contains(pack.Surfaces, surface.Surface) {
 			nextCommand = fmt.Sprintf("packy update %s --surface %s --dry-run", pack.ID, surface.Surface)
 			return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
 		}
@@ -152,7 +153,7 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 		}
 	}
 	for _, surface := range report.Surfaces {
-		if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
+		if report.LifecycleAvailability.FreshActivationAvailable && slices.Contains(pack.Surfaces, surface.Surface) && surface.Contract.SelectionValidity.All.Available {
 			nextCommand = fmt.Sprintf("packy activate %s --surface %s --dry-run", pack.ID, surface.Surface)
 			break
 		}

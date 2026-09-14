@@ -70,10 +70,9 @@ type packShowJSON struct {
 
 func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 	pack := report.Detail.Pack
-	surfaces := make([]capabilitypack.Surface, 0, len(report.Surfaces))
+	surfaces := append([]capabilitypack.Surface(nil), report.Detail.Pack.Surfaces...)
 	contracts := make([]packShowSurfaceJSON, 0, len(report.Surfaces))
 	for _, surface := range report.Surfaces {
-		surfaces = append(surfaces, surface.Surface)
 		contracts = append(contracts, packShowSurfaceJSON{
 			Surface: surface.Surface,
 			CatalogIdentity: packShowCatalogIdentityJSON{

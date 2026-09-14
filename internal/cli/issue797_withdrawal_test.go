@@ -314,3 +314,76 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 		t.Fatalf("retained project composition = %#v", report.Packs)
 	}
 }
+
+func TestIssue797RemovedSurfaceKeepsEvidenceWithoutOfferingUpdate(t *testing.T) {
+	v1 := testsupport.PortableAllSurfaces("removed-surface-version")
+	v2 := v1.Candidate().WithSurfaces(testsupport.SurfaceOpenCode)
+	firstSnapshot := strings.Repeat("6", 40)
+	secondSnapshot := strings.Repeat("a", 40)
+	source := &catalogSourceFixture{release: catalogReleaseFixture(t, firstSnapshot, v1)}
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, v1)
+	opts := fixture.options
+	env := MapEnv{}
+	for key, value := range opts.Env.(MapEnv) {
+		env[key] = value
+	}
+	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.Env, opts.CatalogSource = env, source
+	if out, err := executeCommand(t, NewRootCommand(opts), "init"); err != nil {
+		t.Fatalf("initialize v1: %v\n%s", err, out)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", v1.ID(), "--surface", "claude"); err != nil {
+		t.Fatalf("activate v1 on Claude: %v\n%s", err, out)
+	}
+	source.release = catalogReleaseFixture(t, secondSnapshot, v2)
+	if out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh"); err != nil {
+		t.Fatalf("select v2 without Claude: %v\n%s", err, out)
+	}
+
+	statusOutput, err := executeCommand(t, NewRootCommand(opts), "status", v1.ID(), "--surface", "claude", "--json")
+	if err != nil {
+		t.Fatalf("status removed Claude surface: %v\n%s", err, statusOutput)
+	}
+	var status capabilitypack.JSONStatusReport
+	if err := json.Unmarshal([]byte(statusOutput), &status); err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Entries) != 1 || !status.Entries[0].HistoricalEvidence.Available || !status.Entries[0].UpdateAvailable {
+		t.Fatalf("removed surface status = %#v", status.Entries)
+	}
+	humanStatus, err := executeCommand(t, NewRootCommand(opts), "status")
+	if err != nil || !strings.Contains(humanStatus, "update unavailable on this surface") {
+		t.Fatalf("removed surface status action: %v\n%s", err, humanStatus)
+	}
+	showOutput, err := executeCommand(t, NewRootCommand(opts), "show", v1.ID(), "--json")
+	if err != nil {
+		t.Fatalf("show removed Claude surface: %v\n%s", err, showOutput)
+	}
+	var document packShowJSON
+	if err := json.Unmarshal([]byte(showOutput), &document); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(document.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
+		t.Fatalf("current supported surfaces = %#v", document.Surfaces)
+	}
+	claudeContract := slices.IndexFunc(document.SurfaceContracts, func(contract packShowSurfaceJSON) bool { return contract.Surface == capabilitypack.SurfaceClaude })
+	if claudeContract < 0 || document.SurfaceContracts[claudeContract].CatalogIdentity.Version != v1.CurrentVersion() {
+		t.Fatalf("retained Claude contract = %#v", document.SurfaceContracts)
+	}
+	human, err := executeCommand(t, NewRootCommand(opts), "show", v1.ID())
+	if err != nil || strings.Contains(human, "packy update "+v1.ID()+" --surface claude") || !strings.Contains(human, "packy status "+v1.ID()+" --surface claude") {
+		t.Fatalf("removed surface decision summary: %v\n%s", err, human)
+	}
+	dashboard, err := newTUIBackend(opts.withDefaults(), newWorkstationResolver(opts.withDefaults())).Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := findTUIPack(dashboard.Global.Packs, v1.ID())
+	if view == nil {
+		t.Fatalf("TUI omitted current Pack with retained Claude surface: %#v", dashboard.Global.Packs)
+	}
+	index := slices.IndexFunc(view.SurfaceStatuses, func(surface tui.SurfaceStatus) bool { return surface.Name == "claude" })
+	if index < 0 || view.SurfaceStatuses[index].Supported || view.SurfaceStatuses[index].UpdateAvailable || !view.SurfaceStatuses[index].CatalogUpdateAvailable {
+		t.Fatalf("removed surface TUI status = %#v", view)
+	}
+}

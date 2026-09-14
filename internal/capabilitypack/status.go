@@ -590,7 +590,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	}
 	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
-	entry.UpdateActionAvailable = entry.UpdateAvailable || entry.Intent.Active && entry.Projections.requiresReconciliation()
+	entry.UpdateActionAvailable = slices.Contains(entry.Pack.Surfaces, surface) && (entry.UpdateAvailable || entry.Intent.Active && entry.Projections.requiresReconciliation())
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	for _, detail := range entry.ProjectionDetails {
 		entry.Evidence = append(entry.Evidence, fmt.Sprintf("%s: %s observed=%s desired=%s target=%s", detail.ID, detail.Health, detail.ObservedFingerprint, detail.DesiredFingerprint, detail.Target))
