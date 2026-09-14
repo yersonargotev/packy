@@ -53,6 +53,9 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 		if err != nil {
 			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract: %w", intent.PackID, intent.Version, err)
 		}
+		if pack.Version != intent.Version {
+			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract", intent.PackID, intent.Version)
+		}
 		for _, portableResource := range pack.Resources {
 			resource := resourceWithAliases(portableResource, intent.Aliases)
 			if resource.Kind != "skill" && resource.Kind != "command" && resource.Kind != "instruction" && resource.Kind != "agent" && resource.Kind != "lifecycle" && resource.Kind != "mcp_server" {

@@ -1120,12 +1120,22 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 
 func claudeOwnershipResolver(catalog capabilitypack.Catalog) func(context.Context, string, string, string) (capabilitypack.Pack, error) {
 	current := make(map[string]capabilitypack.Pack)
+	currentByID := make(map[string]capabilitypack.Pack)
+	currentSnapshots := make(map[string]bool)
 	for _, pack := range catalog.List() {
 		current[pack.ID+"\x00"+pack.Version+"\x00"+pack.CatalogSnapshot] = pack
+		currentByID[pack.ID] = pack
+		currentSnapshots[pack.CatalogSnapshot] = true
 	}
 	return func(ctx context.Context, id, version, snapshotID string) (capabilitypack.Pack, error) {
 		if pack, ok := current[id+"\x00"+version+"\x00"+snapshotID]; ok {
 			return pack, nil
+		}
+		if pack, ok := currentByID[id]; ok && (snapshotID == "" || pack.CatalogSnapshot == snapshotID) {
+			return pack, nil
+		}
+		if snapshotID == "" || currentSnapshots[snapshotID] {
+			return capabilitypack.Pack{}, fmt.Errorf("capability pack %q has no catalog-current ownership contract", id)
 		}
 		return catalog.ResolveIntentPackAt(ctx, id, version, snapshotID)
 	}
