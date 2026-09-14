@@ -70,6 +70,28 @@ Project, and only then atomically exchanges the complete prepared bundle into
 the Git worktree. A rejected or interrupted operation never exposes a partial
 Catalog Project. These commands never publish a Catalog Snapshot.
 
+Refresh every exact-copy resource for one Pack origin by selecting the new
+upstream commit and the Pack's new version:
+
+```sh
+packy catalog upstream-refresh example-pack \
+  --project /path/to/packy-catalog \
+  --origin-id upstream \
+  --commit fedcba9876543210fedcba9876543210fedcba98 \
+  --version 0.2.0
+```
+
+Before preparing the update, Packy verifies the current exact copies against
+the previously pinned commit. Unexpected local changes stop the operation.
+Packy then acquires the selected commit, replaces all exact copies for that
+origin in the staged bundle, updates their shared provenance and Pack version,
+and validates the complete Catalog Project before applying it atomically. Any
+acquisition, validation, or concurrent-write failure leaves the requested
+operation unapplied. An origin containing adapted resources is rejected until
+those resources are explicitly reconciled; adaptations are never overwritten
+or silently repointed. Upstream Refresh leaves a reviewable Git diff and never
+publishes it.
+
 ## Validation
 
 From a Packy checkout, validate a candidate Catalog Project with:

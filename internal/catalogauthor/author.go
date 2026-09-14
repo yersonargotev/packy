@@ -59,6 +59,15 @@ type ImportRequest struct {
 	Conflicts    []string
 }
 
+// RefreshRequest describes one exact-copy Upstream Refresh.
+type RefreshRequest struct {
+	ProjectRoot string
+	PackID      string
+	Version     string
+	OriginID    string
+	Commit      string
+}
+
 // Result identifies the validated reviewable content left by an operation.
 type Result struct {
 	PackID       string
@@ -68,6 +77,17 @@ type Result struct {
 	Repository   string
 	Commit       string
 	Packs        int
+}
+
+// RefreshResult identifies one validated exact-copy Upstream Refresh.
+type RefreshResult struct {
+	PackID      string
+	Version     string
+	Repository  string
+	OldCommit   string
+	Commit      string
+	ExactCopies int
+	Packs       int
 }
 
 // Create prepares and validates a new Pack before atomically installing its
@@ -216,6 +236,124 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 		Resource:     request.Kind + ":" + request.ResourceID,
 		Relationship: request.Relationship, Repository: request.Repository,
 		Commit: request.Commit, Packs: len(validation.Packs),
+	}, nil
+}
+
+// RefreshExactCopies verifies the current exact copies against their pinned
+// origin, prepares them from a selected newer commit, validates the complete
+// Catalog Project, and only then applies the prepared bundle.
+func RefreshExactCopies(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
+	var result RefreshResult
+	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+		var err error
+		result, err = refreshExactCopies(ctx, request, resolver)
+		return err
+	})
+	return result, err
+}
+
+func refreshExactCopies(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
+	if resolver == nil {
+		return RefreshResult{}, fmt.Errorf("Upstream Refresh requires an exact-origin resolver")
+	}
+	if strings.TrimSpace(request.ProjectRoot) == "" {
+		return RefreshResult{}, fmt.Errorf("Catalog Project path is required")
+	}
+	if !authoringIDPattern.MatchString(request.PackID) {
+		return RefreshResult{}, fmt.Errorf("Pack id must be lowercase kebab-case")
+	}
+	if !authoringIDPattern.MatchString(request.OriginID) {
+		return RefreshResult{}, fmt.Errorf("origin id must be lowercase kebab-case")
+	}
+	if !authoringCommitPattern.MatchString(request.Commit) {
+		return RefreshResult{}, fmt.Errorf("commit must be a full lowercase Git object ID")
+	}
+	if strings.TrimSpace(request.Version) == "" {
+		return RefreshResult{}, fmt.Errorf("new Pack version is required")
+	}
+
+	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	defer cleanup()
+	manifestPath := filepath.Join("bundle", "packs", request.PackID, "pack.json")
+	stagedManifest := filepath.Join(stage, manifestPath)
+	_, manifest, err := readManifest(stagedManifest)
+	if err != nil {
+		return RefreshResult{}, fmt.Errorf("read Pack %q: %w", request.PackID, err)
+	}
+
+	originIndex := -1
+	for i := range manifest.Origins {
+		if manifest.Origins[i].ID == request.OriginID {
+			originIndex = i
+			break
+		}
+	}
+	if originIndex < 0 {
+		return RefreshResult{}, fmt.Errorf("Pack %q has no origin %q", request.PackID, request.OriginID)
+	}
+	oldOrigin := manifest.Origins[originIndex]
+	if oldOrigin.Commit == request.Commit {
+		return RefreshResult{}, fmt.Errorf("selected upstream commit is already pinned for origin %q", request.OriginID)
+	}
+
+	var exactCopies []managedpack.Resource
+	for _, resource := range manifest.Resources {
+		if resource.Origin == nil || resource.Origin.ID != request.OriginID {
+			continue
+		}
+		if resource.Origin.Relationship == managedpack.RelationshipAdapted {
+			return RefreshResult{}, fmt.Errorf("origin %q includes adapted resource %q; Upstream Refresh requires explicit reconciliation", request.OriginID, resource.Kind+":"+resource.ID)
+		}
+		if resource.Origin.Relationship == managedpack.RelationshipExactCopy {
+			exactCopies = append(exactCopies, resource)
+		}
+	}
+	if len(exactCopies) == 0 {
+		return RefreshResult{}, fmt.Errorf("origin %q has no exact-copy resources", request.OriginID)
+	}
+
+	if _, err := managedpack.ValidateCatalogProject(ctx, request.ProjectRoot, "", resolver); err != nil {
+		return RefreshResult{}, fmt.Errorf("verify current Catalog Project before Upstream Refresh: %w", err)
+	}
+	newOrigin := oldOrigin
+	newOrigin.Commit = request.Commit
+	newOrigin.Revision = ""
+	newRoot, err := resolver.Resolve(ctx, newOrigin)
+	if err != nil {
+		return RefreshResult{}, fmt.Errorf("resolve selected upstream commit: %w", err)
+	}
+	if strings.TrimSpace(newRoot) == "" {
+		return RefreshResult{}, fmt.Errorf("resolve selected upstream commit: empty local root")
+	}
+
+	for _, resource := range exactCopies {
+		destination := filepath.Join(stage, "bundle", filepath.FromSlash(resource.Source))
+		if err := os.RemoveAll(destination); err != nil {
+			return RefreshResult{}, fmt.Errorf("prepare exact-copy resource %q: %w", resource.Kind+":"+resource.ID, err)
+		}
+		source := filepath.Join(newRoot, filepath.FromSlash(resource.Origin.Path))
+		if err := copyPath(source, destination); err != nil {
+			return RefreshResult{}, fmt.Errorf("prepare exact-copy resource %q from origin path %q: %w", resource.Kind+":"+resource.ID, resource.Origin.Path, err)
+		}
+	}
+	manifest.Version = request.Version
+	manifest.Origins[originIndex] = newOrigin
+	if err := writeManifest(stagedManifest, manifest); err != nil {
+		return RefreshResult{}, err
+	}
+	validation, err := managedpack.ValidateCatalogProject(ctx, stage, request.ProjectRoot, resolver)
+	if err != nil {
+		return RefreshResult{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
+	}
+	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+		return RefreshResult{}, fmt.Errorf("write prepared Catalog Project: %w", err)
+	}
+	return RefreshResult{
+		PackID: manifest.ID, Version: manifest.Version, Repository: newOrigin.Repository,
+		Commit: newOrigin.Commit, OldCommit: oldOrigin.Commit, ExactCopies: len(exactCopies), Packs: len(validation.Packs),
 	}, nil
 }
 
