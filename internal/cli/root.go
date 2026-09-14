@@ -215,7 +215,42 @@ func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Comm
 			}})
 		},
 	})
-	command.AddCommand(newCatalogCreateCommand(opts), newCatalogImportCommand(opts))
+	command.AddCommand(newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
+	return command
+}
+
+func newCatalogUpstreamRefreshCommand(opts Options) *cobra.Command {
+	var request catalogauthor.RefreshRequest
+	command := &cobra.Command{
+		Use: "upstream-refresh <pack>", Short: "Refresh exact-copy resources from a selected upstream commit", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			request.PackID = args[0]
+			originResolver, cleanup, err := resolveCatalogOrigins(opts)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			result, err := catalogauthor.RefreshExactCopies(cmd.Context(), request, originResolver)
+			if err != nil {
+				return err
+			}
+			label := "resources"
+			if result.ExactCopies == 1 {
+				label = "resource"
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "refreshed %d exact-copy %s for %s@%s from %s@%s -> %s; validated Catalog Project packs=%d; publication not performed\n",
+				result.ExactCopies, label, result.PackID, result.Version, result.Repository, result.OldCommit, result.Commit, result.Packs)
+			return err
+		},
+	}
+	flags := command.Flags()
+	flags.StringVar(&request.ProjectRoot, "project", ".", "Catalog Project root")
+	flags.StringVar(&request.Version, "version", "", "new Pack SemVer")
+	flags.StringVar(&request.OriginID, "origin-id", "", "Pack-local upstream origin id")
+	flags.StringVar(&request.Commit, "commit", "", "selected full upstream commit")
+	for _, name := range []string{"version", "origin-id", "commit"} {
+		_ = command.MarkFlagRequired(name)
+	}
 	return command
 }
 
