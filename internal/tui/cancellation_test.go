@@ -30,6 +30,10 @@ func (b *blockingLifecycleBackend) Initialize(ctx context.Context, progress func
 	return ctx.Err()
 }
 
+func (b *blockingLifecycleBackend) RefreshCatalog(ctx context.Context, progress func(string)) error {
+	return b.Initialize(ctx, progress)
+}
+
 func (b *blockingLifecycleBackend) Preview(ctx context.Context, _ PreviewRequest) (Preview, error) {
 	close(b.previewStarted)
 	<-ctx.Done()
@@ -53,6 +57,8 @@ func (b *cancellationBackend) Load(ctx context.Context) (Dashboard, error) {
 }
 
 func (*cancellationBackend) Initialize(context.Context, func(string)) error { return nil }
+
+func (*cancellationBackend) RefreshCatalog(context.Context, func(string)) error { return nil }
 
 func (*cancellationBackend) Preview(context.Context, PreviewRequest) (Preview, error) {
 	return Preview{}, nil

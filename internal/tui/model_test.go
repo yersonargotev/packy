@@ -22,6 +22,8 @@ type fakeBackend struct {
 	loads           int
 	initializations int
 	initialize      func(func(string)) error
+	refreshes       int
+	refresh         func(func(string)) error
 	preview         tui.Preview
 	previewErr      error
 	previewFor      func(tui.PreviewRequest) (tui.Preview, error)
@@ -33,12 +35,94 @@ type fakeBackend struct {
 	applyFor        func(tui.ApplyRequest, func(tui.ApplyProgress)) (tui.ApplyResult, error)
 }
 
+func (b *fakeBackend) RefreshCatalog(_ context.Context, progress func(string)) error {
+	b.refreshes++
+	if b.refresh != nil {
+		return b.refresh(progress)
+	}
+	return nil
+}
+
 func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error {
 	b.initializations++
 	if b.initialize != nil {
 		return b.initialize(progress)
 	}
 	return nil
+}
+
+func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testing.T) {
+	initial := tui.Dashboard{
+		Health:  tui.Health{Status: "healthy"},
+		Catalog: tui.Catalog{SnapshotID: strings.Repeat("a", 40), Repository: "yersonargotev/packy-catalog", Digest: strings.Repeat("b", 64), Packs: 1, RefreshAvailable: true},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"codex"}}}},
+	}
+	refreshed := initial
+	refreshed.Catalog.SnapshotID = strings.Repeat("c", 40)
+	refreshed.Global.Packs = []tui.Pack{{ID: "argote", Version: "2.0.0", Surfaces: []string{"codex"}}}
+	backend := &fakeBackend{dashboard: initial}
+	backend.refresh = func(progress func(string)) error {
+		progress("selected official Catalog Snapshot " + refreshed.Catalog.SnapshotID)
+		backend.dashboard = refreshed
+		return nil
+	}
+
+	model := loadModel(t, backend)
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Reviewed Pack catalog", "yersonargotev/packy-catalog", initial.Catalog.SnapshotID, "1 Pack", "c refresh"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("catalog inspection missing %q:\n%s", want, view)
+		}
+	}
+
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+	model = runModelCommand(t, model, command)
+	if backend.refreshes != 1 {
+		t.Fatalf("catalog refresh calls = %d, want 1", backend.refreshes)
+	}
+	view = ansi.Strip(model.View().Content)
+	for _, want := range []string{"Catalog refresh succeeded", refreshed.Catalog.SnapshotID, "Enter dashboard"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("catalog refresh result missing %q:\n%s", want, view)
+		}
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, refreshed.Catalog.SnapshotID) || !strings.Contains(view, "argote  2.0.0") {
+		t.Fatalf("refreshed availability was not reloaded:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if !strings.Contains(ansi.Strip(model.View().Content), "Pack details") {
+		t.Fatal("catalog refresh removed the existing lifecycle")
+	}
+}
+
+func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testing.T) {
+	snapshotID := strings.Repeat("d", 40)
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health:  tui.Health{Status: "healthy"},
+		Catalog: tui.Catalog{SnapshotID: snapshotID, Repository: "yersonargotev/packy-catalog", Packs: 1, RefreshAvailable: true},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"codex"}}}},
+	}}
+	backend.refresh = func(func(string)) error {
+		return errors.New("Catalog Snapshot requires Packy engine 2; update Packy and retry catalog refresh")
+	}
+
+	model := loadModel(t, backend)
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+	model = runModelCommand(t, model, command)
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Catalog refresh failed", "requires Packy engine 2", "previous selected Catalog Snapshot remains available"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("failed refresh missing %q:\n%s", want, view)
+		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, snapshotID) || !strings.Contains(view, "argote") {
+		t.Fatalf("failed refresh did not retain prior catalog:\n%s", view)
+	}
 }
 
 func (b *fakeBackend) Preview(_ context.Context, request tui.PreviewRequest) (tui.Preview, error) {

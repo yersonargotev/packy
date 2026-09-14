@@ -26,6 +26,7 @@ const dashboardWheelDelta = 3
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
 	Initialize(context.Context, func(string)) error
+	RefreshCatalog(context.Context, func(string)) error
 	Preview(context.Context, PreviewRequest) (Preview, error)
 	Apply(context.Context, ApplyRequest, func(ApplyProgress)) (ApplyResult, error)
 }
@@ -204,8 +205,17 @@ type Scope struct {
 type Dashboard struct {
 	Health  Health
 	Setup   Setup
+	Catalog Catalog
 	Global  Scope
 	Project Scope
+}
+
+type Catalog struct {
+	SnapshotID       string
+	Repository       string
+	Digest           string
+	Packs            int
+	RefreshAvailable bool
 }
 
 type Setup struct {
@@ -300,6 +310,7 @@ type Model struct {
 	detailScroll           int
 	pagedScreenScroll      int
 	initializing           bool
+	catalogOperation       string
 	initializationResult   bool
 	initializationErr      error
 	initializationProgress []string
@@ -524,8 +535,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.initializationResult = false
 				return m, nil
 			case key.Matches(message, dashboardKeys.Inspect):
-				if m.initializationErr != nil && m.dashboard.Setup.InitializationAvailable {
-					return m.startInitialization()
+				if m.initializationErr != nil {
+					if m.catalogOperation == "refresh" && m.dashboard.Catalog.RefreshAvailable {
+						return m.startCatalogRefresh()
+					}
+					if m.dashboard.Setup.InitializationAvailable {
+						return m.startInitialization()
+					}
 				}
 				m.initializationResult = false
 				return m, nil
@@ -659,6 +675,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(message, dashboardKeys.Reload):
 			m.loaded, m.err, m.inspecting, m.selecting, m.preview = false, nil, false, false, nil
 			return m, m.Init()
+		case key.Matches(message, dashboardKeys.CatalogRefresh):
+			if m.dashboard.Catalog.RefreshAvailable {
+				return m.startCatalogRefresh()
+			}
 		case key.Matches(message, dashboardKeys.Help):
 			m.showHelp = !m.showHelp
 		case key.Matches(message, dashboardKeys.Health):
@@ -763,7 +783,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startInitialization() (tea.Model, tea.Cmd) {
+	return m.startCatalogOperation("initialize")
+}
+
+func (m Model) startCatalogRefresh() (tea.Model, tea.Cmd) {
+	return m.startCatalogOperation("refresh")
+}
+
+func (m Model) startCatalogOperation(operation string) (tea.Model, tea.Cmd) {
 	m.initializing = true
+	m.catalogOperation = operation
 	m.initializationResult = false
 	m.initializationErr = nil
 	m.initializationProgress = nil
@@ -771,7 +800,11 @@ func (m Model) startInitialization() (tea.Model, tea.Cmd) {
 	m.initializationEvents = make(chan tea.Msg, 64)
 	events := m.initializationEvents
 	initialize := func() tea.Msg {
-		err := m.backend.Initialize(m.ctx, func(detail string) {
+		callback := m.backend.Initialize
+		if operation == "refresh" {
+			callback = m.backend.RefreshCatalog
+		}
+		err := callback(m.ctx, func(detail string) {
 			sendOperationEvent(m.ctx, events, initializationProgress{detail: detail})
 		})
 		sendOperationEvent(m.ctx, events, initializationFinished{err: err})
@@ -1085,21 +1118,22 @@ func nextRow(row, length, direction int) int {
 }
 
 type keyMap struct {
-	Up, Down, NextScope, PreviousScope, Inspect, Back, Filter, Health, Help, Reload, Quit key.Binding
+	Up, Down, NextScope, PreviousScope, Inspect, Back, Filter, Health, Help, Reload, CatalogRefresh, Quit key.Binding
 }
 
 var dashboardKeys = keyMap{
-	Up:            key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-	Down:          key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-	NextScope:     key.NewBinding(key.WithKeys("tab", "right"), key.WithHelp("tab/→", "next scope")),
-	PreviousScope: key.NewBinding(key.WithKeys("shift+tab", "left"), key.WithHelp("shift+tab/←", "previous scope")),
-	Inspect:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "inspect")),
-	Back:          key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-	Filter:        key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	Health:        key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "health")),
-	Help:          key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
-	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Up:             key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Down:           key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+	NextScope:      key.NewBinding(key.WithKeys("tab", "right"), key.WithHelp("tab/→", "next scope")),
+	PreviousScope:  key.NewBinding(key.WithKeys("shift+tab", "left"), key.WithHelp("shift+tab/←", "previous scope")),
+	Inspect:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "inspect")),
+	Back:           key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+	Filter:         key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	Health:         key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "health")),
+	Help:           key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	Reload:         key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
+	CatalogRefresh: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "refresh catalog")),
+	Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
 func (m Model) View() tea.View {
@@ -1220,10 +1254,32 @@ func (m Model) dashboardContent() (string, string) {
 		help = m.help.ShortHelpView(setupHelpBindings())
 	}
 	if m.showHelp {
-		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter inspect · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · q/Ctrl+C quit"
+		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter inspect · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · c refresh catalog · q/Ctrl+C quit"
 	}
-	content := strings.Join([]string{header, "", health + setup, "", scopes + filter}, "\n")
+	catalog := ""
+	if m.dashboard.Catalog.SnapshotID != "" {
+		catalog = "\n" + panel(m.renderCatalog(), contentWidth, false)
+	}
+	content := strings.Join([]string{header, "", health + setup + catalog, "", scopes + filter}, "\n")
 	return content, help
+}
+
+func (m Model) renderCatalog() string {
+	catalog := m.dashboard.Catalog
+	packLabel := "Packs"
+	if catalog.Packs == 1 {
+		packLabel = "Pack"
+	}
+	lines := []string{
+		sectionTitleStyle.Render("◇ Reviewed Pack catalog") + "  " + dimStyle.Render("· c refresh"),
+		"Repository: " + catalog.Repository,
+		"Selected snapshot: " + catalog.SnapshotID,
+		fmt.Sprintf("Inventory: %d %s", catalog.Packs, packLabel),
+	}
+	if catalog.Digest != "" {
+		lines = append(lines, "Catalog digest: "+catalog.Digest)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) dashboardActive() bool {
@@ -1336,23 +1392,32 @@ func (m Model) renderSetup() string {
 }
 
 func (m Model) renderInitializationProgress() string {
+	title, status, waiting := "Packy initialization", "Initialization in progress", "Packy will return when initialization finishes"
+	if m.catalogOperation == "refresh" {
+		title, status, waiting = "Catalog refresh", "Catalog refresh in progress", "Packy will return when catalog refresh finishes"
+	}
 	lines := []string{sectionHeading("Progress", 0)}
 	if len(m.initializationProgress) == 0 {
-		lines = append(lines, "Preparing Installed Source…")
+		lines = append(lines, "Acquiring the latest official Catalog Snapshot…")
 	} else {
 		for _, detail := range m.initializationProgress {
 			lines = append(lines, "  "+detail)
 		}
 	}
 	content := strings.Join(lines, "\n")
-	return m.renderViewportScreen("Packy initialization", "Initialization in progress", content, "Packy will return when initialization finishes", m.viewportMaxOffset(content))
+	return m.renderViewportScreen(title, status, content, waiting, m.viewportMaxOffset(content))
 }
 
 func (m Model) renderInitializationResult() string {
-	status := "Initialization succeeded"
+	title := "Packy initialization"
+	operation := "Initialization"
+	if m.catalogOperation == "refresh" {
+		title, operation = "Catalog refresh", "Catalog refresh"
+	}
+	status := operation + " succeeded"
 	action := "Enter dashboard"
 	if m.initializationErr != nil {
-		status = "Initialization failed"
+		status = operation + " failed"
 		action = "Enter retry"
 	}
 	lines := []string{statusBadge(map[bool]string{true: "failed", false: "verified"}[m.initializationErr != nil]), sectionHeading("Activity", 0)}
@@ -1361,8 +1426,11 @@ func (m Model) renderInitializationResult() string {
 	}
 	if m.initializationErr != nil {
 		lines = append(lines, "", m.initializationErr.Error())
+		if m.catalogOperation == "refresh" && m.dashboard.Catalog.SnapshotID != "" {
+			lines = append(lines, "", "The previous selected Catalog Snapshot remains available: "+m.dashboard.Catalog.SnapshotID)
+		}
 	}
-	return m.renderPagedScreen("Packy initialization", status, strings.Join(lines, "\n"), action+" · Esc dashboard · q quit")
+	return m.renderPagedScreen(title, status, strings.Join(lines, "\n"), action+" · Esc dashboard · q quit")
 }
 
 func (m Model) renderBody(content string) string {

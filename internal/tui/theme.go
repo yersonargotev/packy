@@ -237,6 +237,7 @@ func dashboardHelpBindings() []key.Binding {
 		dashboardKeys.Health,
 		dashboardKeys.Help,
 		dashboardKeys.Reload,
+		dashboardKeys.CatalogRefresh,
 		dashboardKeys.Quit,
 	}
 }
