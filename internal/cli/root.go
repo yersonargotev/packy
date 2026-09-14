@@ -227,7 +227,20 @@ func newCatalogCreateCommand(opts Options) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request.PackID = args[0]
 			request.Surfaces = surfaces
-			result, err := catalogauthor.Create(cmd.Context(), request, opts.CatalogOriginResolver)
+			originResolver := opts.CatalogOriginResolver
+			var closeResolver func() error
+			if originResolver == nil {
+				created, err := catalogorigin.New()
+				if err != nil {
+					return err
+				}
+				originResolver = created
+				closeResolver = created.Close
+			}
+			if closeResolver != nil {
+				defer closeResolver()
+			}
+			result, err := catalogauthor.Create(cmd.Context(), request, originResolver)
 			if err != nil {
 				return err
 			}
