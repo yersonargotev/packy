@@ -9,7 +9,7 @@ current discovery.
 
 | Area | Current scope |
 | --- | --- |
-| Packs | Independently selectable Packs discovered from the bundled manifests. |
+| Packs | Independently selectable Packs discovered from the selected Catalog Snapshot. |
 | Authoring | One reviewed manifest and reviewed content per Pack. |
 | Surfaces | Codex, OpenCode, and user-global Claude Code. |
 | Global lifecycle | Inspect, activate, update, status, deactivate, and remove one Pack at a time. |

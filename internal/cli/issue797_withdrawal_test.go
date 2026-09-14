@@ -206,6 +206,32 @@ func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T)
 	if out, err := executeCommand(t, NewRootCommand(opts), "activate", v2.ID(), "--surface", "codex"); err != nil {
 		t.Fatalf("activate v2 on Codex: %v\n%s", err, out)
 	}
+	currentOutput, err := executeCommand(t, NewRootCommand(opts), "show", v1.ID(), "--json")
+	if err != nil {
+		t.Fatalf("show mixed retained/current versions: %v\n%s", err, currentOutput)
+	}
+	var currentDocument packShowJSON
+	if err := json.Unmarshal([]byte(currentOutput), &currentDocument); err != nil {
+		t.Fatal(err)
+	}
+	currentVersions := map[capabilitypack.Surface]string{}
+	for _, surface := range currentDocument.SurfaceContracts {
+		currentVersions[surface.Surface] = surface.CatalogIdentity.Version
+	}
+	if currentVersions[capabilitypack.SurfaceClaude] != v1.CurrentVersion() || currentVersions[capabilitypack.SurfaceCodex] != v2.CurrentVersion() {
+		t.Fatalf("current surface contract identities = %#v", currentVersions)
+	}
+	statusOutput, err := executeCommand(t, NewRootCommand(opts), "status", v1.ID(), "--surface", "claude", "--json")
+	if err != nil {
+		t.Fatalf("status retained Claude version against current v2: %v\n%s", err, statusOutput)
+	}
+	var status capabilitypack.JSONStatusReport
+	if err := json.Unmarshal([]byte(statusOutput), &status); err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Entries) != 1 || status.Entries[0].PackVersion != v2.CurrentVersion() || status.Entries[0].Intent.Version != v1.CurrentVersion() || !status.Entries[0].UpdateAvailable || !status.Entries[0].HistoricalEvidence.Available {
+		t.Fatalf("current catalog status lost retained evidence: %#v", status.Entries)
+	}
 	source.release = catalogReleaseFixture(t, withdrawnSnapshot, remaining)
 	if out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh"); err != nil {
 		t.Fatalf("select withdrawing snapshot: %v\n%s", err, out)

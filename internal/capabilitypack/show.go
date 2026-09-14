@@ -235,7 +235,7 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 		}
 		surfaceIntents[surface] = intent
 		surfaceSet[surface] = true
-		if !current && intent.Active {
+		if intent.Active {
 			retained, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
 			if err != nil {
 				return ShowReport{}, fmt.Errorf("resolve %s retained surface contract: %w", surface, err)

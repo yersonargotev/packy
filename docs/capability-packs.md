@@ -64,7 +64,7 @@ resources, projected paths, and content digests. Packy uses that receipt to:
 
 - stop before changing drifted Pack-owned paths;
 - reject target collisions before mutation;
-- update only to the current bundled Pack version;
+- update only to the Pack version in the selected Catalog Snapshot;
 - remove only unchanged paths owned by the selected receipt; and
 - keep other Pack receipts independent.
 

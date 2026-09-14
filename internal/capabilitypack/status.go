@@ -512,15 +512,25 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active && intent.Version != pack.Version {
-			return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
-		}
-		if intent.Active && !slices.Contains(pack.Surfaces, surface) {
-			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, pack.ID, pack.Version)
-		}
-		if intent.Active || ownedResidual {
 			evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
-		} else {
-			evidencePack, err = f.catalog.Show(ctx, pack.ID)
+			if err != nil {
+				return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
+			}
+			entry.Contract = LifecycleContractFor(evidencePack, surface, intent.Aliases)
+		}
+		contractPack := pack
+		if evidencePack.ID != "" {
+			contractPack = evidencePack
+		}
+		if intent.Active && !slices.Contains(contractPack.Surfaces, surface) {
+			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, contractPack.ID, contractPack.Version)
+		}
+		if evidencePack.ID == "" {
+			if intent.Active || ownedResidual {
+				evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
+			} else {
+				evidencePack, err = f.catalog.Show(ctx, pack.ID)
+			}
 		}
 		if err != nil {
 			return StatusEntry{}, err
