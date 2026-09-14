@@ -25,8 +25,9 @@ type activationDocument struct {
 }
 
 type installedPackIdentity struct {
-	ID      string `json:"id"`
-	Version string `json:"version"`
+	ID              string `json:"id"`
+	Version         string `json:"version"`
+	CatalogSnapshot string `json:"catalog_snapshot,omitempty"`
 }
 
 type installedProjection struct {
@@ -184,7 +185,7 @@ func receiptDocumentFromActivation(document activationDocument) installedReceipt
 				continue
 			}
 			receipt := installedPackReceipt{
-				Pack: installedPackIdentity{ID: intent.PackID, Version: intent.Version}, Surface: intent.Surface,
+				Pack: installedPackIdentity{ID: intent.PackID, Version: intent.Version, CatalogSnapshot: intent.CatalogSnapshot}, Surface: intent.Surface,
 				ReadinessObligations: append([]ReadinessObligation(nil), intent.ReadinessObligations...),
 				ExternalRequirements: append([]string{}, intent.ExternalRequirements...),
 				Selection:            cloneSelection(intent.Selection), Aliases: cloneAliases(intent.Aliases),
@@ -226,7 +227,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 			bySurface[receipt.Surface] = state
 		}
 		explicit := true
-		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
+		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, CatalogSnapshot: receipt.Pack.CatalogSnapshot, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
 		state.Intents = append(state.Intents, intent)
 		state.Intent = intent
 		for _, projection := range receipt.Projections {

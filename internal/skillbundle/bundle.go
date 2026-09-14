@@ -13,84 +13,10 @@ import (
 var defaultGroups = []string{"engineering", "productivity"}
 var selectedInProgress = []string{"loop-me"}
 
-type SourceOrigin string
-
-const (
-	SourceOriginOverride   SourceOrigin = "override"
-	SourceOriginRepository SourceOrigin = "repo"
-	SourceOriginInstalled  SourceOrigin = "installed"
-)
-
-// InstalledSource is the narrow bootstrap-owned descriptor consumed when the
-// package installation is the selected fallback.
-type InstalledSource interface {
-	BundleRoot() string
-}
-
-// SourceOptions supplies the process-specific candidates used to select a
-// skill source. Callers own environment and cwd lookup; this package owns
-// precedence and the Packy bundle layout.
-type SourceOptions struct {
-	ExplicitRoot    string
-	RepositoryStart string
-	InstalledSource InstalledSource
-}
-
 type Source struct {
 	Root        string
 	MissingHint string
 	IsDefault   bool
-	Origin      SourceOrigin
-}
-
-// ResolveSource selects an explicit development source, then a repository
-// ancestor, then the package Installed Source. Selection is deliberately
-// separate from Discover validation so path-only commands can still inspect a
-// missing installation and mutating commands fail when they request resources.
-func ResolveSource(ctx context.Context, opts SourceOptions) (Source, error) {
-	repositoryStart, err := filepath.Abs(opts.RepositoryStart)
-	if err != nil {
-		return Source{}, fmt.Errorf("resolve repository start: %w", err)
-	}
-	if opts.ExplicitRoot != "" {
-		root := opts.ExplicitRoot
-		if !filepath.IsAbs(root) {
-			root = filepath.Join(repositoryStart, root)
-		}
-		return Source{Root: filepath.Clean(root), Origin: SourceOriginOverride}, nil
-	}
-
-	for dir := repositoryStart; ; dir = filepath.Dir(dir) {
-		candidate := SourceRoot(dir)
-		exists, err := SourceRootExists(ctx, candidate)
-		if err != nil {
-			return Source{}, err
-		}
-		if exists {
-			return Source{Root: candidate, Origin: SourceOriginRepository}, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-	}
-
-	return Source{
-		Root:        InstalledSourceRoot(opts.InstalledSource),
-		MissingHint: "run packy init to initialize it",
-		IsDefault:   true,
-		Origin:      SourceOriginInstalled,
-	}, nil
-}
-
-// InstalledSourceRoot derives the skill source beneath bootstrap's Installed
-// Source bundle without reacquiring checkout layout knowledge.
-func InstalledSourceRoot(source InstalledSource) string {
-	return filepath.Join(source.BundleRoot(), "skills")
-}
-
-func SourceRoot(packyRoot string) string {
-	return filepath.Join(packyRoot, "bundle", "skills")
 }
 
 // BundleRoot returns the Packy-owned bundle containing a selected skill source.
@@ -98,17 +24,6 @@ func SourceRoot(packyRoot string) string {
 // learning the source tree layout.
 func BundleRoot(skillSourceRoot string) string {
 	return filepath.Dir(filepath.Clean(skillSourceRoot))
-}
-
-func SourceRootExists(ctx context.Context, sourceRoot string) (bool, error) {
-	exists := false
-	repositoryRoot := filepath.Dir(BundleRoot(sourceRoot))
-	err := bundletransaction.WithExclusive(ctx, repositoryRoot, func() error {
-		info, statErr := os.Stat(sourceRoot)
-		exists = statErr == nil && info.IsDir()
-		return nil
-	})
-	return exists, err
 }
 
 // Skill is the installer's ownership metadata for one bundled skill.

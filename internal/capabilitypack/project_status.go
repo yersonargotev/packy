@@ -568,7 +568,11 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		status := &report.Packs[i]
 		var pack Pack
 		if status.Pack.Version != "" {
-			pack, err = f.catalog.resolveIntentPack(ctx, status.Pack.ID, status.Pack.Version)
+			snapshotID := ""
+			if installationErr == nil {
+				snapshotID = projectReceiptCatalogSnapshot(installation.Lock, status.Pack.ID, status.Surface)
+			}
+			pack, err = f.catalog.resolveIntentPackAt(ctx, status.Pack.ID, status.Pack.Version, snapshotID)
 		} else {
 			pack, err = f.catalog.Show(ctx, status.Pack.ID)
 		}

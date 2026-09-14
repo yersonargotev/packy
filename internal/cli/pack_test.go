@@ -323,13 +323,13 @@ func TestRootCompletionOffersFlatPackVerbsWithoutPackGroup(t *testing.T) {
 		}
 		commands = append(commands, command)
 	}
-	want := []string{"activate", "audit", "check", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "verify", "version"}
+	want := []string{"activate", "audit", "catalog", "check", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "verify", "version"}
 	if !reflect.DeepEqual(commands, want) {
 		t.Fatalf("root completion commands = %q, want %q\n%s", commands, want, out)
 	}
 }
 
-func TestPackListUsesOneCapturedWorkstationForSkillSource(t *testing.T) {
+func TestPackListUsesOneCapturedWorkstationForExplicitDevelopmentSource(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -338,8 +338,9 @@ func TestPackListUsesOneCapturedWorkstationForSkillSource(t *testing.T) {
 	captures := 0
 	opts := Options{
 		Env: MapEnv{
-			"HOME":            home,
-			"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills"),
 		},
 		Getwd: func() (string, error) {
 			captures++

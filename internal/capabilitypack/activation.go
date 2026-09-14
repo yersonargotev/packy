@@ -325,6 +325,7 @@ type ActivationIntent struct {
 	PackID               string                `json:"pack_id"`
 	Surface              Surface               `json:"surface"`
 	Version              string                `json:"version"`
+	CatalogSnapshot      string                `json:"catalog_snapshot,omitempty"`
 	Active               bool                  `json:"active"`
 	Revision             int                   `json:"revision"`
 	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
@@ -697,7 +698,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	oldVersion := requested.Version
 	if active && intent.Version != "" {
 		oldVersion = intent.Version
-		requested, err = f.catalog.resolveIntentPack(ctx, request.PackID, intent.Version)
+		requested, err = f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogSnapshot)
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}
@@ -1207,7 +1208,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			targetVersion = request.Plan.oldVersion
 		}
 		explicit := true
-		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, Active: activeTarget, Revision: state.Intent.Revision + 1, ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...), ExternalRequirements: append([]string{}, pack.Requires.Tools...), Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, Resources: packResourceIdentities(pack), Explicit: &explicit}
+		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, CatalogSnapshot: pack.CatalogSnapshot, Active: activeTarget, Revision: state.Intent.Revision + 1, ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...), ExternalRequirements: append([]string{}, pack.Requires.Tools...), Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, Resources: packResourceIdentities(pack), Explicit: &explicit}
 		byID := map[string]ActivationIntent{}
 		for _, intent := range previousIntents {
 			byID[intent.PackID] = intent
@@ -1224,7 +1225,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			if previouslyActive {
 				explicitFact = previous.Explicit
 			}
-			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, ReadinessObligations: append([]ReadinessObligation(nil), activation.Pack.ReadinessObligations...), ExternalRequirements: append([]string{}, activation.Pack.Requires.Tools...), Aliases: cloneAliases(aliases), Selection: activationSelection, Resources: packResourceIdentities(activation.Pack), Explicit: explicitFact}
+			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, CatalogSnapshot: activation.Pack.CatalogSnapshot, Active: true, Revision: state.Intent.Revision, ReadinessObligations: append([]ReadinessObligation(nil), activation.Pack.ReadinessObligations...), ExternalRequirements: append([]string{}, activation.Pack.Requires.Tools...), Aliases: cloneAliases(aliases), Selection: activationSelection, Resources: packResourceIdentities(activation.Pack), Explicit: explicitFact}
 			if activation.Pack.ID == pack.ID {
 				byID[activation.Pack.ID] = state.Intent
 			}
@@ -1557,7 +1558,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if plan.operation == OperationDeactivate {
 		intent, ok := intentForPack(state, plan.pack.ID, plan.surface)
 		if ok && intent.Version != "" {
-			pack, err = f.catalog.resolveIntentPack(ctx, intent.PackID, intent.Version)
+			pack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
 			if err != nil {
 				return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("historical artifact changed after Preview: %v; rerun deactivate to preview a fresh plan", err)}
 			}
