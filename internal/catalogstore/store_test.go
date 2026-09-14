@@ -71,6 +71,9 @@ func TestFailedAcquisitionPreservesPreviousSelection(t *testing.T) {
 		{"unknown engine vocabulary", func(r *catalogstore.Release) {
 			replaceManifest(t, r, strings.Replace(validManifest("newer", "2.0.0"), `"resources":[`, `"future_engine_field":true,"resources":[`, 1))
 		}, "newer Packy engine"},
+		{"unsupported capability", func(r *catalogstore.Release) {
+			replaceManifest(t, r, strings.Replace(validManifest("newer", "2.0.0"), `"capabilities":[]`, `"capabilities":[{"type":"future-capability"}]`, 1))
+		}, "newer Packy engine"},
 	}
 
 	for i, test := range tests {

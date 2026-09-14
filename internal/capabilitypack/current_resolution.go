@@ -10,6 +10,9 @@ func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pac
 }
 
 func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotID string) (Pack, error) {
+	if c.snapshotID != "" && snapshotID == "" {
+		return Pack{}, fmt.Errorf("capability pack %q receipt predates Catalog Snapshots; complete the documented one-time v0.2 reset before using the independent catalog", id)
+	}
 	if snapshotID != "" && snapshotID != c.snapshotID {
 		if c.resolveSnapshot == nil {
 			return Pack{}, fmt.Errorf("capability pack %q receipt references unavailable Catalog Snapshot %s", id, snapshotID)
