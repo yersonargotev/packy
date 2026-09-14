@@ -154,6 +154,30 @@ func TestCatalogUpstreamRefreshDistinguishesAddedAndRemovedEmptyUpstreamFiles(t 
 	}
 }
 
+func TestCatalogUpstreamRefreshShowsUpstreamFileModeChanges(t *testing.T) {
+	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	oldPath := filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md")
+	newPath := filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md")
+	writeAuthoringFile(t, oldPath, "same upstream bytes\n")
+	writeAuthoringFile(t, newPath, "same upstream bytes\n")
+	if err := os.Chmod(newPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	terminal := &fakeTerminal{interactive: true, approve: true}
+
+	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver, Terminal: terminal}),
+		"catalog", "upstream-refresh", "seed", "--project", fixture.project,
+		"--origin-id", "upstream", "--commit", fixture.newCommit, "--version", "1.1.0")
+	if err != nil {
+		t.Fatalf("mode reconciliation: %v\n%s", err, out)
+	}
+	for _, want := range []string{"old mode 100644", "new mode 100755"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("mode diff missing %q: %s", want, out)
+		}
+	}
+}
+
 func TestCatalogUpstreamRefreshLeavesMixedRequestUnappliedOnFailure(t *testing.T) {
 	fixture := writeMixedUpstreamRefreshFixture(t, false)
 	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))

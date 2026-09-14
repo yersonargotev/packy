@@ -421,9 +421,9 @@ func adaptationChanges(oldPath, newPath string) (string, error) {
 	sort.Strings(paths)
 	var report strings.Builder
 	for _, path := range paths {
-		oldData, oldExists := oldFiles[path]
-		newData, newExists := newFiles[path]
-		if oldExists && newExists && bytes.Equal(oldData, newData) {
+		oldFile, oldExists := oldFiles[path]
+		newFile, newExists := newFiles[path]
+		if oldExists && newExists && bytes.Equal(oldFile.data, newFile.data) && oldFile.mode == newFile.mode {
 			continue
 		}
 		oldLabel, newLabel := "old/"+path, "new/"+path
@@ -434,10 +434,18 @@ func adaptationChanges(oldPath, newPath string) (string, error) {
 			newLabel = "/dev/null"
 		}
 		fmt.Fprintf(&report, "--- %s\n+++ %s\n", oldLabel, newLabel)
-		if textBytes(oldData) && textBytes(newData) {
-			writeChangedLines(&report, oldData, newData)
+		switch {
+		case !oldExists:
+			fmt.Fprintf(&report, "new file mode %s\n", newFile.mode)
+		case !newExists:
+			fmt.Fprintf(&report, "deleted file mode %s\n", oldFile.mode)
+		case oldFile.mode != newFile.mode:
+			fmt.Fprintf(&report, "old mode %s\nnew mode %s\n", oldFile.mode, newFile.mode)
+		}
+		if textBytes(oldFile.data) && textBytes(newFile.data) {
+			writeChangedLines(&report, oldFile.data, newFile.data)
 		} else {
-			fmt.Fprintf(&report, "-sha256:%x\n+sha256:%x\n", sha256.Sum256(oldData), sha256.Sum256(newData))
+			fmt.Fprintf(&report, "-sha256:%x\n+sha256:%x\n", sha256.Sum256(oldFile.data), sha256.Sum256(newFile.data))
 		}
 		if report.Len() > maximumAdaptationDiffBytes {
 			return "", fmt.Errorf("upstream differences exceed the %d-byte display limit; reconciliation cannot continue", maximumAdaptationDiffBytes)
@@ -449,7 +457,12 @@ func adaptationChanges(oldPath, newPath string) (string, error) {
 	return report.String(), nil
 }
 
-func adaptationFiles(root string) (map[string][]byte, error) {
+type adaptationFile struct {
+	data []byte
+	mode string
+}
+
+func adaptationFiles(root string) (map[string]adaptationFile, error) {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return nil, err
@@ -457,13 +470,13 @@ func adaptationFiles(root string) (map[string][]byte, error) {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("symlinks are not allowed: %s", root)
 	}
-	files := map[string][]byte{}
+	files := map[string]adaptationFile{}
 	if info.Mode().IsRegular() {
 		data, err := os.ReadFile(root)
 		if err != nil {
 			return nil, err
 		}
-		files[filepath.Base(root)] = data
+		files[filepath.Base(root)] = adaptationFile{data: data, mode: canonicalGitFileMode(info.Mode())}
 		return files, nil
 	}
 	if !info.IsDir() {
@@ -491,10 +504,17 @@ func adaptationFiles(root string) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
-		files[filepath.ToSlash(relative)] = data
+		files[filepath.ToSlash(relative)] = adaptationFile{data: data, mode: canonicalGitFileMode(info.Mode())}
 		return nil
 	})
 	return files, err
+}
+
+func canonicalGitFileMode(mode os.FileMode) string {
+	if mode.Perm()&0o111 != 0 {
+		return "100755"
+	}
+	return "100644"
 }
 
 func textBytes(data []byte) bool {
