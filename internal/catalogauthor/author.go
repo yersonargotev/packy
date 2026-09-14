@@ -522,6 +522,9 @@ func writeChangedLines(report *strings.Builder, oldData, newData []byte) {
 			}
 			report.WriteByte('\n')
 		}
+		if difference.Text != "" && !strings.HasSuffix(difference.Text, "\n") {
+			report.WriteString("\\ No newline at end of file\n")
+		}
 	}
 }
 

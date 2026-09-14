@@ -94,6 +94,23 @@ func TestCatalogUpstreamRefreshDoesNotPromptForIncompleteAdaptationDiff(t *testi
 	}
 }
 
+func TestCatalogUpstreamRefreshShowsChangedFinalNewline(t *testing.T) {
+	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md"), "same line")
+	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md"), "same line\n")
+	terminal := &fakeTerminal{interactive: true, approve: true}
+
+	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver, Terminal: terminal}),
+		"catalog", "upstream-refresh", "seed", "--project", fixture.project,
+		"--origin-id", "upstream", "--commit", fixture.newCommit, "--version", "1.1.0")
+	if err != nil {
+		t.Fatalf("newline reconciliation: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "\\ No newline at end of file") {
+		t.Fatalf("newline-only diff is ambiguous: %s", out)
+	}
+}
+
 func TestCatalogUpstreamRefreshLeavesMixedRequestUnappliedOnFailure(t *testing.T) {
 	fixture := writeMixedUpstreamRefreshFixture(t, false)
 	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
