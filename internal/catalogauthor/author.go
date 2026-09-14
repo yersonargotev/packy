@@ -1,0 +1,591 @@
+// Package catalogauthor owns atomic, validated Catalog Project authoring.
+package catalogauthor
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/yersonargotev/packy/internal/bundletransaction"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/managedpack"
+)
+
+var (
+	authoringIDPattern         = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	authoringRepositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	authoringCommitPattern     = regexp.MustCompile(`^[0-9a-f]{40}$`)
+)
+
+// CreateRequest describes one supported Catalog Project template expansion.
+type CreateRequest struct {
+	ProjectRoot string
+	Template    string
+	PackID      string
+	Version     string
+	Description string
+	Surfaces    []string
+}
+
+// ImportRequest describes one explicit Pack Import from an immutable origin.
+type ImportRequest struct {
+	ProjectRoot  string
+	PackID       string
+	Version      string
+	Repository   string
+	Commit       string
+	OriginID     string
+	OriginPath   string
+	Destination  string
+	Relationship string
+	Kind         string
+	ResourceID   string
+	Description  string
+	Hosts        []string
+	Notices      []string
+	License      string
+	Attribution  string
+	Requires     []string
+	Conflicts    []string
+}
+
+// Result identifies the validated reviewable content left by an operation.
+type Result struct {
+	PackID       string
+	Version      string
+	Resource     string
+	Relationship string
+	Repository   string
+	Commit       string
+	Packs        int
+}
+
+// Create prepares and validates a new Pack before atomically installing its
+// manifest in the Catalog Project. The only supported template is empty.
+func Create(ctx context.Context, request CreateRequest, resolver managedpack.OriginResolver) (Result, error) {
+	var result Result
+	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+		var err error
+		result, err = create(ctx, request, resolver)
+		return err
+	})
+	return result, err
+}
+
+func create(ctx context.Context, request CreateRequest, resolver managedpack.OriginResolver) (Result, error) {
+	if request.Template != "empty" {
+		return Result{}, fmt.Errorf("unsupported Pack template %q; supported templates: empty", request.Template)
+	}
+	if strings.TrimSpace(request.ProjectRoot) == "" {
+		return Result{}, fmt.Errorf("Catalog Project path is required")
+	}
+	if !authoringIDPattern.MatchString(request.PackID) {
+		return Result{}, fmt.Errorf("Pack id must be lowercase kebab-case")
+	}
+	surfaces, err := parseSurfaces(request.Surfaces)
+	if err != nil {
+		return Result{}, err
+	}
+	manifest := managedpack.Manifest{
+		SchemaVersion: managedpack.SchemaVersion,
+		ID:            request.PackID, Version: request.Version, Description: request.Description,
+		Selectable: true, Surfaces: surfaces,
+		ReadinessObligations: []capabilitypack.ReadinessObligation{},
+		ExternalRequirements: []string{}, Origins: []managedpack.Origin{}, Resources: []managedpack.Resource{},
+	}
+	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cleanup()
+	manifestRelative := filepath.Join("bundle", "packs", request.PackID, "pack.json")
+	stagedManifest := filepath.Join(stage, manifestRelative)
+	if _, err := os.Lstat(stagedManifest); err == nil {
+		return Result{}, fmt.Errorf("Pack %q already exists", request.PackID)
+	} else if !os.IsNotExist(err) {
+		return Result{}, fmt.Errorf("inspect Pack %q: %w", request.PackID, err)
+	}
+	if err := writeManifest(stagedManifest, manifest); err != nil {
+		return Result{}, err
+	}
+	validation, err := managedpack.ValidateCatalogProject(ctx, stage, "", resolver)
+	if err != nil {
+		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
+	}
+	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+		return Result{}, fmt.Errorf("write prepared Pack: %w", err)
+	}
+	return Result{PackID: manifest.ID, Version: manifest.Version, Packs: len(validation.Packs)}, nil
+}
+
+// Import prepares one explicitly selected resource, validates the complete
+// Catalog Project, and only then applies the resource and manifest together.
+func Import(ctx context.Context, request ImportRequest, resolver managedpack.OriginResolver) (Result, error) {
+	var result Result
+	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+		var err error
+		result, err = importResource(ctx, request, resolver)
+		return err
+	})
+	return result, err
+}
+
+func importResource(ctx context.Context, request ImportRequest, resolver managedpack.OriginResolver) (Result, error) {
+	if resolver == nil {
+		return Result{}, fmt.Errorf("Pack Import requires an exact-origin resolver")
+	}
+	if strings.TrimSpace(request.ProjectRoot) == "" {
+		return Result{}, fmt.Errorf("Catalog Project path is required")
+	}
+	if err := validateImportRequest(request); err != nil {
+		return Result{}, err
+	}
+	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cleanup()
+	manifestRelative := filepath.Join("bundle", "packs", request.PackID, "pack.json")
+	stagedManifest := filepath.Join(stage, manifestRelative)
+	_, manifest, err := readManifest(stagedManifest)
+	if err != nil {
+		return Result{}, fmt.Errorf("read Pack %q: %w", request.PackID, err)
+	}
+	manifest.Version = request.Version
+
+	origin := managedpack.Origin{ID: request.OriginID, Repository: request.Repository, Commit: request.Commit}
+	originRoot, err := resolver.Resolve(ctx, origin)
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve exact upstream commit: %w", err)
+	}
+	if strings.TrimSpace(originRoot) == "" {
+		return Result{}, fmt.Errorf("resolve exact upstream commit: empty local root")
+	}
+	if request.Kind != "notice" && len(request.Notices) == 0 {
+		detected := detectNotice(originRoot)
+		if detected != "" {
+			return Result{}, fmt.Errorf("resource notice is required; detected upstream notice %q; import it first and provide --notice notice:<id>", detected)
+		}
+		return Result{}, fmt.Errorf("resource notice is required; import a notice resource first and provide --notice notice:<id>")
+	}
+
+	resource, err := buildResource(request, manifest)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := addOrigin(&manifest, origin); err != nil {
+		return Result{}, err
+	}
+	if err := addResource(&manifest, resource); err != nil {
+		return Result{}, err
+	}
+
+	stagedDestination := filepath.Join(stage, "bundle", filepath.FromSlash(request.Destination))
+	if _, err := os.Lstat(stagedDestination); err == nil {
+		return Result{}, fmt.Errorf("destination %q already exists", request.Destination)
+	} else if !os.IsNotExist(err) {
+		return Result{}, fmt.Errorf("inspect destination %q: %w", request.Destination, err)
+	}
+	source := filepath.Join(originRoot, filepath.FromSlash(request.OriginPath))
+	if err := copyPath(source, stagedDestination); err != nil {
+		return Result{}, fmt.Errorf("prepare resource from origin path %q: %w", request.OriginPath, err)
+	}
+	if err := writeManifest(stagedManifest, manifest); err != nil {
+		return Result{}, err
+	}
+	validation, err := managedpack.ValidateCatalogProject(ctx, stage, request.ProjectRoot, resolver)
+	if err != nil {
+		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
+	}
+
+	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+		return Result{}, fmt.Errorf("write prepared Catalog Project: %w", err)
+	}
+	return Result{
+		PackID: manifest.ID, Version: manifest.Version,
+		Resource:     request.Kind + ":" + request.ResourceID,
+		Relationship: request.Relationship, Repository: request.Repository,
+		Commit: request.Commit, Packs: len(validation.Packs),
+	}, nil
+}
+
+func validateImportRequest(request ImportRequest) error {
+	if !authoringIDPattern.MatchString(request.PackID) {
+		return fmt.Errorf("Pack id must be lowercase kebab-case")
+	}
+	if !authoringRepositoryPattern.MatchString(request.Repository) {
+		return fmt.Errorf("repository must be an owner/name identity")
+	}
+	if !authoringCommitPattern.MatchString(request.Commit) {
+		return fmt.Errorf("commit must be a full lowercase Git object ID")
+	}
+	if !authoringIDPattern.MatchString(request.OriginID) {
+		return fmt.Errorf("origin id must be lowercase kebab-case")
+	}
+	if !authoringIDPattern.MatchString(request.ResourceID) {
+		return fmt.Errorf("resource id must be lowercase kebab-case")
+	}
+	if strings.TrimSpace(request.Version) == "" {
+		return fmt.Errorf("new Pack version is required")
+	}
+	if strings.TrimSpace(request.Description) == "" {
+		return fmt.Errorf("resource description is required")
+	}
+	if err := validateRelativePath(request.OriginPath, true); err != nil {
+		return fmt.Errorf("origin path: %w", err)
+	}
+	if err := validateRelativePath(request.Destination, false); err != nil {
+		return fmt.Errorf("destination: %w", err)
+	}
+	return nil
+}
+
+func validateRelativePath(value string, allowDot bool) error {
+	if value == "" || filepath.IsAbs(value) || strings.Contains(value, `\`) {
+		return fmt.Errorf("%q must be a normalized repository-relative path", value)
+	}
+	clean := filepath.ToSlash(filepath.Clean(value))
+	if clean != value || (!allowDot && clean == ".") || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("%q must be a normalized repository-relative path", value)
+	}
+	for _, part := range strings.Split(clean, "/") {
+		if strings.EqualFold(part, ".git") {
+			return fmt.Errorf("%q must not select Git metadata", value)
+		}
+	}
+	return nil
+}
+
+func buildResource(request ImportRequest, manifest managedpack.Manifest) (managedpack.Resource, error) {
+	if request.Kind != "skill" && request.Kind != "instruction" && request.Kind != "notice" {
+		return managedpack.Resource{}, fmt.Errorf("unsupported import resource kind %q; supported kinds: instruction, notice, skill", request.Kind)
+	}
+	relationship := managedpack.Relationship(request.Relationship)
+	if relationship != managedpack.RelationshipExactCopy && relationship != managedpack.RelationshipAdapted {
+		return managedpack.Resource{}, fmt.Errorf("relationship must be exact-copy or adapted")
+	}
+	resource := managedpack.Resource{
+		Kind: request.Kind, ID: request.ResourceID, Source: filepath.ToSlash(request.Destination),
+		Description: request.Description,
+		Requires:    sortedCopy(request.Requires), Conflicts: sortedCopy(request.Conflicts),
+		Notices: sortedCopy(request.Notices), Bindings: []capabilitypack.Binding{},
+		SurfaceExclusions: []capabilitypack.SurfaceExclusion{},
+		Origin:            &managedpack.ResourceOrigin{ID: request.OriginID, Path: filepath.ToSlash(request.OriginPath), Relationship: relationship},
+	}
+	if request.Kind == "notice" {
+		if len(request.Hosts) != 0 {
+			return managedpack.Resource{}, fmt.Errorf("notice imports do not accept --host")
+		}
+		if strings.TrimSpace(request.License) == "" || strings.TrimSpace(request.Attribution) == "" {
+			return managedpack.Resource{}, fmt.Errorf("notice imports require --license and --attribution")
+		}
+		resource.License = request.License
+		resource.Attribution = request.Attribution
+		resource.Notices = []string{"notice:" + request.ResourceID}
+		return resource, nil
+	}
+	if strings.TrimSpace(request.License) != "" || strings.TrimSpace(request.Attribution) != "" {
+		return managedpack.Resource{}, fmt.Errorf("--license and --attribution apply only to notice imports")
+	}
+	hosts, err := parseSurfaces(request.Hosts)
+	if err != nil {
+		return managedpack.Resource{}, fmt.Errorf("hosts: %w", err)
+	}
+	if !reflect.DeepEqual(hosts, manifest.Surfaces) {
+		return managedpack.Resource{}, fmt.Errorf("--host must explicitly name every Pack surface %v", manifest.Surfaces)
+	}
+	for _, surface := range hosts {
+		invocation := request.ResourceID
+		sharing := "shared"
+		if request.Kind == "skill" {
+			sharing = "exclusive"
+			switch surface {
+			case capabilitypack.SurfaceCodex:
+				invocation = "$" + request.ResourceID
+			case capabilitypack.SurfaceClaude:
+				invocation = "/" + request.ResourceID
+			}
+		}
+		resource.Bindings = append(resource.Bindings, capabilitypack.Binding{
+			Surface: surface, Projection: request.Kind, Name: request.ResourceID,
+			Invocation: invocation, Mode: "native", Sharing: sharing,
+			Capabilities: []capabilitypack.SurfaceCapability{},
+		})
+	}
+	return resource, nil
+}
+
+func parseSurfaces(values []string) ([]capabilitypack.Surface, error) {
+	if len(values) == 0 {
+		return nil, fmt.Errorf("at least one surface is required")
+	}
+	result := make([]capabilitypack.Surface, 0, len(values))
+	seen := map[capabilitypack.Surface]bool{}
+	for _, value := range values {
+		surface := capabilitypack.Surface(value)
+		if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceCodex && surface != capabilitypack.SurfaceOpenCode {
+			return nil, fmt.Errorf("unsupported surface %q", value)
+		}
+		if seen[surface] {
+			return nil, fmt.Errorf("surface %q is duplicated", value)
+		}
+		seen[surface] = true
+		result = append(result, surface)
+	}
+	slices.Sort(result)
+	return result, nil
+}
+
+func addOrigin(manifest *managedpack.Manifest, origin managedpack.Origin) error {
+	for _, existing := range manifest.Origins {
+		if existing.ID == origin.ID {
+			if existing != origin {
+				return fmt.Errorf("origin %q already identifies %s@%s", existing.ID, existing.Repository, existing.Commit)
+			}
+			return nil
+		}
+		if strings.EqualFold(existing.Repository, origin.Repository) {
+			return fmt.Errorf("repository %q already uses origin id %q", origin.Repository, existing.ID)
+		}
+	}
+	manifest.Origins = append(manifest.Origins, origin)
+	sort.Slice(manifest.Origins, func(i, j int) bool { return manifest.Origins[i].ID < manifest.Origins[j].ID })
+	return nil
+}
+
+func addResource(manifest *managedpack.Manifest, resource managedpack.Resource) error {
+	identity := resource.Kind + ":" + resource.ID
+	for _, existing := range manifest.Resources {
+		if existing.Kind+":"+existing.ID == identity {
+			return fmt.Errorf("resource %q already exists", identity)
+		}
+	}
+	manifest.Resources = append(manifest.Resources, resource)
+	sort.Slice(manifest.Resources, func(i, j int) bool {
+		return manifest.Resources[i].Kind+":"+manifest.Resources[i].ID < manifest.Resources[j].Kind+":"+manifest.Resources[j].ID
+	})
+	return nil
+}
+
+func stageBundle(projectRoot string) (string, string, func(), error) {
+	info, err := os.Lstat(projectRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", "", func() {}, fmt.Errorf("Catalog Project root must be an existing directory and not a symlink")
+	}
+	metadataRoot, err := gitMetadataRoot(projectRoot)
+	if err != nil {
+		return "", "", func() {}, err
+	}
+	stage, err := os.MkdirTemp(metadataRoot, "packy-catalog-author-")
+	if err != nil {
+		return "", "", func() {}, fmt.Errorf("create authoring stage: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(stage) }
+	bundleRoot := filepath.Join(projectRoot, "bundle")
+	original, err := treeIdentity(bundleRoot)
+	if err != nil {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("inspect Catalog Project bundle: %w", err)
+	}
+	if err := copyPath(bundleRoot, filepath.Join(stage, "bundle")); err != nil {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("stage Catalog Project bundle: %w", err)
+	}
+	current, err := treeIdentity(bundleRoot)
+	if err != nil || current != original {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("Catalog Project changed while its bundle was staged")
+	}
+	return stage, original, cleanup, nil
+}
+
+func gitMetadataRoot(projectRoot string) (string, error) {
+	path := filepath.Join(projectRoot, ".git")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("Catalog Project must be a Git worktree: %w", err)
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+	if !info.Mode().IsRegular() || info.Size() > 4096 {
+		return "", fmt.Errorf("Catalog Project .git entry is invalid")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read Catalog Project .git entry: %w", err)
+	}
+	value := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(value, "gitdir: ") {
+		return "", fmt.Errorf("Catalog Project .git entry is invalid")
+	}
+	metadata := strings.TrimSpace(strings.TrimPrefix(value, "gitdir: "))
+	if !filepath.IsAbs(metadata) {
+		metadata = filepath.Join(projectRoot, metadata)
+	}
+	metadataInfo, err := os.Lstat(metadata)
+	if err != nil || !metadataInfo.IsDir() || metadataInfo.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("Catalog Project Git metadata directory is unavailable")
+	}
+	return metadata, nil
+}
+
+func treeIdentity(root string) (string, error) {
+	digest := sha256.New()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlinks are not allowed: %s", path)
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(digest, "%s\x00%s\x00", filepath.ToSlash(relative), info.Mode().Type()|info.Mode().Perm())
+		if info.Mode().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.Copy(digest, file)
+			closeErr := file.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil)), nil
+}
+
+func replaceBundleAtomically(projectRoot, stage, original string) error {
+	bundleRoot := filepath.Join(projectRoot, "bundle")
+	current, err := treeIdentity(bundleRoot)
+	if err != nil {
+		return err
+	}
+	if current != original {
+		return fmt.Errorf("Catalog Project changed during preparation")
+	}
+	if err := exchangePaths(bundleRoot, filepath.Join(stage, "bundle")); err != nil {
+		return fmt.Errorf("atomically exchange prepared bundle: %w", err)
+	}
+	return nil
+}
+
+func readManifest(path string) ([]byte, managedpack.Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, managedpack.Manifest{}, err
+	}
+	var manifest managedpack.Manifest
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return nil, managedpack.Manifest{}, err
+	}
+	return data, manifest, nil
+}
+
+func writeManifest(path string, manifest managedpack.Manifest) error {
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode prepared Pack manifest: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("prepare Pack manifest directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write staged Pack manifest: %w", err)
+	}
+	return nil
+}
+
+func copyPath(source, destination string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlinks are not allowed: %s", source)
+	}
+	if info.IsDir() {
+		if err := os.MkdirAll(destination, info.Mode().Perm()); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(source)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := copyPath(filepath.Join(source, entry.Name()), filepath.Join(destination, entry.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("only regular files and directories are supported: %s", source)
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return err
+	}
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+	destinationFile, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+		_ = destinationFile.Close()
+		_ = os.Remove(destination)
+		return err
+	}
+	if err := destinationFile.Close(); err != nil {
+		_ = os.Remove(destination)
+		return err
+	}
+	return nil
+}
+
+func detectNotice(originRoot string) string {
+	for _, name := range []string{"LICENSE", "LICENSE.md", "COPYING", "NOTICE"} {
+		info, err := os.Lstat(filepath.Join(originRoot, name))
+		if err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			return name
+		}
+	}
+	return ""
+}
+
+func sortedCopy(values []string) []string {
+	result := append([]string{}, values...)
+	sort.Strings(result)
+	return result
+}
