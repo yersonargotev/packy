@@ -37,7 +37,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 			project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 			adapter := claudecode.NewSurfaceAdapter(bundle, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
 			facade := capabilitypack.NewFacade(catalog)
-			install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project}, adapter)
+			install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project, PackyHome: packyHome}, adapter)
 			if err != nil || install.Disposition != capabilitypack.ProjectInstallPreviewable {
 				t.Fatalf("install = %#v, err=%v", install, err)
 			}
@@ -60,7 +60,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 			}
 			updatedAdapter := claudecode.NewSurfaceAdapter(updatedBundle, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
 			updatedFacade := capabilitypack.NewFacade(updatedCatalog)
-			update, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project}, updatedAdapter)
+			update, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, ProjectRoot: project, PackyHome: packyHome}, updatedAdapter)
 			if err != nil || update.Disposition != capabilitypack.ProjectInstallPreviewable {
 				t.Fatalf("update = %#v, err=%v", update, err)
 			}

@@ -52,7 +52,7 @@ func newProjectInstallFixture(t *testing.T) projectInstallFixture {
 func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	fixture := newProjectInstallFixture(t)
 	install, err := fixture.facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
-		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project,
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome,
 		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{fixture.resource}},
 	}, fixture.adapter)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	}
 	updatedAdapter := codex.NewSurfaceAdapterWithConfig(updatedBundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
 	updatedFacade := capabilitypack.NewFacade(updatedCatalog)
-	preview, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project}, updatedAdapter)
+	preview, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome}, updatedAdapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) {
 	fixture := newProjectInstallFixture(t)
 	install, err := fixture.facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
-		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project,
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome,
 		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{fixture.resource}},
 	}, fixture.adapter)
 	if err != nil {
@@ -251,7 +251,7 @@ func projectActivationDigest(t *testing.T, root string) string {
 func TestProjectActivationIsNotRequiredForDeclarativeOnlyInstallation(t *testing.T) {
 	fixture := newProjectInstallFixture(t)
 	install, err := fixture.facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
-		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project,
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome,
 		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{fixture.resource}},
 	}, fixture.adapter)
 	if err != nil {

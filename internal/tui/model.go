@@ -734,7 +734,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					if len(actions) > 0 {
 						m.operation = actions[0]
 					}
-					if len(actions) > 1 {
+					if len(actions) > 1 || projectOrphanedExit(m.selectedSurfaceStatus()) {
 						m.choosingAction = true
 						m.actionChoice = 0
 						m.pagedScreenScroll = 0
@@ -957,16 +957,26 @@ func firstLifecycleAction(status SurfaceStatus) string {
 func (m Model) lifecycleActions() []string {
 	if pack := m.selectedPack(); pack != nil {
 		status := m.selectedSurfaceStatus()
+		if m.project && packHasProjectOrphan(*pack) {
+			actions := []string{}
+			if projectOrphanedExit(status) || (status != nil && status.Active) {
+				actions = append(actions, "deactivate")
+			}
+			if status != nil && status.Installation != "" && status.Installation != "absent" {
+				actions = append(actions, "uninstall")
+			}
+			return actions
+		}
 		if status != nil && !status.Supported && (status.Active || status.InstalledVersion != "") {
 			if m.project {
-				if status.Installation == "" || status.Installation == "absent" {
-					return nil
-				}
 				actions := []string{}
-				if status.Active {
+				if status.Active || status.Runtime == "orphaned" || status.Runtime == "blocked" || status.Runtime == "stale" {
 					actions = append(actions, "deactivate")
 				}
-				return append(actions, "uninstall")
+				if status.Installation != "" && status.Installation != "absent" {
+					actions = append(actions, "uninstall")
+				}
+				return actions
 			}
 			if status != nil && status.Active {
 				return []string{"deactivate"}
@@ -1010,6 +1020,19 @@ func projectLifecycleOperation(status *SurfaceStatus) string {
 		return ""
 	}
 	return actions[0]
+}
+
+func projectOrphanedExit(status *SurfaceStatus) bool {
+	return status != nil && (status.Runtime == "orphaned" || status.Runtime == "blocked") && (status.Installation == "" || status.Installation == "absent")
+}
+
+func packHasProjectOrphan(pack Pack) bool {
+	for index := range pack.SurfaceStatuses {
+		if projectOrphanedExit(&pack.SurfaceStatuses[index]) {
+			return true
+		}
+	}
+	return false
 }
 
 func projectLifecycleActionsForStatus(status *SurfaceStatus) []string {
@@ -1642,6 +1665,8 @@ func (m Model) detailAction() string {
 	if m.project {
 		actions := m.lifecycleActions()
 		switch {
+		case projectOrphanedExit(m.selectedSurfaceStatus()):
+			action = "Enter choose project lifecycle action"
 		case len(actions) > 1:
 			action = "Enter choose project lifecycle action"
 		case len(actions) == 0:
@@ -1767,6 +1792,14 @@ func preferredSurfaceIndex(pack Pack, project bool) int {
 			}
 		}
 		return 0
+	}
+	for index, surface := range supportedSurfaces(pack) {
+		for statusIndex := range pack.SurfaceStatuses {
+			status := &pack.SurfaceStatuses[statusIndex]
+			if status.Name == surface && projectOrphanedExit(status) {
+				return index
+			}
+		}
 	}
 	for index, surface := range supportedSurfaces(pack) {
 		for _, status := range pack.SurfaceStatuses {

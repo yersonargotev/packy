@@ -223,7 +223,7 @@ func TestFacadeProjectLifecycleUsesIdentityAgnosticReadiness(t *testing.T) {
 		adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{
 			Revision: "synthetic-v1", Projections: []ObservedProjection{{ID: projectionID, Goal: ProjectionPresent, DesiredFingerprint: "exact", Action: ProjectionAction{ID: projectionID, Target: filepath.Join(root, ".agents", "skills", identity.resource), PreviewOnly: true}}},
 		}}}
-		preview, err := NewFacade(Catalog{packs: []Pack{pack}}).PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: root, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+		preview, err := NewFacade(Catalog{packs: []Pack{pack}}).PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: root, PackyHome: filepath.Join(root, ".packy-test"), Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -448,7 +448,7 @@ func TestProjectActivationPreviewUsesGenericRequirementResolver(t *testing.T) {
 	adapter := &syntheticRequirementAdapter{target: filepath.Join(project, ".agents", "skills", "guide")}
 	resolver := &recordingReadinessResolver{paths: map[string]string{"project-helper": "/tmp/project-helper"}}
 	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithExternalEffects(resolver, nil, nil))
-	install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+	install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
