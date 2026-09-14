@@ -1,20 +1,22 @@
 package ci_test
 
 import (
-	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
-func TestIssue798ReviewedContentCandidatePublishesCompleteSnapshot(t *testing.T) {
+func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testing.T) {
+	root := repositoryRoot(t)
 	baseline := t.TempDir()
 	writePublicationCatalogPack(t, baseline, "alpha", "1.0.0", "old alpha\n")
 	writePublicationCatalogPack(t, baseline, "stable", "2.0.0", "stable\n")
@@ -23,52 +25,81 @@ func TestIssue798ReviewedContentCandidatePublishesCompleteSnapshot(t *testing.T)
 	writePublicationCatalogPack(t, candidate, "beta", "1.0.0", "new beta\n")
 	writePublicationCatalogPack(t, candidate, "stable", "2.0.0", "stable\n")
 
-	validation, err := managedpack.ValidateCatalogProject(context.Background(), candidate, baseline, nil)
-	if err != nil {
-		t.Fatal(err)
+	bin := t.TempDir()
+	buildEnvironment := testprocess.GoOfflineEnv(t)
+	tools := map[string]string{
+		"catalogvalidate": "./internal/tools/catalogvalidate",
+		"catalogsnapshot": "./internal/tools/catalogsnapshot",
+		"packy":           "./internal/cli/testdata/issue798packy",
 	}
-	identities := make([]string, 0, len(validation.Packs))
-	for _, pack := range validation.Packs {
-		identities = append(identities, pack.Manifest.ID+"@"+pack.Manifest.Version)
-	}
-	if want := []string{"alpha@1.1.0", "beta@1.0.0", "stable@2.0.0"}; !slices.Equal(identities, want) {
-		t.Fatalf("validated candidate Packs = %v, want %v", identities, want)
-	}
-
-	commit := strings.Repeat("3", 40)
-	dist := filepath.Join(t.TempDir(), "dist")
-	result, err := managedpack.BuildCatalogSnapshot(context.Background(), candidate, validation, managedpack.CatalogSnapshotSource{
-		Repository: "yersonargotev/packy-catalog",
-		Commit:     commit,
-		Builder:    "yersonargotev/packy@" + strings.Repeat("4", 40),
-	}, dist)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Index.Packs) != 3 {
-		t.Fatalf("complete Catalog Snapshot Packs = %d, want 3", len(result.Index.Packs))
+	for name, packagePath := range tools {
+		buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, name), packagePath)
 	}
 
-	fakeGH, releaseRoot := catalogPublicationFixture(t)
-	command := exec.Command(filepath.Join(repositoryRoot(t), "scripts", "publish-catalog-snapshot.sh"),
-		"--repository", "example/catalog", "--commit", commit, "--dist", dist)
-	command.Env = testprocess.Env(t, "GH_BIN="+fakeGH, "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+commit)
-	output, err := command.CombinedOutput()
-	if err != nil || !strings.Contains(string(output), "published immutable Catalog Snapshot") {
-		t.Fatalf("publish reviewed content candidate: %v\n%s", err, output)
+	validation := runIssue798Process(t, testprocess.Env(t), root, filepath.Join(bin, "catalogvalidate"),
+		"--project", candidate, "--baseline", baseline)
+	for _, want := range []string{"validated Catalog Project packs=3", "alpha@1.1.0", "beta@1.0.0", "stable@2.0.0"} {
+		if !strings.Contains(validation, want) {
+			t.Fatalf("candidate validation omitted %q:\n%s", want, validation)
+		}
 	}
-	for _, asset := range []string{"catalog-snapshot.tar.gz", "SHA256SUMS"} {
-		published, readErr := os.ReadFile(filepath.Join(releaseRoot, "release", asset))
-		if readErr != nil {
-			t.Fatal(readErr)
+
+	baselineCommit := strings.Repeat("3", 40)
+	candidateCommit := strings.Repeat("4", 40)
+	builder := "yersonargotev/packy@" + strings.Repeat("5", 40)
+	baselineDist := filepath.Join(t.TempDir(), "dist")
+	candidateDist := filepath.Join(t.TempDir(), "dist")
+	for _, snapshot := range []struct {
+		project, commit, dist string
+	}{{baseline, baselineCommit, baselineDist}, {candidate, candidateCommit, candidateDist}} {
+		output := runIssue798Process(t, testprocess.Env(t), root, filepath.Join(bin, "catalogsnapshot"),
+			"--project", snapshot.project,
+			"--source-repository", "yersonargotev/packy-catalog",
+			"--source-commit", snapshot.commit,
+			"--builder", builder,
+			"--out-dir", snapshot.dist)
+		if !strings.Contains(output, "built Catalog Snapshot") {
+			t.Fatalf("snapshot build output:\n%s", output)
 		}
-		built, readErr := os.ReadFile(filepath.Join(dist, asset))
-		if readErr != nil {
-			t.Fatal(readErr)
+	}
+
+	fakeGH, baselineReleaseRoot := catalogPublicationFixture(t)
+	candidateReleaseRoot := t.TempDir()
+	publishIssue798Snapshot(t, root, fakeGH, baselineReleaseRoot, baselineCommit, baselineDist)
+	publishIssue798Snapshot(t, root, fakeGH, candidateReleaseRoot, candidateCommit, candidateDist)
+
+	releasePath := filepath.Join(t.TempDir(), "catalog-release.json")
+	writeIssue798Release(t, releasePath, publishedIssue798Release(t, baselineReleaseRoot, baselineCommit))
+	packyEnvironment := testprocess.Env(t, "PACKY_CATALOG_RELEASE="+releasePath)
+	packy := filepath.Join(bin, "packy")
+	executableDigest := issue798Digest(readIssue798File(t, packy))
+	if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, "init"); !strings.Contains(output, baselineCommit) {
+		t.Fatalf("initialization omitted baseline snapshot %s:\n%s", baselineCommit, output)
+	}
+
+	writeIssue798Release(t, releasePath, publishedIssue798Release(t, candidateReleaseRoot, candidateCommit))
+	if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, "catalog", "refresh"); !strings.Contains(output, candidateCommit) {
+		t.Fatalf("refresh omitted candidate snapshot %s:\n%s", candidateCommit, output)
+	}
+	if err := os.Remove(releasePath); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		want string
+		args []string
+	}{
+		{"alpha   1.1.0", []string{"list"}},
+		{"beta    1.0.0", []string{"list"}},
+		{"stable  2.0.0", []string{"list"}},
+		{"alpha", []string{"activate", "alpha", "--surface", "codex", "--dry-run"}},
+		{"beta", []string{"activate", "beta", "--surface", "codex", "--dry-run"}},
+	} {
+		if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, check.args...); !strings.Contains(output, check.want) {
+			t.Fatalf("offline Packy %v omitted %q:\n%s", check.args, check.want, output)
 		}
-		if !slices.Equal(published, built) {
-			t.Fatalf("published %s differs from validated candidate", asset)
-		}
+	}
+	if finalDigest := issue798Digest(readIssue798File(t, packy)); finalDigest != executableDigest {
+		t.Fatalf("installed Packy executable changed across Catalog Publications: %s -> %s", executableDigest, finalDigest)
 	}
 }
 
@@ -159,6 +190,90 @@ func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(failureRoot, "release")); !os.IsNotExist(statErr) {
 		t.Fatalf("failed lookup created release: err=%v", statErr)
 	}
+}
+
+func buildIssue798Executable(t *testing.T, root string, environment []string, output, packagePath string) {
+	t.Helper()
+	command := exec.Command("go", "build", "-o", output, packagePath)
+	command.Dir = root
+	command.Env = append([]string(nil), environment...)
+	if combined, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build %s: %v\n%s", packagePath, err, combined)
+	}
+}
+
+func runIssue798Process(t *testing.T, environment []string, directory, executable string, args ...string) string {
+	t.Helper()
+	command := exec.Command(executable, args...)
+	command.Dir = directory
+	command.Env = append([]string(nil), environment...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run %s %v: %v\n%s", executable, args, err, output)
+	}
+	return string(output)
+}
+
+func publishIssue798Snapshot(t *testing.T, root, fakeGH, releaseRoot, commit, dist string) {
+	t.Helper()
+	command := exec.Command(filepath.Join(root, "scripts", "publish-catalog-snapshot.sh"),
+		"--repository", "example/catalog", "--commit", commit, "--dist", dist)
+	command.Env = testprocess.Env(t, "GH_BIN="+fakeGH, "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+commit)
+	output, err := command.CombinedOutput()
+	if err != nil || !strings.Contains(string(output), "published immutable Catalog Snapshot") {
+		t.Fatalf("publish Catalog Snapshot %s: %v\n%s", commit, err, output)
+	}
+	for _, asset := range []string{"catalog-snapshot.tar.gz", "SHA256SUMS"} {
+		published := readIssue798File(t, filepath.Join(releaseRoot, "release", asset))
+		built := readIssue798File(t, filepath.Join(dist, asset))
+		if string(published) != string(built) {
+			t.Fatalf("published %s differs from validated candidate", asset)
+		}
+	}
+}
+
+func publishedIssue798Release(t *testing.T, releaseRoot, commit string) catalogstore.Release {
+	t.Helper()
+	archive := readIssue798File(t, filepath.Join(releaseRoot, "release", "catalog-snapshot.tar.gz"))
+	checksum := readIssue798File(t, filepath.Join(releaseRoot, "release", "SHA256SUMS"))
+	return catalogstore.Release{
+		Repository:          "yersonargotev/packy-catalog",
+		Tag:                 "catalog-" + commit,
+		Commit:              commit,
+		Publisher:           "github-actions[bot]",
+		Published:           true,
+		Immutable:           true,
+		AttestationVerified: true,
+		Assets: []catalogstore.Asset{
+			{Name: "catalog-snapshot.tar.gz", SHA256: issue798Digest(archive), Data: archive},
+			{Name: "SHA256SUMS", SHA256: issue798Digest(checksum), Data: checksum},
+		},
+	}
+}
+
+func writeIssue798Release(t *testing.T, path string, release catalogstore.Release) {
+	t.Helper()
+	data, err := json.Marshal(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readIssue798File(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func issue798Digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func writePublicationCatalogPack(t *testing.T, root, id, version, content string) {
