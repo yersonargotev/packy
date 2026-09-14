@@ -13,6 +13,8 @@ import (
 
 func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T) {
 	fixture := writeMixedUpstreamRefreshFixture(t, true)
+	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md"), "shared\nold upstream\nretained\n")
+	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md"), "shared\nnew upstream\nretained\n")
 	maintained := "# Maintained adaptation\n"
 	writeAuthoringFile(t, filepath.Join(fixture.project, "bundle", "skills", "seed", "SKILL.md"), maintained)
 	terminal := &fakeTerminal{interactive: true, approve: true}
@@ -32,8 +34,8 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 	}
 	for _, want := range []string{
 		"adapted resource skill:seed upstream changes",
-		"-# Old upstream",
-		"+# New upstream",
+		"-old upstream",
+		"+new upstream",
 		"refreshed 1 exact-copy resource",
 		"reconciled 1 adapted resource",
 		"publication not performed",
@@ -41,6 +43,9 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 		if !strings.Contains(out, want) {
 			t.Fatalf("refresh output missing %q: %s", want, out)
 		}
+	}
+	if strings.Contains(out, "shared") || strings.Contains(out, "retained") {
+		t.Fatalf("upstream diff reported unchanged lines: %s", out)
 	}
 	if terminal.calls != 1 || !strings.Contains(terminal.prompts[0], "skill:seed") {
 		t.Fatalf("reconciliation prompts = %#v", terminal.prompts)
@@ -65,6 +70,27 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 	}
 	if got := adapted.Notices; len(got) != 1 || got[0] != "notice:seed" {
 		t.Fatalf("adapted resource notices = %#v", got)
+	}
+}
+
+func TestCatalogUpstreamRefreshDoesNotPromptForIncompleteAdaptationDiff(t *testing.T) {
+	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md"), strings.Repeat("old upstream line\n", 5000))
+	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md"), strings.Repeat("new upstream line\n", 5000))
+	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	terminal := &fakeTerminal{interactive: true, approve: true}
+
+	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver, Terminal: terminal}),
+		"catalog", "upstream-refresh", "seed", "--project", fixture.project,
+		"--origin-id", "upstream", "--commit", fixture.newCommit, "--version", "1.1.0")
+	if err == nil || !strings.Contains(err.Error(), "differences exceed") {
+		t.Fatalf("oversized adaptation diff = %v, output %s", err, out)
+	}
+	if terminal.calls != 0 {
+		t.Fatalf("incomplete diff prompted %d times", terminal.calls)
+	}
+	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+		t.Fatalf("incomplete diff changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 

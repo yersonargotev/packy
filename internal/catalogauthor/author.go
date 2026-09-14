@@ -18,6 +18,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/managedpack"
@@ -256,13 +257,13 @@ func RefreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 	var result RefreshResult
 	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
 		var err error
-		result, err = refreshExactCopies(ctx, request, resolver)
+		result, err = refreshUpstream(ctx, request, resolver)
 		return err
 	})
 	return result, err
 }
 
-func refreshExactCopies(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
+func refreshUpstream(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
 	if resolver == nil {
 		return RefreshResult{}, fmt.Errorf("Upstream Refresh requires an exact-origin resolver")
 	}
@@ -427,18 +428,12 @@ func adaptationChanges(oldPath, newPath string) (string, error) {
 		}
 		fmt.Fprintf(&report, "--- old/%s\n+++ new/%s\n", path, path)
 		if textBytes(oldData) && textBytes(newData) {
-			writeDiffLines(&report, "-", oldData)
-			writeDiffLines(&report, "+", newData)
+			writeChangedLines(&report, oldData, newData)
 		} else {
 			fmt.Fprintf(&report, "-sha256:%x\n+sha256:%x\n", sha256.Sum256(oldData), sha256.Sum256(newData))
 		}
 		if report.Len() > maximumAdaptationDiffBytes {
-			changes := report.String()
-			limit := maximumAdaptationDiffBytes
-			for !utf8.ValidString(changes[:limit]) {
-				limit--
-			}
-			return changes[:limit] + "\n... upstream diff truncated\n", nil
+			return "", fmt.Errorf("upstream differences exceed the %d-byte display limit; reconciliation cannot continue", maximumAdaptationDiffBytes)
 		}
 	}
 	if report.Len() == 0 {
@@ -499,20 +494,34 @@ func textBytes(data []byte) bool {
 	return utf8.Valid(data) && !bytes.ContainsRune(data, 0)
 }
 
-func writeDiffLines(report *strings.Builder, prefix string, data []byte) {
-	for _, line := range strings.SplitAfter(string(data), "\n") {
-		if line == "" {
+func writeChangedLines(report *strings.Builder, oldData, newData []byte) {
+	differ := diffmatchpatch.New()
+	oldChars, newChars, lines := differ.DiffLinesToChars(string(oldData), string(newData))
+	differences := differ.DiffCharsToLines(differ.DiffMain(oldChars, newChars, false), lines)
+	for _, difference := range differences {
+		prefix := ""
+		switch difference.Type {
+		case diffmatchpatch.DiffDelete:
+			prefix = "-"
+		case diffmatchpatch.DiffInsert:
+			prefix = "+"
+		default:
 			continue
 		}
-		report.WriteString(prefix)
-		for _, char := range strings.TrimSuffix(line, "\n") {
-			if char == '\t' || !unicode.IsControl(char) {
-				report.WriteRune(char)
+		for _, line := range strings.SplitAfter(difference.Text, "\n") {
+			if line == "" {
 				continue
 			}
-			fmt.Fprintf(report, "\\u%04x", char)
+			report.WriteString(prefix)
+			for _, char := range strings.TrimSuffix(line, "\n") {
+				if char == '\t' || !unicode.IsControl(char) {
+					report.WriteRune(char)
+					continue
+				}
+				fmt.Fprintf(report, "\\u%04x", char)
+			}
+			report.WriteByte('\n')
 		}
-		report.WriteByte('\n')
 	}
 }
 

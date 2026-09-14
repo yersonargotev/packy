@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	github.com/sergi/go-diff v1.4.0
 	github.com/sigstore/sigstore-go v1.2.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.46.0
@@ -86,7 +87,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
-	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sigstore/protobuf-specs v0.5.1 // indirect
 	github.com/sigstore/rekor v1.5.2 // indirect
