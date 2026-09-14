@@ -237,16 +237,6 @@ func newWorkstationResolver(opts Options) *workstation.Resolver {
 	})
 }
 
-func defaultInitRepositoryRef(explicitRef, currentVersion string) string {
-	if strings.TrimSpace(explicitRef) != "" {
-		return explicitRef
-	}
-	if strings.HasPrefix(currentVersion, "v") {
-		return currentVersion
-	}
-	return ""
-}
-
 func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var jsonOutput bool
 	cmd := &cobra.Command{
