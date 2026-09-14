@@ -222,15 +222,24 @@ func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Comm
 func newCatalogUpstreamRefreshCommand(opts Options) *cobra.Command {
 	var request catalogauthor.RefreshRequest
 	command := &cobra.Command{
-		Use: "upstream-refresh <pack>", Short: "Refresh exact-copy resources from a selected upstream commit", Args: cobra.ExactArgs(1),
+		Use: "upstream-refresh <pack>", Short: "Refresh and reconcile resources from a selected upstream commit", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request.PackID = args[0]
+			request.Reconcile = func(diff catalogauthor.AdaptationDiff) (bool, error) {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "adapted resource %s upstream changes:\n%s", diff.Resource, diff.Changes); err != nil {
+					return false, err
+				}
+				if !opts.Terminal.InteractiveSession(cmd.InOrStdin(), cmd.OutOrStdout()) {
+					return false, nil
+				}
+				return opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), "Confirm the maintained adaptation for "+diff.Resource+" reconciles these upstream changes and continue?")
+			}
 			originResolver, cleanup, err := resolveCatalogOrigins(opts)
 			if err != nil {
 				return err
 			}
 			defer cleanup()
-			result, err := catalogauthor.RefreshExactCopies(cmd.Context(), request, originResolver)
+			result, err := catalogauthor.RefreshUpstream(cmd.Context(), request, originResolver)
 			if err != nil {
 				return err
 			}
@@ -238,8 +247,12 @@ func newCatalogUpstreamRefreshCommand(opts Options) *cobra.Command {
 			if result.ExactCopies == 1 {
 				label = "resource"
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "refreshed %d exact-copy %s for %s@%s from %s@%s -> %s; validated Catalog Project packs=%d; publication not performed\n",
-				result.ExactCopies, label, result.PackID, result.Version, result.Repository, result.OldCommit, result.Commit, result.Packs)
+			adaptationLabel := "resources"
+			if result.Adaptations == 1 {
+				adaptationLabel = "resource"
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "refreshed %d exact-copy %s and reconciled %d adapted %s for %s@%s from %s@%s -> %s; validated Catalog Project packs=%d; publication not performed\n",
+				result.ExactCopies, label, result.Adaptations, adaptationLabel, result.PackID, result.Version, result.Repository, result.OldCommit, result.Commit, result.Packs)
 			return err
 		},
 	}

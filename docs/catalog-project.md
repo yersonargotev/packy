@@ -83,14 +83,18 @@ packy catalog upstream-refresh example-pack \
 
 Before preparing the update, Packy verifies the current exact copies against
 the previously pinned commit. Unexpected local changes stop the operation.
-Packy then acquires the selected commit, replaces all exact copies for that
-origin in the staged bundle, updates their shared provenance and Pack version,
-and validates the complete Catalog Project before applying it atomically. Any
-acquisition, validation, or concurrent-write failure leaves the requested
-operation unapplied. An origin containing adapted resources is rejected until
-those resources are explicitly reconciled; adaptations are never overwritten
-or silently repointed. Upstream Refresh leaves a reviewable Git diff and never
-publishes it.
+Packy then acquires the selected commit and presents the old-to-new upstream
+differences for every adapted resource. In an interactive terminal, the
+maintainer must explicitly confirm that each maintained adaptation reconciles
+those changes; a declined or non-interactive request remains unapplied.
+
+After reconciliation, Packy replaces all exact copies in the staged bundle
+while preserving every maintained adaptation, its notices, and its provenance.
+It updates the origin commit and Pack version, then validates the complete
+Catalog Project before applying it atomically. Any unresolved adaptation,
+acquisition, validation, or concurrent-write failure leaves the whole request
+unapplied. Upstream Refresh leaves a reviewable Git diff and never publishes
+it.
 
 ## Validation
 
