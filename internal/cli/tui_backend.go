@@ -41,7 +41,22 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		Health: healthForTUI(health),
 		Global: tui.Scope{Available: true},
 	}
-	catalog, err := discoverPackCatalog(ctx, b.opts, b.resolver)
+	snapshot, err := b.resolver.Resolve(workstation.Options{})
+	if err != nil {
+		return tui.Dashboard{}, fmt.Errorf("resolve workstation context: %w", err)
+	}
+	sources, err := resolveInvocationSources(ctx, b.opts, snapshot)
+	if err != nil {
+		dashboard.Setup = tui.Setup{
+			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
+			Blockers: []tui.SetupBlocker{{
+				Cause:           fmt.Sprintf("discover reviewed Pack catalog: %v", err),
+				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},
+			}},
+		}
+		return dashboard, nil
+	}
+	catalog, err := loadInvocationCatalog(ctx, sources)
 	if err != nil {
 		dashboard.Setup = tui.Setup{
 			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
@@ -63,6 +78,15 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		}
 		return dashboard, nil
 	}
+	if sources.skills.IsDefault {
+		dashboard.Catalog = tui.Catalog{
+			SnapshotID:       sources.snapshot.ID,
+			Repository:       sources.snapshot.Index.Source.Repository,
+			Digest:           sources.snapshot.Index.CatalogSHA256,
+			Packs:            len(sources.snapshot.Index.Packs),
+			RefreshAvailable: true,
+		}
+	}
 	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
 	facade, err := activationFacade(ctx, b.opts, b.resolver)
 	if err != nil {
@@ -80,10 +104,6 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		} else {
 			dashboard.Global.Packs = catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))
 		}
-	}
-	snapshot, err := b.resolver.Resolve(workstation.Options{})
-	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("resolve workstation context: %w", err)
 	}
 	currentDirectory, err := snapshot.CurrentDirectory()
 	if err != nil {
@@ -136,6 +156,10 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 			return nil
 		},
 	})
+}
+
+func (b *tuiBackend) RefreshCatalog(ctx context.Context, progress func(string)) error {
+	return b.Initialize(ctx, progress)
 }
 
 func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (tui.Preview, error) {

@@ -167,6 +167,9 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	if source.calls != callsAfterInitialization {
 		t.Fatalf("TUI load discovered catalog updates online: calls %d -> %d", callsAfterInitialization, source.calls)
 	}
+	if dashboard.Catalog.SnapshotID != commit || dashboard.Catalog.Repository != "yersonargotev/packy-catalog" || dashboard.Catalog.Packs != 1 || !dashboard.Catalog.RefreshAvailable {
+		t.Fatalf("TUI catalog inspection = %#v", dashboard.Catalog)
+	}
 }
 
 func TestIssue792InstalledCLIConsumesAcquiredSnapshotOffline(t *testing.T) {
