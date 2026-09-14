@@ -33,7 +33,7 @@ validation, an immutable `pack-v<version>` release, and independent Packy
 promotion. Promotion validates the candidate again and proposes its admission
 to the bundled catalog. The bundle is generated distribution content, not a
 second authoring location.
-[Managed Pack Projects](../../managed-pack-projects.md),
+[Managed Pack Projects](https://github.com/yersonargotev/packy/blob/b54df8353421c07878df21a9766b856d935165f6/docs/managed-pack-projects.md),
 [Capability Packs](../../capability-packs.md)
 
 The initial registry has seven separate project repositories. This creates
@@ -160,7 +160,7 @@ the present contract, derived resources require origin attribution and notices;
 the proposal should preserve that useful provenance rather than silently
 weakening it. A catalog does not need a bespoke immutable publisher release for
 each exact-copy upstream when an immutable source commit supplies the input.
-[Current origin contract](../../managed-pack-projects.md)
+[Historical origin contract](https://github.com/yersonargotev/packy/blob/b54df8353421c07878df21a9766b856d935165f6/docs/managed-pack-projects.md)
 
 ### Maintainer flow after adoption
 

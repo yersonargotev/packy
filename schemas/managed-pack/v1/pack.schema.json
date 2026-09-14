@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/yersonargotev/packy/schemas/managed-pack/v1/pack.schema.json",
-  "title": "Managed Pack Project manifest v1",
+  "title": "Pack manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

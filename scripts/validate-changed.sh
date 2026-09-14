@@ -22,7 +22,6 @@ readonly packages=(
   ./internal/setuphealth
   ./internal/skillbundle
   ./internal/tools/claudesmoke
-  ./internal/tools/packcontentvalidate
   ./internal/version
   ./internal/workstation
 )

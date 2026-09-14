@@ -2,8 +2,8 @@
 
 Packy is an installer/configurator for the reviewed Packs in its
 manifest-backed Pack catalog on Codex, OpenCode, and Claude Code **2.1.203 or
-newer**. It is not an always-on runtime orchestrator. Use `packy list` or
-the generated [Pack catalog](../packs/index.md) for current discovery.
+newer**. It is not an always-on runtime orchestrator. Use `packy list` for
+current discovery.
 
 ## Product boundary
 
@@ -28,7 +28,7 @@ the generated [Pack catalog](../packs/index.md) for current discovery.
 - Project intent remains reviewable while personal runtime consent stays local.
 - Unchanged receipt-owned projections can be updated or removed without
   granting authority over unrelated files.
-- The focused Pack validator gives maintainers a short authoring feedback loop.
+- Whole-catalog validation gives maintainers a short authoring feedback loop.
 - One read-only Pack audit produces a redacted trust report across workstation,
   active global Pack, and current-project contract health without collapsing
   unknown readiness into failure.
@@ -42,7 +42,8 @@ immutable.
 
 ## Verification
 
-Use focused tests for touched behavior, `./scripts/validate-pack-content.sh`
-for Pack content, and `./scripts/validate-packy.sh` for the sandboxed general
-check. Release packaging checks run only at the release boundary described in
-the [release guide](../release.md).
+Use focused tests for touched behavior and `./scripts/validate-packy.sh` for the
+sandboxed general check. Catalog Project content uses the whole-catalog
+validation described in the [catalog authoring guide](../catalog-project.md).
+Release packaging checks run only at the release boundary described in the
+[release guide](../release.md).
