@@ -105,6 +105,14 @@ func (s *Store) AcquireLatest(ctx context.Context) (Snapshot, error) {
 	if s.source == nil {
 		return Snapshot{}, errors.New("catalog Source is required")
 	}
+	if err := os.MkdirAll(filepath.Join(s.root, "snapshots"), 0o755); err != nil {
+		return Snapshot{}, fmt.Errorf("prepare catalog store: %w", err)
+	}
+	guard, err := bundletransaction.Acquire(ctx, s.root)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("lock catalog store: %w", err)
+	}
+	defer guard.Release()
 	release, err := s.source.Latest(ctx, officialRepository)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("acquire latest official catalog release: %w", err)
@@ -116,14 +124,6 @@ func (s *Store) AcquireLatest(ctx context.Context) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
-	if err := os.MkdirAll(filepath.Join(s.root, "snapshots"), 0o755); err != nil {
-		return Snapshot{}, fmt.Errorf("prepare catalog store: %w", err)
-	}
-	guard, err := bundletransaction.Acquire(ctx, s.root)
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("lock catalog store: %w", err)
-	}
-	defer guard.Release()
 	stage, err := os.MkdirTemp(filepath.Join(s.root, "snapshots"), ".staging-")
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("stage Catalog Snapshot: %w", err)
