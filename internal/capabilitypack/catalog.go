@@ -69,10 +69,15 @@ type Resource struct {
 	catalogRoot       string
 }
 
-// CatalogRoot identifies the immutable Catalog Snapshot root that owns this
-// resource. Runtime adapters use it when an installed Pack is no longer in the
-// selected snapshot; synthetic and authoring Packs may leave it empty.
-func (r Resource) CatalogRoot() string { return r.catalogRoot }
+// CatalogRootOr returns the immutable Catalog Snapshot root that owns this
+// resource. Runtime adapters use fallback for synthetic and authoring resources
+// that do not belong to a downloaded snapshot.
+func (r Resource) CatalogRootOr(fallback string) string {
+	if r.catalogRoot != "" {
+		return r.catalogRoot
+	}
+	return fallback
+}
 
 type RuntimeModeRole string
 type RuntimeRequirementKind string

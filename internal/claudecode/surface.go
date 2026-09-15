@@ -119,7 +119,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				continue
 			}
 			if r.Kind == "command" {
-				content, err := os.ReadFile(filepath.Join(catalogRoot(r, a.bundleRoot), filepath.Clean(r.Source)))
+				content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source)))
 				if err != nil {
 					return result, err
 				}
@@ -142,7 +142,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				}
 				continue
 			}
-			source := filepath.Join(catalogRoot(r, a.bundleRoot), filepath.Clean(r.Source))
+			source := filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source))
 			if err := a.validateSkillAssetClosure(pack, r, source); err != nil {
 				return result, err
 			}
@@ -171,7 +171,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: action})
 			revision = append(revision, id+observed)
 		case "instruction":
-			content, err := os.ReadFile(filepath.Join(catalogRoot(r, a.bundleRoot), filepath.Clean(r.Source)))
+			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source)))
 			if err != nil {
 				return result, err
 			}
@@ -202,7 +202,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: action})
 			revision = append(revision, "instructions="+Fingerprint(instructionOriginal))
 		case "agent":
-			content, err := os.ReadFile(filepath.Join(catalogRoot(r, a.bundleRoot), filepath.Clean(r.Source)))
+			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source)))
 			if err != nil {
 				return result, err
 			}
@@ -1196,7 +1196,7 @@ func (a *SurfaceAdapter) consumerAssets(pack capabilitypack.Pack, consumer capab
 	sort.Slice(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
 	result := make([]capabilitypack.ObservedProjection, 0, len(assets))
 	for _, asset := range assets {
-		content, err := os.ReadFile(filepath.Join(catalogRoot(asset, a.bundleRoot), filepath.Clean(asset.Source)))
+		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.bundleRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return nil, err
 		}
@@ -1218,7 +1218,7 @@ func (a *SurfaceAdapter) validateSkillAssetClosure(pack capabilitypack.Pack, con
 		return err
 	}
 	for _, asset := range dependencyAssets(pack, consumer) {
-		path, err := canonicalPath(filepath.Join(catalogRoot(asset, a.bundleRoot), filepath.Clean(asset.Source)))
+		path, err := canonicalPath(filepath.Join(asset.CatalogRootOr(a.bundleRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return err
 		}
@@ -1237,7 +1237,7 @@ func (a *SurfaceAdapter) embedConsumerAssets(pack capabilitypack.Pack, consumer 
 	}
 	result := strings.TrimSpace(string(prompt))
 	for _, asset := range assets {
-		content, err := os.ReadFile(filepath.Join(catalogRoot(asset, a.bundleRoot), filepath.Clean(asset.Source)))
+		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.bundleRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return nil, err
 		}
@@ -1247,13 +1247,6 @@ func (a *SurfaceAdapter) embedConsumerAssets(pack capabilitypack.Pack, consumer 
 }
 
 func fingerprintsEqual(a, b string) bool { return a == b || "sha256:"+a == b || a == "sha256:"+b }
-
-func catalogRoot(resource capabilitypack.Resource, fallback string) string {
-	if root := resource.CatalogRoot(); root != "" {
-		return root
-	}
-	return fallback
-}
 
 func directChild(path, root string) bool {
 	return filepath.Dir(filepath.Clean(path)) == filepath.Clean(root) && filepath.Base(path) != "." && filepath.Base(path) != ".."

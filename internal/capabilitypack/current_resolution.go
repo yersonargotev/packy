@@ -5,6 +5,37 @@ import (
 	"fmt"
 )
 
+// IntentPackResolver resolves the immutable Pack contract recorded by an
+// activation intent.
+type IntentPackResolver func(context.Context, string, string, string) (Pack, error)
+
+// IntentPackResolver snapshots catalog-current contracts so adapters can
+// resolve ownership while the catalog observation lock is already held. Only
+// receipts that reference a different, retained snapshot require storage.
+func (c Catalog) IntentPackResolver() IntentPackResolver {
+	current := make(map[string]Pack, len(c.packs))
+	for _, pack := range c.packs {
+		current[intentPackContractKey(pack.ID, pack.Version, pack.CatalogSnapshot)] = clonePack(pack)
+	}
+	return func(ctx context.Context, id, version, snapshotID string) (Pack, error) {
+		if c.snapshotID != "" && snapshotID == "" {
+			return Pack{}, fmt.Errorf("capability pack %q receipt predates Catalog Snapshots; follow the adoption procedure in docs/catalog-adoption.md before using the independent catalog", id)
+		}
+		if snapshotID != c.snapshotID {
+			return c.resolveIntentPackAt(ctx, id, version, snapshotID)
+		}
+		pack, ok := current[intentPackContractKey(id, version, snapshotID)]
+		if !ok {
+			return Pack{}, fmt.Errorf("capability pack %q has no exact catalog-current ownership contract for version %q at Catalog Snapshot %q", id, version, snapshotID)
+		}
+		return clonePack(pack), nil
+	}
+}
+
+func intentPackContractKey(id, version, snapshotID string) string {
+	return id + "\x00" + version + "\x00" + snapshotID
+}
+
 func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pack, error) {
 	return c.resolveIntentPackAt(ctx, id, version, "")
 }
