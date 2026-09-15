@@ -55,13 +55,13 @@ func newSyntheticCLIFixture(t *testing.T, terminal Terminal, packs ...testsuppor
 	return syntheticCLIFixture{
 		options: Options{
 			Env: MapEnv{
-				"HOME":                home,
-				"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-				"PATH":                "",
-				"PACKY_SKILLS_SOURCE": filepath.Join(bundleRoot, "skills"),
+				"HOME":            home,
+				"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),
+				"PATH":            "",
 			},
-			Runner:   &fakeRunner{},
-			Terminal: terminal,
+			Runner:          &fakeRunner{},
+			Terminal:        terminal,
+			skillSourceRoot: filepath.Join(bundleRoot, "skills"),
 		},
 		home:       home,
 		bundleRoot: bundleRoot,

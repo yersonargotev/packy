@@ -1,6 +1,6 @@
-// Package claudesmoke proves the package-installed Packy initialization and
-// explicit activation path against Claude Code without allowing either program
-// to see operator workstation state.
+// Package claudesmoke proves packaged Packy inspection and explicit activation
+// from a selected Catalog Snapshot against Claude Code without allowing either
+// program to see operator workstation state.
 package claudesmoke
 
 import (
@@ -22,6 +22,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yersonargotev/packy/internal/catalogstore"
+	"github.com/yersonargotev/packy/internal/managedpack"
 )
 
 const ExactFloor = "2.1.203"
@@ -44,7 +47,6 @@ type phaseKind uint8
 const (
 	phaseClaudeVersion phaseKind = iota
 	phasePackyVersion
-	phaseInit
 	phaseDoctor
 	phasePackList
 	phasePackShow
@@ -67,7 +69,6 @@ type smokeContext struct {
 	EvidencePath, Sandbox                           string
 	Env                                             []string
 	Packy, ClaudeInterposer, ClaudeLog, ExternalLog string
-	InstallRepo, InstallRef                         string
 	SourceCheckout                                  string
 	Workstation                                     workstationFixture
 }
@@ -112,19 +113,19 @@ type SafetyEvidence struct {
 	WriteBoundaryEnforced           bool `json:"write_boundary_enforced"`
 }
 type AssertionEvidence struct {
-	InstalledSourceInitialized           bool `json:"installed_source_initialized"`
-	DoctorReportedCoreHealthy            bool `json:"doctor_reported_core_healthy"`
-	ClaudeInstructionPreserved           bool `json:"claude_instruction_preserved"`
-	ClaudeMCPPreserved                   bool `json:"claude_mcp_preserved"`
-	SharedSkillSentinelPreserved         bool `json:"shared_skill_sentinel_preserved"`
-	InitializationCausedNoSurfaceChange  bool `json:"initialization_caused_no_surface_change"`
-	ActivationPreviewCausedNoChange      bool `json:"activation_preview_caused_no_change"`
-	RepresentativePackActivated          bool `json:"representative_pack_activated"`
-	ReadinessInspectedSeparately         bool `json:"readiness_inspected_separately"`
-	NoActivationStateAfterInitialization bool `json:"no_activation_state_after_initialization"`
-	NoClaudeMutationOperations           bool `json:"no_claude_mutation_operations"`
-	EngramStubProtocolVerified           bool `json:"engram_stub_protocol_verified"`
-	SensitiveFixtureRedacted             bool `json:"sensitive_fixture_redacted"`
+	CatalogSnapshotSelected                      bool `json:"catalog_snapshot_selected"`
+	DoctorReportedCoreHealthy                    bool `json:"doctor_reported_core_healthy"`
+	ClaudeInstructionPreserved                   bool `json:"claude_instruction_preserved"`
+	ClaudeMCPPreserved                           bool `json:"claude_mcp_preserved"`
+	SharedSkillSentinelPreserved                 bool `json:"shared_skill_sentinel_preserved"`
+	PreActivationInspectionCausedNoSurfaceChange bool `json:"pre_activation_inspection_caused_no_surface_change"`
+	ActivationPreviewCausedNoChange              bool `json:"activation_preview_caused_no_change"`
+	RepresentativePackActivated                  bool `json:"representative_pack_activated"`
+	ReadinessInspectedSeparately                 bool `json:"readiness_inspected_separately"`
+	NoActivationStateBeforeExplicitActivation    bool `json:"no_activation_state_before_explicit_activation"`
+	NoClaudeMutationOperations                   bool `json:"no_claude_mutation_operations"`
+	EngramStubProtocolVerified                   bool `json:"engram_stub_protocol_verified"`
+	SensitiveFixtureRedacted                     bool `json:"sensitive_fixture_redacted"`
 }
 type Evidence struct {
 	SchemaVersion          int                          `json:"schema_version"`
@@ -236,8 +237,11 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	installRepo, installRef, sourceSHA, err := prepareInstallableSource(ctx, sandbox, acquireEnv, repo, cfg.SourceRef, filepath.Join(sandbox, "source-repository"))
+	_, _, sourceSHA, err := prepareInstallableSource(ctx, sandbox, acquireEnv, repo, cfg.SourceRef, layout.SourceRepository, layout.InstalledSource)
 	if err != nil {
+		return Evidence{}, err
+	}
+	if err := selectCatalogSnapshotFixture(ctx, layout, acquireEnv, sourceSHA); err != nil {
 		return Evidence{}, err
 	}
 	install, err := sandboxCommand(ctx, sandbox, npmExecutable, "install", "--prefix", filepath.Join(sandbox, "npm"), "--no-audit", "--no-fund", "@anthropic-ai/claude-code@"+resolved)
@@ -317,14 +321,15 @@ esac
 	if err != nil {
 		return Evidence{}, err
 	}
-	e := Evidence{SchemaVersion: 3, PackyRef: cfg.SourceRef, PackySHA: sourceSHA, OS: runtime.GOOS, Arch: runtime.GOARCH, RequestedClaudeVersion: cfg.ClaudeSelector, ResolvedClaudeVersion: resolved, ClaudeIntegrity: integrity, ClaudeDigest: digest, Sandbox: sandbox, Before: before}
+	e := Evidence{SchemaVersion: 4, PackyRef: cfg.SourceRef, PackySHA: sourceSHA, OS: runtime.GOOS, Arch: runtime.GOARCH, RequestedClaudeVersion: cfg.ClaudeSelector, ResolvedClaudeVersion: resolved, ClaudeIntegrity: integrity, ClaudeDigest: digest, Sandbox: sandbox, Before: before}
+	e.InstalledSourceSHA = sourceSHA
+	e.Assertions.CatalogSnapshotSelected = true
 	e.Assertions.EngramStubProtocolVerified = probeErr == nil && engramProbe
 	e.Assertions.SensitiveFixtureRedacted = true
 	e.Safety = SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, NoInteractiveClaude: true, WriteBoundaryEnforced: probeErr == nil}
 	e, err = executeSmoke(ctx, e, smokeContext{
 		EvidencePath: cfg.EvidencePath, Sandbox: sandbox, Env: env, Packy: packy,
-		ClaudeInterposer: claudeInterposer, ClaudeLog: claudeLog, ExternalLog: externalLog, InstallRepo: installRepo,
-		InstallRef: installRef, SourceCheckout: repo,
+		ClaudeInterposer: claudeInterposer, ClaudeLog: claudeLog, ExternalLog: externalLog, SourceCheckout: repo,
 		Workstation: workstationFixture{
 			InstructionPath: foreignInstructionPath, MCPPath: foreignMCPPath, SharedSkillPath: sharedSkillPath,
 			Instruction: foreignInstruction, MCP: foreignMCP,
@@ -408,12 +413,10 @@ func observeAddyQualification(ctx context.Context, sandbox, repo, packy, checkou
 func executeSmoke(ctx context.Context, e Evidence, lc smokeContext) (Evidence, error) {
 	evidencePath, sandbox, env := lc.EvidencePath, lc.Sandbox, lc.Env
 	packy, claudeInterposer, claudeLog := lc.Packy, lc.ClaudeInterposer, lc.ClaudeLog
-	installRepo, installRef := lc.InstallRepo, lc.InstallRef
 
 	phases := []smokePhase{
 		{Kind: phaseClaudeVersion, Argv: []string{claudeInterposer, "--version"}},
 		{Kind: phasePackyVersion, Argv: []string{packy, "version"}},
-		{Kind: phaseInit, Argv: []string{packy, "init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", installRepo, "--repository-ref", installRef}},
 		{Kind: phaseDoctor, Argv: []string{packy, "doctor"}},
 		{Kind: phasePackList, Argv: []string{packy, "list"}},
 		{Kind: phasePackShow, Argv: []string{packy, "show", "addy"}},
@@ -436,17 +439,10 @@ func executeSmoke(ctx context.Context, e Evidence, lc smokeContext) (Evidence, e
 			return e, fmt.Errorf("%s exited %d", ce.Name, ce.ExitCode)
 		}
 		switch phase.Kind {
-		case phaseInit:
-			installedSHA, readErr := sandboxOutput(ctx, sandbox, filepath.Join(sandbox, "work"), env, "git", "-C", filepath.Join(sandbox, "installed-source"), "rev-parse", "HEAD")
-			if readErr != nil {
-				return e, readErr
-			}
-			e.InstalledSourceSHA = strings.TrimSpace(installedSHA)
-			e.Assertions.InstalledSourceInitialized = e.InstalledSourceSHA != ""
 		case phaseDoctor:
 			e.Assertions.DoctorReportedCoreHealthy = strings.Contains(ce.Stdout, "PASS packy-core:") && strings.Contains(ce.Stdout, "SUMMARY status=healthy")
 		case phasePackShow:
-			e.Assertions.InitializationCausedNoSurfaceChange = initializationPreserved(lc.Workstation, sandbox, claudeLog, lc.ExternalLog, e.Before)
+			e.Assertions.PreActivationInspectionCausedNoSurfaceChange = preActivationInspectionPreserved(lc.Workstation, sandbox, claudeLog, lc.ExternalLog, e.Before)
 		case phaseActivationPreview:
 			projection := filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design")
 			_, projectionErr := os.Lstat(projection)
@@ -477,7 +473,7 @@ func executeSmoke(ctx context.Context, e Evidence, lc smokeContext) (Evidence, e
 	if err != nil {
 		return e, err
 	}
-	e.Assertions.NoActivationStateAfterInitialization = e.Assertions.InitializationCausedNoSurfaceChange
+	e.Assertions.NoActivationStateBeforeExplicitActivation = e.Assertions.PreActivationInspectionCausedNoSurfaceChange
 	claudeInvocations := readClaudeInvocations(claudeLog)
 	e.Commands = append(e.Commands, claudeInvocations...)
 	e.Assertions.NoClaudeMutationOperations = onlyClaudeVersionInvocations(claudeInvocations)
@@ -495,7 +491,7 @@ func executeSmoke(ctx context.Context, e Evidence, lc smokeContext) (Evidence, e
 	return e, nil
 }
 
-func initializationPreserved(fixture workstationFixture, sandbox, claudeLog, externalLog string, before []FileEvidence) bool {
+func preActivationInspectionPreserved(fixture workstationFixture, sandbox, claudeLog, externalLog string, before []FileEvidence) bool {
 	return surfacesPreservedWithoutActivation(fixture, sandbox, before) &&
 		reflect.DeepEqual(readClaudeInvocations(claudeLog), []CommandEvidence{{Name: "claude", Args: []string{"version"}, ExitCode: 0}}) &&
 		externalLogEmpty(externalLog)
@@ -675,8 +671,6 @@ func AllowedCommand(packy, claude string, argv []string) bool {
 	switch argv[1] {
 	case "version", "doctor":
 		return len(argv) == 2
-	case "init":
-		return len(argv) == 10
 	case "list":
 		return len(argv) == 2
 	case "show":
@@ -699,7 +693,6 @@ func restrictedEnv(root, claudeBin string, runtimeBin ...string) []string {
 		"XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "XDG_DATA_HOME=" + filepath.Join(root, "data"), "TMPDIR=" + filepath.Join(root, "tmp"),
 		"PATH=" + strings.Join(pathEntries, string(os.PathListSeparator)), "LANG=C", "LC_ALL=C", "NO_COLOR=1",
 		"HOMEBREW_PREFIX=" + filepath.Join(root, "homebrew"),
-		"PACKY_SKILLS_SOURCE=" + filepath.Join(root, "installed-source", "bundle", "skills"),
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "DISABLE_AUTOUPDATER=1",
 	}
 }
@@ -759,7 +752,7 @@ func pathWithin(root, path string) bool {
 }
 
 func ValidateEvidence(e Evidence) error {
-	if e.SchemaVersion != 3 || e.PackyVersion == "" || e.PackyRef == "" || len(e.PackySHA) != 40 || e.InstalledSourceSHA != e.PackySHA || e.ResolvedClaudeVersion == "" || e.ClaudeIntegrity == "" || len(e.ClaudeDigest) != 64 {
+	if e.SchemaVersion != 4 || e.PackyVersion == "" || e.PackyRef == "" || len(e.PackySHA) != 40 || e.InstalledSourceSHA != e.PackySHA || e.ResolvedClaudeVersion == "" || e.ClaudeIntegrity == "" || len(e.ClaudeDigest) != 64 {
 		return errors.New("missing or malformed canonical evidence")
 	}
 	packySHA, shaErr := hex.DecodeString(e.PackySHA)
@@ -779,7 +772,6 @@ func ValidateEvidence(e Evidence) error {
 	want := []CommandEvidence{
 		{Name: "claude", Args: []string{"--version"}},
 		{Name: "packy", Args: []string{"version"}},
-		{Name: "packy", Args: []string{"init"}},
 		{Name: "packy", Args: []string{"doctor"}},
 		{Name: "packy", Args: []string{"list"}},
 		{Name: "packy", Args: []string{"show", "addy"}},
@@ -794,14 +786,6 @@ func ValidateEvidence(e Evidence) error {
 		got := e.Commands[i]
 		if got.Name != command.Name {
 			return errors.New("evidence command sequence is malformed")
-		}
-		// init has confined path arguments; its operation is the stable part.
-		if i == 2 {
-			wantInit := []string{"init", "--home", filepath.Join(e.Sandbox, "home"), "--source-root", filepath.Join(e.Sandbox, "installed-source"), "--repository-url", filepath.Join(e.Sandbox, "source-repository"), "--repository-ref", syntheticSourceRef}
-			if e.Sandbox == "" || !filepath.IsAbs(e.Sandbox) || filepath.Clean(e.Sandbox) != e.Sandbox || !reflect.DeepEqual(got.Args, wantInit) {
-				return errors.New("evidence command sequence is malformed")
-			}
-			continue
 		}
 		if !reflect.DeepEqual(got.Args, command.Args) {
 			return errors.New("evidence command sequence is malformed")
@@ -826,7 +810,7 @@ func ValidateEvidence(e Evidence) error {
 		return errors.New("malformed Claude acquisition evidence")
 	}
 	a := e.Assertions
-	if !a.InstalledSourceInitialized || !a.DoctorReportedCoreHealthy || !a.ClaudeInstructionPreserved || !a.ClaudeMCPPreserved || !a.SharedSkillSentinelPreserved || !a.InitializationCausedNoSurfaceChange || !a.ActivationPreviewCausedNoChange || !a.RepresentativePackActivated || !a.ReadinessInspectedSeparately || !a.NoActivationStateAfterInitialization || !a.NoClaudeMutationOperations || !a.EngramStubProtocolVerified || !a.SensitiveFixtureRedacted {
+	if !a.CatalogSnapshotSelected || !a.DoctorReportedCoreHealthy || !a.ClaudeInstructionPreserved || !a.ClaudeMCPPreserved || !a.SharedSkillSentinelPreserved || !a.PreActivationInspectionCausedNoSurfaceChange || !a.ActivationPreviewCausedNoChange || !a.RepresentativePackActivated || !a.ReadinessInspectedSeparately || !a.NoActivationStateBeforeExplicitActivation || !a.NoClaudeMutationOperations || !a.EngramStubProtocolVerified || !a.SensitiveFixtureRedacted {
 		return errors.New("explicit activation assertions are incomplete")
 	}
 	raw, _ := json.Marshal(e)
@@ -1032,10 +1016,9 @@ func sandboxOutput(ctx context.Context, writableRoot, dir string, env []string, 
 	return stdout.String(), nil
 }
 
-// prepareInstallableSource leaves the proved checkout untouched while adapting
-// arbitrary Git object names (notably CI's full GITHUB_SHA) to bootstrap's
-// git-clone --branch contract.
-func prepareInstallableSource(ctx context.Context, sandbox string, env []string, sourceRepo, requestedRef, destination string) (repository, ref, sha string, err error) {
+// prepareInstallableSource leaves the proved checkout untouched while creating
+// a clean, exact candidate checkout used to build the disposable snapshot.
+func prepareInstallableSource(ctx context.Context, sandbox string, env []string, sourceRepo, requestedRef, destination, installedDestination string) (repository, ref, sha string, err error) {
 	resolved, err := hostOutput(ctx, sourceRepo, "git", "rev-parse", "--verify", "--end-of-options", requestedRef+"^{commit}")
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve requested source ref %q: %w", requestedRef, err)
@@ -1050,7 +1033,94 @@ func prepareInstallableSource(ctx context.Context, sandbox string, env []string,
 	if _, err := sandboxOutput(ctx, sandbox, destination, env, "git", "branch", "--force", syntheticSourceRef, resolved); err != nil {
 		return "", "", "", fmt.Errorf("create installable source ref: %w", err)
 	}
+	if _, err := sandboxOutput(ctx, sandbox, filepath.Join(sandbox, "work"), env, "git", "clone", "--branch", syntheticSourceRef, "--single-branch", "--no-hardlinks", destination, installedDestination); err != nil {
+		return "", "", "", fmt.Errorf("create installed source fixture: %w", err)
+	}
 	return destination, syntheticSourceRef, resolved, nil
+}
+
+type catalogSnapshotFixtureSource struct {
+	release catalogstore.Release
+}
+
+func (s catalogSnapshotFixtureSource) Latest(context.Context, string) (catalogstore.Release, error) {
+	return s.release, nil
+}
+
+type smokeCatalogOriginResolver struct {
+	sandbox  string
+	work     string
+	env      []string
+	root     string
+	resolved map[string]string
+}
+
+func (r *smokeCatalogOriginResolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
+	key := origin.Repository + "\x00" + origin.Commit
+	if resolved := r.resolved[key]; resolved != "" {
+		return resolved, nil
+	}
+	sum := sha256.Sum256([]byte(key))
+	target := filepath.Join(r.root, hex.EncodeToString(sum[:]))
+	if _, err := sandboxOutput(ctx, r.sandbox, r.work, r.env, "git", "clone", "--no-checkout", "https://github.com/"+origin.Repository+".git", target); err != nil {
+		return "", fmt.Errorf("clone public origin %s: %w", origin.Repository, err)
+	}
+	if _, err := sandboxOutput(ctx, r.sandbox, target, r.env, "git", "checkout", "--detach", origin.Commit); err != nil {
+		return "", fmt.Errorf("checkout public origin %s@%s: %w", origin.Repository, origin.Commit, err)
+	}
+	r.resolved[key] = target
+	return target, nil
+}
+
+func selectCatalogSnapshotFixture(ctx context.Context, layout sandboxLayout, env []string, commit string) error {
+	originRoot := filepath.Join(layout.Acquisition, "catalog-origins")
+	if err := os.MkdirAll(originRoot, 0o700); err != nil {
+		return err
+	}
+	resolver := &smokeCatalogOriginResolver{
+		sandbox: layout.Root, work: layout.Work, env: env, root: originRoot, resolved: map[string]string{},
+	}
+	validation, err := managedpack.ValidateCatalogProject(ctx, layout.InstalledSource, "", resolver)
+	if err != nil {
+		return fmt.Errorf("validate disposable Catalog Snapshot fixture: %w", err)
+	}
+	result, err := managedpack.BuildCatalogSnapshot(ctx, layout.InstalledSource, validation, managedpack.CatalogSnapshotSource{
+		Repository: "yersonargotev/packy-catalog",
+		Commit:     commit,
+		Builder:    "yersonargotev/packy@" + commit,
+	}, filepath.Join(layout.Acquisition, "catalog-snapshot"))
+	if err != nil {
+		return fmt.Errorf("build disposable Catalog Snapshot fixture: %w", err)
+	}
+	archive, err := os.ReadFile(result.ArchivePath)
+	if err != nil {
+		return err
+	}
+	checksum, err := os.ReadFile(result.ChecksumPath)
+	if err != nil {
+		return err
+	}
+	digest := func(data []byte) string {
+		sum := sha256.Sum256(data)
+		return hex.EncodeToString(sum[:])
+	}
+	release := catalogstore.Release{
+		Repository:          "yersonargotev/packy-catalog",
+		Tag:                 "catalog-" + commit,
+		Commit:              commit,
+		Publisher:           "github-actions[bot]",
+		Published:           true,
+		Immutable:           true,
+		AttestationVerified: true,
+		Assets: []catalogstore.Asset{
+			{Name: "catalog-snapshot.tar.gz", SHA256: digest(archive), Data: archive},
+			{Name: "SHA256SUMS", SHA256: digest(checksum), Data: checksum},
+		},
+	}
+	if _, err := catalogstore.New(catalogstore.DefaultDataRoot(layout.Home), catalogSnapshotFixtureSource{release: release}).AcquireLatest(ctx); err != nil {
+		return fmt.Errorf("select disposable Catalog Snapshot fixture: %w", err)
+	}
+	return nil
 }
 
 func parsePackyVersion(s string) string {

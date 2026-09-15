@@ -5,6 +5,44 @@ import (
 	"fmt"
 )
 
+// IntentPackResolver resolves the immutable Pack contract recorded by an
+// activation intent.
+type IntentPackResolver func(context.Context, string, string, string) (Pack, error)
+
+// IntentPackResolver snapshots catalog-current contracts so adapters can
+// resolve ownership while the catalog observation lock is already held. Only
+// receipts that reference a different, retained snapshot require storage.
+func (c Catalog) IntentPackResolver() IntentPackResolver {
+	current := make(map[string]Pack, len(c.packs))
+	for _, pack := range c.packs {
+		current[intentPackContractKey(pack.ID, pack.Version, pack.CatalogSnapshot)] = clonePack(pack)
+	}
+	return func(ctx context.Context, id, version, snapshotID string) (Pack, error) {
+		if c.snapshotID != "" && snapshotID == "" {
+			return Pack{}, fmt.Errorf("capability pack %q receipt predates Catalog Snapshots; follow the adoption procedure in docs/catalog-adoption.md before using the independent catalog", id)
+		}
+		if snapshotID != c.snapshotID {
+			pack, err := c.resolveIntentPackAt(ctx, id, version, snapshotID)
+			if err != nil {
+				return Pack{}, err
+			}
+			if pack.ID != id || pack.Version != version || pack.CatalogSnapshot != snapshotID {
+				return Pack{}, fmt.Errorf("capability pack %q has no exact retained ownership contract for version %q at Catalog Snapshot %q", id, version, snapshotID)
+			}
+			return pack, nil
+		}
+		pack, ok := current[intentPackContractKey(id, version, snapshotID)]
+		if !ok {
+			return Pack{}, fmt.Errorf("capability pack %q has no exact catalog-current ownership contract for version %q at Catalog Snapshot %q", id, version, snapshotID)
+		}
+		return clonePack(pack), nil
+	}
+}
+
+func intentPackContractKey(id, version, snapshotID string) string {
+	return id + "\x00" + version + "\x00" + snapshotID
+}
+
 func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pack, error) {
 	return c.resolveIntentPackAt(ctx, id, version, "")
 }
@@ -21,11 +59,18 @@ func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotI
 		if err != nil {
 			return Pack{}, fmt.Errorf("resolve Catalog Snapshot %s for capability pack %q: %w", snapshotID, id, err)
 		}
-		historical, err := DiscoverRetainedForDurableIntents(ctx, bundleRoot, snapshotID, c.resolveSnapshot)
+		if err := ctx.Err(); err != nil {
+			return Pack{}, err
+		}
+		// resolveSnapshot validates the retained immutable snapshot before
+		// returning its bundle root. Read those bytes directly: acquiring the
+		// retained bundle lock while the current bundle lock is held would allow
+		// two cross-snapshot observations to deadlock in opposite order.
+		historical, err := discoverRetainedForDurableIntentsUnlocked(bundleRoot, snapshotID, c.resolveSnapshot)
 		if err != nil {
 			return Pack{}, fmt.Errorf("load retained Catalog Snapshot %s: %w", snapshotID, err)
 		}
-		pack, err := historical.Show(ctx, id)
+		pack, err := historical.showUnlocked(id)
 		if err != nil {
 			return Pack{}, err
 		}

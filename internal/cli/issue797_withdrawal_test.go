@@ -28,7 +28,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.skillSourceRoot = ""
 	opts.Env = env
 	opts.CatalogSource = source
 	project := filepath.Join(t.TempDir(), "project")
@@ -188,7 +188,7 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.skillSourceRoot = ""
 	opts.Env, opts.CatalogSource = env, source
 	project := filepath.Join(t.TempDir(), "project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
@@ -299,7 +299,7 @@ func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T)
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.skillSourceRoot = ""
 	opts.Env, opts.CatalogSource = env, source
 
 	if out, err := executeCommand(t, NewRootCommand(opts), "init"); err != nil {
@@ -375,7 +375,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.skillSourceRoot = ""
 	opts.Env, opts.CatalogSource = env, source
 	project := filepath.Join(t.TempDir(), "project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
@@ -436,7 +436,7 @@ func TestIssue797RemovedSurfaceKeepsEvidenceWithoutOfferingUpdate(t *testing.T) 
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.skillSourceRoot = ""
 	opts.Env, opts.CatalogSource = env, source
 	if out, err := executeCommand(t, NewRootCommand(opts), "init"); err != nil {
 		t.Fatalf("initialize v1: %v\n%s", err, out)

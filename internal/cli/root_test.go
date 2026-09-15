@@ -101,6 +101,22 @@ func TestNoArgumentExecutionPropagatesCommandContextToTUI(t *testing.T) {
 	}
 }
 
+func TestRemovedSkillsSourceEnvironmentOverrideDoesNotBypassCatalogInitialization(t *testing.T) {
+	home := t.TempDir()
+	sourceRoot := createSkillSource(t)
+	opts := Options{Env: MapEnv{
+		"HOME":                home,
+		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg-config"),
+		"PATH":                "",
+		"PACKY_SKILLS_SOURCE": sourceRoot,
+	}}
+
+	output, err := executeCommand(t, NewRootCommand(opts), "list")
+	if err == nil || !strings.Contains(err.Error(), "official Catalog Snapshot is unavailable; run `packy init`") {
+		t.Fatalf("list with removed PACKY_SKILLS_SOURCE override = %v\n%s", err, output)
+	}
+}
+
 func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 	t.Run("healthy", func(t *testing.T) {
 		opts, _, _ := sandboxOptions(t)
@@ -410,15 +426,15 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 	runner := &fakeRunner{path: map[string]string{"engram": engram}}
 	return Options{
 		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg-config"),
-			"XDG_CACHE_HOME":      filepath.Join(home, "xdg-cache"),
-			"CODEX_HOME":          filepath.Join(home, ".codex"),
-			"PATH":                homebrewBin,
-			"HOMEBREW_PREFIX":     homebrewPrefix,
-			"PACKY_SKILLS_SOURCE": sourceRoot,
+			"HOME":            home,
+			"XDG_CONFIG_HOME": filepath.Join(home, "xdg-config"),
+			"XDG_CACHE_HOME":  filepath.Join(home, "xdg-cache"),
+			"CODEX_HOME":      filepath.Join(home, ".codex"),
+			"PATH":            homebrewBin,
+			"HOMEBREW_PREFIX": homebrewPrefix,
 		},
-		Runner: runner,
+		Runner:          runner,
+		skillSourceRoot: sourceRoot,
 	}, runner, home
 }
 

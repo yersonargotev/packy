@@ -69,10 +69,15 @@ type Resource struct {
 	catalogRoot       string
 }
 
-// CatalogRoot identifies the immutable Catalog Snapshot root that owns this
-// resource. Runtime adapters use it when an installed Pack is no longer in the
-// selected snapshot; synthetic and authoring Packs may leave it empty.
-func (r Resource) CatalogRoot() string { return r.catalogRoot }
+// CatalogRootOr returns the immutable Catalog Snapshot root that owns this
+// resource. Runtime adapters use fallback for synthetic and authoring resources
+// that do not belong to a downloaded snapshot.
+func (r Resource) CatalogRootOr(fallback string) string {
+	if r.catalogRoot != "" {
+		return r.catalogRoot
+	}
+	return fallback
+}
 
 type RuntimeModeRole string
 type RuntimeRequirementKind string
@@ -480,12 +485,27 @@ func DiscoverRetainedForDurableIntents(ctx context.Context, bundleRoot, snapshot
 	if err != nil {
 		return Catalog{}, err
 	}
+	return configureRetainedCatalog(catalog, snapshotID, resolveSnapshot), nil
+}
+
+// discoverRetainedForDurableIntentsUnlocked reads a bundle root returned by a
+// validating immutable-snapshot resolver. Callers may already hold another
+// snapshot's observation lock, so this path must not acquire a bundle lock.
+func discoverRetainedForDurableIntentsUnlocked(bundleRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
+	catalog, err := discoverCurrentCatalogUnlocked(bundleRoot, false)
+	if err != nil {
+		return Catalog{}, err
+	}
+	return configureRetainedCatalog(catalog, snapshotID, resolveSnapshot), nil
+}
+
+func configureRetainedCatalog(catalog Catalog, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) Catalog {
 	catalog.snapshotID = snapshotID
 	catalog.resolveSnapshot = resolveSnapshot
 	for i := range catalog.packs {
 		catalog.packs[i].CatalogSnapshot = snapshotID
 	}
-	return catalog, nil
+	return catalog
 }
 
 func discoverProductionCatalog(ctx context.Context, bundleRoot string, validateSources bool, validate func(context.Context) error) (Catalog, error) {

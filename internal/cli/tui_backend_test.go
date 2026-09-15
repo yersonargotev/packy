@@ -31,13 +31,13 @@ func TestTUIProductionBackendUsesPackyOwnersWithoutMutatingState(t *testing.T) {
 			home := t.TempDir()
 			opts := Options{
 				Env: MapEnv{
-					"HOME":                home,
-					"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-					"PATH":                "",
-					"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+					"HOME":            home,
+					"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),
+					"PATH":            "",
 				},
-				Getwd:  func() (string, error) { return test.currentDirectory, nil },
-				Runner: &fakeRunner{},
+				Getwd:           func() (string, error) { return test.currentDirectory, nil },
+				Runner:          &fakeRunner{},
+				skillSourceRoot: filepath.Join(repositoryRoot, "bundle", "skills"),
 			}
 			opts = opts.withDefaults()
 			before := snapshotTree(t, home)

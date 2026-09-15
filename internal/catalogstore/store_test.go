@@ -120,6 +120,52 @@ func TestConcurrentRepeatAcquisitionRetainsOneValidSnapshot(t *testing.T) {
 	}
 }
 
+func TestConcurrentAcquisitionFetchesLatestReleaseInsideStoreLock(t *testing.T) {
+	oldCommit := strings.Repeat("a", 40)
+	newCommit := strings.Repeat("b", 40)
+	source := &orderedSource{
+		releases: []catalogstore.Release{
+			validRelease(t, oldCommit, validManifest("example", "1.2.3")),
+			validRelease(t, newCommit, validManifest("example", "1.2.4")),
+		},
+		firstStarted:  make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+	}
+	root := t.TempDir()
+	first := catalogstore.New(root, source)
+	second := catalogstore.New(root, source)
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := first.AcquireLatest(context.Background())
+		firstDone <- err
+	}()
+	<-source.firstStarted
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := second.AcquireLatest(cancelled); err == nil || !strings.Contains(err.Error(), "lock catalog store") {
+		t.Fatalf("cancelled concurrent acquisition error = %v, want store lock failure", err)
+	}
+	select {
+	case <-source.secondStarted:
+		t.Fatal("second Latest started while the first acquisition held the store lock")
+	default:
+	}
+
+	close(source.releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.AcquireLatest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := second.Selected()
+	if err != nil || selected.ID != newCommit {
+		t.Fatalf("Selected() = %#v, %v; want new release %s", selected, err, newCommit)
+	}
+}
+
 func TestRetainedSnapshotReadsFailClosedAfterLocalTampering(t *testing.T) {
 	commit := strings.Repeat("a", 40)
 	store := catalogstore.New(t.TempDir(), staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))})
@@ -141,6 +187,32 @@ func TestRetainedSnapshotReadsFailClosedAfterLocalTampering(t *testing.T) {
 type staticSource struct {
 	release catalogstore.Release
 	err     error
+}
+
+type orderedSource struct {
+	mu            sync.Mutex
+	releases      []catalogstore.Release
+	firstStarted  chan struct{}
+	releaseFirst  chan struct{}
+	secondStarted chan struct{}
+	calls         int
+}
+
+func (s *orderedSource) Latest(context.Context, string) (catalogstore.Release, error) {
+	s.mu.Lock()
+	call := s.calls
+	s.calls++
+	s.mu.Unlock()
+	switch call {
+	case 0:
+		close(s.firstStarted)
+		<-s.releaseFirst
+	case 1:
+		close(s.secondStarted)
+	default:
+		return catalogstore.Release{}, fmt.Errorf("unexpected Latest call %d", call+1)
+	}
+	return s.releases[call], nil
 }
 
 func (s staticSource) Latest(context.Context, string) (catalogstore.Release, error) {

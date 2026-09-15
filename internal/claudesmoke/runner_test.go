@@ -58,6 +58,14 @@ func TestAllowedCommandRejectsInteractiveClaudeAndUnknownPacky(t *testing.T) {
 	}
 }
 
+func TestRestrictedEnvHasNoPackSourceOverride(t *testing.T) {
+	for _, entry := range RestrictedEnv(t.TempDir(), t.TempDir()) {
+		if strings.HasPrefix(entry, "PACKY_SKILLS_SOURCE=") {
+			t.Fatalf("restricted environment exposes removed source override: %q", entry)
+		}
+	}
+}
+
 func TestRunAllowedUsesCanonicalConfiguredPackyIdentity(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-specific")
@@ -393,7 +401,7 @@ func TestAddyProjectionMatchesInstalledSourceContent(t *testing.T) {
 func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "evidence.json")
 	evidence := validEvidence()
-	evidence.Assertions.NoActivationStateAfterInitialization = false
+	evidence.Assertions.NoActivationStateBeforeExplicitActivation = false
 	if err := validateAndWriteEvidence(path, evidence); err == nil {
 		t.Fatal("invalid evidence accepted")
 	}
@@ -401,7 +409,7 @@ func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(b, []byte(`"no_activation_state_after_initialization": false`)) {
+	if !bytes.Contains(b, []byte(`"no_activation_state_before_explicit_activation": false`)) {
 		t.Fatalf("failed diagnostic evidence missing assertion: %s", b)
 	}
 }
@@ -410,7 +418,6 @@ func validEvidence() Evidence {
 	sandbox := filepath.Join(string(filepath.Separator), "sandbox")
 	args := [][]string{
 		{"--version"}, {"version"},
-		{"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef},
 		{"doctor"}, {"list"}, {"show", "addy"},
 		{"activate", "addy", "--surface", "claude", "--dry-run"},
 		{"activate", "addy", "--surface", "claude"},
@@ -424,10 +431,10 @@ func validEvidence() Evidence {
 	commands = append(commands, CommandEvidence{Name: "claude", Args: []string{"version"}, ExitCode: 0})
 	sha := strings.Repeat("a", 40)
 	manifest := []FileEvidence{{Path: "fixture", SHA256: strings.Repeat("c", 64), Mode: 0o600, Size: 1}}
-	return Evidence{SchemaVersion: 3, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true, ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true, ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
+	return Evidence{SchemaVersion: 4, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{CatalogSnapshotSelected: true, DoctorReportedCoreHealthy: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, PreActivationInspectionCausedNoSurfaceChange: true, ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true, ReadinessInspectedSeparately: true, NoActivationStateBeforeExplicitActivation: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
 }
 
-func TestEvidenceSchemaV3ProvesInitializationThenExplicitActivation(t *testing.T) {
+func TestEvidenceSchemaV4ProvesSnapshotThenExplicitActivation(t *testing.T) {
 	data, err := json.Marshal(validEvidence())
 	if err != nil {
 		t.Fatal(err)
@@ -440,19 +447,19 @@ func TestEvidenceSchemaV3ProvesInitializationThenExplicitActivation(t *testing.T
 		t.Fatal(err)
 	}
 	want := []string{
-		"installed_source_initialized", "doctor_reported_core_healthy",
+		"catalog_snapshot_selected", "doctor_reported_core_healthy",
 		"claude_instruction_preserved", "claude_mcp_preserved",
-		"shared_skill_sentinel_preserved", "initialization_caused_no_surface_change",
+		"shared_skill_sentinel_preserved", "pre_activation_inspection_caused_no_surface_change",
 		"activation_preview_caused_no_change", "representative_pack_activated",
-		"readiness_inspected_separately", "no_activation_state_after_initialization",
+		"readiness_inspected_separately", "no_activation_state_before_explicit_activation",
 		"no_claude_mutation_operations", "engram_stub_protocol_verified", "sensitive_fixture_redacted",
 	}
-	if document.SchemaVersion != 3 || len(document.Assertions) != len(want) {
+	if document.SchemaVersion != 4 || len(document.Assertions) != len(want) {
 		t.Fatalf("schema = %d, assertions = %#v", document.SchemaVersion, document.Assertions)
 	}
 	for _, name := range want {
 		if !document.Assertions[name] {
-			t.Fatalf("schema v3 omitted or failed %q: %#v", name, document.Assertions)
+			t.Fatalf("schema v4 omitted or failed %q: %#v", name, document.Assertions)
 		}
 	}
 }
@@ -512,7 +519,7 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted credential marker")
 	}
 	e = validEvidence()
-	e.Commands[6].Args = []string{"activate", "addy", "--surface", "claude"}
+	e.Commands[5].Args = []string{"activate", "addy", "--surface", "claude"}
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered lifecycle sequence")
 	}
@@ -520,26 +527,6 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 	e.Commands[0].Name = "packy"
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered executable identity")
-	}
-	e = validEvidence()
-	e.Commands[2].Args[3] = "--unexpected"
-	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted tampered init flag")
-	}
-	e = validEvidence()
-	e.Commands[2].Args[2] = filepath.Join(string(filepath.Separator), "outside")
-	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted init home outside recorded sandbox")
-	}
-	e = validEvidence()
-	e.Commands[2].Args[6] = filepath.Join(e.Sandbox, "unrelated-repository")
-	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted unrelated init repository")
-	}
-	e = validEvidence()
-	e.Commands[2].Args[8] = e.PackyRef
-	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted unproved init repository ref")
 	}
 	e = validEvidence()
 	e.Commands = e.Commands[:len(e.Commands)-1]
@@ -725,7 +712,8 @@ func TestPrepareInstallableSourceAdaptsFullSHAWithoutMutatingCheckout(t *testing
 	if err := os.Mkdir(filepath.Join(root, "work"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	repository, ref, resolved, err := prepareInstallableSource(context.Background(), root, acquisitionEnv(root, "/usr/bin/npm"), source, sha, filepath.Join(root, "installable"))
+	installed := filepath.Join(root, "installed-source")
+	repository, ref, resolved, err := prepareInstallableSource(context.Background(), root, acquisitionEnv(root, "/usr/bin/npm"), source, sha, filepath.Join(root, "installable"), installed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,6 +722,9 @@ func TestPrepareInstallableSourceAdaptsFullSHAWithoutMutatingCheckout(t *testing
 	}
 	if got := runGit(repository, "rev-parse", ref+"^{commit}"); got != sha {
 		t.Fatalf("synthetic ref = %q, want %q", got, sha)
+	}
+	if got := runGit(installed, "rev-parse", "HEAD"); got != sha {
+		t.Fatalf("installed source fixture = %q, want %q", got, sha)
 	}
 	if got := runGit(source, "status", "--porcelain=v1", "--untracked-files=all"); got != statusBefore {
 		t.Fatalf("source checkout changed: before %q after %q", statusBefore, got)

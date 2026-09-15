@@ -77,11 +77,8 @@ func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
 	createSkillSourceAt(t, filepath.Join(bundleRoot, "skills"))
 	home := t.TempDir()
 	opts := Options{Env: MapEnv{
-		"HOME":                home,
-		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-		"PATH":                "",
-		"PACKY_SKILLS_SOURCE": filepath.Join(bundleRoot, "skills"),
-	}}
+		"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+	}, skillSourceRoot: filepath.Join(bundleRoot, "skills")}
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list", "--json")
 	if err != nil {
@@ -127,9 +124,6 @@ func packListRepositoryOptions(t *testing.T) (Options, string) {
 	}
 	home := t.TempDir()
 	return Options{Env: MapEnv{
-		"HOME":                home,
-		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-		"PATH":                "",
-		"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-	}}, repositoryRoot
+		"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+	}, skillSourceRoot: filepath.Join(repositoryRoot, "bundle", "skills")}, repositoryRoot
 }
