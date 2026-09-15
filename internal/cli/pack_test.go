@@ -142,7 +142,7 @@ func (a alwaysUsableAdapter) ApplyProjections(ctx context.Context, actions []cap
 func alwaysUsableAdapters(t *testing.T, opts Options) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
 	t.Helper()
 	layout := resolvePackTestLayout(t, opts.Env)
-	bundleRoot := skillbundle.BundleRoot(opts.Env.Getenv("PACKY_SKILLS_SOURCE"))
+	bundleRoot := skillbundle.BundleRoot(opts.skillSourceRoot)
 	return map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 		capabilitypack.SurfaceCodex:    alwaysUsableAdapter{delegate: codex.NewSurfaceAdapterWithConfig(bundleRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile())},
 		capabilitypack.SurfaceOpenCode: alwaysUsableAdapter{delegate: opencode.NewSurfaceAdapter(bundleRoot, layout.skills.Root(), layout.openCode.ConfigFile(), layout.openCode.PromptFile())},
@@ -201,7 +201,7 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	packID := pack.Manifest().ID
 	resourceID := "skill:helper"
 	layout := resolvePackTestLayout(t, opts.Env)
-	bundleRoot := skillbundle.BundleRoot(opts.Env.Getenv("PACKY_SKILLS_SOURCE"))
+	bundleRoot := skillbundle.BundleRoot(opts.skillSourceRoot)
 	adapter := &controlledCheckHostAdapter{
 		delegate:    codex.NewSurfaceAdapterWithConfig(bundleRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile()),
 		hostVersion: "codex/v1",
@@ -329,7 +329,7 @@ func TestRootCompletionOffersFlatPackVerbsWithoutPackGroup(t *testing.T) {
 	}
 }
 
-func TestPackListUsesOneCapturedWorkstationForExplicitDevelopmentSource(t *testing.T) {
+func TestPackListUsesOneCapturedWorkstationForInjectedTestSource(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -338,10 +338,10 @@ func TestPackListUsesOneCapturedWorkstationForExplicitDevelopmentSource(t *testi
 	captures := 0
 	opts := Options{
 		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills"),
+			"HOME":            home,
+			"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),
 		},
+		skillSourceRoot: filepath.Join(repoRoot, "bundle", "skills"),
 		Getwd: func() (string, error) {
 			captures++
 			return repoRoot, nil
@@ -438,7 +438,7 @@ func packActivationOptions(t *testing.T, terminal Terminal) (Options, string, st
 		t.Fatal(err)
 	}
 	home := t.TempDir()
-	return Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: &fakeRunner{}, Terminal: terminal}, home, repoRoot
+	return Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": ""}, Runner: &fakeRunner{}, Terminal: terminal, skillSourceRoot: filepath.Join(repoRoot, "bundle", "skills")}, home, repoRoot
 }
 
 type mattyManifestFacts struct {
@@ -875,7 +875,7 @@ func TestRealPackCatalogListAndShowPreserveArgoteEngramMattyPublicContracts(t *t
 	}
 	home := t.TempDir()
 	runner := &fakeRunner{}
-	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: runner}
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": ""}, Runner: runner, skillSourceRoot: filepath.Join(repoRoot, "bundle", "skills")}
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
 	out, err := executeCommand(t, NewRootCommand(opts), "list")

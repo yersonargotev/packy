@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/tui"
@@ -121,7 +122,9 @@ func TestUnrelatedSyntheticPacksPreserveReadinessAcrossSurfacesScopesAndPresenta
 		if index < 0 || pack.SurfaceStatuses[index].Configured != "true" || pack.SurfaceStatuses[index].Authorized != test.globalAuthorization || pack.SurfaceStatuses[index].Usable != "unknown" || len(pack.SurfaceStatuses[index].Conditions) < 3 || len(pack.SurfaceStatuses[index].PendingActions) != test.pendingActions {
 			t.Fatalf("TUI %s/%s readiness/actions = %#v", manifest.ID, test.surface, pack.SurfaceStatuses)
 		}
-		preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: manifest.ID, Surface: test.surface, Scope: "global"})
+		previewContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		preview, err := backend.Preview(previewContext, tui.PreviewRequest{Operation: "deactivate", PackID: manifest.ID, Surface: test.surface, Scope: "global"})
+		cancel()
 		if err != nil || preview.Operation != "deactivate" || len(preview.Phases) == 0 || len(preview.Phases[0].Actions) == 0 {
 			t.Fatalf("TUI %s/%s lifecycle preview = %#v, err=%v", manifest.ID, test.surface, preview, err)
 		}

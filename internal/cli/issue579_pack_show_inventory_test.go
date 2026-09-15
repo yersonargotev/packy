@@ -15,11 +15,8 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := Options{Env: MapEnv{
-		"HOME":                t.TempDir(),
-		"XDG_CONFIG_HOME":     filepath.Join(t.TempDir(), "xdg"),
-		"PATH":                "",
-		"PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills"),
-	}}
+		"HOME": t.TempDir(), "XDG_CONFIG_HOME": filepath.Join(t.TempDir(), "xdg"), "PATH": "",
+	}, skillSourceRoot: filepath.Join(root, "bundle", "skills")}
 
 	first, err := executeCommand(t, NewRootCommand(opts), "show", "engram")
 	if err != nil {
@@ -51,11 +48,8 @@ func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := Options{Env: MapEnv{
-		"HOME":                t.TempDir(),
-		"XDG_CONFIG_HOME":     filepath.Join(t.TempDir(), "xdg"),
-		"PATH":                "",
-		"PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills"),
-	}}
+		"HOME": t.TempDir(), "XDG_CONFIG_HOME": filepath.Join(t.TempDir(), "xdg"), "PATH": "",
+	}, skillSourceRoot: filepath.Join(root, "bundle", "skills")}
 
 	output, err := executeCommand(t, NewRootCommand(opts), "show", "engram", "--json")
 	if err != nil {

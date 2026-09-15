@@ -48,7 +48,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	sources, err := resolveInvocationSources(ctx, b.opts, snapshot)
 	if err != nil {
 		dashboard.Setup = tui.Setup{
-			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
+			InitializationAvailable: strings.TrimSpace(b.opts.skillSourceRoot) == "",
 			Blockers: []tui.SetupBlocker{{
 				Cause:           fmt.Sprintf("discover reviewed Pack catalog: %v", err),
 				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},
@@ -59,7 +59,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	catalog, err := loadInvocationCatalog(ctx, sources)
 	if err != nil {
 		dashboard.Setup = tui.Setup{
-			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
+			InitializationAvailable: strings.TrimSpace(b.opts.skillSourceRoot) == "",
 			Blockers: []tui.SetupBlocker{{
 				Cause:           fmt.Sprintf("discover reviewed Pack catalog: %v", err),
 				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},
@@ -70,7 +70,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	details, err := catalog.ListDetails(ctx)
 	if err != nil {
 		dashboard.Setup = tui.Setup{
-			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
+			InitializationAvailable: strings.TrimSpace(b.opts.skillSourceRoot) == "",
 			Blockers: []tui.SetupBlocker{{
 				Cause:           fmt.Sprintf("load reviewed Pack catalog: %v", err),
 				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},

@@ -14,8 +14,9 @@ searchable controls for each Pack's resource selection.
   snapshot, while other activations keep resolving their retained immutable
   content.
 - The old release-coupled Installed Source Git checkout, repository-ancestor
-  discovery, and bootstrap flags have been removed. `PACKY_SKILLS_SOURCE`
-  remains available only as an explicit development and test override.
+  discovery, bootstrap flags, and `PACKY_SKILLS_SOURCE` environment override
+  have been removed. Packaged commands resolve only the selected official
+  Catalog Snapshot; tests inject local fixture sources through code.
 - Existing release-coupled installations have an explicit
   [clean adoption procedure](../catalog-adoption.md). The previous Packy first
   inventories, previews, deactivates, and uninstalls its own receipts while

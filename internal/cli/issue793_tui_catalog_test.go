@@ -24,7 +24,7 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	delete(env, "PACKY_SKILLS_SOURCE")
+	opts.skillSourceRoot = ""
 	opts.Env = env
 	opts.CatalogSource = source
 	backend := newTUIBackend(opts.withDefaults(), newWorkstationResolver(opts.withDefaults()))

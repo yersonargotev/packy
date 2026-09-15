@@ -43,6 +43,7 @@ type Options struct {
 	TUIRunner              func(context.Context, Options, io.Reader, io.Writer) error
 	CatalogSource          catalogstore.Source
 	CatalogOriginResolver  managedpack.OriginResolver
+	skillSourceRoot        string
 }
 
 func (o Options) withDefaults() Options {
@@ -494,13 +495,13 @@ type invocationSources struct {
 }
 
 func resolveInvocationSources(ctx context.Context, opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
-	currentDirectory, err := snapshot.CurrentDirectory()
-	if err != nil {
-		return invocationSources{}, fmt.Errorf("resolve skill source root: %w", err)
-	}
-	explicit := strings.TrimSpace(opts.Env.Getenv("PACKY_SKILLS_SOURCE"))
+	explicit := strings.TrimSpace(opts.skillSourceRoot)
 	if explicit != "" {
 		if !filepath.IsAbs(explicit) {
+			currentDirectory, err := snapshot.CurrentDirectory()
+			if err != nil {
+				return invocationSources{}, fmt.Errorf("resolve skill source root: %w", err)
+			}
 			explicit = filepath.Join(currentDirectory, explicit)
 		}
 		return invocationSources{skills: skillbundle.Source{Root: filepath.Clean(explicit)}}, nil

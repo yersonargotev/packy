@@ -41,7 +41,7 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts := Options{Env: env, Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{}, Terminal: terminal}
+	opts := Options{Env: env, Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{}, Terminal: terminal, skillSourceRoot: filepath.Join(bundleRoot, "skills")}
 
 	protectedContent := map[string]string{
 		filepath.Join(env["HOME"], "personal.txt"):                  "personal\n",
@@ -77,41 +77,26 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 	}
 
 	executableDir := t.TempDir()
-	legacySourceCLI := filepath.Join(executableDir, "packy-legacy-source-mode")
-	build := exec.Command("go", "build", "-o", legacySourceCLI, "./cmd/packy")
+	catalogSnapshotCLI := filepath.Join(executableDir, "packy-catalog-snapshot-mode")
+	build := exec.Command("go", "build", "-o", catalogSnapshotCLI, "./cmd/packy")
 	build.Dir = filepath.Join("..", "..")
 	build.Env = testprocess.GoOfflineEnv(t)
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build previous CLI: %v\n%s", err, output)
 	}
-	run := func(binary string, args ...string) string {
+	run := func(binary string, args ...string) (string, error) {
 		t.Helper()
 		command := exec.Command(binary, args...)
 		command.Dir = project
 		command.Env = append([]string(nil), environment...)
 		output, err := command.CombinedOutput()
-		if err != nil {
-			t.Fatalf("run %s %v: %v\n%s", filepath.Base(binary), args, err, output)
-		}
-		return string(output)
+		return string(output), err
 	}
 
-	// The real CLI artifact runs in legacy-source mode while the explicit source
-	// override remains present. This is one build, not a simulated old version.
-	for _, command := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"list"}, packID},
-		{[]string{"status", packID, "--surface", "codex"}, packID},
-		{[]string{"status", "--project"}, packID},
-		{[]string{"deactivate", packID, "--surface", "codex", "--dry-run"}, "Deactivation dry-run"},
-		{[]string{"deactivate", packID, "--surface", "codex", "--project", "--dry-run"}, "DEACTIVATION DRY-RUN"},
-		{[]string{"uninstall", packID, "--surface", "codex", "--dry-run"}, "UNINSTALL DRY-RUN"},
-	} {
-		if output := run(legacySourceCLI, command.args...); !strings.Contains(output, command.want) {
-			t.Fatalf("previous CLI %v omitted %q:\n%s", command.args, command.want, output)
-		}
+	// A packaged CLI ignores the former source override and stays closed until
+	// an official Catalog Snapshot has been selected.
+	if output, err := run(catalogSnapshotCLI, "list"); err == nil || !strings.Contains(output, "run `packy init`") {
+		t.Fatalf("packaged CLI accepted PACKY_SKILLS_SOURCE without a snapshot: %v\n%s", err, output)
 	}
 
 	for _, args := range [][]string{
@@ -128,15 +113,9 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 	}
 	assertAdoptionProtectedFiles(t, protected)
 
-	// Rename the same artifact only to make the documented replacement boundary
-	// visible. Removing the override then runs it in Catalog Snapshot mode.
-	catalogSnapshotCLI := filepath.Join(executableDir, "packy-catalog-snapshot-mode")
-	if err := os.Rename(legacySourceCLI, catalogSnapshotCLI); err != nil {
-		t.Fatal(err)
-	}
-	delete(env, "PACKY_SKILLS_SOURCE")
-	environment = adoptionEnvironmentWithout(environment, "PACKY_SKILLS_SOURCE")
-	opts.Env = env
+	// The same packaged artifact resolves only the selected snapshot even while
+	// the obsolete environment variable remains set.
+	opts.skillSourceRoot = ""
 	snapshotID := strings.Repeat("f", 40)
 	opts.CatalogSource = &catalogSourceFixture{release: catalogReleaseFixture(t, snapshotID, pack)}
 	if output, err := executeCommand(t, NewRootCommand(opts), "init"); err != nil || !strings.Contains(output, "selected official Catalog Snapshot") {
@@ -151,7 +130,7 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 			t.Fatalf("apply current installation %v: %v\n%s", args, err, output)
 		}
 	}
-	if output := run(catalogSnapshotCLI, "status", "--project"); !strings.Contains(output, packID) {
+	if output, err := run(catalogSnapshotCLI, "status", "--project"); err != nil || !strings.Contains(output, packID) {
 		t.Fatalf("current CLI omitted reinstalled project Pack:\n%s", output)
 	}
 	assertAdoptionCatalogSnapshot(t, filepath.Join(env["HOME"], ".packy", "packs.json"), snapshotID)
@@ -171,17 +150,6 @@ func adoptionEnvironmentMap(environment []string) MapEnv {
 		key, value, ok := strings.Cut(entry, "=")
 		if ok {
 			result[key] = value
-		}
-	}
-	return result
-}
-
-func adoptionEnvironmentWithout(environment []string, key string) []string {
-	prefix := key + "="
-	result := make([]string, 0, len(environment))
-	for _, entry := range environment {
-		if !strings.HasPrefix(entry, prefix) {
-			result = append(result, entry)
 		}
 	}
 	return result
