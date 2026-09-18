@@ -560,14 +560,6 @@ func exists(path string) bool {
 	return err == nil
 }
 
-func callStrings(calls []fakeCall) []string {
-	out := make([]string, 0, len(calls))
-	for _, call := range calls {
-		out = append(out, strings.Join(append([]string{call.name}, call.args...), " "))
-	}
-	return out
-}
-
 func snapshotTree(t *testing.T, root string) string {
 	t.Helper()
 	var entries []string
