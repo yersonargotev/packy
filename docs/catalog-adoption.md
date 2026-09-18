@@ -1,9 +1,10 @@
-# Adopt the Catalog Snapshot model
+# Adopt a new catalog generation
 
-Packy does not convert installations created by the previous Installed Source
-model. Adopt the Catalog Snapshot model with a clean, explicit handoff. Keep
-the previous Packy binary and every source directory it references until the
-handoff is complete.
+Packy does not convert installations created by an incompatible catalog
+generation. This includes the legacy Installed Source model and Catalog
+Snapshot schema v1. Adopt the current catalog with a clean, explicit handoff.
+Keep the previous Packy binary and every source directory or retained snapshot
+it references until the handoff is complete.
 
 This procedure changes only Packy-owned installations and receipts. It does
 not convert or delete source directories, personal files, credentials, Engram
@@ -21,13 +22,14 @@ packy status
 packy status --project
 ```
 
-Keep the old source directories unchanged. An installed Pack can need its
-referenced source to inspect, preview, deactivate, or uninstall its receipt.
-There is no automatic converter, downgrade, or cleanup command.
+Keep old source directories and retained snapshots unchanged. An installed
+Pack can need its referenced content to inspect, preview, deactivate, or
+uninstall its receipt. There is no automatic converter, downgrade, or cleanup
+command.
 
 ## 2. Preview and remove old-model installations
 
-Still using the previous Packy binary and its referenced sources, handle every
+Still using the previous Packy binary and its referenced content, handle every
 Pack and surface reported by the inventory. Preview each operation first:
 
 ```sh
@@ -46,14 +48,14 @@ packy uninstall <pack> --surface <surface>
 
 Repeat `packy status` and `packy status --project`. Do not replace the binary
 until the old global activation, project personal activation, and project
-installation receipts are gone. If Packy reports drift or a missing source,
-stop and restore the referenced source or resolve the reported ownership
-conflict; do not delete paths manually.
+installation receipts are gone. If Packy reports drift or missing content,
+stop and restore the referenced source or snapshot, or resolve the reported
+ownership conflict; do not delete paths manually.
 
 ## 3. Replace Packy and initialize the current catalog
 
 Only after the previous Packy reports a clean handoff may you replace or
-upgrade the binary. Then initialize its verified Catalog Snapshot:
+upgrade the binary. Then initialize its verified current Catalog Snapshot:
 
 ```sh
 brew upgrade yersonargotev/tap/packy
@@ -83,8 +85,9 @@ packy activate <pack> --surface <surface> --project
 ```
 
 Finish with `packy status` and `packy status --project`. Once no retained
-receipt references an old source directory, you may archive it according to
-your own retention policy. Packy never deletes it for you.
+receipt references old catalog content, you may archive the source directory
+or snapshot according to your own retention policy. Packy never deletes it for
+you.
 
 Catalog withdrawal prevents new installation or activation from the selected
 snapshot. It does not uninstall an existing receipt. Keep the snapshot or
