@@ -310,7 +310,7 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 		}
 	}
 	candidate := pack.Candidate()
-	if err := candidate.WriteBundle(fixture.bundleRoot); err != nil {
+	if err := candidate.WriteCatalog(fixture.catalogRoot); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "codex", "--project"); err != nil {
@@ -336,7 +336,7 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 		root.Kind+":"+root.ID, ".",
 		[]byte("# Incompatible shared update\n\nChanged synthetic guidance.\n"),
 	)
-	if err := incompatible.WriteBundle(fixture.bundleRoot); err != nil {
+	if err := incompatible.WriteCatalog(fixture.catalogRoot); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
@@ -369,7 +369,7 @@ func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t
 		t.Fatalf("shared dependency was not installed: %v", err)
 	}
 	candidate := pack.Candidate().WithRetainedRequirements(workflow)
-	if err := candidate.WriteBundle(fixture.bundleRoot); err != nil {
+	if err := candidate.WriteCatalog(fixture.catalogRoot); err != nil {
 		t.Fatal(err)
 	}
 	lockPath := filepath.Join(project, "packy.lock.json")

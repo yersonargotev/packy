@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yersonargotev/packy/internal/bundletransaction"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
 func TestValidatedCatalogRejectsSourceBeforeManifestDiscovery(t *testing.T) {
 	root := t.TempDir()
 	rejected := errors.New("unadmitted source")
-	_, err := DiscoverValidatedForDurableIntents(context.Background(), filepath.Join(root, "bundle"), func(context.Context) error { return rejected })
+	_, err := DiscoverValidatedForDurableIntents(context.Background(), root, func(context.Context) error { return rejected })
 	if !errors.Is(err, rejected) {
 		t.Fatalf("discovery error = %v; want source rejection before missing catalog", err)
 	}
@@ -38,7 +38,7 @@ func TestValidatedCatalogRevalidatesEveryObservation(t *testing.T) {
 		"details": func() error { _, err := catalog.ListDetails(context.Background()); return err },
 		"show":    func() error { _, err := catalog.Show(context.Background(), "missing"); return err },
 		"facade": func() error {
-			_, err := withBundleObservation(context.Background(), NewFacade(catalog), func(Facade) (bool, error) { t.Fatal("invalid source reached facade"); return false, nil })
+			_, err := withCatalogObservation(context.Background(), NewFacade(catalog), func(Facade) (bool, error) { t.Fatal("invalid source reached facade"); return false, nil })
 			return err
 		},
 	} {
@@ -60,7 +60,7 @@ func TestValidatedCatalogKeepsValidationAndConsumptionInOneTransaction(t *testin
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()
-		guard, err := bundletransaction.Acquire(ctx, root)
+		guard, err := catalogtransaction.Acquire(ctx, bundle)
 		if guard != nil {
 			guard.Release()
 			t.Fatal("source replacement acquired observation lock")
@@ -78,7 +78,7 @@ func TestValidatedCatalogKeepsValidationAndConsumptionInOneTransaction(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = withBundleObservation(context.Background(), NewFacade(catalog), func(facade Facade) (bool, error) {
+	_, err = withCatalogObservation(context.Background(), NewFacade(catalog), func(facade Facade) (bool, error) {
 		assertLocked()
 		if facade.catalog.validateSource == nil {
 			t.Fatal("refresh dropped source validator")

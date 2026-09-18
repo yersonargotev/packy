@@ -433,8 +433,8 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 			"PATH":            homebrewBin,
 			"HOMEBREW_PREFIX": homebrewPrefix,
 		},
-		Runner:          runner,
-		skillSourceRoot: sourceRoot,
+		Runner:              runner,
+		catalogRootOverride: sourceRoot,
 	}, runner, home
 }
 

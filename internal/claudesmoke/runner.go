@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
-	"github.com/yersonargotev/packy/internal/managedpack"
 )
 
 const ExactFloor = "2.1.203"
@@ -539,7 +539,7 @@ func addyProjectionMatchesInstalledSource(sandbox string) bool {
 	if err != nil {
 		return false
 	}
-	source, err := os.ReadFile(filepath.Join(sandbox, "installed-source", "bundle", "skills", "api-and-interface-design", "SKILL.md"))
+	source, err := os.ReadFile(filepath.Join(sandbox, "installed-source", "packs", "addy", "skills", "api-and-interface-design", "SKILL.md"))
 	return err == nil && bytes.Equal(projection, source)
 }
 
@@ -1055,7 +1055,7 @@ type smokeCatalogOriginResolver struct {
 	resolved map[string]string
 }
 
-func (r *smokeCatalogOriginResolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
+func (r *smokeCatalogOriginResolver) Resolve(ctx context.Context, origin cataloglayout.Origin) (string, error) {
 	key := origin.Repository + "\x00" + origin.Commit
 	if resolved := r.resolved[key]; resolved != "" {
 		return resolved, nil
@@ -1080,11 +1080,11 @@ func selectCatalogSnapshotFixture(ctx context.Context, layout sandboxLayout, env
 	resolver := &smokeCatalogOriginResolver{
 		sandbox: layout.Root, work: layout.Work, env: env, root: originRoot, resolved: map[string]string{},
 	}
-	validation, err := managedpack.ValidateCatalogProject(ctx, layout.InstalledSource, "", resolver)
+	validation, err := cataloglayout.ValidateCatalogProject(ctx, layout.InstalledSource, "", resolver)
 	if err != nil {
 		return fmt.Errorf("validate disposable Catalog Snapshot fixture: %w", err)
 	}
-	result, err := managedpack.BuildCatalogSnapshot(ctx, layout.InstalledSource, validation, managedpack.CatalogSnapshotSource{
+	result, err := cataloglayout.BuildCatalogSnapshot(ctx, layout.InstalledSource, validation, cataloglayout.CatalogSnapshotSource{
 		Repository: "yersonargotev/packy-catalog",
 		Commit:     commit,
 		Builder:    "yersonargotev/packy@" + commit,

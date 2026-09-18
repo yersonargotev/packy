@@ -27,6 +27,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0037-source-issue-delivery-from-an-independent-release.md"),
 		filepath.Join(root, "docs", "adr", "0038-promote-releases-from-managed-pack-projects.md"),
 		filepath.Join(root, "docs", "adr", "0039-publish-an-independent-canonical-pack-catalog.md"),
+		filepath.Join(root, "docs", "adr", "0040-adopt-pack-local-catalog-layout.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
@@ -126,7 +127,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Catalog Project", "canonical authoring source", "Whole-catalog", "independent Pack version",
 	})
 	requireDocumentationText(t, root, "docs/catalog-project.md", []string{
-		"yersonargotev/packy-catalog", "bundle/packs/*/pack.json", "Declared Pack Closure",
+		"yersonargotev/packy-catalog", "packs/*/pack.json", "Declared Pack Closure",
 		"catalogvalidate", "strictly greater SemVer", "inert data", "same validator",
 		"initial Packy engine release", "same installed Packy executable",
 	})
@@ -157,11 +158,11 @@ func TestObsoleteManagedPackPromotionSurfaceIsRemoved(t *testing.T) {
 	for _, path := range []string{
 		".github/workflows/managed-pack-validation.yml",
 		"docs/managed-pack-projects.md",
-		"internal/managedpack/admission.go",
-		"internal/managedpack/installed_integrity.go",
-		"internal/managedpack/integrity.go",
-		"internal/managedpack/preflight.go",
-		"internal/managedpack/registry.go",
+		"internal/cataloglayout/admission.go",
+		"internal/cataloglayout/installed_integrity.go",
+		"internal/cataloglayout/integrity.go",
+		"internal/cataloglayout/preflight.go",
+		"internal/cataloglayout/registry.go",
 		"schemas/managed-pack/v1/admission-record.schema.json",
 		"schemas/managed-pack/v1/registry.schema.json",
 		"scripts/validate-pack-content.sh",
@@ -172,7 +173,7 @@ func TestObsoleteManagedPackPromotionSurfaceIsRemoved(t *testing.T) {
 	}
 	for _, path := range []string{
 		"docs/packs",
-		"internal/managedpackpromotion",
+		"internal/cataloglayoutpromotion",
 		"internal/tools/managedpackvalidate",
 		"internal/tools/packcontentvalidate",
 		"internal/tools/packdocs",

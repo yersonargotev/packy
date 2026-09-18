@@ -30,12 +30,12 @@ type RuntimeEvidenceObserver interface {
 }
 
 type SurfaceAdapter struct {
-	layout                            CanonicalLayout
-	bundleRoot, stateRoot, executable string
-	runner                            Runner
-	ownership                         OwnershipSnapshotProvider
-	authorization                     AuthorizationObserver
-	runtimeEvidence                   RuntimeEvidenceObserver
+	layout                             CanonicalLayout
+	catalogRoot, stateRoot, executable string
+	runner                             Runner
+	ownership                          OwnershipSnapshotProvider
+	authorization                      AuthorizationObserver
+	runtimeEvidence                    RuntimeEvidenceObserver
 }
 
 func (a *SurfaceAdapter) WithRuntimeEvidence(observer RuntimeEvidenceObserver) *SurfaceAdapter {
@@ -43,14 +43,14 @@ func (a *SurfaceAdapter) WithRuntimeEvidence(observer RuntimeEvidenceObserver) *
 	return a
 }
 
-func NewSurfaceAdapterWithAuthorization(bundleRoot string, layout CanonicalLayout, stateRoot, executable string, runner Runner, ownership OwnershipSnapshotProvider, authorization AuthorizationObserver) *SurfaceAdapter {
-	a := NewSurfaceAdapter(bundleRoot, layout, stateRoot, executable, runner, ownership)
+func NewSurfaceAdapterWithAuthorization(catalogRoot string, layout CanonicalLayout, stateRoot, executable string, runner Runner, ownership OwnershipSnapshotProvider, authorization AuthorizationObserver) *SurfaceAdapter {
+	a := NewSurfaceAdapter(catalogRoot, layout, stateRoot, executable, runner, ownership)
 	a.authorization = authorization
 	return a
 }
 
-func NewSurfaceAdapter(bundleRoot string, layout CanonicalLayout, stateRoot, executable string, runner Runner, ownership OwnershipSnapshotProvider) *SurfaceAdapter {
-	return &SurfaceAdapter{bundleRoot: bundleRoot, layout: layout, stateRoot: stateRoot, executable: executable, runner: runner, ownership: ownership}
+func NewSurfaceAdapter(catalogRoot string, layout CanonicalLayout, stateRoot, executable string, runner Runner, ownership OwnershipSnapshotProvider) *SurfaceAdapter {
+	return &SurfaceAdapter{catalogRoot: catalogRoot, layout: layout, stateRoot: stateRoot, executable: executable, runner: runner, ownership: ownership}
 }
 
 func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
@@ -96,7 +96,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		switch b.Projection {
 		case "skill":
 			if isClaudeCompositeProjection(pack, r, b) {
-				composite, err := claudeCompositeSkill(pack, r, b, a.bundleRoot)
+				composite, err := claudeCompositeSkill(pack, r, b, a.catalogRoot)
 				if err != nil {
 					return result, err
 				}
@@ -119,7 +119,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				continue
 			}
 			if r.Kind == "command" {
-				content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source)))
+				content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source)))
 				if err != nil {
 					return result, err
 				}
@@ -142,7 +142,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				}
 				continue
 			}
-			source := filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source))
+			source := filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source))
 			if err := a.validateSkillAssetClosure(pack, r, source); err != nil {
 				return result, err
 			}
@@ -171,7 +171,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: action})
 			revision = append(revision, id+observed)
 		case "instruction":
-			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source)))
+			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source)))
 			if err != nil {
 				return result, err
 			}
@@ -202,7 +202,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: action})
 			revision = append(revision, "instructions="+Fingerprint(instructionOriginal))
 		case "agent":
-			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.bundleRoot), filepath.Clean(r.Source)))
+			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source)))
 			if err != nil {
 				return result, err
 			}
@@ -443,7 +443,7 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 	switch b.Projection {
 	case "skill":
 		if isClaudeCompositeProjection(pack, r, b) {
-			composite, err := claudeCompositeSkill(pack, r, b, a.bundleRoot)
+			composite, err := claudeCompositeSkill(pack, r, b, a.catalogRoot)
 			if err != nil {
 				return capabilitypack.ObservedProjection{}, "", err
 			}
@@ -1196,7 +1196,7 @@ func (a *SurfaceAdapter) consumerAssets(pack capabilitypack.Pack, consumer capab
 	sort.Slice(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
 	result := make([]capabilitypack.ObservedProjection, 0, len(assets))
 	for _, asset := range assets {
-		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.bundleRoot), filepath.Clean(asset.Source)))
+		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.catalogRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return nil, err
 		}
@@ -1218,7 +1218,7 @@ func (a *SurfaceAdapter) validateSkillAssetClosure(pack capabilitypack.Pack, con
 		return err
 	}
 	for _, asset := range dependencyAssets(pack, consumer) {
-		path, err := canonicalPath(filepath.Join(asset.CatalogRootOr(a.bundleRoot), filepath.Clean(asset.Source)))
+		path, err := canonicalPath(filepath.Join(asset.CatalogRootOr(a.catalogRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return err
 		}
@@ -1237,7 +1237,7 @@ func (a *SurfaceAdapter) embedConsumerAssets(pack capabilitypack.Pack, consumer 
 	}
 	result := strings.TrimSpace(string(prompt))
 	for _, asset := range assets {
-		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.bundleRoot), filepath.Clean(asset.Source)))
+		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.catalogRoot), filepath.Clean(asset.Source)))
 		if err != nil {
 			return nil, err
 		}

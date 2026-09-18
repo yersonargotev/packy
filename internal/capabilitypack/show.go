@@ -186,7 +186,7 @@ type ShowLifecycleAvailability struct {
 // Show returns catalog metadata, portable per-surface contracts, and durable
 // surface-local intent facts. It performs no host inspection or mutation.
 func (f Facade) Show(ctx context.Context, id string) (ShowReport, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (ShowReport, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (ShowReport, error) {
 		return locked.show(ctx, id)
 	})
 }

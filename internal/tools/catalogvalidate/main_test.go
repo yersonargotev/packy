@@ -43,15 +43,16 @@ func TestRunReportsPackVersionFailure(t *testing.T) {
 
 func writeCatalogFixture(t *testing.T, root, id, version, content string) {
 	t.Helper()
-	source := filepath.Join(root, "bundle", "skills", id, "SKILL.md")
+	packRoot := filepath.Join(root, "packs", id)
+	source := filepath.Join(packRoot, "skills", id, "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(source, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	manifest := fmt.Sprintf("{\"schema_version\":1,\"id\":%q,\"version\":%q,\"description\":\"Fixture Pack\",\"selectable\":true,\"surfaces\":[\"codex\"],\"readiness_obligations\":[\"runtime-usability\",\"surface-authorization\"],\"external_requirements\":[],\"origins\":[],\"resources\":[{\"kind\":\"skill\",\"id\":%q,\"source\":%q,\"description\":\"Fixture skill\",\"requires\":[],\"conflicts\":[],\"bindings\":[{\"surface\":\"codex\",\"projection\":\"skill\",\"name\":%q,\"invocation\":%q,\"mode\":\"native\",\"sharing\":\"exclusive\",\"capabilities\":[]}],\"surface_exclusions\":[]}]}\n", id, version, id, "skills/"+id, id, "$"+id)
-	manifestPath := filepath.Join(root, "bundle", "packs", id, "pack.json")
+	manifest := fmt.Sprintf("{\"schema_version\":2,\"id\":%q,\"version\":%q,\"description\":\"Fixture Pack\",\"selectable\":true,\"surfaces\":[\"codex\"],\"readiness_obligations\":[\"runtime-usability\",\"surface-authorization\"],\"external_requirements\":[],\"origins\":[],\"resources\":[{\"kind\":\"skill\",\"id\":%q,\"source\":%q,\"description\":\"Fixture skill\",\"requires\":[],\"conflicts\":[],\"bindings\":[{\"surface\":\"codex\",\"projection\":\"skill\",\"name\":%q,\"invocation\":%q,\"mode\":\"native\",\"sharing\":\"exclusive\",\"capabilities\":[]}],\"surface_exclusions\":[]}]}\n", id, version, id, "skills/"+id, id, "$"+id)
+	manifestPath := filepath.Join(packRoot, "pack.json")
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -20,28 +20,28 @@ type adoptionSentinel struct {
 
 func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonalData(t *testing.T) {
 	pack := testsupport.PortableAllSurfaces("adoption")
-	bundleRoot := t.TempDir()
+	catalogRoot := t.TempDir()
 	for _, group := range []string{"engineering", "productivity"} {
-		if err := os.MkdirAll(filepath.Join(bundleRoot, "skills", group), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(catalogRoot, "skills", group), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sentinel := filepath.Join(bundleRoot, "skills", "in-progress", "loop-me")
+	sentinel := filepath.Join(catalogRoot, "skills", "in-progress", "loop-me")
 	if err := os.MkdirAll(sentinel, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sentinel, "SKILL.md"), []byte("# Adoption rehearsal sentinel\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := pack.WriteBundle(bundleRoot); err != nil {
+	if err := pack.WriteCatalog(catalogRoot); err != nil {
 		t.Fatal(err)
 	}
-	environment := testprocess.Env(t, "PACKY_SKILLS_SOURCE="+filepath.Join(bundleRoot, "skills"))
+	environment := testprocess.Env(t, "PACKY_SKILLS_SOURCE="+catalogRoot)
 	env := adoptionEnvironmentMap(environment)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts := Options{Env: env, Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{}, Terminal: terminal, skillSourceRoot: filepath.Join(bundleRoot, "skills")}
+	opts := Options{Env: env, Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{}, Terminal: terminal, catalogRootOverride: catalogRoot}
 
 	protectedContent := map[string]string{
 		filepath.Join(env["HOME"], "personal.txt"):                  "personal\n",
@@ -108,14 +108,14 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 			t.Fatalf("apply previous handoff %v: %v\n%s", args, err, output)
 		}
 	}
-	if _, err := os.Stat(bundleRoot); err != nil {
+	if _, err := os.Stat(catalogRoot); err != nil {
 		t.Fatalf("old referenced source was removed during handoff: %v", err)
 	}
 	assertAdoptionProtectedFiles(t, protected)
 
 	// The same packaged artifact resolves only the selected snapshot even while
 	// the obsolete environment variable remains set.
-	opts.skillSourceRoot = ""
+	opts.catalogRootOverride = ""
 	snapshotID := strings.Repeat("f", 40)
 	opts.CatalogSource = &catalogSourceFixture{release: catalogReleaseFixture(t, snapshotID, pack)}
 	if output, err := executeCommand(t, NewRootCommand(opts), "init"); err != nil || !strings.Contains(output, "selected official Catalog Snapshot") {
@@ -138,7 +138,7 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 	snapshotRoot := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", snapshotID)
 	assertAdoptionProjectionSymlinksUseSnapshot(t, filepath.Join(env["HOME"], ".packy", "packs.json"), "", snapshotRoot)
 	assertAdoptionProjectionSymlinksUseSnapshot(t, filepath.Join(project, "packy.lock.json"), project, snapshotRoot)
-	if _, err := os.Stat(bundleRoot); err != nil {
+	if _, err := os.Stat(catalogRoot); err != nil {
 		t.Fatalf("old source disappeared after Catalog Snapshot reinstall: %v", err)
 	}
 	assertAdoptionProtectedFiles(t, protected)

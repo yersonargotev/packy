@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yersonargotev/packy/internal/bundletransaction"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
 func TestResolveIntentPackAtUsesExactCurrentSnapshotContract(t *testing.T) {
@@ -119,12 +119,12 @@ func TestIntentPackResolversDoNotNestLocksAcrossRetainedSnapshots(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	guardA, err := bundletransaction.Acquire(context.Background(), filepath.Dir(bundleA))
+	guardA, err := catalogtransaction.Acquire(context.Background(), filepath.Dir(bundleA))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer guardA.Release()
-	guardB, err := bundletransaction.Acquire(context.Background(), filepath.Dir(bundleB))
+	guardB, err := catalogtransaction.Acquire(context.Background(), filepath.Dir(bundleB))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,8 +182,9 @@ func TestResolveIntentPackAtLoadsExactRetainedSnapshot(t *testing.T) {
 	if pack.Version != "1.0.0" || pack.CatalogSnapshot != retainedSnapshot {
 		t.Fatalf("ResolveIntentPackAt() = %#v", pack)
 	}
-	if got := pack.Resources[0].CatalogRootOr("fallback"); got != retainedBundle {
-		t.Fatalf("CatalogRootOr() = %q; want retained bundle %q", got, retainedBundle)
+	wantPackRoot := filepath.Join(retainedBundle, "packs", "retained")
+	if got := pack.Resources[0].CatalogRootOr("fallback"); got != wantPackRoot {
+		t.Fatalf("CatalogRootOr() = %q; want retained Pack root %q", got, wantPackRoot)
 	}
 	_, err = catalog.IntentPackResolver()(context.Background(), "retained", "", retainedSnapshot)
 	if err == nil || !strings.Contains(err.Error(), "no exact retained ownership contract") {

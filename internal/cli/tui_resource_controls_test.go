@@ -26,7 +26,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(fixture.bundleRoot, "packs", synthetic.ID(), "pack.json"), data, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(fixture.catalogRoot, "packs", synthetic.ID(), "pack.json"), data, 0o644); err != nil {
 				t.Fatal(err)
 			}
 

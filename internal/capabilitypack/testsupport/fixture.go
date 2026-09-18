@@ -3,7 +3,7 @@
 // public contract.
 //
 // The package owns a small typed wire model instead of importing
-// capabilitypack or managedpack. Tests in package capabilitypack can therefore
+// capabilitypack or cataloglayout. Tests in package capabilitypack can therefore
 // use these fixtures without creating an import cycle; written manifests are
 // still exercised through the production loaders and validators.
 package testsupport
@@ -298,7 +298,7 @@ func ExternalTool(id string) Fixture {
 }
 
 // CollisionPair returns two unrelated Packs whose guidance binds to the same
-// host-native name while retaining distinct bundle source paths.
+// host-native name while retaining distinct Pack source paths.
 func CollisionPair(firstID, secondID string) (Fixture, Fixture) {
 	return collisionFixture(firstID), collisionFixture(secondID)
 }
@@ -499,11 +499,12 @@ func (f Fixture) WithAdaptedBytes(identity, relative string, data []byte) Fixtur
 	return result
 }
 
-// WriteBundle materializes a fixture in Packy's current bundle layout. It can
-// be called repeatedly on one root to compose unrelated fixtures.
-func (f Fixture) WriteBundle(root string) error {
+// WriteCatalog materializes a fixture in Packy's Pack-local catalog layout. It
+// can be called repeatedly on one root to compose unrelated fixtures.
+func (f Fixture) WriteCatalog(root string) error {
+	packRoot := filepath.Join(root, "packs", f.manifest.ID)
 	for relative, data := range f.files {
-		if err := writeFile(root, relative, data); err != nil {
+		if err := writeFile(packRoot, relative, data); err != nil {
 			return err
 		}
 	}
@@ -512,7 +513,7 @@ func (f Fixture) WriteBundle(root string) error {
 		return fmt.Errorf("marshal Pack %q manifest: %w", f.manifest.ID, err)
 	}
 	data = append(data, '\n')
-	return writeFile(root, filepath.ToSlash(filepath.Join("packs", f.manifest.ID, "pack.json")), data)
+	return writeFile(packRoot, "pack.json", data)
 }
 
 // WriteProject materializes one Catalog Project Pack and its independent origin
@@ -590,7 +591,7 @@ func baseFixture(id string, surfaces []Surface) Fixture {
 	origin := originID(id)
 	return Fixture{
 		manifest: Manifest{
-			SchemaVersion: 1, ID: id, Version: "1.0.0",
+			SchemaVersion: 2, ID: id, Version: "1.0.0",
 			Description: "Synthetic " + id + " Pack fixture", Selectable: true,
 			Surfaces:             surfaces,
 			ReadinessObligations: []string{"runtime-usability", "surface-authorization"},

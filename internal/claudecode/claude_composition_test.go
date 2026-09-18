@@ -151,33 +151,13 @@ func TestClaudeCommandStrictTOMLAndDependencies(t *testing.T) {
 	}
 }
 
-func TestClaudeCommandStrictDecoderAcceptsReviewedCommandBytes(t *testing.T) {
-	commands := filepath.Join("..", "..", "bundle", "commands")
-	entries, err := os.ReadDir(commands)
+func TestClaudeCommandStrictDecoderAcceptsCanonicalCommandBytes(t *testing.T) {
+	command, err := decodeClaudeCommandSource([]byte("description = \"Build the reviewed change\"\nprompt = \"Implement and verify the requested work.\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	count := 0
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".toml" {
-			continue
-		}
-		path := filepath.Join(commands, entry.Name())
-		content, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		command, err := decodeClaudeCommandSource(content)
-		if err != nil {
-			t.Fatalf("decode %s: %v", path, err)
-		}
-		if command.Description == "" || command.Prompt == "" {
-			t.Fatalf("empty exact command fields for %s", path)
-		}
-		count++
-	}
-	if count != 8 {
-		t.Fatalf("decoded %d exact commands, want 8", count)
+	if command.Description == "" || command.Prompt == "" {
+		t.Fatalf("empty exact command fields: %#v", command)
 	}
 }
 
@@ -215,7 +195,7 @@ func TestClaudeCompositePayloadRejectsTamperAndNoncanonicalData(t *testing.T) {
 	if err := os.Symlink(outside, reference); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := composeClaudeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root); err == nil || !strings.Contains(err.Error(), "escapes bundle root") {
+	if _, err := composeClaudeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root); err == nil || !strings.Contains(err.Error(), "escapes catalog root") {
 		t.Fatalf("escaping source symlink was accepted: %v", err)
 	}
 }

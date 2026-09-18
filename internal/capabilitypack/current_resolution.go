@@ -55,7 +55,7 @@ func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotI
 		if c.resolveSnapshot == nil {
 			return Pack{}, fmt.Errorf("capability pack %q receipt references unavailable Catalog Snapshot %s", id, snapshotID)
 		}
-		bundleRoot, err := c.resolveSnapshot(ctx, snapshotID)
+		catalogRoot, err := c.resolveSnapshot(ctx, snapshotID)
 		if err != nil {
 			return Pack{}, fmt.Errorf("resolve Catalog Snapshot %s for capability pack %q: %w", snapshotID, id, err)
 		}
@@ -63,10 +63,10 @@ func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version, snapshotI
 			return Pack{}, err
 		}
 		// resolveSnapshot validates the retained immutable snapshot before
-		// returning its bundle root. Read those bytes directly: acquiring the
-		// retained bundle lock while the current bundle lock is held would allow
+		// returning its catalog root. Read those bytes directly: acquiring the
+		// retained catalog lock while the current catalog lock is held would allow
 		// two cross-snapshot observations to deadlock in opposite order.
-		historical, err := discoverRetainedForDurableIntentsUnlocked(bundleRoot, snapshotID, c.resolveSnapshot)
+		historical, err := discoverRetainedForDurableIntentsUnlocked(catalogRoot, snapshotID, c.resolveSnapshot)
 		if err != nil {
 			return Pack{}, fmt.Errorf("load retained Catalog Snapshot %s: %w", snapshotID, err)
 		}

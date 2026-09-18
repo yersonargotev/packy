@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 )
 
@@ -27,7 +27,7 @@ func execute() int {
 	return run(os.Args[1:], os.Stdout, os.Stderr, resolver)
 }
 
-func run(args []string, stdout, stderr io.Writer, resolver managedpack.OriginResolver) int {
+func run(args []string, stdout, stderr io.Writer, resolver cataloglayout.OriginResolver) int {
 	flags := flag.NewFlagSet("catalogsnapshot", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	project := flags.String("project", ".", "Catalog Project root")
@@ -43,12 +43,12 @@ func run(args []string, stdout, stderr io.Writer, resolver managedpack.OriginRes
 		return 2
 	}
 
-	validation, err := managedpack.ValidateCatalogProject(context.Background(), *project, "", resolver)
+	validation, err := cataloglayout.ValidateCatalogProject(context.Background(), *project, "", resolver)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	result, err := managedpack.BuildCatalogSnapshot(context.Background(), *project, validation, managedpack.CatalogSnapshotSource{
+	result, err := cataloglayout.BuildCatalogSnapshot(context.Background(), *project, validation, cataloglayout.CatalogSnapshotSource{
 		Repository: *sourceRepository,
 		Commit:     *sourceCommit,
 		Builder:    *builder,

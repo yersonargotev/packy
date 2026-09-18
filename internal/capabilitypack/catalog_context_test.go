@@ -3,16 +3,15 @@ package capabilitypack
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/yersonargotev/packy/internal/bundletransaction"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
 func TestCatalogListCurrentHonorsCancellationWhileWaitingForBundle(t *testing.T) {
 	repository := t.TempDir()
-	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	guard, err := catalogtransaction.Acquire(context.Background(), repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +19,7 @@ func TestCatalogListCurrentHonorsCancellationWhileWaitingForBundle(t *testing.T)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
-	_, err = (Catalog{bundleRoot: filepath.Join(repository, "bundle")}).ListCurrent(ctx)
+	_, err = (Catalog{catalogRoot: repository}).ListCurrent(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("ListCurrent error = %v; want context deadline", err)
 	}

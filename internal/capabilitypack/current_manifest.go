@@ -71,9 +71,9 @@ type managedResourceOriginWire struct {
 	Relationship string `json:"relationship"`
 }
 
-// LoadCurrentManifest loads one materialized Pack schema v1 contract from a
+// LoadCurrentManifest loads one materialized Pack schema v2 contract from a
 // Catalog Snapshot. It rejects manifests outside the current catalog model.
-func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, error) {
+func LoadCurrentManifest(path, packRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Pack{}, fmt.Errorf("read Pack manifest %s: %w", path, err)
@@ -87,16 +87,16 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 	if shape.SchemaVersion == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version is required", path)
 	}
-	return loadManagedCurrentManifest(data, path, bundleRoot, validateSources)
+	return loadManagedCurrentManifest(data, path, packRoot, validateSources)
 }
 
-func loadManagedCurrentManifest(data []byte, path, bundleRoot string, validateSources bool) (Pack, error) {
+func loadManagedCurrentManifest(data []byte, path, packRoot string, validateSources bool) (Pack, error) {
 	var managed managedCurrentManifest
 	if err := strictDecode(data, &managed); err != nil {
 		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
 	}
-	if managed.SchemaVersion != 1 {
-		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 1", path)
+	if managed.SchemaVersion != 2 {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 2", path)
 	}
 	if managed.Origins == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field origins is required", path)
@@ -110,10 +110,10 @@ func loadManagedCurrentManifest(data []byte, path, bundleRoot string, validateSo
 		ReadinessObligations: managed.ReadinessObligations,
 		ExternalRequirements: managed.ExternalRequirements,
 		Resources:            managed.Resources,
-	}, path, bundleRoot, validateSources)
+	}, path, packRoot, validateSources)
 }
 
-func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, validateSources bool) (Pack, error) {
+func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, validateSources bool) (Pack, error) {
 	if raw.Selectable == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field selectable is required", path)
 	}
@@ -144,14 +144,14 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 			Requires: wire.Requires, Conflicts: wire.Conflicts, Notices: wire.Notices,
 			Bindings: wire.Bindings, SurfaceExclusions: wire.SurfaceExclusions,
 			RequiresTools: []string{},
-			catalogRoot:   bundleRoot,
+			catalogRoot:   packRoot,
 		})
 	}
 	if err := validateCurrentPack(pack); err != nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: %w", path, err)
 	}
 	if validateSources {
-		if err := validatePackResourceSources(pack, bundleRoot); err != nil {
+		if err := validatePackResourceSources(pack, packRoot); err != nil {
 			return Pack{}, fmt.Errorf("invalid Pack manifest %s: %w", path, err)
 		}
 	}
@@ -168,7 +168,7 @@ func decodeCurrentResource(encoded json.RawMessage) (currentResourceWire, error)
 
 // ValidateProjectPack validates the runtime-facing portion of a Managed Pack
 // manifest against the same capability vocabulary used by Packy's catalog.
-// Managed Pack provenance and closure remain owned by internal/managedpack.
+// Managed Pack provenance and closure remain owned by internal/cataloglayout.
 func ValidateProjectPack(pack Pack, projectRoot string) error {
 	pack.Contract = Contract{OptionalModes: []OptionalMode{}}
 	if err := validateCurrentPack(pack); err != nil {
@@ -360,10 +360,10 @@ func hasDuplicateReadinessObligations(values []string) bool {
 	return false
 }
 
-func currentManifestPath(bundleRoot, pack string) (string, string, error) {
+func currentManifestPath(catalogRoot, pack string) (string, string, error) {
 	packDir := pack
 	if !filepath.IsAbs(pack) && filepath.Clean(pack) == pack && !strings.ContainsRune(pack, filepath.Separator) {
-		packDir = filepath.Join(bundleRoot, "packs", pack)
+		packDir = filepath.Join(catalogRoot, "packs", pack)
 	}
 	abs, err := filepath.Abs(packDir)
 	if err != nil {

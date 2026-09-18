@@ -6,7 +6,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/opencode"
-	"github.com/yersonargotev/packy/internal/skillbundle"
+	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -15,7 +15,7 @@ import (
 type cliTestFixture struct {
 	workstation workstation.Snapshot
 	packState   capabilitypack.StateLayout
-	skills      skillbundle.GlobalLayout
+	skills      skilllayout.GlobalLayout
 	codex       codex.CanonicalLayout
 	opencode    opencode.CanonicalLayout
 }
@@ -38,7 +38,7 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 	return cliTestFixture{
 		workstation: snapshot,
 		packState:   capabilitypack.NewStateLayout(snapshot.PackyHome()),
-		skills:      skillbundle.NewGlobalLayout(snapshot.Home()),
+		skills:      skilllayout.NewGlobalLayout(snapshot.Home()),
 		codex:       codex.NewCanonicalLayout(snapshot.Home()),
 		opencode:    opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 	}

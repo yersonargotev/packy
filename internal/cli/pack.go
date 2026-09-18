@@ -20,7 +20,7 @@ import (
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/reportredaction"
-	"github.com/yersonargotev/packy/internal/skillbundle"
+	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/toolbin"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
@@ -261,7 +261,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return err
 			}
 			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock), capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.tools, nil, nil))
-			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection, Aliases: aliases}, adapter)
 			if err != nil {
 				return err
@@ -649,7 +649,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 		return err
 	}
 	facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock))
-	adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+	adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Force: force}, adapter)
 	if err != nil {
 		return err
@@ -1084,17 +1084,17 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	if err != nil {
 		return capabilitypack.Facade{}, err
 	}
-	codexAdapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
-	openCodeAdapter := opencode.NewSurfaceAdapter(composition.bundleRoot, composition.skills.Root(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+	codexAdapter := codex.NewSurfaceAdapterWithConfig(composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+	openCodeAdapter := opencode.NewSurfaceAdapter(composition.catalogRoot, composition.skills.Root(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 	store := capabilitypack.NewFileActivationStore(composition.state.File())
 	claudeLayout := composition.claude
 	claudeExecutable, _ := opts.ClaudeLookPath("claude")
-	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, composition.catalog.IntentPackResolver(), claudeLayout, composition.bundleRoot)
+	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, composition.catalog.IntentPackResolver(), claudeLayout, composition.catalogRoot)
 	var claudeAdapter *claudecode.SurfaceAdapter
 	if opts.ClaudeAuthorization != nil {
-		claudeAdapter = claudecode.NewSurfaceAdapterWithAuthorization(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership, opts.ClaudeAuthorization)
+		claudeAdapter = claudecode.NewSurfaceAdapterWithAuthorization(composition.catalogRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership, opts.ClaudeAuthorization)
 	} else {
-		claudeAdapter = claudecode.NewSurfaceAdapter(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership)
+		claudeAdapter = claudecode.NewSurfaceAdapter(composition.catalogRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, opts.ClaudeRunner, ownership)
 	}
 	if opts.ClaudeRuntimeEvidence != nil {
 		claudeAdapter = claudeAdapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
@@ -1694,25 +1694,25 @@ func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.Surfac
 	return codex.NewSurfaceAdapterWithConfig("", "", "", "")
 }
 
-func projectInstallAdapter(surface capabilitypack.Surface, bundleRoot, skillsRoot, codexPrompt, codexConfig, openCodeConfig, openCodePrompt string) capabilitypack.SurfaceAdapter {
+func projectInstallAdapter(surface capabilitypack.Surface, catalogRoot, skillsRoot, codexPrompt, codexConfig, openCodeConfig, openCodePrompt string) capabilitypack.SurfaceAdapter {
 	if surface == "" {
 		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceClaude:   claudeProjectAdapter(bundleRoot),
-			capabilitypack.SurfaceCodex:    codex.NewSurfaceAdapterWithConfig(bundleRoot, skillsRoot, codexPrompt, codexConfig),
-			capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter(bundleRoot, skillsRoot, openCodeConfig, openCodePrompt),
+			capabilitypack.SurfaceClaude:   claudeProjectAdapter(catalogRoot),
+			capabilitypack.SurfaceCodex:    codex.NewSurfaceAdapterWithConfig(catalogRoot, skillsRoot, codexPrompt, codexConfig),
+			capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter(catalogRoot, skillsRoot, openCodeConfig, openCodePrompt),
 		}, capabilitypack.SurfaceCodex)
 	}
 	if surface == capabilitypack.SurfaceClaude {
-		return claudeProjectAdapter(bundleRoot)
+		return claudeProjectAdapter(catalogRoot)
 	}
 	if surface == capabilitypack.SurfaceOpenCode {
-		return opencode.NewSurfaceAdapter(bundleRoot, skillsRoot, openCodeConfig, openCodePrompt)
+		return opencode.NewSurfaceAdapter(catalogRoot, skillsRoot, openCodeConfig, openCodePrompt)
 	}
-	return codex.NewSurfaceAdapterWithConfig(bundleRoot, skillsRoot, codexPrompt, codexConfig)
+	return codex.NewSurfaceAdapterWithConfig(catalogRoot, skillsRoot, codexPrompt, codexConfig)
 }
 
-func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
-	return claudecode.NewSurfaceAdapter(bundleRoot, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
+func claudeProjectAdapter(catalogRoot string) capabilitypack.SurfaceAdapter {
+	return claudecode.NewSurfaceAdapter(catalogRoot, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
 }
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
@@ -2062,15 +2062,15 @@ func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver)
 }
 
 type packComposition struct {
-	catalog    capabilitypack.Catalog
-	state      capabilitypack.StateLayout
-	skills     skillbundle.GlobalLayout
-	bundleRoot string
-	codex      codex.CanonicalLayout
-	openCode   opencode.CanonicalLayout
-	claude     claudecode.CanonicalLayout
-	tools      toolbin.PATHResolver
-	engram     engrambin.Acquirer
+	catalog     capabilitypack.Catalog
+	state       capabilitypack.StateLayout
+	skills      skilllayout.GlobalLayout
+	catalogRoot string
+	codex       codex.CanonicalLayout
+	openCode    opencode.CanonicalLayout
+	claude      claudecode.CanonicalLayout
+	tools       toolbin.PATHResolver
+	engram      engrambin.Acquirer
 }
 
 func resolvePackComposition(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (packComposition, error) {
@@ -2082,7 +2082,7 @@ func resolvePackComposition(ctx context.Context, opts Options, workstationResolv
 	if err != nil {
 		return packComposition{}, err
 	}
-	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
+	catalogRoot := sources.catalogRoot
 	catalog, err := loadInvocationCatalog(ctx, sources)
 	if err != nil {
 		return packComposition{}, err
@@ -2092,15 +2092,15 @@ func resolvePackComposition(ctx context.Context, opts Options, workstationResolv
 		engramAcquirer = engramAcquirer.WithFormulaInspector(opts.EngramFormulaInspector)
 	}
 	return packComposition{
-		catalog:    catalog,
-		state:      capabilitypack.NewStateLayout(snapshot.PackyHome()),
-		skills:     skillbundle.NewGlobalLayout(snapshot.Home()),
-		bundleRoot: bundleRoot,
-		codex:      codex.NewCanonicalLayout(snapshot.Home()),
-		openCode:   opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
-		claude:     claudecode.NewCanonicalLayout(snapshot.Home()),
-		tools:      toolbin.NewPATHResolver(opts.Runner.LookPath),
-		engram:     engramAcquirer,
+		catalog:     catalog,
+		state:       capabilitypack.NewStateLayout(snapshot.PackyHome()),
+		skills:      skilllayout.NewGlobalLayout(snapshot.Home()),
+		catalogRoot: catalogRoot,
+		codex:       codex.NewCanonicalLayout(snapshot.Home()),
+		openCode:    opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
+		claude:      claudecode.NewCanonicalLayout(snapshot.Home()),
+		tools:       toolbin.NewPATHResolver(opts.Runner.LookPath),
+		engram:      engramAcquirer,
 	}, nil
 }
 
@@ -2113,14 +2113,11 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 // loadInvocationCatalog preserves source selection intent while the catalog owns
 // the transaction spanning validation, discovery, and later resource reads.
 func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
-	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
-	if !sources.skills.IsDefault {
-		if err := skillbundle.ValidateSource(ctx, sources.skills.Root, sources.skills.MissingHint); err != nil {
-			return capabilitypack.Catalog{}, err
-		}
-		return capabilitypack.DiscoverForDurableIntents(ctx, bundleRoot)
+	catalogRoot := sources.catalogRoot
+	if !sources.isDefault {
+		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
-	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, bundleRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
+	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
 		return sources.store.Resolve(snapshotID)
 	})
 }

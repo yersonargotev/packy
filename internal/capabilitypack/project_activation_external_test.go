@@ -30,7 +30,7 @@ func newProjectInstallFixture(t *testing.T) projectInstallFixture {
 	t.Helper()
 	fixture := testsupport.CapabilityRich("project-runtime")
 	bundle := t.TempDir()
-	if err := fixture.WriteBundle(bundle); err != nil {
+	if err := fixture.WriteCatalog(bundle); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
@@ -65,7 +65,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	updatedBundle := t.TempDir()
-	if err := fixture.candidate.WriteBundle(updatedBundle); err != nil {
+	if err := fixture.candidate.WriteCatalog(updatedBundle); err != nil {
 		t.Fatal(err)
 	}
 	updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
