@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
-	"github.com/yersonargotev/packy/internal/managedpack"
 )
 
 type catalogSourceFixture struct {
@@ -28,7 +28,7 @@ func (s *catalogSourceFixture) Latest(context.Context, string) (catalogstore.Rel
 
 type catalogOriginFixture map[string]string
 
-func (r catalogOriginFixture) Resolve(_ context.Context, origin managedpack.Origin) (string, error) {
+func (r catalogOriginFixture) Resolve(_ context.Context, origin cataloglayout.Origin) (string, error) {
 	return r[origin.ID], nil
 }
 
@@ -45,7 +45,7 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	opts.skillSourceRoot = ""
+	opts.catalogRootOverride = ""
 	opts.Env = env
 	opts.CatalogSource = source
 
@@ -147,7 +147,7 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	for key, value := range opts.Env.(MapEnv) {
 		env[key] = value
 	}
-	opts.skillSourceRoot = ""
+	opts.catalogRootOverride = ""
 	opts.Env = env
 	opts.CatalogSource = source
 	backend := newTUIBackend(opts.withDefaults(), newWorkstationResolver(opts.withDefaults()))
@@ -177,10 +177,9 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.Fixture) catalogstore.Release {
 	t.Helper()
 	projectRoot := t.TempDir()
-	bundleRoot := filepath.Join(projectRoot, "bundle")
 	origins := catalogOriginFixture{}
 	for _, fixture := range fixtures {
-		if err := fixture.WriteBundle(bundleRoot); err != nil {
+		if err := fixture.WriteCatalog(projectRoot); err != nil {
 			t.Fatal(err)
 		}
 		resolved, err := fixture.WriteProject(t.TempDir(), t.TempDir())
@@ -191,11 +190,11 @@ func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.
 			origins[id] = root
 		}
 	}
-	validation, err := managedpack.ValidateCatalogProject(context.Background(), projectRoot, "", origins)
+	validation, err := cataloglayout.ValidateCatalogProject(context.Background(), projectRoot, "", origins)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := managedpack.BuildCatalogSnapshot(context.Background(), projectRoot, validation, managedpack.CatalogSnapshotSource{
+	result, err := cataloglayout.BuildCatalogSnapshot(context.Background(), projectRoot, validation, cataloglayout.CatalogSnapshotSource{
 		Repository: "yersonargotev/packy-catalog", Commit: commit, Builder: "yersonargotev/packy@" + strings.Repeat("c", 40),
 	}, filepath.Join(t.TempDir(), "snapshot"))
 	if err != nil {

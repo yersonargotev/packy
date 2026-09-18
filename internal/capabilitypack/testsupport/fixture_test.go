@@ -31,11 +31,11 @@ func TestPortableAllSurfacesWritesBundleAndDerivesVersions(t *testing.T) {
 		t.Fatalf("surfaces = %#v, want %#v", got, want)
 	}
 
-	bundleRoot := t.TempDir()
-	if err := fixture.WriteBundle(bundleRoot); err != nil {
+	catalogRoot := t.TempDir()
+	if err := fixture.WriteCatalog(catalogRoot); err != nil {
 		t.Fatal(err)
 	}
-	manifestData, err := os.ReadFile(filepath.Join(bundleRoot, "packs", "portable-one", "pack.json"))
+	manifestData, err := os.ReadFile(filepath.Join(catalogRoot, "packs", "portable-one", "pack.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestPortableAllSurfacesWritesBundleAndDerivesVersions(t *testing.T) {
 	if !reflect.DeepEqual(written, manifest) {
 		t.Fatalf("written manifest = %#v, want %#v", written, manifest)
 	}
-	if got, err := os.ReadFile(filepath.Join(bundleRoot, "instructions", "portable-one.md")); err != nil {
+	if got, err := os.ReadFile(filepath.Join(catalogRoot, "packs", "portable-one", "instructions", "portable-one.md")); err != nil {
 		t.Fatal(err)
 	} else if want := []byte("# Portable One guidance\n\nSynthetic guidance for every supported surface.\n"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("guidance bytes = %q, want %q", got, want)
@@ -132,11 +132,11 @@ func TestWithRetainedRequirementsKeepsCapabilityReferencesCoherentAndWritesBundl
 		t.Fatalf("retired candidate version = %q, want %q", retired.CurrentVersion(), narrowed.CandidateVersion())
 	}
 
-	bundleRoot := t.TempDir()
-	if err := retired.WriteBundle(bundleRoot); err != nil {
+	catalogRoot := t.TempDir()
+	if err := retired.WriteCatalog(catalogRoot); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(bundleRoot, "packs", retired.ID(), "pack.json"))
+	data, err := os.ReadFile(filepath.Join(catalogRoot, "packs", retired.ID(), "pack.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

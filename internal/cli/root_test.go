@@ -433,8 +433,8 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 			"PATH":            homebrewBin,
 			"HOMEBREW_PREFIX": homebrewPrefix,
 		},
-		Runner:          runner,
-		skillSourceRoot: sourceRoot,
+		Runner:              runner,
+		catalogRootOverride: sourceRoot,
 	}, runner, home
 }
 
@@ -558,14 +558,6 @@ func TestHelpAndVersionDoNotResolveWorkstation(t *testing.T) {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func callStrings(calls []fakeCall) []string {
-	out := make([]string, 0, len(calls))
-	for _, call := range calls {
-		out = append(out, strings.Join(append([]string{call.name}, call.args...), " "))
-	}
-	return out
 }
 
 func snapshotTree(t *testing.T, root string) string {

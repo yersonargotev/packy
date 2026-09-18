@@ -13,10 +13,10 @@ import (
 // It owns only workstation wiring; manifest vocabulary and bundle bytes remain
 // owned by the domain fixture package.
 type syntheticCLIFixture struct {
-	options    Options
-	home       string
-	bundleRoot string
-	packs      map[string]testsupport.Fixture
+	options     Options
+	home        string
+	catalogRoot string
+	packs       map[string]testsupport.Fixture
 }
 
 func newSyntheticCLIFixture(t *testing.T, terminal Terminal, packs ...testsupport.Fixture) syntheticCLIFixture {
@@ -24,16 +24,16 @@ func newSyntheticCLIFixture(t *testing.T, terminal Terminal, packs ...testsuppor
 	if len(packs) == 0 {
 		t.Fatal("synthetic CLI fixture requires at least one Pack")
 	}
-	bundleRoot := t.TempDir()
+	catalogRoot := t.TempDir()
 	for _, group := range []string{"engineering", "productivity"} {
-		if err := os.MkdirAll(filepath.Join(bundleRoot, "skills", group), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(catalogRoot, "skills", group), 0o755); err != nil {
 			t.Fatalf("create synthetic Skill Source group %q: %v", group, err)
 		}
 	}
-	// skillbundle still validates its selected v0 in-progress sentinel even when
+	// skilllayout still validates its selected v0 in-progress sentinel even when
 	// the tested Pack contributes no legacy grouped skill. Keep that CLI source
 	// adapter concern out of the domain fixture.
-	loopMe := filepath.Join(bundleRoot, "skills", "in-progress", "loop-me")
+	loopMe := filepath.Join(catalogRoot, "skills", "in-progress", "loop-me")
 	if err := os.MkdirAll(loopMe, 0o755); err != nil {
 		t.Fatalf("create synthetic Skill Source sentinel: %v", err)
 	}
@@ -46,7 +46,7 @@ func newSyntheticCLIFixture(t *testing.T, terminal Terminal, packs ...testsuppor
 		if _, exists := byID[manifest.ID]; exists {
 			t.Fatalf("duplicate synthetic Pack ID %q", manifest.ID)
 		}
-		if err := pack.WriteBundle(bundleRoot); err != nil {
+		if err := pack.WriteCatalog(catalogRoot); err != nil {
 			t.Fatalf("write synthetic Pack %q: %v", manifest.ID, err)
 		}
 		byID[manifest.ID] = pack
@@ -59,13 +59,13 @@ func newSyntheticCLIFixture(t *testing.T, terminal Terminal, packs ...testsuppor
 				"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),
 				"PATH":            "",
 			},
-			Runner:          &fakeRunner{},
-			Terminal:        terminal,
-			skillSourceRoot: filepath.Join(bundleRoot, "skills"),
+			Runner:              &fakeRunner{},
+			Terminal:            terminal,
+			catalogRootOverride: catalogRoot,
 		},
-		home:       home,
-		bundleRoot: bundleRoot,
-		packs:      byID,
+		home:        home,
+		catalogRoot: catalogRoot,
+		packs:       byID,
 	}
 }
 

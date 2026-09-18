@@ -1,4 +1,0 @@
-interface:
-  display_name: "Engram Memory CLI"
-  short_description: "Recall, preserve, or curate Engram project memory"
-  default_prompt: "Use $engram-memory-cli to recall, preserve, or curate durable project knowledge with the Engram CLI."

@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 )
 
 // Resolver owns temporary exact-origin checkouts for one command invocation.
@@ -39,7 +39,7 @@ func (r *Resolver) Close() error {
 }
 
 // Resolve checks out one exact public GitHub origin commit.
-func (r *Resolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
+func (r *Resolver) Resolve(ctx context.Context, origin cataloglayout.Origin) (string, error) {
 	key := origin.Repository + "\x00" + origin.Commit
 	if root := r.resolved[key]; root != "" {
 		return root, nil

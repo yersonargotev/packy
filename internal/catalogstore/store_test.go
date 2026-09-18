@@ -15,8 +15,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
-	"github.com/yersonargotev/packy/internal/managedpack"
 )
 
 const officialRepository = "yersonargotev/packy-catalog"
@@ -40,9 +40,9 @@ func TestStoreAcquiresValidatesAndSelectsAnImmutableOfficialSnapshot(t *testing.
 	if err != nil || selected.ID != commit {
 		t.Fatalf("Selected() = %#v, %v", selected, err)
 	}
-	bundle, err := store.Resolve(commit)
-	if err != nil || bundle != snapshot.BundleRoot {
-		t.Fatalf("Resolve() = %q, %v; want %q", bundle, err, snapshot.BundleRoot)
+	root, err := store.Resolve(commit)
+	if err != nil || root != snapshot.Root {
+		t.Fatalf("Resolve() = %q, %v; want %q", root, err, snapshot.Root)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestRetainedSnapshotReadsFailClosedAfterLocalTampering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(snapshot.BundleRoot, "skills", "example", "SKILL.md"), []byte("tampered\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshot.Root, "packs", "example", "skills", "example", "SKILL.md"), []byte("tampered\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Selected(); err == nil || !strings.Contains(err.Error(), "indexed identity") {
@@ -240,22 +240,22 @@ func snapshotArchive(t *testing.T, commit, manifest string) []byte {
 	t.Helper()
 	manifestBytes := []byte(manifest)
 	skillBytes := []byte("# Fixture\n")
-	files := []managedpack.FileRecord{
-		{Path: "packs/" + manifestID(t, manifest) + "/pack.json", Mode: "100644", SHA256: digest(manifestBytes)},
+	files := []cataloglayout.FileRecord{
+		{Path: "pack.json", Mode: "100644", SHA256: digest(manifestBytes)},
 		{Path: "skills/" + manifestID(t, manifest) + "/SKILL.md", Mode: "100644", SHA256: digest(skillBytes)},
 	}
 	closure := digestFileIndex(files)
-	packs := []managedpack.CatalogSnapshotPack{{ID: manifestID(t, manifest), Version: manifestVersion(t, manifest), ManifestSHA256: digest(manifestBytes), ClosureSHA256: closure, Files: files}}
+	packs := []cataloglayout.CatalogSnapshotPack{{ID: manifestID(t, manifest), Version: manifestVersion(t, manifest), ManifestSHA256: digest(manifestBytes), ClosureSHA256: closure, Files: files}}
 	encodedPacks, _ := json.Marshal(packs)
-	index := managedpack.CatalogSnapshotIndex{SchemaVersion: 1, Source: managedpack.CatalogSnapshotSource{Repository: officialRepository, Commit: commit}, Builder: "yersonargotev/packy@" + strings.Repeat("b", 40), CatalogSHA256: digest(encodedPacks), Packs: packs}
+	index := cataloglayout.CatalogSnapshotIndex{SchemaVersion: 2, Source: cataloglayout.CatalogSnapshotSource{Repository: officialRepository, Commit: commit}, Builder: "yersonargotev/packy@" + strings.Repeat("b", 40), CatalogSHA256: digest(encodedPacks), Packs: packs}
 	indexBytes, _ := json.Marshal(index)
 
 	var output bytes.Buffer
 	gz := gzip.NewWriter(&output)
 	tw := tar.NewWriter(gz)
 	writeTar(t, tw, "catalog-index.json", indexBytes)
-	writeTar(t, tw, "bundle/"+files[0].Path, manifestBytes)
-	writeTar(t, tw, "bundle/"+files[1].Path, skillBytes)
+	writeTar(t, tw, "packs/"+manifestID(t, manifest)+"/"+files[0].Path, manifestBytes)
+	writeTar(t, tw, "packs/"+manifestID(t, manifest)+"/"+files[1].Path, skillBytes)
 	if err := tw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func writeTar(t *testing.T, tw *tar.Writer, name string, data []byte) {
 }
 
 func validManifest(id, version string) string {
-	return fmt.Sprintf(`{"schema_version":1,"id":%q,"version":%q,"description":"Fixture Pack","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"skill","id":%q,"source":%q,"description":"Fixture skill","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],"surface_exclusions":[]}]}`, id, version, id, "skills/"+id, id, "$"+id)
+	return fmt.Sprintf(`{"schema_version":2,"id":%q,"version":%q,"description":"Fixture Pack","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"skill","id":%q,"source":%q,"description":"Fixture skill","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],"surface_exclusions":[]}]}`, id, version, id, "skills/"+id, id, "$"+id)
 }
 
 func manifestID(t *testing.T, data string) string {
@@ -298,7 +298,7 @@ func manifestVersion(t *testing.T, data string) string {
 	return v.Version
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
-func digestFileIndex(files []managedpack.FileRecord) string {
+func digestFileIndex(files []cataloglayout.FileRecord) string {
 	h := sha256.New()
 	for _, f := range files {
 		fmt.Fprintf(h, "%s\x00%s\x00%s\n", f.Path, f.Mode, f.SHA256)

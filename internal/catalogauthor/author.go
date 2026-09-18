@@ -19,9 +19,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
-	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
 var (
@@ -104,9 +104,9 @@ type RefreshResult struct {
 
 // Create prepares and validates a new Pack before atomically installing its
 // manifest in the Catalog Project. The only supported template is empty.
-func Create(ctx context.Context, request CreateRequest, resolver managedpack.OriginResolver) (Result, error) {
+func Create(ctx context.Context, request CreateRequest, resolver cataloglayout.OriginResolver) (Result, error) {
 	var result Result
-	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+	err := catalogtransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
 		var err error
 		result, err = create(ctx, request, resolver)
 		return err
@@ -114,7 +114,7 @@ func Create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 	return result, err
 }
 
-func create(ctx context.Context, request CreateRequest, resolver managedpack.OriginResolver) (Result, error) {
+func create(ctx context.Context, request CreateRequest, resolver cataloglayout.OriginResolver) (Result, error) {
 	if request.Template != "empty" {
 		return Result{}, fmt.Errorf("unsupported Pack template %q; supported templates: empty", request.Template)
 	}
@@ -128,20 +128,19 @@ func create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 	if err != nil {
 		return Result{}, err
 	}
-	manifest := managedpack.Manifest{
-		SchemaVersion: managedpack.SchemaVersion,
+	manifest := cataloglayout.Manifest{
+		SchemaVersion: cataloglayout.SchemaVersion,
 		ID:            request.PackID, Version: request.Version, Description: request.Description,
 		Selectable: true, Surfaces: surfaces,
 		ReadinessObligations: []capabilitypack.ReadinessObligation{},
-		ExternalRequirements: []string{}, Origins: []managedpack.Origin{}, Resources: []managedpack.Resource{},
+		ExternalRequirements: []string{}, Origins: []cataloglayout.Origin{}, Resources: []cataloglayout.Resource{},
 	}
-	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
+	stage, originalCatalog, cleanup, err := stagePack(request.ProjectRoot, request.PackID, false)
 	if err != nil {
 		return Result{}, err
 	}
 	defer cleanup()
-	manifestRelative := filepath.Join("bundle", "packs", request.PackID, "pack.json")
-	stagedManifest := filepath.Join(stage, manifestRelative)
+	stagedManifest := filepath.Join(stage, "pack.json")
 	if _, err := os.Lstat(stagedManifest); err == nil {
 		return Result{}, fmt.Errorf("Pack %q already exists", request.PackID)
 	} else if !os.IsNotExist(err) {
@@ -150,11 +149,11 @@ func create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 	if err := writeManifest(stagedManifest, manifest); err != nil {
 		return Result{}, err
 	}
-	validation, err := managedpack.ValidateCatalogProject(ctx, stage, "", resolver)
+	validation, err := cataloglayout.ValidateCatalogPackCandidate(ctx, request.ProjectRoot, "", request.PackID, stage, resolver)
 	if err != nil {
 		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
-	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+	if err := replacePackAtomically(request.ProjectRoot, request.PackID, stage, originalCatalog); err != nil {
 		return Result{}, fmt.Errorf("write prepared Pack: %w", err)
 	}
 	return Result{PackID: manifest.ID, Version: manifest.Version, Packs: len(validation.Packs)}, nil
@@ -162,9 +161,9 @@ func create(ctx context.Context, request CreateRequest, resolver managedpack.Ori
 
 // Import prepares one explicitly selected resource, validates the complete
 // Catalog Project, and only then applies the resource and manifest together.
-func Import(ctx context.Context, request ImportRequest, resolver managedpack.OriginResolver) (Result, error) {
+func Import(ctx context.Context, request ImportRequest, resolver cataloglayout.OriginResolver) (Result, error) {
 	var result Result
-	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+	err := catalogtransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
 		var err error
 		result, err = importResource(ctx, request, resolver)
 		return err
@@ -172,7 +171,7 @@ func Import(ctx context.Context, request ImportRequest, resolver managedpack.Ori
 	return result, err
 }
 
-func importResource(ctx context.Context, request ImportRequest, resolver managedpack.OriginResolver) (Result, error) {
+func importResource(ctx context.Context, request ImportRequest, resolver cataloglayout.OriginResolver) (Result, error) {
 	if resolver == nil {
 		return Result{}, fmt.Errorf("Pack Import requires an exact-origin resolver")
 	}
@@ -182,20 +181,19 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 	if err := validateImportRequest(request); err != nil {
 		return Result{}, err
 	}
-	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
+	stage, originalCatalog, cleanup, err := stagePack(request.ProjectRoot, request.PackID, true)
 	if err != nil {
 		return Result{}, err
 	}
 	defer cleanup()
-	manifestRelative := filepath.Join("bundle", "packs", request.PackID, "pack.json")
-	stagedManifest := filepath.Join(stage, manifestRelative)
+	stagedManifest := filepath.Join(stage, "pack.json")
 	_, manifest, err := readManifest(stagedManifest)
 	if err != nil {
 		return Result{}, fmt.Errorf("read Pack %q: %w", request.PackID, err)
 	}
 	manifest.Version = request.Version
 
-	origin := managedpack.Origin{ID: request.OriginID, Repository: request.Repository, Commit: request.Commit}
+	origin := cataloglayout.Origin{ID: request.OriginID, Repository: request.Repository, Commit: request.Commit}
 	originRoot, err := resolver.Resolve(ctx, origin)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve exact upstream commit: %w", err)
@@ -222,7 +220,7 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 		return Result{}, err
 	}
 
-	stagedDestination := filepath.Join(stage, "bundle", filepath.FromSlash(request.Destination))
+	stagedDestination := filepath.Join(stage, filepath.FromSlash(request.Destination))
 	if _, err := os.Lstat(stagedDestination); err == nil {
 		return Result{}, fmt.Errorf("destination %q already exists", request.Destination)
 	} else if !os.IsNotExist(err) {
@@ -235,12 +233,12 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 	if err := writeManifest(stagedManifest, manifest); err != nil {
 		return Result{}, err
 	}
-	validation, err := managedpack.ValidateCatalogProject(ctx, stage, request.ProjectRoot, resolver)
+	validation, err := cataloglayout.ValidateCatalogPackCandidate(ctx, request.ProjectRoot, request.ProjectRoot, request.PackID, stage, resolver)
 	if err != nil {
 		return Result{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
 
-	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+	if err := replacePackAtomically(request.ProjectRoot, request.PackID, stage, originalCatalog); err != nil {
 		return Result{}, fmt.Errorf("write prepared Catalog Project: %w", err)
 	}
 	return Result{
@@ -252,10 +250,10 @@ func importResource(ctx context.Context, request ImportRequest, resolver managed
 }
 
 // RefreshUpstream verifies exact copies and explicitly reconciles maintained
-// adaptations before validating and atomically applying the prepared bundle.
-func RefreshUpstream(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
+// adaptations before validating and atomically applying the prepared Pack.
+func RefreshUpstream(ctx context.Context, request RefreshRequest, resolver cataloglayout.OriginResolver) (RefreshResult, error) {
 	var result RefreshResult
-	err := bundletransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
+	err := catalogtransaction.WithExclusive(ctx, request.ProjectRoot, func() error {
 		var err error
 		result, err = refreshUpstream(ctx, request, resolver)
 		return err
@@ -263,7 +261,7 @@ func RefreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 	return result, err
 }
 
-func refreshUpstream(ctx context.Context, request RefreshRequest, resolver managedpack.OriginResolver) (RefreshResult, error) {
+func refreshUpstream(ctx context.Context, request RefreshRequest, resolver cataloglayout.OriginResolver) (RefreshResult, error) {
 	if resolver == nil {
 		return RefreshResult{}, fmt.Errorf("Upstream Refresh requires an exact-origin resolver")
 	}
@@ -283,13 +281,12 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 		return RefreshResult{}, fmt.Errorf("new Pack version is required")
 	}
 
-	stage, originalBundle, cleanup, err := stageBundle(request.ProjectRoot)
+	stage, originalCatalog, cleanup, err := stagePack(request.ProjectRoot, request.PackID, true)
 	if err != nil {
 		return RefreshResult{}, err
 	}
 	defer cleanup()
-	manifestPath := filepath.Join("bundle", "packs", request.PackID, "pack.json")
-	stagedManifest := filepath.Join(stage, manifestPath)
+	stagedManifest := filepath.Join(stage, "pack.json")
 	_, manifest, err := readManifest(stagedManifest)
 	if err != nil {
 		return RefreshResult{}, fmt.Errorf("read Pack %q: %w", request.PackID, err)
@@ -310,15 +307,15 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 		return RefreshResult{}, fmt.Errorf("selected upstream commit is already pinned for origin %q", request.OriginID)
 	}
 
-	var exactCopies, adaptations []managedpack.Resource
+	var exactCopies, adaptations []cataloglayout.Resource
 	for _, resource := range manifest.Resources {
 		if resource.Origin == nil || resource.Origin.ID != request.OriginID {
 			continue
 		}
-		if resource.Origin.Relationship == managedpack.RelationshipAdapted {
+		if resource.Origin.Relationship == cataloglayout.RelationshipAdapted {
 			adaptations = append(adaptations, resource)
 		}
-		if resource.Origin.Relationship == managedpack.RelationshipExactCopy {
+		if resource.Origin.Relationship == cataloglayout.RelationshipExactCopy {
 			exactCopies = append(exactCopies, resource)
 		}
 	}
@@ -326,7 +323,7 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 		return RefreshResult{}, fmt.Errorf("origin %q has no resources", request.OriginID)
 	}
 
-	if _, err := managedpack.ValidateCatalogProject(ctx, request.ProjectRoot, "", resolver); err != nil {
+	if _, err := cataloglayout.ValidateCatalogProject(ctx, request.ProjectRoot, "", resolver); err != nil {
 		return RefreshResult{}, fmt.Errorf("verify current Catalog Project before Upstream Refresh: %w", err)
 	}
 	newOrigin := oldOrigin
@@ -369,7 +366,7 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 	}
 
 	for _, resource := range exactCopies {
-		destination := filepath.Join(stage, "bundle", filepath.FromSlash(resource.Source))
+		destination := filepath.Join(stage, filepath.FromSlash(resource.Source))
 		if err := os.RemoveAll(destination); err != nil {
 			return RefreshResult{}, fmt.Errorf("prepare exact-copy resource %q: %w", resource.Kind+":"+resource.ID, err)
 		}
@@ -383,11 +380,11 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver manag
 	if err := writeManifest(stagedManifest, manifest); err != nil {
 		return RefreshResult{}, err
 	}
-	validation, err := managedpack.ValidateCatalogProject(ctx, stage, request.ProjectRoot, resolver)
+	validation, err := cataloglayout.ValidateCatalogPackCandidate(ctx, request.ProjectRoot, request.ProjectRoot, request.PackID, stage, resolver)
 	if err != nil {
 		return RefreshResult{}, fmt.Errorf("validate prepared Catalog Project: %w", err)
 	}
-	if err := replaceBundleAtomically(request.ProjectRoot, stage, originalBundle); err != nil {
+	if err := replacePackAtomically(request.ProjectRoot, request.PackID, stage, originalCatalog); err != nil {
 		return RefreshResult{}, fmt.Errorf("write prepared Catalog Project: %w", err)
 	}
 	return RefreshResult{
@@ -602,28 +599,28 @@ func validateRelativePath(value string, allowDot bool) error {
 	return nil
 }
 
-func buildResource(request ImportRequest, manifest managedpack.Manifest) (managedpack.Resource, error) {
+func buildResource(request ImportRequest, manifest cataloglayout.Manifest) (cataloglayout.Resource, error) {
 	if request.Kind != "skill" && request.Kind != "instruction" && request.Kind != "notice" {
-		return managedpack.Resource{}, fmt.Errorf("unsupported import resource kind %q; supported kinds: instruction, notice, skill", request.Kind)
+		return cataloglayout.Resource{}, fmt.Errorf("unsupported import resource kind %q; supported kinds: instruction, notice, skill", request.Kind)
 	}
-	relationship := managedpack.Relationship(request.Relationship)
-	if relationship != managedpack.RelationshipExactCopy && relationship != managedpack.RelationshipAdapted {
-		return managedpack.Resource{}, fmt.Errorf("relationship must be exact-copy or adapted")
+	relationship := cataloglayout.Relationship(request.Relationship)
+	if relationship != cataloglayout.RelationshipExactCopy && relationship != cataloglayout.RelationshipAdapted {
+		return cataloglayout.Resource{}, fmt.Errorf("relationship must be exact-copy or adapted")
 	}
-	resource := managedpack.Resource{
+	resource := cataloglayout.Resource{
 		Kind: request.Kind, ID: request.ResourceID, Source: filepath.ToSlash(request.Destination),
 		Description: request.Description,
 		Requires:    sortedCopy(request.Requires), Conflicts: sortedCopy(request.Conflicts),
 		Notices: sortedCopy(request.Notices), Bindings: []capabilitypack.Binding{},
 		SurfaceExclusions: []capabilitypack.SurfaceExclusion{},
-		Origin:            &managedpack.ResourceOrigin{ID: request.OriginID, Path: filepath.ToSlash(request.OriginPath), Relationship: relationship},
+		Origin:            &cataloglayout.ResourceOrigin{ID: request.OriginID, Path: filepath.ToSlash(request.OriginPath), Relationship: relationship},
 	}
 	if request.Kind == "notice" {
 		if len(request.Hosts) != 0 {
-			return managedpack.Resource{}, fmt.Errorf("notice imports do not accept --host")
+			return cataloglayout.Resource{}, fmt.Errorf("notice imports do not accept --host")
 		}
 		if strings.TrimSpace(request.License) == "" || strings.TrimSpace(request.Attribution) == "" {
-			return managedpack.Resource{}, fmt.Errorf("notice imports require --license and --attribution")
+			return cataloglayout.Resource{}, fmt.Errorf("notice imports require --license and --attribution")
 		}
 		resource.License = request.License
 		resource.Attribution = request.Attribution
@@ -631,14 +628,14 @@ func buildResource(request ImportRequest, manifest managedpack.Manifest) (manage
 		return resource, nil
 	}
 	if strings.TrimSpace(request.License) != "" || strings.TrimSpace(request.Attribution) != "" {
-		return managedpack.Resource{}, fmt.Errorf("--license and --attribution apply only to notice imports")
+		return cataloglayout.Resource{}, fmt.Errorf("--license and --attribution apply only to notice imports")
 	}
 	hosts, err := parseSurfaces(request.Hosts)
 	if err != nil {
-		return managedpack.Resource{}, fmt.Errorf("hosts: %w", err)
+		return cataloglayout.Resource{}, fmt.Errorf("hosts: %w", err)
 	}
 	if !reflect.DeepEqual(hosts, manifest.Surfaces) {
-		return managedpack.Resource{}, fmt.Errorf("--host must explicitly name every Pack surface %v", manifest.Surfaces)
+		return cataloglayout.Resource{}, fmt.Errorf("--host must explicitly name every Pack surface %v", manifest.Surfaces)
 	}
 	for _, surface := range hosts {
 		invocation := request.ResourceID
@@ -682,7 +679,7 @@ func parseSurfaces(values []string) ([]capabilitypack.Surface, error) {
 	return result, nil
 }
 
-func addOrigin(manifest *managedpack.Manifest, origin managedpack.Origin) error {
+func addOrigin(manifest *cataloglayout.Manifest, origin cataloglayout.Origin) error {
 	for _, existing := range manifest.Origins {
 		if existing.ID == origin.ID {
 			if existing != origin {
@@ -699,7 +696,7 @@ func addOrigin(manifest *managedpack.Manifest, origin managedpack.Origin) error 
 	return nil
 }
 
-func addResource(manifest *managedpack.Manifest, resource managedpack.Resource) error {
+func addResource(manifest *cataloglayout.Manifest, resource cataloglayout.Resource) error {
 	identity := resource.Kind + ":" + resource.ID
 	for _, existing := range manifest.Resources {
 		if existing.Kind+":"+existing.ID == identity {
@@ -713,7 +710,7 @@ func addResource(manifest *managedpack.Manifest, resource managedpack.Resource) 
 	return nil
 }
 
-func stageBundle(projectRoot string) (string, string, func(), error) {
+func stagePack(projectRoot, packID string, requireExisting bool) (string, string, func(), error) {
 	info, err := os.Lstat(projectRoot)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", "", func() {}, fmt.Errorf("Catalog Project root must be an existing directory and not a symlink")
@@ -727,22 +724,38 @@ func stageBundle(projectRoot string) (string, string, func(), error) {
 		return "", "", func() {}, fmt.Errorf("create authoring stage: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(stage) }
-	bundleRoot := filepath.Join(projectRoot, "bundle")
-	original, err := treeIdentity(bundleRoot)
+	packsRoot := filepath.Join(projectRoot, "packs")
+	original, err := catalogTreeIdentity(packsRoot)
 	if err != nil {
 		cleanup()
-		return "", "", func() {}, fmt.Errorf("inspect Catalog Project bundle: %w", err)
+		return "", "", func() {}, fmt.Errorf("inspect Catalog Project Packs: %w", err)
 	}
-	if err := copyPath(bundleRoot, filepath.Join(stage, "bundle")); err != nil {
-		cleanup()
-		return "", "", func() {}, fmt.Errorf("stage Catalog Project bundle: %w", err)
+	stagedPack := filepath.Join(stage, "pack")
+	currentPack := filepath.Join(packsRoot, packID)
+	if requireExisting {
+		if err := copyPath(currentPack, stagedPack); err != nil {
+			cleanup()
+			return "", "", func() {}, fmt.Errorf("stage Pack %q: %w", packID, err)
+		}
+	} else {
+		if _, err := os.Lstat(currentPack); err == nil {
+			cleanup()
+			return "", "", func() {}, fmt.Errorf("Pack %q already exists", packID)
+		} else if !os.IsNotExist(err) {
+			cleanup()
+			return "", "", func() {}, fmt.Errorf("inspect Pack %q: %w", packID, err)
+		}
+		if err := os.MkdirAll(stagedPack, 0o755); err != nil {
+			cleanup()
+			return "", "", func() {}, fmt.Errorf("prepare staged Pack %q: %w", packID, err)
+		}
 	}
-	current, err := treeIdentity(bundleRoot)
+	current, err := catalogTreeIdentity(packsRoot)
 	if err != nil || current != original {
 		cleanup()
-		return "", "", func() {}, fmt.Errorf("Catalog Project changed while its bundle was staged")
+		return "", "", func() {}, fmt.Errorf("Catalog Project changed while Pack %q was staged", packID)
 	}
-	return stage, original, cleanup, nil
+	return stagedPack, original, cleanup, nil
 }
 
 func gitMetadataRoot(projectRoot string) (string, error) {
@@ -816,36 +829,69 @@ func treeIdentity(root string) (string, error) {
 	return fmt.Sprintf("%x", digest.Sum(nil)), nil
 }
 
-func replaceBundleAtomically(projectRoot, stage, original string) error {
-	bundleRoot := filepath.Join(projectRoot, "bundle")
-	current, err := treeIdentity(bundleRoot)
+func catalogTreeIdentity(packsRoot string) (string, error) {
+	info, err := os.Lstat(packsRoot)
+	if os.IsNotExist(err) {
+		return "missing", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("Catalog Project Packs must be a directory and not a symlink")
+	}
+	return treeIdentity(packsRoot)
+}
+
+func replacePackAtomically(projectRoot, packID, stagedPack, original string) error {
+	packsRoot := filepath.Join(projectRoot, "packs")
+	current, err := catalogTreeIdentity(packsRoot)
 	if err != nil {
 		return err
 	}
 	if current != original {
 		return fmt.Errorf("Catalog Project changed during preparation")
 	}
-	if err := exchangePaths(bundleRoot, filepath.Join(stage, "bundle")); err != nil {
-		return fmt.Errorf("atomically exchange prepared bundle: %w", err)
+	destination := filepath.Join(packsRoot, packID)
+	createdPacksRoot := false
+	if current == "missing" {
+		if err := os.Mkdir(packsRoot, 0o755); err != nil {
+			return fmt.Errorf("prepare Catalog Project Packs: %w", err)
+		}
+		createdPacksRoot = true
+	}
+	if _, err := os.Lstat(destination); os.IsNotExist(err) {
+		if err := os.Rename(stagedPack, destination); err != nil {
+			if createdPacksRoot {
+				_ = os.Remove(packsRoot)
+			}
+			return fmt.Errorf("atomically install prepared Pack: %w", err)
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect current Pack: %w", err)
+	}
+	if err := exchangePaths(destination, stagedPack); err != nil {
+		return fmt.Errorf("atomically exchange prepared Pack: %w", err)
 	}
 	return nil
 }
 
-func readManifest(path string) ([]byte, managedpack.Manifest, error) {
+func readManifest(path string) ([]byte, cataloglayout.Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, managedpack.Manifest{}, err
+		return nil, cataloglayout.Manifest{}, err
 	}
-	var manifest managedpack.Manifest
+	var manifest cataloglayout.Manifest
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&manifest); err != nil {
-		return nil, managedpack.Manifest{}, err
+		return nil, cataloglayout.Manifest{}, err
 	}
 	return data, manifest, nil
 }
 
-func writeManifest(path string, manifest managedpack.Manifest) error {
+func writeManifest(path string, manifest cataloglayout.Manifest) error {
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode prepared Pack manifest: %w", err)

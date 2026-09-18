@@ -200,7 +200,7 @@ func (f Facade) observationTime() time.Time {
 }
 
 func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (StatusReport, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (StatusReport, error) {
 		return locked.status(ctx, request)
 	})
 }
@@ -209,7 +209,7 @@ func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport
 // It is the read-only summary seam used by Doctor; inactive catalog entries and
 // residual ownership are deliberately not inspected.
 func (f Facade) ActiveStatus(ctx context.Context) (StatusReport, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (StatusReport, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (StatusReport, error) {
 		return locked.activeStatus(ctx)
 	})
 }

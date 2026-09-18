@@ -268,12 +268,13 @@ func assertClaudeCompositionProject(t *testing.T, project, workflow string) {
 
 func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow string) {
 	t.Helper()
+	packDir := filepath.Join(bundle, "packs", packID)
 	for path, content := range map[string]string{
 		"agents/reviewer.md":       "---\nname: reviewer\ndescription: Review changes\n---\n\n# Reviewer\n",
 		"references/guide.md":      "Reviewed guide.\n",
 		"skills/workflow/SKILL.md": workflow,
 	} {
-		target := filepath.Join(bundle, filepath.FromSlash(path))
+		target := filepath.Join(packDir, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -281,12 +282,11 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
 			t.Fatal(err)
 		}
 	}
-	packDir := filepath.Join(bundle, "packs", packID)
 	if err := os.MkdirAll(packDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": %q,
   "version": %q,
   "description": "Synthetic Claude composition",

@@ -599,13 +599,13 @@ type ApplyResult struct {
 }
 
 func (f Facade) Preview(ctx context.Context, request ActivationRequest) (ReconciliationPlan, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
 		return locked.preview(ctx, request, OperationActivate, "", false)
 	})
 }
 
 func (f Facade) PreviewUpdate(ctx context.Context, request UpdateRequest) (ReconciliationPlan, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
 		return locked.previewUpdate(ctx, request)
 	})
 }
@@ -660,7 +660,7 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 }
 
 func (f Facade) PreviewDeactivate(ctx context.Context, request DeactivationRequest) (ReconciliationPlan, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
 		return locked.previewDeactivate(ctx, request)
 	})
 }
@@ -1147,7 +1147,7 @@ func (f Facade) Approve(plan ReconciliationPlan, kind ConsentKind) ApprovalRecei
 }
 
 func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
-	result, err := withBundleObservation(ctx, f, func(locked Facade) (ApplyResult, error) {
+	result, err := withCatalogObservation(ctx, f, func(locked Facade) (ApplyResult, error) {
 		return locked.apply(ctx, request)
 	})
 	return result, ReportSafeError(err, &request.Plan)

@@ -378,7 +378,7 @@ func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 func TestAddyProjectionMatchesInstalledSourceContent(t *testing.T) {
 	root := t.TempDir()
 	projection := filepath.Join(root, "home", ".claude", "skills", "api-and-interface-design", "SKILL.md")
-	source := filepath.Join(root, "installed-source", "bundle", "skills", "api-and-interface-design", "SKILL.md")
+	source := filepath.Join(root, "installed-source", "packs", "addy", "skills", "api-and-interface-design", "SKILL.md")
 	for _, path := range []string{projection, source} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)

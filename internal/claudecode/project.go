@@ -85,7 +85,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if _, composite := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); composite {
 			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
 		}
-		source := filepath.Join(a.bundleRoot, resource.Source)
+		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
 		desired, err := localprojection.FingerprintCopiedTree(source)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("fingerprint %s source: %w", identity, err)
@@ -103,7 +103,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if _, composite := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); composite {
 			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
 		}
-		prompt, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		prompt, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -112,7 +112,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if !bound || binding.Projection != "agent" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -132,7 +132,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -141,7 +141,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if !bound || binding.Projection != "instruction" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -184,7 +184,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 
 func (a *SurfaceAdapter) claudeProjectCompositeProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, projectRoot string) (capabilitypack.ObservedProjection, bool, error) {
 	identity := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-	composite, err := claudeCompositeSkill(pack, resource, binding, a.bundleRoot)
+	composite, err := claudeCompositeSkill(pack, resource, binding, a.catalogRoot)
 	if err != nil {
 		return capabilitypack.ObservedProjection{}, false, err
 	}

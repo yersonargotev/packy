@@ -55,7 +55,7 @@ func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
 		"HOME": opts.Env.Getenv("HOME"), "XDG_CONFIG_HOME": opts.Env.Getenv("XDG_CONFIG_HOME"),
 		"PATH": "",
 	}
-	opts.skillSourceRoot = filepath.Join(t.TempDir(), "missing-catalog")
+	opts.catalogRootOverride = filepath.Join(t.TempDir(), "missing-catalog")
 
 	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "installed", "--json")
 	if err != nil {
@@ -166,7 +166,7 @@ func TestIssue453NamedInstallNeverInventsMissingBytesFromDigest(t *testing.T) {
 		"HOME": opts.Env.Getenv("HOME"), "XDG_CONFIG_HOME": opts.Env.Getenv("XDG_CONFIG_HOME"),
 		"PATH": "",
 	}
-	opts.skillSourceRoot = filepath.Join(t.TempDir(), "missing-catalog")
+	opts.catalogRootOverride = filepath.Join(t.TempDir(), "missing-catalog")
 	before := snapshotTree(t, project)
 	_, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex")
 	if err == nil {

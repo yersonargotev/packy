@@ -1,84 +1,21 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"reflect"
-	"slices"
-	"strings"
 	"testing"
-
-	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-func TestPackListJSONReportsValidatedCatalogInCanonicalOrder(t *testing.T) {
-	opts, repositoryRoot := packListRepositoryOptions(t)
-
-	output, err := executeCommand(t, NewRootCommand(opts), "list", "--json")
-	if err != nil {
-		t.Fatalf("pack list --json: %v\n%s", err, output)
-	}
-	var report struct {
-		SchemaVersion int    `json:"schema_version"`
-		Report        string `json:"report"`
-		Packs         []struct {
-			ID          string                   `json:"id"`
-			Version     string                   `json:"version"`
-			Description string                   `json:"description"`
-			Surfaces    []capabilitypack.Surface `json:"surfaces"`
-		} `json:"packs"`
-	}
-	decoder := json.NewDecoder(strings.NewReader(output))
-	if err := decoder.Decode(&report); err != nil {
-		t.Fatalf("decode report: %v\n%s", err, output)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		t.Fatalf("pack list emitted more than one JSON document: %v\n%s", err, output)
-	}
-	if report.SchemaVersion != 1 || report.Report != "pack-list" || report.Packs == nil {
-		t.Fatalf("report header = %#v", report)
-	}
-
-	catalog, err := capabilitypack.Discover(context.Background(), filepath.Join(repositoryRoot, "bundle"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := catalog.ListCurrent(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(report.Packs) != len(want) {
-		t.Fatalf("packs = %d, want %d", len(report.Packs), len(want))
-	}
-	for i, pack := range report.Packs {
-		expected := want[i]
-		if pack.ID != expected.ID || pack.Version != expected.Version || pack.Description != expected.Description || !reflect.DeepEqual(pack.Surfaces, expected.Surfaces) {
-			t.Fatalf("pack %d = %#v, want id=%q version=%q description=%q surfaces=%v", i, pack, expected.ID, expected.Version, expected.Description, expected.Surfaces)
-		}
-		if i > 0 && report.Packs[i-1].ID >= pack.ID {
-			t.Fatalf("packs are not in canonical ID order: %#v", report.Packs)
-		}
-		if !slices.IsSorted(pack.Surfaces) {
-			t.Fatalf("surfaces are not in canonical order for %q: %v", pack.ID, pack.Surfaces)
-		}
-	}
-}
-
 func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
-	bundleRoot := filepath.Join(t.TempDir(), "bundle")
-	if err := os.MkdirAll(filepath.Join(bundleRoot, "packs"), 0o700); err != nil {
+	catalogRoot := filepath.Join(t.TempDir(), "bundle")
+	if err := os.MkdirAll(filepath.Join(catalogRoot, "packs"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	createSkillSourceAt(t, filepath.Join(bundleRoot, "skills"))
+	createSkillSourceAt(t, catalogRoot)
 	home := t.TempDir()
 	opts := Options{Env: MapEnv{
 		"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
-	}, skillSourceRoot: filepath.Join(bundleRoot, "skills")}
+	}, catalogRootOverride: catalogRoot}
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list", "--json")
 	if err != nil {
@@ -87,43 +24,4 @@ func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
 	if output != "{\"schema_version\":1,\"report\":\"pack-list\",\"packs\":[]}\n" {
 		t.Fatalf("empty report = %q", output)
 	}
-}
-
-func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
-	opts, _ := packListRepositoryOptions(t)
-	addyVersion := checkedInPackVersion(t, "addy")
-	argoteVersion := checkedInPackVersion(t, "argote")
-	engramVersion := checkedInPackVersion(t, "engram")
-	issueDeliveryVersion := checkedInPackVersion(t, "issue-delivery")
-	mattyVersion := checkedInMattyFacts(t).Version
-	orchestrateVersion := checkedInPackVersion(t, "orchestrate")
-	pstackVersion := checkedInPackVersion(t, "pstack")
-
-	output, err := executeCommand(t, NewRootCommand(opts), "list")
-	if err != nil {
-		t.Fatalf("pack list: %v\n%s", err, output)
-	}
-	want := "PACK            VERSION  DESCRIPTION                                                            AVAILABLE ON\n" +
-		fmt.Sprintf("addy            %-7s  Addy agent skills                                                      claude, codex, opencode\n", addyVersion) +
-		fmt.Sprintf("argote          %-7s  Yerson Argote's engineering and communication guidance                 claude, codex, opencode\n", argoteVersion) +
-		fmt.Sprintf("engram          %-7s  Upstream Engram CLI memory workflows for agent work                    codex\n", engramVersion) +
-		fmt.Sprintf("issue-delivery  %-7s  Deliver issues through policy-driven or Matt-configured workflows      codex\n", issueDeliveryVersion) +
-		fmt.Sprintf("matty           %-7s  Matty workflow                                                         claude, codex, opencode\n", mattyVersion) +
-		fmt.Sprintf("orchestrate     %-7s  Coordinate focused Codex subagents                                     codex\n", orchestrateVersion) +
-		fmt.Sprintf("pstack          %-7s  Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n", pstackVersion)
-	if output != want {
-		t.Fatalf("human output changed:\n%s", output)
-	}
-}
-
-func packListRepositoryOptions(t *testing.T) (Options, string) {
-	t.Helper()
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	return Options{Env: MapEnv{
-		"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
-	}, skillSourceRoot: filepath.Join(repositoryRoot, "bundle", "skills")}, repositoryRoot
 }

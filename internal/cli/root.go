@@ -14,12 +14,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/catalogauthor"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/engrambin"
-	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/setuphealth"
-	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
@@ -42,8 +41,8 @@ type Options struct {
 	ClaudeRuntimeEvidence  claudecode.RuntimeEvidenceObserver
 	TUIRunner              func(context.Context, Options, io.Reader, io.Writer) error
 	CatalogSource          catalogstore.Source
-	CatalogOriginResolver  managedpack.OriginResolver
-	skillSourceRoot        string
+	CatalogOriginResolver  cataloglayout.OriginResolver
+	catalogRootOverride    string
 }
 
 func (o Options) withDefaults() Options {
@@ -330,7 +329,7 @@ func newCatalogImportCommand(opts Options) *cobra.Command {
 	flags.StringVar(&request.Commit, "commit", "", "exact full upstream commit")
 	flags.StringVar(&request.OriginID, "origin-id", "", "Pack-local upstream origin id")
 	flags.StringVar(&request.OriginPath, "origin-path", "", "selected path within the upstream commit")
-	flags.StringVar(&request.Destination, "destination", "", "explicit bundle-relative destination")
+	flags.StringVar(&request.Destination, "destination", "", "explicit Pack-relative destination")
 	flags.StringVar(&request.Relationship, "relationship", "", "exact-copy or adapted")
 	flags.StringVar(&request.Kind, "kind", "", "resource kind (instruction, notice, or skill)")
 	flags.StringVar(&request.ResourceID, "resource-id", "", "Pack-local resource id")
@@ -347,7 +346,7 @@ func newCatalogImportCommand(opts Options) *cobra.Command {
 	return command
 }
 
-func resolveCatalogOrigins(opts Options) (managedpack.OriginResolver, func() error, error) {
+func resolveCatalogOrigins(opts Options) (cataloglayout.OriginResolver, func() error, error) {
 	if opts.CatalogOriginResolver != nil {
 		return opts.CatalogOriginResolver, func() error { return nil }, nil
 	}
@@ -489,22 +488,23 @@ func failedActivePackObservations(intents []capabilitypack.ActivationIntent) []s
 }
 
 type invocationSources struct {
-	skills   skillbundle.Source
-	snapshot catalogstore.Snapshot
-	store    *catalogstore.Store
+	catalogRoot string
+	isDefault   bool
+	snapshot    catalogstore.Snapshot
+	store       *catalogstore.Store
 }
 
 func resolveInvocationSources(ctx context.Context, opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
-	explicit := strings.TrimSpace(opts.skillSourceRoot)
+	explicit := strings.TrimSpace(opts.catalogRootOverride)
 	if explicit != "" {
 		if !filepath.IsAbs(explicit) {
 			currentDirectory, err := snapshot.CurrentDirectory()
 			if err != nil {
-				return invocationSources{}, fmt.Errorf("resolve skill source root: %w", err)
+				return invocationSources{}, fmt.Errorf("resolve catalog root: %w", err)
 			}
 			explicit = filepath.Join(currentDirectory, explicit)
 		}
-		return invocationSources{skills: skillbundle.Source{Root: filepath.Clean(explicit)}}, nil
+		return invocationSources{catalogRoot: filepath.Clean(explicit)}, nil
 	}
 	store := newCatalogStore(opts, snapshot)
 	selected, err := store.Selected()
@@ -512,8 +512,9 @@ func resolveInvocationSources(ctx context.Context, opts Options, snapshot workst
 		return invocationSources{}, fmt.Errorf("official Catalog Snapshot is unavailable; run `packy init`: %w", err)
 	}
 	return invocationSources{
-		skills:   skillbundle.Source{Root: selected.SkillRoot(), IsDefault: true},
-		snapshot: selected,
-		store:    store,
+		catalogRoot: selected.Root,
+		isDefault:   true,
+		snapshot:    selected,
+		store:       store,
 	}, nil
 }

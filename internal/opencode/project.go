@@ -36,7 +36,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		projectInstruction, hasProjectInstruction := resource.SurfaceCapability(capabilitypack.SurfaceOpenCode, capabilitypack.SurfaceCapabilityProjectInstruction)
 		if hasProjectInstruction {
 			data := projectInstruction.ProjectInstruction
-			content, err := os.ReadFile(filepath.Join(a.bundleRoot, data.Source))
+			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), data.Source))
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read project instruction capability %q source: %w", data.ID, err)
 			}
@@ -84,7 +84,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
 		target := filepath.Join(projectRoot, ".agents", "skills", name)
-		source := filepath.Join(a.bundleRoot, resource.Source)
+		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
 		desired, err := localprojection.FingerprintCopiedTree(source)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("fingerprint %s source: %w", identity, err)
@@ -98,7 +98,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -107,7 +107,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -116,7 +116,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
+		content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}

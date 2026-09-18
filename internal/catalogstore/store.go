@@ -19,9 +19,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
 const (
@@ -70,15 +70,12 @@ type Asset struct {
 
 // Snapshot identifies one retained immutable Catalog Snapshot.
 type Snapshot struct {
-	ID         string
-	Commit     string
-	Tag        string
-	BundleRoot string
-	Index      managedpack.CatalogSnapshotIndex
+	ID     string
+	Commit string
+	Tag    string
+	Root   string
+	Index  cataloglayout.CatalogSnapshotIndex
 }
-
-// SkillRoot returns the selected snapshot's reviewed skill source.
-func (s Snapshot) SkillRoot() string { return filepath.Join(s.BundleRoot, "skills") }
 
 // Store is a filesystem-backed official Catalog Snapshot store.
 type Store struct {
@@ -108,7 +105,7 @@ func (s *Store) AcquireLatest(ctx context.Context) (Snapshot, error) {
 	if err := os.MkdirAll(filepath.Join(s.root, "snapshots"), 0o755); err != nil {
 		return Snapshot{}, fmt.Errorf("prepare catalog store: %w", err)
 	}
-	guard, err := bundletransaction.Acquire(ctx, s.root)
+	guard, err := catalogtransaction.Acquire(ctx, s.root)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("lock catalog store: %w", err)
 	}
@@ -183,7 +180,7 @@ func (s *Store) Selected() (Snapshot, error) {
 	return snapshotFrom(index, "catalog-"+selection.SnapshotID, root), nil
 }
 
-// Resolve returns one retained snapshot's bundle root without using Source.
+// Resolve returns one retained snapshot root without using Source.
 func (s *Store) Resolve(snapshotID string) (string, error) {
 	if !commitPattern.MatchString(snapshotID) {
 		return "", fmt.Errorf("invalid Catalog Snapshot identity %q", snapshotID)
@@ -197,7 +194,7 @@ func (s *Store) Resolve(snapshotID string) (string, error) {
 	if index.Source.Repository != officialRepository || index.Source.Commit != snapshotID {
 		return "", fmt.Errorf("resolve Catalog Snapshot %s: index identity does not match", snapshotID)
 	}
-	return filepath.Join(root, "bundle"), nil
+	return root, nil
 }
 
 type selectionDocument struct {
@@ -317,60 +314,59 @@ func safeArchivePath(name string) bool {
 	if name == "" || strings.Contains(name, `\`) || filepath.IsAbs(name) || filepath.ToSlash(filepath.Clean(name)) != name {
 		return false
 	}
-	return name == "catalog-index.json" || strings.HasPrefix(name, "bundle/")
+	return name == "catalog-index.json" || strings.HasPrefix(name, "packs/")
 }
 
-func validateSnapshot(root string, release Release) (managedpack.CatalogSnapshotIndex, error) {
+func validateSnapshot(root string, release Release) (cataloglayout.CatalogSnapshotIndex, error) {
 	index, err := readIndex(root)
 	if err != nil {
-		return managedpack.CatalogSnapshotIndex{}, err
+		return cataloglayout.CatalogSnapshotIndex{}, err
 	}
-	if index.SchemaVersion != 1 {
-		return managedpack.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index schema_version must be 1; install a newer Packy engine if this snapshot uses a newer schema")
+	if index.SchemaVersion != 2 {
+		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index schema_version must be 2")
 	}
 	if index.Source.Repository != officialRepository || index.Source.Commit != release.Commit || release.Tag != "catalog-"+index.Source.Commit {
-		return managedpack.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index source, release tag, and commit identities do not match")
+		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index source, release tag, and commit identities do not match")
 	}
 	if !builderPattern.MatchString(index.Builder) || len(index.Packs) == 0 {
-		return managedpack.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index has invalid builder or empty catalog identity")
+		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index has invalid builder or empty catalog identity")
 	}
 	encodedPacks, err := json.Marshal(index.Packs)
 	if err != nil || digest(encodedPacks) != index.CatalogSHA256 {
-		return managedpack.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot catalog SHA-256 does not match Pack identities")
+		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot catalog SHA-256 does not match Pack identities")
 	}
-	expected := map[string]managedpack.FileRecord{"catalog-index.json": {Path: "catalog-index.json"}}
+	expected := map[string]cataloglayout.FileRecord{"catalog-index.json": {Path: "catalog-index.json"}}
 	for i, pack := range index.Packs {
 		if !idPattern.MatchString(pack.ID) || pack.Version == "" || i > 0 && index.Packs[i-1].ID >= pack.ID || len(pack.Files) == 0 {
-			return managedpack.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot Pack identities must be valid, sorted, and unique")
+			return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot Pack identities must be valid, sorted, and unique")
 		}
 		if digestFileIndex(pack.Files) != pack.ClosureSHA256 {
-			return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q closure SHA-256 does not match file identities", pack.ID)
+			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q closure SHA-256 does not match file identities", pack.ID)
 		}
-		manifest := "packs/" + pack.ID + "/pack.json"
 		manifestFound := false
 		for j, file := range pack.Files {
-			if !safeBundlePath(file.Path) || !digestPattern.MatchString(file.SHA256) || file.Mode != "100644" && file.Mode != "100755" || j > 0 && pack.Files[j-1].Path >= file.Path {
-				return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q has invalid file identities", pack.ID)
+			if !safeCatalogPath(file.Path) || !digestPattern.MatchString(file.SHA256) || file.Mode != "100644" && file.Mode != "100755" || j > 0 && pack.Files[j-1].Path >= file.Path {
+				return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q has invalid file identities", pack.ID)
 			}
-			archivePath := "bundle/" + file.Path
+			archivePath := "packs/" + pack.ID + "/" + file.Path
 			if _, duplicate := expected[archivePath]; duplicate {
-				return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot file %q has multiple owners", file.Path)
+				return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot file %q has multiple owners", file.Path)
 			}
 			expected[archivePath] = file
-			if file.Path == manifest && file.SHA256 == pack.ManifestSHA256 {
+			if file.Path == "pack.json" && file.SHA256 == pack.ManifestSHA256 {
 				manifestFound = true
 			}
 		}
 		if !manifestFound {
-			return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q manifest identity does not match", pack.ID)
+			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q manifest identity does not match", pack.ID)
 		}
 	}
 	actual, err := snapshotFiles(root)
 	if err != nil {
-		return managedpack.CatalogSnapshotIndex{}, err
+		return cataloglayout.CatalogSnapshotIndex{}, err
 	}
 	if len(actual) != len(expected) {
-		return managedpack.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot extracted files do not exactly match the index")
+		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot extracted files do not exactly match the index")
 	}
 	for name, record := range expected {
 		if name == "catalog-index.json" {
@@ -378,21 +374,20 @@ func validateSnapshot(root string, release Release) (managedpack.CatalogSnapshot
 		}
 		fact, ok := actual[name]
 		if !ok || fact.SHA256 != record.SHA256 || fact.Mode != record.Mode {
-			return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot file %q does not match its indexed identity", name)
+			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot file %q does not match its indexed identity", name)
 		}
 	}
-	bundle := filepath.Join(root, "bundle")
 	for _, pack := range index.Packs {
-		loaded, loadErr := capabilitypack.ValidatePackContent(bundle, pack.ID)
+		loaded, loadErr := capabilitypack.ValidatePackContent(root, pack.ID)
 		if loadErr != nil {
 			message := loadErr.Error()
 			if strings.Contains(message, "unknown field") || strings.Contains(message, "unsupported") || strings.Contains(message, "schema_version") {
-				return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q requires a newer Packy engine: %w", pack.ID, loadErr)
+				return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q requires a newer Packy engine: %w", pack.ID, loadErr)
 			}
-			return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("validate Catalog Snapshot Pack %q: %w", pack.ID, loadErr)
+			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("validate Catalog Snapshot Pack %q: %w", pack.ID, loadErr)
 		}
 		if loaded.ID != pack.ID || loaded.Version != pack.Version {
-			return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q manifest identity does not match index", pack.ID)
+			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q manifest identity does not match index", pack.ID)
 		}
 	}
 	return index, nil
@@ -428,7 +423,7 @@ func snapshotFiles(root string) (map[string]fileFact, error) {
 	return result, err
 }
 
-func safeBundlePath(name string) bool {
+func safeCatalogPath(name string) bool {
 	if name == "" || strings.Contains(name, `\`) || filepath.IsAbs(name) || filepath.ToSlash(filepath.Clean(name)) != name || name == "." || strings.HasPrefix(name, "../") {
 		return false
 	}
@@ -440,14 +435,14 @@ func safeBundlePath(name string) bool {
 	return true
 }
 
-func readIndex(root string) (managedpack.CatalogSnapshotIndex, error) {
+func readIndex(root string) (cataloglayout.CatalogSnapshotIndex, error) {
 	data, err := os.ReadFile(filepath.Join(root, "catalog-index.json"))
 	if err != nil {
-		return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("read Catalog Snapshot index: %w", err)
+		return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("read Catalog Snapshot index: %w", err)
 	}
-	var index managedpack.CatalogSnapshotIndex
+	var index cataloglayout.CatalogSnapshotIndex
 	if err := strictDecode(data, &index); err != nil {
-		return managedpack.CatalogSnapshotIndex{}, fmt.Errorf("decode Catalog Snapshot index: %w", err)
+		return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("decode Catalog Snapshot index: %w", err)
 	}
 	return index, nil
 }
@@ -501,13 +496,13 @@ func strictDecode(data []byte, value any) error {
 	return nil
 }
 
-func snapshotFrom(index managedpack.CatalogSnapshotIndex, tag, root string) Snapshot {
-	return Snapshot{ID: index.Source.Commit, Commit: index.Source.Commit, Tag: tag, BundleRoot: filepath.Join(root, "bundle"), Index: index}
+func snapshotFrom(index cataloglayout.CatalogSnapshotIndex, tag, root string) Snapshot {
+	return Snapshot{ID: index.Source.Commit, Commit: index.Source.Commit, Tag: tag, Root: root, Index: index}
 }
 
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
-func digestFileIndex(files []managedpack.FileRecord) string {
-	copyFiles := append([]managedpack.FileRecord(nil), files...)
+func digestFileIndex(files []cataloglayout.FileRecord) string {
+	copyFiles := append([]cataloglayout.FileRecord(nil), files...)
 	if !sort.SliceIsSorted(copyFiles, func(i, j int) bool { return copyFiles[i].Path < copyFiles[j].Path }) {
 		return ""
 	}

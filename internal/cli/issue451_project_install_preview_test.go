@@ -30,7 +30,7 @@ func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *t
 	opts.Getwd = func() (string, error) { return nested, nil }
 	beforeProject := snapshotTree(t, project)
 	beforeHome := snapshotTree(t, home)
-	beforeBundle := snapshotTree(t, fixture.bundleRoot)
+	beforeBundle := snapshotTree(t, fixture.catalogRoot)
 
 	structured, err := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--dry-run", "--json")
 	if err != nil {
@@ -76,10 +76,10 @@ func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *t
 	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {
 		t.Fatalf("preview is not deterministic: err=%v\nfirst=%s\nsecond=%s", repeatErr, structured, again)
 	}
-	if strings.Contains(human, project) || strings.Contains(structured, project) || strings.Contains(structured, home) || strings.Contains(structured, fixture.bundleRoot) {
+	if strings.Contains(human, project) || strings.Contains(structured, project) || strings.Contains(structured, home) || strings.Contains(structured, fixture.catalogRoot) {
 		t.Fatalf("preview disclosed workstation paths: %s", structured)
 	}
-	if len(runner.calls) != 0 || snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome || snapshotTree(t, fixture.bundleRoot) != beforeBundle {
+	if len(runner.calls) != 0 || snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome || snapshotTree(t, fixture.catalogRoot) != beforeBundle {
 		t.Fatalf("preview caused effects: calls=%v", runner.calls)
 	}
 }

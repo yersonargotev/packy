@@ -30,7 +30,7 @@ func TestOlderReceiptStatusPresentationsBeforeApply(t *testing.T) {
 				t.Fatalf("activate: %v\n%s", err, out)
 			}
 			candidate := pack.Candidate().WithExactCopyBytes(pack.OperationalResource().String(), ".", []byte("# Updated guidance\n\nNew catalog content.\n"))
-			if err := candidate.WriteBundle(fixture.bundleRoot); err != nil {
+			if err := candidate.WriteCatalog(fixture.catalogRoot); err != nil {
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, fixture.home)
@@ -107,7 +107,7 @@ func TestOlderReceiptStatusPresentationsBeforeApply(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(fixture.bundleRoot, "packs", pack.ID(), "pack.json"), manifestBytes, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(fixture.catalogRoot, "packs", pack.ID(), "pack.json"), manifestBytes, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			doctor, err := executeCommand(t, NewRootCommand(opts), "doctor")

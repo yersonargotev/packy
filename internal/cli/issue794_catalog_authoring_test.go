@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 )
 
 type authoringOriginResolver map[string]string
 
-func (r authoringOriginResolver) Resolve(_ context.Context, origin managedpack.Origin) (string, error) {
+func (r authoringOriginResolver) Resolve(_ context.Context, origin cataloglayout.Origin) (string, error) {
 	return r[origin.Repository+"@"+origin.Commit], nil
 }
 
@@ -23,7 +23,24 @@ type mutatingAuthoringResolver struct {
 	mutate   func()
 }
 
-func (r *mutatingAuthoringResolver) Resolve(_ context.Context, _ managedpack.Origin) (string, error) {
+func TestCatalogCreateCanAtomicallyCreateTheFirstPack(t *testing.T) {
+	project := t.TempDir()
+	if err := os.Mkdir(filepath.Join(project, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, err := executeCommand(t, NewRootCommand(Options{}),
+		"catalog", "create", "first-pack", "--project", project, "--template", "empty",
+		"--version", "1.0.0", "--description", "First reviewed Pack", "--surface", "codex",
+	)
+	if err != nil {
+		t.Fatalf("catalog create: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(project, "packs", "first-pack", "pack.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (r *mutatingAuthoringResolver) Resolve(_ context.Context, _ cataloglayout.Origin) (string, error) {
 	r.calls++
 	if r.calls == r.mutateAt {
 		r.mutate()
@@ -107,14 +124,14 @@ func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 		}
 	}
 
-	validation, err := managedpack.ValidateCatalogProject(context.Background(), project, "", opts.CatalogOriginResolver)
+	validation, err := cataloglayout.ValidateCatalogProject(context.Background(), project, "", opts.CatalogOriginResolver)
 	if err != nil {
 		t.Fatalf("resulting Catalog Project: %v", err)
 	}
 	if len(validation.Packs) != 2 {
 		t.Fatalf("validated Packs = %d, want 2", len(validation.Packs))
 	}
-	var imported managedpack.Manifest
+	var imported cataloglayout.Manifest
 	for _, pack := range validation.Packs {
 		if pack.Manifest.ID == "focus-pack" {
 			imported = pack.Manifest
@@ -123,10 +140,10 @@ func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 	if len(imported.Origins) != 1 || imported.Origins[0].Commit != commit || len(imported.Resources) != 2 {
 		t.Fatalf("imported provenance = origins %#v resources %#v", imported.Origins, imported.Resources)
 	}
-	if got := imported.Resources[1]; got.Origin == nil || got.Origin.Relationship != managedpack.RelationshipAdapted || len(got.Notices) != 1 || got.Notices[0] != "notice:focus-mit" {
+	if got := imported.Resources[1]; got.Origin == nil || got.Origin.Relationship != cataloglayout.RelationshipAdapted || len(got.Notices) != 1 || got.Notices[0] != "notice:focus-mit" {
 		t.Fatalf("imported skill provenance = %#v", got)
 	}
-	data, err := os.ReadFile(filepath.Join(project, "bundle", "skills", "focus-pack", "focus", "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(project, "packs", "focus-pack", "skills", "focus-pack", "focus", "SKILL.md"))
 	if err != nil || string(data) != "# Focus\n" {
 		t.Fatalf("imported resource = %q, %v", data, err)
 	}
@@ -142,7 +159,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 		CatalogOriginResolver: authoringOriginResolver{"example/guide@" + commit: origin},
 	}
 
-	before := snapshotTree(t, filepath.Join(project, "bundle"))
+	before := snapshotTree(t, filepath.Join(project, "packs"))
 	out, err := executeCommand(t, NewRootCommand(opts),
 		"catalog", "import", "seed",
 		"--project", project,
@@ -166,7 +183,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 			t.Fatalf("diagnostic missing %q: %v", want, err)
 		}
 	}
-	if after := snapshotTree(t, filepath.Join(project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(project, "packs")); after != before {
 		t.Fatalf("failed import changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 
@@ -189,7 +206,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 	if err == nil || !strings.Contains(err.Error(), `notice "notice:missing" does not exist`) {
 		t.Fatalf("invalid prepared import = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, filepath.Join(project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(project, "packs")); after != before {
 		t.Fatalf("validation failure changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
@@ -198,7 +215,7 @@ func TestCatalogImportRollsBackAWriteWhenTheManifestChanges(t *testing.T) {
 	project := writeAuthoringCatalog(t)
 	origin := t.TempDir()
 	writeAuthoringFile(t, filepath.Join(origin, "LICENSE"), "MIT License\n")
-	manifestPath := filepath.Join(project, "bundle", "packs", "seed", "pack.json")
+	manifestPath := filepath.Join(project, "packs", "seed", "pack.json")
 	resolver := &mutatingAuthoringResolver{root: origin, mutateAt: 2}
 	resolver.mutate = func() {
 		data, err := os.ReadFile(manifestPath)
@@ -231,7 +248,7 @@ func TestCatalogImportRollsBackAWriteWhenTheManifestChanges(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Catalog Project changed during preparation") {
 		t.Fatalf("late write import = error %v, output %s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(project, "bundle", "notices")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(project, "packs", "seed", "notices")); !os.IsNotExist(err) {
 		t.Fatalf("rollback left imported resource or parent directories: %v", err)
 	}
 	data, err := os.ReadFile(manifestPath)
@@ -242,7 +259,7 @@ func TestCatalogImportRollsBackAWriteWhenTheManifestChanges(t *testing.T) {
 
 func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
 	project := writeAuthoringCatalog(t)
-	before := snapshotTree(t, filepath.Join(project, "bundle"))
+	before := snapshotTree(t, filepath.Join(project, "packs"))
 	out, err := executeCommand(t, NewRootCommand(Options{}),
 		"catalog", "create", "../../escaped",
 		"--project", project,
@@ -254,7 +271,7 @@ func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Pack id must be lowercase kebab-case") {
 		t.Fatalf("path traversal create = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, filepath.Join(project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(project, "packs")); after != before {
 		t.Fatalf("rejected creation changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
@@ -266,7 +283,7 @@ func writeAuthoringCatalog(t *testing.T) string {
 		t.Fatal(err)
 	}
 	manifest := `{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "seed",
   "version": "1.0.0",
   "description": "Seed Pack",
@@ -278,7 +295,7 @@ func writeAuthoringCatalog(t *testing.T) string {
   "resources": []
 }
 `
-	writeAuthoringFile(t, filepath.Join(project, "bundle", "packs", "seed", "pack.json"), manifest)
+	writeAuthoringFile(t, filepath.Join(project, "packs", "seed", "pack.json"), manifest)
 	return project
 }
 

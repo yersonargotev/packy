@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yersonargotev/packy/internal/bundletransaction"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
 // SupportedSurfaces returns Packy's complete product-owned CLI surface set in
@@ -439,7 +439,7 @@ func (p Pack) ResourceCounts() ResourceCounts {
 
 type Catalog struct {
 	packs                 []Pack
-	bundleRoot            string
+	catalogRoot           string
 	snapshotID            string
 	resolveSnapshot       func(context.Context, string) (string, error)
 	entries               []catalogEntry
@@ -459,40 +459,40 @@ type CatalogDetail struct {
 	ResourceInventory []DescriptiveResource
 }
 
-// Discover loads the strict initial catalog from a Packy-owned bundle root.
-func Discover(ctx context.Context, bundleRoot string) (Catalog, error) {
-	return discoverProductionCatalog(ctx, bundleRoot, true, nil)
+// Discover loads the strict initial catalog from a Packy-owned catalog root.
+func Discover(ctx context.Context, catalogRoot string) (Catalog, error) {
+	return discoverProductionCatalog(ctx, catalogRoot, true, nil)
 }
 
 // DiscoverForDurableIntents retains the lifecycle-facing name while loading
 // only the current manifest generation.
-func DiscoverForDurableIntents(ctx context.Context, bundleRoot string) (Catalog, error) {
-	return discoverProductionCatalog(ctx, bundleRoot, false, nil)
+func DiscoverForDurableIntents(ctx context.Context, catalogRoot string) (Catalog, error) {
+	return discoverProductionCatalog(ctx, catalogRoot, false, nil)
 }
 
 // DiscoverValidatedForDurableIntents validates the selected source under the
-// bundle transaction before discovery and every subsequent catalog observation.
-// Validation must be read-only and must not acquire the bundle lock itself.
-func DiscoverValidatedForDurableIntents(ctx context.Context, bundleRoot string, validate func(context.Context) error) (Catalog, error) {
-	return discoverProductionCatalog(ctx, bundleRoot, false, validate)
+// catalog transaction before discovery and every subsequent catalog observation.
+// Validation must be read-only and must not acquire the catalog lock itself.
+func DiscoverValidatedForDurableIntents(ctx context.Context, catalogRoot string, validate func(context.Context) error) (Catalog, error) {
+	return discoverProductionCatalog(ctx, catalogRoot, false, validate)
 }
 
 // DiscoverRetainedForDurableIntents loads one immutable retained Catalog
 // Snapshot. Historical lifecycle reads resolve through the supplied snapshot
 // resolver instead of following the currently selected catalog.
-func DiscoverRetainedForDurableIntents(ctx context.Context, bundleRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
-	catalog, err := discoverProductionCatalog(ctx, bundleRoot, false, nil)
+func DiscoverRetainedForDurableIntents(ctx context.Context, catalogRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
+	catalog, err := discoverProductionCatalog(ctx, catalogRoot, false, nil)
 	if err != nil {
 		return Catalog{}, err
 	}
 	return configureRetainedCatalog(catalog, snapshotID, resolveSnapshot), nil
 }
 
-// discoverRetainedForDurableIntentsUnlocked reads a bundle root returned by a
+// discoverRetainedForDurableIntentsUnlocked reads a catalog root returned by a
 // validating immutable-snapshot resolver. Callers may already hold another
-// snapshot's observation lock, so this path must not acquire a bundle lock.
-func discoverRetainedForDurableIntentsUnlocked(bundleRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
-	catalog, err := discoverCurrentCatalogUnlocked(bundleRoot, false)
+// snapshot's observation lock, so this path must not acquire a catalog lock.
+func discoverRetainedForDurableIntentsUnlocked(catalogRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
+	catalog, err := discoverCurrentCatalogUnlocked(catalogRoot, false)
 	if err != nil {
 		return Catalog{}, err
 	}
@@ -508,20 +508,20 @@ func configureRetainedCatalog(catalog Catalog, snapshotID string, resolveSnapsho
 	return catalog
 }
 
-func discoverProductionCatalog(ctx context.Context, bundleRoot string, validateSources bool, validate func(context.Context) error) (Catalog, error) {
+func discoverProductionCatalog(ctx context.Context, catalogRoot string, validateSources bool, validate func(context.Context) error) (Catalog, error) {
 	var catalog Catalog
-	source := Catalog{bundleRoot: bundleRoot, validateSource: validate}
-	err := source.withBundleLock(ctx, func(locked Catalog) error {
+	source := Catalog{catalogRoot: catalogRoot, validateSource: validate}
+	err := source.withCatalogLock(ctx, func(locked Catalog) error {
 		var err error
-		catalog, err = discoverCurrentCatalogUnlocked(bundleRoot, validateSources)
+		catalog, err = discoverCurrentCatalogUnlocked(catalogRoot, validateSources)
 		catalog.validateSource = locked.validateSource
 		return err
 	})
 	return catalog, err
 }
 
-func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Catalog, error) {
-	entries, err := os.ReadDir(filepath.Join(bundleRoot, "packs"))
+func discoverCurrentCatalogUnlocked(catalogRoot string, validateSources bool) (Catalog, error) {
+	entries, err := os.ReadDir(filepath.Join(catalogRoot, "packs"))
 	if err != nil {
 		return Catalog{}, fmt.Errorf("read Pack catalog: %w", err)
 	}
@@ -531,8 +531,8 @@ func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Ca
 		if !entry.IsDir() {
 			return Catalog{}, fmt.Errorf("unexpected Pack catalog entry %q", entry.Name())
 		}
-		path := filepath.Join(bundleRoot, "packs", entry.Name(), "pack.json")
-		pack, err := LoadCurrentManifest(path, bundleRoot, validateSources)
+		path := filepath.Join(catalogRoot, "packs", entry.Name(), "pack.json")
+		pack, err := LoadCurrentManifest(path, filepath.Join(catalogRoot, "packs", entry.Name()), validateSources)
 		if err != nil {
 			return Catalog{}, err
 		}
@@ -547,17 +547,17 @@ func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Ca
 	}
 	sort.Slice(packs, func(i, j int) bool { return packs[i].ID < packs[j].ID })
 	sort.Slice(metadata, func(i, j int) bool { return metadata[i].ID < metadata[j].ID })
-	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: metadata, deferSourceValidation: !validateSources}, nil
+	return Catalog{packs: packs, catalogRoot: catalogRoot, entries: metadata, deferSourceValidation: !validateSources}, nil
 }
 
 func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
-	if c.bundleRoot == "" {
+	if c.catalogRoot == "" {
 		return c, nil
 	}
 	var refreshed Catalog
-	err := c.withBundleLock(ctx, func(locked Catalog) error {
+	err := c.withCatalogLock(ctx, func(locked Catalog) error {
 		var err error
-		refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
+		refreshed, err = discoverCurrentCatalogUnlocked(c.catalogRoot, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
 		refreshed.validateSource = locked.validateSource
 		refreshed.snapshotID = locked.snapshotID
@@ -570,11 +570,11 @@ func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
 	return refreshed, err
 }
 
-func (c Catalog) withBundleLock(ctx context.Context, observe func(Catalog) error) error {
-	if c.bundleRoot == "" || c.transactionHeld {
+func (c Catalog) withCatalogLock(ctx context.Context, observe func(Catalog) error) error {
+	if c.catalogRoot == "" || c.transactionHeld {
 		return observe(c)
 	}
-	return bundletransaction.WithExclusive(ctx, filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
+	return catalogtransaction.WithExclusive(ctx, filepath.Clean(c.catalogRoot), func() error {
 		c.transactionHeld = true
 		if c.validateSource != nil {
 			if err := c.validateSource(ctx); err != nil {
@@ -597,7 +597,7 @@ func (c Catalog) List() []Pack {
 // pack has passed the same fresh validation as ListCurrent.
 func (c Catalog) ListDetails(ctx context.Context) ([]CatalogDetail, error) {
 	var details []CatalogDetail
-	err := c.withBundleLock(ctx, func(locked Catalog) error {
+	err := c.withCatalogLock(ctx, func(locked Catalog) error {
 		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
@@ -627,7 +627,7 @@ func (c Catalog) ShowDetail(ctx context.Context, id string) (CatalogDetail, erro
 // passed the same source validation as direct current selection.
 func (c Catalog) ListCurrent(ctx context.Context) ([]Pack, error) {
 	var packs []Pack
-	err := c.withBundleLock(ctx, func(locked Catalog) error {
+	err := c.withCatalogLock(ctx, func(locked Catalog) error {
 		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
@@ -650,7 +650,7 @@ func (c Catalog) Show(ctx context.Context, id string) (Pack, error) {
 		return c.showUnlocked(id)
 	}
 	var pack Pack
-	err := c.withBundleLock(ctx, func(locked Catalog) error {
+	err := c.withCatalogLock(ctx, func(locked Catalog) error {
 		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
@@ -665,7 +665,7 @@ func (c Catalog) showUnlocked(id string) (Pack, error) {
 	for _, pack := range c.packs {
 		if pack.ID == id {
 			if c.deferSourceValidation {
-				if err := validatePackResourceSources(pack, c.bundleRoot); err != nil {
+				if err := validatePackResourceSources(pack, c.catalogRoot); err != nil {
 					return Pack{}, fmt.Errorf("invalid catalog-current pack %q: %w", id, err)
 				}
 			}
@@ -1454,16 +1454,17 @@ func sortedByID[T any](values []T, id func(T) string) bool {
 	return true
 }
 
-func validatePackResourceSources(pack Pack, bundleRoot string) error {
+func validatePackResourceSources(pack Pack, fallbackRoot string) error {
 	for _, resource := range pack.Resources {
+		root := resource.CatalogRootOr(fallbackRoot)
 		if resource.Kind == "skill" || resource.Kind == "instruction" || resource.Kind == "agent" || resource.Kind == "command" || resource.Kind == "asset" || resource.Kind == "notice" {
-			if err := validateSource(bundleRoot, resource); err != nil {
+			if err := validateSource(root, resource); err != nil {
 				return fmt.Errorf("resource %q source: %w", resource.Kind+":"+resource.ID, err)
 			}
 		}
 		for _, binding := range resource.Bindings {
 			for _, source := range binding.ReferencedSourcePaths() {
-				if err := validateSource(bundleRoot, Resource{Kind: "instruction", Source: source}); err != nil {
+				if err := validateSource(root, Resource{Kind: "instruction", Source: source}); err != nil {
 					return fmt.Errorf("resource %q surface capability source: %w", resource.Kind+":"+resource.ID, err)
 				}
 			}
@@ -1478,7 +1479,7 @@ func validateSourcePath(source string) error {
 	}
 	clean := filepath.Clean(source)
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%q escapes the bundle root", source)
+		return fmt.Errorf("%q escapes the catalog root", source)
 	}
 	return nil
 }
@@ -1517,7 +1518,7 @@ func validateSource(root string, resource Resource) error {
 	clean := filepath.Clean(source)
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return fmt.Errorf("resolve bundle root: %w", err)
+		return fmt.Errorf("resolve catalog root: %w", err)
 	}
 	resolved, err := filepath.EvalSymlinks(filepath.Join(root, clean))
 	if err != nil {
@@ -1525,7 +1526,7 @@ func validateSource(root string, resource Resource) error {
 	}
 	rel, err := filepath.Rel(resolvedRoot, resolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%q resolves outside the bundle root", source)
+		return fmt.Errorf("%q resolves outside the catalog root", source)
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {

@@ -10,10 +10,11 @@ import (
 )
 
 func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(t *testing.T) {
-	bundleRoot := t.TempDir()
-	manifestPath, manifestBytes := writeManagedCurrentManifestFixture(t, bundleRoot)
+	catalogRoot := t.TempDir()
+	manifestPath, manifestBytes := writeManagedCurrentManifestFixture(t, catalogRoot)
 
-	pack, err := LoadCurrentManifest(manifestPath, bundleRoot, true)
+	packRoot := filepath.Dir(manifestPath)
+	pack, err := LoadCurrentManifest(manifestPath, packRoot, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +40,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 	if got, want := pack.Resources, []Resource{
 		{
 			Kind: "instruction", ID: "guide", Source: "instructions/managed-loader.md",
-			catalogRoot: bundleRoot,
+			catalogRoot: packRoot,
 			Description: "Projects the managed guidance", Requires: []string{}, Conflicts: []string{},
 			RequiresTools: []string{}, Notices: []string{"notice:upstream-license"},
 			Bindings: []Binding{{
@@ -53,7 +54,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 		},
 		{
 			Kind: "notice", ID: "upstream-license", Source: "notices/upstream-license",
-			catalogRoot: bundleRoot,
+			catalogRoot: packRoot,
 			Description: "Preserves the upstream license", License: "MIT", Attribution: "Example Authors",
 			Requires: []string{}, Conflicts: []string{}, RequiresTools: []string{}, Bindings: []Binding{},
 			SurfaceExclusions: []SurfaceExclusion{},
@@ -72,9 +73,9 @@ func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
 		{
 			name: "wrong schema",
 			mutate: func(manifest string) string {
-				return strings.Replace(manifest, `"schema_version": 1`, `"schema_version": 2`, 1)
+				return strings.Replace(manifest, `"schema_version": 2`, `"schema_version": 1`, 1)
 			},
-			wantErr: "schema_version must be 1",
+			wantErr: "schema_version must be 2",
 		},
 		{
 			name: "legacy exclusions",
@@ -108,8 +109,8 @@ func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			bundleRoot := t.TempDir()
-			manifestPath, manifestBytes := writeManagedCurrentManifestFixture(t, bundleRoot)
+			catalogRoot := t.TempDir()
+			manifestPath, manifestBytes := writeManagedCurrentManifestFixture(t, catalogRoot)
 			invalid := test.mutate(string(manifestBytes))
 			if invalid == string(manifestBytes) {
 				t.Fatal("fixture mutation did not change the manifest")
@@ -118,7 +119,7 @@ func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err := LoadCurrentManifest(manifestPath, bundleRoot, false)
+			_, err := LoadCurrentManifest(manifestPath, filepath.Dir(manifestPath), false)
 			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("managed manifest error = %v, want %q", err, test.wantErr)
 			}
@@ -127,8 +128,8 @@ func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
 }
 
 func TestLoadCurrentManifestRejectsManifestWithoutManagedSchemaVersion(t *testing.T) {
-	bundleRoot := t.TempDir()
-	manifestPath := filepath.Join(bundleRoot, "packs", "missing-schema", "pack.json")
+	catalogRoot := t.TempDir()
+	manifestPath := filepath.Join(catalogRoot, "packs", "missing-schema", "pack.json")
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -136,18 +137,19 @@ func TestLoadCurrentManifestRejectsManifestWithoutManagedSchemaVersion(t *testin
 		t.Fatal(err)
 	}
 
-	_, err := LoadCurrentManifest(manifestPath, bundleRoot, true)
+	_, err := LoadCurrentManifest(manifestPath, filepath.Dir(manifestPath), true)
 	if err == nil || !strings.Contains(err.Error(), "Managed Pack schema_version is required") {
 		t.Fatalf("manifest error = %v, want missing Managed Pack schema_version", err)
 	}
 }
 
-func writeManagedCurrentManifestFixture(t *testing.T, bundleRoot string) (string, []byte) {
+func writeManagedCurrentManifestFixture(t *testing.T, catalogRoot string) (string, []byte) {
 	t.Helper()
-	manifestPath := filepath.Join(bundleRoot, "packs", "managed-loader", "pack.json")
+	manifestPath := filepath.Join(catalogRoot, "packs", "managed-loader", "pack.json")
+	packRoot := filepath.Dir(manifestPath)
 	for path, content := range map[string]string{
-		filepath.Join(bundleRoot, "instructions", "managed-loader.md"): "# Managed guidance\n",
-		filepath.Join(bundleRoot, "notices", "upstream-license"):       "MIT License\n",
+		filepath.Join(packRoot, "instructions", "managed-loader.md"): "# Managed guidance\n",
+		filepath.Join(packRoot, "notices", "upstream-license"):       "MIT License\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -160,7 +162,7 @@ func writeManagedCurrentManifestFixture(t *testing.T, bundleRoot string) (string
 		t.Fatal(err)
 	}
 	manifest := []byte(`{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "managed-loader",
   "version": "2.3.4",
   "description": "Managed loader fixture",

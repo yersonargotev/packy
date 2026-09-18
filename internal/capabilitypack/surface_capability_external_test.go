@@ -72,7 +72,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 					t.Fatal(err)
 				}
 				currentGuidance := "Updated shared project guidance from " + packID + "."
-				if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(currentGuidance+"\n"), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(updatedBundle, "packs", packID, "instructions", packID+".md"), []byte(currentGuidance+"\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
@@ -178,7 +178,7 @@ func TestOpenCodePrimaryPromptCapabilityIsPackIdentityIndependent(t *testing.T) 
 				t.Fatal(err)
 			}
 			updatedGuidance := "Updated primary guidance from " + packID + ".\n"
-			if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(updatedGuidance), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(updatedBundle, "packs", packID, "instructions", packID+".md"), []byte(updatedGuidance), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
@@ -259,12 +259,13 @@ func approvalsFor(t *testing.T, facade capabilitypack.Facade, plan capabilitypac
 
 func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
 	t.Helper()
+	packDir := filepath.Join(bundle, "packs", packID)
 	for _, resource := range []struct{ path, content string }{
 		{"skills/" + packID + "/SKILL.md", "# " + packID + "\n"},
 		{"skills/plain/SKILL.md", "# Plain\n"},
 		{"instructions/" + packID + ".md", "Primary guidance from " + packID + ".\n"},
 	} {
-		path := filepath.Join(bundle, resource.path)
+		path := filepath.Join(packDir, resource.path)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -272,12 +273,11 @@ func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
 			t.Fatal(err)
 		}
 	}
-	packDir := filepath.Join(bundle, "packs", packID)
 	if err := os.MkdirAll(packDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": %q,
   "version": "1.0.0",
   "description": "Synthetic OpenCode primary prompt tracer",
@@ -307,26 +307,26 @@ func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
 
 func writeProjectInstructionPack(t *testing.T, bundle, packID string, surface capabilitypack.Surface) {
 	t.Helper()
-	skill := filepath.Join(bundle, "skills", packID)
+	packDir := filepath.Join(bundle, "packs", packID)
+	skill := filepath.Join(packDir, "skills", packID)
 	if err := os.MkdirAll(skill, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("# "+packID+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	instruction := filepath.Join(bundle, "instructions", packID+".md")
+	instruction := filepath.Join(packDir, "instructions", packID+".md")
 	if err := os.MkdirAll(filepath.Dir(instruction), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(instruction, []byte("Shared project guidance from "+packID+".\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	packDir := filepath.Join(bundle, "packs", packID)
 	if err := os.MkdirAll(packDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": %q,
   "version": "1.0.0",
   "description": "Synthetic capability tracer",

@@ -78,7 +78,7 @@ drift report; its authority is limited to paths in the targeted receipt.
 ## Authoring the catalog
 
 The [Catalog Project](catalog-project.md) canonically authors every Pack at
-`bundle/packs/<pack-id>/pack.json` together with its reviewed bundle-relative
+`packs/<pack-id>/pack.json` together with its reviewed Pack-relative
 resources. Each Pack keeps one `pack.json` manifest. There is no separately
 maintained Pack registry and ordinary content changes do not require per-Pack
 releases or promotion into Packy.

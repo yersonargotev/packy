@@ -59,17 +59,17 @@ func claudeCompositeSkillBuilder(pack capabilitypack.Pack, resource capabilitypa
 	return nil
 }
 
-func claudeCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
+func claudeCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, catalogRoot string) (compositeSkill, error) {
 	builder := claudeCompositeSkillBuilder(pack, resource, binding)
 	if builder == nil {
 		return compositeSkill{}, errors.New("resource has no Claude composite skill translation")
 	}
-	return builder(pack, resource, binding, bundleRoot)
+	return builder(pack, resource, binding, catalogRoot)
 }
 
-// composeClaudeSkill is a pure translation: it reads selected bundle bytes but
+// composeClaudeSkill is a pure translation: it reads selected Pack bytes but
 // never interprets or executes skill content.
-func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
+func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, catalogRoot string) (compositeSkill, error) {
 	capability, ok := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill)
 	if !ok || capability.ClaudeCompositeSkill == nil {
 		return compositeSkill{}, errors.New("resource does not declare Claude composite skill capability")
@@ -80,7 +80,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" || binding.Name == "" {
 		return compositeSkill{}, errors.New("invalid Claude Claude skill binding")
 	}
-	source, err := safeBundlePath(resource.CatalogRootOr(bundleRoot), resource.Source)
+	source, err := safeCatalogPath(resource.CatalogRootOr(catalogRoot), resource.Source)
 	if err != nil {
 		return compositeSkill{}, err
 	}
@@ -120,7 +120,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 		if err != nil {
 			return compositeSkill{}, err
 		}
-		path, err := safeBundlePath(asset.CatalogRootOr(bundleRoot), asset.Source)
+		path, err := safeCatalogPath(asset.CatalogRootOr(catalogRoot), asset.Source)
 		if err != nil {
 			return compositeSkill{}, err
 		}
@@ -159,13 +159,13 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	return result, nil
 }
 
-func safeBundlePath(root, relative string) (string, error) {
+func safeCatalogPath(root, relative string) (string, error) {
 	if relative == "" || filepath.IsAbs(relative) || filepath.Clean(relative) != relative || relative == "." || strings.HasPrefix(filepath.ToSlash(relative), "../") {
 		return "", fmt.Errorf("unsafe Claude source path %q", relative)
 	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return "", fmt.Errorf("resolve Claude bundle root: %w", err)
+		return "", fmt.Errorf("resolve Claude catalog root: %w", err)
 	}
 	candidate := filepath.Join(root, filepath.FromSlash(relative))
 	resolved, err := filepath.EvalSymlinks(candidate)
@@ -174,7 +174,7 @@ func safeBundlePath(root, relative string) (string, error) {
 	}
 	within, err := filepath.Rel(canonicalRoot, resolved)
 	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
-		return "", fmt.Errorf("Claude source escapes bundle root %q", relative)
+		return "", fmt.Errorf("Claude source escapes catalog root %q", relative)
 	}
 	return candidate, nil
 }

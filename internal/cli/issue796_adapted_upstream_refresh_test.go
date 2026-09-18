@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 )
 
 func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T) {
@@ -16,7 +16,7 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md"), "shared\nold upstream\nretained\n")
 	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md"), "shared\nnew upstream\nretained\n")
 	maintained := "# Maintained adaptation\n"
-	writeAuthoringFile(t, filepath.Join(fixture.project, "bundle", "skills", "seed", "SKILL.md"), maintained)
+	writeAuthoringFile(t, filepath.Join(fixture.project, "packs", "seed", "skills", "seed", "SKILL.md"), maintained)
 	terminal := &fakeTerminal{interactive: true, approve: true}
 
 	out, err := executeCommand(t, NewRootCommand(Options{
@@ -50,11 +50,11 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 	if terminal.calls != 1 || !strings.Contains(terminal.prompts[0], "skill:seed") {
 		t.Fatalf("reconciliation prompts = %#v", terminal.prompts)
 	}
-	data, readErr := os.ReadFile(filepath.Join(fixture.project, "bundle", "skills", "seed", "SKILL.md"))
+	data, readErr := os.ReadFile(filepath.Join(fixture.project, "packs", "seed", "skills", "seed", "SKILL.md"))
 	if readErr != nil || string(data) != maintained {
 		t.Fatalf("maintained adaptation = %q, %v", data, readErr)
 	}
-	exact, readErr := os.ReadFile(filepath.Join(fixture.project, "bundle", "instructions", "guide.md"))
+	exact, readErr := os.ReadFile(filepath.Join(fixture.project, "packs", "seed", "instructions", "guide.md"))
 	if readErr != nil || string(exact) != "new exact copy\n" {
 		t.Fatalf("refreshed exact copy = %q, %v", exact, readErr)
 	}
@@ -62,7 +62,7 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 	if manifest.Version != "1.1.0" || manifest.Origins[0].Commit != fixture.newCommit {
 		t.Fatalf("refreshed manifest = version %q origins %#v", manifest.Version, manifest.Origins)
 	}
-	var adapted managedpack.Resource
+	var adapted cataloglayout.Resource
 	for _, resource := range manifest.Resources {
 		if resource.Kind == "skill" && resource.ID == "seed" {
 			adapted = resource
@@ -74,10 +74,10 @@ func TestCatalogUpstreamRefreshReconcilesAdaptedResourceExplicitly(t *testing.T)
 }
 
 func TestCatalogUpstreamRefreshDoesNotPromptForIncompleteAdaptationDiff(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipAdapted)
 	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md"), strings.Repeat("old upstream line\n", 5000))
 	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md"), strings.Repeat("new upstream line\n", 5000))
-	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	before := snapshotTree(t, filepath.Join(fixture.project, "packs"))
 	terminal := &fakeTerminal{interactive: true, approve: true}
 
 	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver, Terminal: terminal}),
@@ -89,13 +89,13 @@ func TestCatalogUpstreamRefreshDoesNotPromptForIncompleteAdaptationDiff(t *testi
 	if terminal.calls != 0 {
 		t.Fatalf("incomplete diff prompted %d times", terminal.calls)
 	}
-	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(fixture.project, "packs")); after != before {
 		t.Fatalf("incomplete diff changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
 func TestCatalogUpstreamRefreshShowsChangedFinalNewline(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipAdapted)
 	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md"), "same line")
 	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md"), "same line\n")
 	terminal := &fakeTerminal{interactive: true, approve: true}
@@ -137,7 +137,7 @@ func TestCatalogUpstreamRefreshDistinguishesAddedAndRemovedEmptyUpstreamFiles(t 
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+			fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipAdapted)
 			test.prepare(t, fixture)
 			terminal := &fakeTerminal{interactive: true, approve: true}
 
@@ -155,7 +155,7 @@ func TestCatalogUpstreamRefreshDistinguishesAddedAndRemovedEmptyUpstreamFiles(t 
 }
 
 func TestCatalogUpstreamRefreshShowsUpstreamFileModeChanges(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipAdapted)
 	oldPath := filepath.Join(fixture.oldRoot, "skills", "seed", "SKILL.md")
 	newPath := filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md")
 	writeAuthoringFile(t, oldPath, "same upstream bytes\n")
@@ -180,7 +180,7 @@ func TestCatalogUpstreamRefreshShowsUpstreamFileModeChanges(t *testing.T) {
 
 func TestCatalogUpstreamRefreshLeavesMixedRequestUnappliedOnFailure(t *testing.T) {
 	fixture := writeMixedUpstreamRefreshFixture(t, false)
-	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	before := snapshotTree(t, filepath.Join(fixture.project, "packs"))
 	terminal := &fakeTerminal{interactive: true, approve: true}
 
 	out, err := executeCommand(t, NewRootCommand(Options{
@@ -199,24 +199,24 @@ func TestCatalogUpstreamRefreshLeavesMixedRequestUnappliedOnFailure(t *testing.T
 	if terminal.calls != 1 {
 		t.Fatalf("reconciliation prompt calls = %d", terminal.calls)
 	}
-	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(fixture.project, "packs")); after != before {
 		t.Fatalf("failed mixed refresh changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
 func writeMixedUpstreamRefreshFixture(t *testing.T, includeNewExactCopy bool) upstreamRefreshFixture {
 	t.Helper()
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipAdapted)
 	writeAuthoringFile(t, filepath.Join(fixture.oldRoot, "guide.md"), "old exact copy\n")
-	writeAuthoringFile(t, filepath.Join(fixture.project, "bundle", "instructions", "guide.md"), "old exact copy\n")
+	writeAuthoringFile(t, filepath.Join(fixture.project, "packs", "seed", "instructions", "guide.md"), "old exact copy\n")
 	if includeNewExactCopy {
 		writeAuthoringFile(t, filepath.Join(fixture.newRoot, "guide.md"), "new exact copy\n")
 	}
 	manifest := readUpstreamRefreshManifest(t, fixture.project)
-	manifest.Resources = append([]managedpack.Resource{{
+	manifest.Resources = append([]cataloglayout.Resource{{
 		Kind: "instruction", ID: "guide", Source: "instructions/guide.md", Description: "Exact guidance",
 		Requires: []string{}, Conflicts: []string{}, Notices: []string{"notice:seed"},
-		Origin:            &managedpack.ResourceOrigin{ID: "upstream", Path: "guide.md", Relationship: managedpack.RelationshipExactCopy},
+		Origin:            &cataloglayout.ResourceOrigin{ID: "upstream", Path: "guide.md", Relationship: cataloglayout.RelationshipExactCopy},
 		Bindings:          []capabilitypack.Binding{{Surface: "codex", Projection: "instruction", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "shared", Capabilities: []capabilitypack.SurfaceCapability{}}},
 		SurfaceExclusions: []capabilitypack.SurfaceExclusion{},
 	}}, manifest.Resources...)
@@ -224,6 +224,6 @@ func writeMixedUpstreamRefreshFixture(t *testing.T, includeNewExactCopy bool) up
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeAuthoringFile(t, filepath.Join(fixture.project, "bundle", "packs", "seed", "pack.json"), string(data)+"\n")
+	writeAuthoringFile(t, filepath.Join(fixture.project, "packs", "seed", "pack.json"), string(data)+"\n")
 	return fixture
 }

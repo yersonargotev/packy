@@ -24,7 +24,7 @@ func TestGlobalUpdateContractDiffPresentations(t *testing.T) {
 			}
 			for _, historical := range []bool{false, true} {
 				if historical {
-					if err := pack.Candidate().WriteBundle(fixture.bundleRoot); err != nil {
+					if err := pack.Candidate().WriteCatalog(fixture.catalogRoot); err != nil {
 						t.Fatal(err)
 					}
 				}

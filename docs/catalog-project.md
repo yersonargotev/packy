@@ -14,23 +14,25 @@ availability. Existing activations keep their retained snapshot until the user
 explicitly runs `packy update <pack> --surface <surface>`, and newly published
 Packs remain inactive until explicitly activated.
 
-The project preserves Packy's bundle-relative layout:
+Each Pack owns one self-contained directory:
 
 ```text
-bundle/
-  packs/<pack-id>/pack.json
-  agents/
-  assets/
-  commands/
-  instructions/
-  notices/
-  skills/
+packs/
+  <pack-id>/
+    pack.json
+    agents/
+    assets/
+    commands/
+    instructions/
+    notices/
+    skills/
 ```
 
-The validator discovers manifests only at `bundle/packs/*/pack.json`; there is
+The validator discovers manifests only at `packs/*/pack.json`; there is
 no handwritten registry. Each manifest and the deterministic union of its
 resource and typed capability source roots form its Declared Pack Closure.
-Distinct Packs cannot own the same closure path.
+Every source is relative to its Pack root, so distinct Packs may use the same
+relative path without sharing physical files. Undeclared files are rejected.
 
 ## CLI authoring
 
@@ -74,10 +76,11 @@ existing notice with `--notice`. Standard upstream notice filenames are
 detected only to improve missing-information diagnostics. They are never used
 to infer licensing, resource kinds, destinations, hosts, or relationships.
 
-Each operation stages the complete `bundle/`, validates the resulting Catalog
-Project, and only then atomically exchanges the complete prepared bundle into
-the Git worktree. A rejected or interrupted operation never exposes a partial
-Catalog Project. These commands never publish a Catalog Snapshot.
+Each operation stages only the affected Pack, composes it with the unchanged
+worktree Packs for whole-catalog validation, and then atomically exchanges only
+`packs/<pack-id>`. Packy rechecks the complete `packs/` identity before the
+exchange, so a concurrent catalog change aborts without exposing a partial
+result. These commands never publish a Catalog Snapshot.
 
 Refresh every exact-copy resource for one Pack origin by selecting the new
 upstream commit and the Pack's new version:
@@ -97,7 +100,7 @@ differences for every adapted resource. In an interactive terminal, the
 maintainer must explicitly confirm that each maintained adaptation reconciles
 those changes; a declined or non-interactive request remains unapplied.
 
-After reconciliation, Packy replaces all exact copies in the staged bundle
+After reconciliation, Packy replaces all exact copies in the staged Pack
 while preserving every maintained adaptation, its notices, and its provenance.
 It updates the origin commit and Pack version, then validates the complete
 Catalog Project before applying it atomically. Any unresolved adaptation,
@@ -143,7 +146,7 @@ A successful validation of a reviewed merge on the Catalog Project's protected
 uses Packy's pinned `catalogsnapshot` tool to build exactly two files:
 
 - `catalog-snapshot.tar.gz`, containing `catalog-index.json` and the complete
-  deterministic union of every declared Pack closure under `bundle/`; and
+  deterministic union of every declared Pack closure under `packs/<pack-id>/`; and
 - `SHA256SUMS`, containing the archive's SHA-256 digest.
 
 The index records the full Catalog Project commit, exact Packy builder commit,

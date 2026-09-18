@@ -6,12 +6,12 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 )
 
 type originResolver map[string]string
 
-func (r originResolver) Resolve(_ context.Context, origin managedpack.Origin) (string, error) {
+func (r originResolver) Resolve(_ context.Context, origin cataloglayout.Origin) (string, error) {
 	return r[origin.ID], nil
 }
 
@@ -44,7 +44,7 @@ func TestProvenanceSafeMutationsRemainValidManagedProjects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := managedpack.ValidateProject(context.Background(), projectRoot, originResolver(origins)); err != nil {
+			if _, err := cataloglayout.ValidateProject(context.Background(), projectRoot, originResolver(origins)); err != nil {
 				t.Fatalf("ValidateProject() error = %v", err)
 			}
 			resource := test.fixture.Manifest().Resources[0]
@@ -67,9 +67,9 @@ func TestEveryRoleWritesAValidCurrentBundle(t *testing.T) {
 	first, second := testsupport.CollisionPair("collision-alpha", "collision-beta")
 	fixtures = append(fixtures, first, second)
 
-	bundleRoot := t.TempDir()
+	catalogRoot := t.TempDir()
 	for i, fixture := range fixtures {
-		if err := fixture.WriteBundle(bundleRoot); err != nil {
+		if err := fixture.WriteCatalog(catalogRoot); err != nil {
 			t.Fatal(err)
 		}
 		projectRoot, originsRoot := t.TempDir(), t.TempDir()
@@ -77,11 +77,11 @@ func TestEveryRoleWritesAValidCurrentBundle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := managedpack.ValidateProject(context.Background(), projectRoot, originResolver(origins)); err != nil {
+		if _, err := cataloglayout.ValidateProject(context.Background(), projectRoot, originResolver(origins)); err != nil {
 			t.Fatalf("ValidateProject() synthetic role %d error = %v", i, err)
 		}
 	}
-	if _, err := capabilitypack.Discover(context.Background(), bundleRoot); err != nil {
+	if _, err := capabilitypack.Discover(context.Background(), catalogRoot); err != nil {
 		t.Fatalf("Discover() synthetic role bundle error = %v", err)
 	}
 }

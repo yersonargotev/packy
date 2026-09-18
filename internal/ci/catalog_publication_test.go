@@ -279,7 +279,8 @@ func issue798Digest(data []byte) string {
 func writePublicationCatalogPack(t *testing.T, root, id, version, content string) {
 	t.Helper()
 	source := filepath.Join("skills", id)
-	resource := filepath.Join(root, "bundle", source, "SKILL.md")
+	packRoot := filepath.Join(root, "packs", id)
+	resource := filepath.Join(packRoot, source, "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(resource), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +288,7 @@ func writePublicationCatalogPack(t *testing.T, root, id, version, content string
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": %q,
   "version": %q,
   "description": "Publication fixture",
@@ -316,7 +317,7 @@ func writePublicationCatalogPack(t *testing.T, root, id, version, content string
   }]
 }
 `, id, version, id, source, id, "$"+id)
-	manifestPath := filepath.Join(root, "bundle", "packs", id, "pack.json")
+	manifestPath := filepath.Join(packRoot, "pack.json")
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatal(err)
 	}

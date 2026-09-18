@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 )
 
@@ -37,7 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer resolver.Close()
 
-	validation, err := managedpack.ValidateCatalogProject(
+	validation, err := cataloglayout.ValidateCatalogProject(
 		context.Background(), *project, *baseline,
 		resolver,
 	)

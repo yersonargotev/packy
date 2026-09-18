@@ -40,7 +40,7 @@ func TestIssue761GlobalApplyReportsSelectedPackProjectionCount(t *testing.T) {
 	if len(state.Ownership) != 2 {
 		t.Fatalf("multi-Pack activation ownership = %#v, want two Pack-scoped facts", state.Ownership)
 	}
-	if err := second.Candidate().WriteBundle(fixture.bundleRoot); err != nil {
+	if err := second.Candidate().WriteCatalog(fixture.catalogRoot); err != nil {
 		t.Fatal(err)
 	}
 	output, err = executeCommand(t, NewRootCommand(fixture.options), "update", second.ID(), "--surface", "codex")

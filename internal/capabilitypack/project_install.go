@@ -205,7 +205,7 @@ func (f Facade) CheckProjectInstallFreshness(ctx context.Context, preview JSONPr
 }
 
 func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
 		return locked.previewProjectInstall(ctx, request, adapter)
 	})
 }
@@ -213,7 +213,7 @@ func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstal
 // PreviewProjectUpdate updates one project Pack surface to the current bundled
 // version, preserving its selected intent unless a replacement is supplied.
 func (f Facade) PreviewProjectUpdate(ctx context.Context, request ProjectUpdateRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
+	return withCatalogObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
 		return locked.previewProjectUpdate(ctx, request, adapter)
 	})
 }

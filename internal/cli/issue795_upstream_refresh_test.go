@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yersonargotev/packy/internal/managedpack"
+	"github.com/yersonargotev/packy/internal/cataloglayout"
 )
 
 func TestCatalogUpstreamRefreshUpdatesExactCopiesAndProvenance(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipExactCopy)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipExactCopy)
 
 	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver}),
 		"catalog", "upstream-refresh", "seed",
@@ -35,7 +35,7 @@ func TestCatalogUpstreamRefreshUpdatesExactCopiesAndProvenance(t *testing.T) {
 			t.Fatalf("refresh output missing %q: %s", want, out)
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(fixture.project, "bundle", "skills", "seed", "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(fixture.project, "packs", "seed", "skills", "seed", "SKILL.md"))
 	if err != nil || string(data) != "# New upstream\n" {
 		t.Fatalf("refreshed resource = %q, %v", data, err)
 	}
@@ -46,9 +46,9 @@ func TestCatalogUpstreamRefreshUpdatesExactCopiesAndProvenance(t *testing.T) {
 }
 
 func TestCatalogUpstreamRefreshRejectsUnexpectedExactCopyChanges(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipExactCopy)
-	writeAuthoringFile(t, filepath.Join(fixture.project, "bundle", "skills", "seed", "SKILL.md"), "# Local edit\n")
-	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipExactCopy)
+	writeAuthoringFile(t, filepath.Join(fixture.project, "packs", "seed", "skills", "seed", "SKILL.md"), "# Local edit\n")
+	before := snapshotTree(t, filepath.Join(fixture.project, "packs"))
 
 	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver}),
 		"catalog", "upstream-refresh", "seed",
@@ -60,15 +60,15 @@ func TestCatalogUpstreamRefreshRejectsUnexpectedExactCopyChanges(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "exact-copy") {
 		t.Fatalf("locally modified refresh = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(fixture.project, "packs")); after != before {
 		t.Fatalf("rejected refresh changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
 func TestCatalogUpstreamRefreshLeavesProjectUnchangedOnAcquisitionFailure(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipExactCopy)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipExactCopy)
 	resolver := failingRefreshResolver{delegate: fixture.resolver, commit: fixture.newCommit}
-	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	before := snapshotTree(t, filepath.Join(fixture.project, "packs"))
 
 	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: resolver}),
 		"catalog", "upstream-refresh", "seed",
@@ -80,18 +80,18 @@ func TestCatalogUpstreamRefreshLeavesProjectUnchangedOnAcquisitionFailure(t *tes
 	if err == nil || !strings.Contains(err.Error(), "resolve selected upstream commit") {
 		t.Fatalf("failed acquisition = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(fixture.project, "packs")); after != before {
 		t.Fatalf("acquisition failure changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
 func TestCatalogUpstreamRefreshLeavesProjectUnchangedOnValidationFailure(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipExactCopy)
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipExactCopy)
 	if err := os.Remove(filepath.Join(fixture.newRoot, "skills", "seed", "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
 	writeAuthoringFile(t, filepath.Join(fixture.newRoot, "skills", "seed", "README.md"), "missing skill entrypoint\n")
-	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	before := snapshotTree(t, filepath.Join(fixture.project, "packs"))
 
 	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver}),
 		"catalog", "upstream-refresh", "seed",
@@ -103,14 +103,14 @@ func TestCatalogUpstreamRefreshLeavesProjectUnchangedOnValidationFailure(t *test
 	if err == nil || !strings.Contains(err.Error(), "validate prepared Catalog Project") || !strings.Contains(err.Error(), "missing SKILL.md") {
 		t.Fatalf("failed validation = error %v, output %s", err, out)
 	}
-	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(fixture.project, "packs")); after != before {
 		t.Fatalf("validation failure changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
 func TestCatalogUpstreamRefreshRejectsAdaptedResourcesWithoutChanges(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipAdapted)
-	before := snapshotTree(t, filepath.Join(fixture.project, "bundle"))
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipAdapted)
+	before := snapshotTree(t, filepath.Join(fixture.project, "packs"))
 
 	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver}),
 		"catalog", "upstream-refresh", "seed",
@@ -127,14 +127,14 @@ func TestCatalogUpstreamRefreshRejectsAdaptedResourcesWithoutChanges(t *testing.
 			t.Fatalf("unresolved adaptation output missing %q: %s", want, out)
 		}
 	}
-	if after := snapshotTree(t, filepath.Join(fixture.project, "bundle")); after != before {
+	if after := snapshotTree(t, filepath.Join(fixture.project, "packs")); after != before {
 		t.Fatalf("adapted rejection changed Catalog Project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
 func TestCatalogUpstreamRefreshPreservesConcurrentCatalogChange(t *testing.T) {
-	fixture := writeUpstreamRefreshFixture(t, managedpack.RelationshipExactCopy)
-	manifestPath := filepath.Join(fixture.project, "bundle", "packs", "seed", "pack.json")
+	fixture := writeUpstreamRefreshFixture(t, cataloglayout.RelationshipExactCopy)
+	manifestPath := filepath.Join(fixture.project, "packs", "seed", "pack.json")
 	resolver := &concurrentRefreshResolver{delegate: fixture.resolver, commit: fixture.newCommit}
 	resolver.mutate = func() {
 		data, err := os.ReadFile(manifestPath)
@@ -160,7 +160,7 @@ func TestCatalogUpstreamRefreshPreservesConcurrentCatalogChange(t *testing.T) {
 	if readErr != nil || !strings.HasSuffix(string(data), "\n\n") {
 		t.Fatalf("concurrent manifest change was not preserved: %q, %v", data, readErr)
 	}
-	resource, readErr := os.ReadFile(filepath.Join(fixture.project, "bundle", "skills", "seed", "SKILL.md"))
+	resource, readErr := os.ReadFile(filepath.Join(fixture.project, "packs", "seed", "skills", "seed", "SKILL.md"))
 	if readErr != nil || string(resource) != "# Old upstream\n" {
 		t.Fatalf("rejected refresh changed resource: %q, %v", resource, readErr)
 	}
@@ -172,7 +172,7 @@ type upstreamRefreshFixture struct {
 	resolver                  authoringOriginResolver
 }
 
-func writeUpstreamRefreshFixture(t *testing.T, relationship managedpack.Relationship) upstreamRefreshFixture {
+func writeUpstreamRefreshFixture(t *testing.T, relationship cataloglayout.Relationship) upstreamRefreshFixture {
 	t.Helper()
 	project := t.TempDir()
 	if err := os.Mkdir(filepath.Join(project, ".git"), 0o700); err != nil {
@@ -182,10 +182,10 @@ func writeUpstreamRefreshFixture(t *testing.T, relationship managedpack.Relation
 	oldCommit, newCommit := strings.Repeat("d", 40), strings.Repeat("e", 40)
 	writeAuthoringFile(t, filepath.Join(oldRoot, "skills", "seed", "SKILL.md"), "# Old upstream\n")
 	writeAuthoringFile(t, filepath.Join(newRoot, "skills", "seed", "SKILL.md"), "# New upstream\n")
-	writeAuthoringFile(t, filepath.Join(project, "bundle", "skills", "seed", "SKILL.md"), "# Old upstream\n")
-	writeAuthoringFile(t, filepath.Join(project, "bundle", "notices", "seed"), "Catalog-authored notice\n")
+	writeAuthoringFile(t, filepath.Join(project, "packs", "seed", "skills", "seed", "SKILL.md"), "# Old upstream\n")
+	writeAuthoringFile(t, filepath.Join(project, "packs", "seed", "notices", "seed"), "Catalog-authored notice\n")
 	manifest := `{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "seed",
   "version": "1.0.0",
   "description": "Seed Pack",
@@ -220,7 +220,7 @@ func writeUpstreamRefreshFixture(t *testing.T, relationship managedpack.Relation
   }]
 }
 `
-	writeAuthoringFile(t, filepath.Join(project, "bundle", "packs", "seed", "pack.json"), manifest)
+	writeAuthoringFile(t, filepath.Join(project, "packs", "seed", "pack.json"), manifest)
 	return upstreamRefreshFixture{
 		project: project, oldRoot: oldRoot, newRoot: newRoot,
 		oldCommit: oldCommit, newCommit: newCommit,
@@ -231,13 +231,13 @@ func writeUpstreamRefreshFixture(t *testing.T, relationship managedpack.Relation
 	}
 }
 
-func readUpstreamRefreshManifest(t *testing.T, project string) managedpack.Manifest {
+func readUpstreamRefreshManifest(t *testing.T, project string) cataloglayout.Manifest {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(project, "bundle", "packs", "seed", "pack.json"))
+	data, err := os.ReadFile(filepath.Join(project, "packs", "seed", "pack.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var manifest managedpack.Manifest
+	var manifest cataloglayout.Manifest
 	err = json.Unmarshal(data, &manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ type failingRefreshResolver struct {
 	commit   string
 }
 
-func (r failingRefreshResolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
+func (r failingRefreshResolver) Resolve(ctx context.Context, origin cataloglayout.Origin) (string, error) {
 	if origin.Commit == r.commit {
 		return "", errors.New("upstream unavailable")
 	}
@@ -264,7 +264,7 @@ type concurrentRefreshResolver struct {
 	mutated  bool
 }
 
-func (r *concurrentRefreshResolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
+func (r *concurrentRefreshResolver) Resolve(ctx context.Context, origin cataloglayout.Origin) (string, error) {
 	if origin.Commit == r.commit && !r.mutated {
 		r.mutated = true
 		r.mutate()

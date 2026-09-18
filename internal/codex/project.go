@@ -92,7 +92,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		projectInstruction, hasProjectInstruction := resource.SurfaceCapability(capabilitypack.SurfaceCodex, capabilitypack.SurfaceCapabilityProjectInstruction)
 		if hasProjectInstruction {
 			data := projectInstruction.ProjectInstruction
-			content, err := os.ReadFile(filepath.Join(a.bundleRoot, data.Source))
+			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(a.catalogRoot), data.Source))
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read project instruction capability %q source: %w", data.ID, err)
 			}
@@ -146,7 +146,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			continue
 		}
 		target := filepath.Join(projectRoot, ".agents", "skills", bindingName)
-		source := filepath.Join(a.bundleRoot, resource.Source)
+		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
 		desired, err := localprojection.FingerprintCopiedTree(source)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint %s source: %w", identity, err)
