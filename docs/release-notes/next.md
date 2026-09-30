@@ -25,9 +25,17 @@ or reinstalling active Packs.
 
 ```sh
 brew upgrade yersonargotev/tap/packy
-packy activate emil --surface codex --alias skill:prototype=emil-prototype
 ```
 
-New installations may use `brew install yersonargotev/tap/packy`, then
-`packy init` to acquire the current Catalog Snapshot. Claude Code **2.1.203 or
-newer** remains the supported floor.
+For a new installation, acquire the current Catalog Snapshot, inspect available
+Packs, and explicitly activate the Pack you want:
+
+```sh
+brew install yersonargotev/tap/packy
+packy init
+packy list
+packy activate engram --surface codex --dry-run
+packy activate engram --surface codex
+```
+
+Claude Code **2.1.203 or newer** remains the supported floor.
