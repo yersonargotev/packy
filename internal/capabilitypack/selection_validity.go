@@ -226,7 +226,7 @@ func selectPackResourcesForSurface(pack Pack, selection ResourceSelection, surfa
 		return Pack{}, err
 	}
 	selected := clonePack(pack)
-	selected.Resources = originalSurfaceResources(pack, resources)
+	selected.Resources = originalSurfaceResources(selected, resources)
 	return selected, nil
 }
 
@@ -240,7 +240,7 @@ func selectSurfacePackResourceClosure(original, expanded Pack, selection Resourc
 		return Pack{}, err
 	}
 	selected := clonePack(original)
-	selected.Resources = originalSurfaceResources(original, resources)
+	selected.Resources = originalSurfaceResources(selected, resources)
 	return selected, nil
 }
 
