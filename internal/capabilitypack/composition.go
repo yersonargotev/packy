@@ -97,6 +97,7 @@ func (c composition) identityDigest() string {
 }
 
 func resourceWithSurfaceAlias(resource Resource, aliases []SurfaceAlias, surface Surface) Resource {
+	resource.Bindings = append([]Binding(nil), resource.Bindings...)
 	for i := range resource.Bindings {
 		binding := &resource.Bindings[i]
 		if binding.Surface != surface {
