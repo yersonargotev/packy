@@ -177,6 +177,20 @@ This is evidence of a real body-relative auxiliary read under that explicit
 permission baseline, not proof that ordinary launches grant the same access.
 No successful inference or completed skill workflow occurred.
 
+A final project-only probe on the same installed `2.1.220` binary used one
+Claude project `same-name` skill, no Claude global skill, and divergent
+Codex/OpenCode bodies in both scopes. Actual `/same-name` dispatch selected
+`project/.claude/skills/same-name/SKILL.md` and expanded
+`CLAUDE_PROJECT_BODY_824`. Native dynamic context with `allowed-tools: Bash(cat *)`
+read the helper and inserted `Auxiliary content: CLAUDE_PROJECT_AUXILIARY_824`
+into the recorded request. No foreign marker appeared. This project-local read
+needed no `--add-dir` grant. Machine assertions for body selection, helper
+content, foreign-body absence, and intentional transport rejection passed.
+The recorder again deliberately returned HTTP 400 and the CLI exited one:
+pre-inference dispatch/read succeeded, but no model response or successful
+semantic workflow is claimed. The isolated fixture provided no real credential
+or user configuration and made no repository changes.
+
 In this installed version, `--bare` initialization omitted custom skills from
 inventory. Discovery assertions therefore used normal mode with isolated
 configuration and fake local-only authentication, not `--bare` output.
@@ -193,11 +207,10 @@ and [SDK initialization protocol implementation](https://github.com/anthropics/c
 | Native Codex/Claude discovery | Actual installed binaries; both scopes observed. |
 | OpenCode native and compatibility discovery | Actual installed binary; both scopes observed. |
 | OpenCode isolation flag | Only the explicitly configured probe process. |
-| Claude body selection | Global body expanded before inference. |
-| Claude auxiliary consumption | Global dynamic context with explicit additional-directory permission. |
+| Claude body selection | Native global/project bodies expanded in separate pre-inference probes. |
+| Claude auxiliary consumption | Global dynamic context with explicit additional-directory permission; project dynamic context with declared Bash permission. Both intentionally ended with HTTP 400 / CLI exit one before inference. |
 | Codex body/helper dispatch | Both scopes, real native dispatch and shell read; deterministic local provider, no inference. |
 | OpenCode body/helper dispatch | Both scopes, actual skill/read tools; explicit external-discovery disabling flag, no inference. |
-| Claude project auxiliary consumption | Not verified. |
 | Latest stable Claude/OpenCode behavior | Source/docs evidence only; binaries not exercised. |
 | Successful model-backed workflows | Not performed for any host. |
 | All worktrees, configured custom roots, or launch contexts | Not established by these fixtures. |

@@ -61,10 +61,12 @@ compatibility discovery. Separate global/project Codex runs dispatched the
 native body and executed a helper read. Separate global/project OpenCode runs
 loaded the native body and read its helper under the explicit external-skills
 disabling flag. Local deterministic providers requested those real host tool
-calls; no model inference occurred. Claude expanded its selected global body
-and read its auxiliary file through permitted native dynamic context before
-inference. Claude project auxiliary reads and successful model-backed workflows
-across the three hosts remain unverified.
+calls; no model inference occurred. Claude expanded its selected native body
+and read its auxiliary file through permitted dynamic context in separate
+global/project probes. Those Claude requests deliberately received HTTP 400
+from the local recorder and exited one after the verified pre-inference
+expansion. Successful model-backed workflows across all three hosts remain
+unverified.
 The [dated evidence](research/evidence/skill-discovery-2026-10-02.md) records
 methods, versions, sources, and the exact limits. A successful Packy projection
 or update is not evidence that a complete host workflow succeeded.
