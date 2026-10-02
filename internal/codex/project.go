@@ -114,6 +114,12 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
+			configPrecondition := localprojection.FingerprintBytes([]byte(current))
+			if _, err := os.Stat(configFile); os.IsNotExist(err) {
+				configPrecondition = "missing"
+			} else if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
 			projectResource := resource
 			projectResource.ID = bindingName
 			desiredBlock := mcpBlock(projectResource, resource.Command)
@@ -130,7 +136,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			projections = append(projections, capabilitypack.ObservedProjection{
 				ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
 				ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/marked-mcp",
-				Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexMCPConfig, Target: configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: 0o644, Precondition: localprojection.FingerprintBytes([]byte(current)), Command: resource.Command, Args: append([]string(nil), resource.Args...), Description: fmt.Sprintf("configure %s in the Codex project", identity), PreviewOnly: true},
+				Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexMCPConfig, Target: configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: 0o644, Precondition: configPrecondition, Command: resource.Command, Args: append([]string(nil), resource.Args...), Description: fmt.Sprintf("configure %s in the Codex project", identity), PreviewOnly: true},
 			})
 			continue
 		}

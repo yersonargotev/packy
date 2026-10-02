@@ -134,7 +134,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		merged, err := MergeMCPProjection(current, target, resource.ID, resource.Command, resource.Args)
+		merged, err := planMCPProjection(current, target, resource.ID, resource.Command, resource.Args)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}

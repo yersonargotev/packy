@@ -214,3 +214,21 @@ func insertObjectProperty(content string, objectClose int, indent, key, value st
 	suffix := content[objectClose:]
 	return prefix + "\n" + indent + "\"" + key + "\": " + value + "\n" + suffix
 }
+
+// planMCPProjection computes replacement bytes without granting ownership. The
+// lifecycle planner compares the original observed fingerprint with its receipt
+// before permitting the returned action; unmanaged and drifted entries block.
+func planMCPProjection(existing, configPath, id, command string, args []string) (string, error) {
+	inspection, err := InspectMCPContent(existing, configPath, id, command, args)
+	if err != nil {
+		return "", err
+	}
+	if !inspection.Exists || inspection.ObservedFingerprint == inspection.DesiredFingerprint {
+		return MergeMCPProjection(existing, configPath, id, command, args)
+	}
+	without, err := RemoveMCPProjection(existing, configPath, id)
+	if err != nil {
+		return "", err
+	}
+	return MergeMCPProjection(without, configPath, id, command, args)
+}
