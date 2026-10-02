@@ -51,7 +51,7 @@ type ResourceVariant struct {
 
 func (v *ResourceVariant) UnmarshalJSON(data []byte) error {
 	type wire ResourceVariant
-	var fields map[string]json.RawMessage
+	var fields map[string]any
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (v *ResourceVariant) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("variant must be an object")
 	}
 	for key, value := range fields {
-		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		if containsVariantNull(value) {
 			return fmt.Errorf("variant field %q must not be null", key)
 		}
 	}
@@ -69,6 +69,26 @@ func (v *ResourceVariant) UnmarshalJSON(data []byte) error {
 	}
 	*v = ResourceVariant(decoded)
 	return nil
+}
+
+func containsVariantNull(value any) bool {
+	switch value := value.(type) {
+	case nil:
+		return true
+	case []any:
+		for _, child := range value {
+			if containsVariantNull(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, child := range value {
+			if containsVariantNull(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func cloneVariants(values []ResourceVariant) []ResourceVariant {

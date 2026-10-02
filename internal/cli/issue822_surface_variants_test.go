@@ -26,7 +26,10 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 	}
 	run("init")
 	for _, surface := range []string{"codex", "claude", "opencode", "codex"} {
-		run("activate", pack.ID(), "--surface", surface, "--dry-run", "--json")
+		preview := run("activate", pack.ID(), "--surface", surface, "--dry-run", "--json")
+		if !strings.Contains(preview, `"definition":"surface_variant"`) || !strings.Contains(preview, `"relationship":"adapted"`) {
+			t.Fatalf("preview does not explain selected variant provenance: %s", preview)
+		}
 		run("activate", pack.ID(), "--surface", surface)
 		relative := ".agents/skills/guide"
 		if surface == "claude" {
@@ -156,6 +159,41 @@ func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T)
 		run("uninstall", pack.ID(), "--surface", surface)
 		if _, err := os.Stat(target); !os.IsNotExist(err) {
 			t.Fatalf("project tree remains: %v", err)
+		}
+	}
+}
+
+func TestIssue822VariantDependencyClosureUsesSelectedSurfaceInGlobalAndProjectCLI(t *testing.T) {
+	pack := testsupport.SkillVariantDependencies("dependencies")
+	for _, projectScope := range []bool{false, true} {
+		fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+		opts := fixture.options
+		root := fixture.home
+		apply, remove := "activate", "deactivate"
+		if projectScope {
+			root = t.TempDir()
+			writeTestGitWorktree(t, root)
+			opts.Getwd = func() (string, error) { return root, nil }
+			apply, remove = "install", "uninstall"
+		}
+		for _, surface := range []string{"codex", "claude"} {
+			if out, err := executeCommand(t, NewRootCommand(opts), apply, pack.ID(), "--surface", surface, "--resource", "skill:guide"); err != nil {
+				t.Fatalf("%s %s: %v\n%s", apply, surface, err, out)
+			}
+			hostRoot := ".agents"
+			if surface == "claude" {
+				hostRoot = ".claude"
+			}
+			_, err := os.Stat(filepath.Join(root, hostRoot, "skills/helper"))
+			if surface == "codex" && err != nil {
+				t.Fatalf("effective dependency missing: %v", err)
+			}
+			if surface == "claude" && !os.IsNotExist(err) {
+				t.Fatalf("Codex dependency leaked to Claude: %v", err)
+			}
+			if out, err := executeCommand(t, NewRootCommand(opts), remove, pack.ID(), "--surface", surface); err != nil {
+				t.Fatalf("%s %s: %v\n%s", remove, surface, err, out)
+			}
 		}
 	}
 }

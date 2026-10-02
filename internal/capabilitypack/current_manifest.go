@@ -174,9 +174,6 @@ func ValidateProjectPack(pack Pack, projectRoot string) error {
 }
 
 func validateCurrentPack(pack Pack) error {
-	if err := validateVariants(pack); err != nil {
-		return err
-	}
 	if !idPattern.MatchString(pack.ID) {
 		return fmt.Errorf("Pack %q field id must be lowercase kebab-case", pack.ID)
 	}
@@ -254,7 +251,7 @@ func validateCurrentPack(pack Pack) error {
 			acquisitions[key] = identity
 		}
 	}
-	return nil
+	return validateVariants(pack)
 }
 
 func validateClaudeCompositionCapabilities(pack Pack, identities map[string]bool) error {

@@ -61,9 +61,10 @@ type ResourceOrigin struct {
 }
 
 type ResourceVariant struct {
-	Surface Surface         `json:"surface"`
-	Source  string          `json:"source"`
-	Origin  *ResourceOrigin `json:"origin"`
+	Requires *[]string       `json:"requires,omitempty"`
+	Surface  Surface         `json:"surface"`
+	Source   string          `json:"source"`
+	Origin   *ResourceOrigin `json:"origin"`
 }
 
 type Resource struct {
@@ -754,4 +755,24 @@ func (f Fixture) WithVariantBytes(surface Surface, relative string, data []byte)
 	result := f.clone()
 	result.files["skills/"+string(surface)+"/"+relative] = append([]byte(nil), data...)
 	return result
+}
+
+// SkillVariantDependencies makes only Codex's guide require the helper skill.
+func SkillVariantDependencies(id string) Fixture {
+	f := SkillVariants(id, SurfaceCodex)
+	helper := derivedResource(id, "skill", "helper", "skills/helper", "Surface dependency", []Binding{
+		binding(SurfaceClaude, "skill", "helper", "/helper", "exclusive", nil),
+		binding(SurfaceCodex, "skill", "helper", "$helper", "exclusive", nil),
+		binding(SurfaceOpenCode, "skill", "helper", "helper", "exclusive", nil),
+	})
+	helper.Origin.Path = "guide"
+	for path, data := range f.files {
+		if strings.HasPrefix(path, "skills/common/") {
+			f.files[strings.Replace(path, "skills/common/", "skills/helper/", 1)] = append([]byte(nil), data...)
+		}
+	}
+	f.manifest.Resources = append(f.manifest.Resources, helper)
+	requires := []string{"skill:helper"}
+	f.manifest.Resources[1].Variants[0].Requires = &requires
+	return f
 }

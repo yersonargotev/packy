@@ -42,7 +42,7 @@ func TestSurfaceVariantsRejectInvalidDeclarationsAndEffectiveGraphs(t *testing.T
 			}
 		})
 	}
-	for _, data := range []string{`{"surface":"codex","source":null}`, `{"surface":"codex","requires":null}`, `{"surface":"codex","id":"other"}`, `{"surface":"codex","bindings":[]}`, `{"surface":"codex","overrides":{}}`, `null`} {
+	for _, data := range []string{`{"surface":"codex","source":null}`, `{"surface":"codex","requires":null}`, `{"surface":"codex","args":[null]}`, `{"surface":"codex","id":"other"}`, `{"surface":"codex","bindings":[]}`, `{"surface":"codex","overrides":{}}`, `null`} {
 		var variant ResourceVariant
 		if err := json.Unmarshal([]byte(data), &variant); err == nil {
 			t.Fatalf("accepted %s", data)

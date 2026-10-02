@@ -30,8 +30,8 @@ packs/
 
 The validator discovers manifests only at `packs/*/pack.json`; there is
 no handwritten registry. Each manifest and the deterministic union of its
-common resource, variant, and typed capability source roots form its Declared
-Pack Closure.
+common resource, variant, and typed capability source roots form its
+Declared Pack Closure.
 Every source is relative to its Pack root, so distinct Packs may use the same
 relative path without sharing physical files. Undeclared files are rejected.
 
