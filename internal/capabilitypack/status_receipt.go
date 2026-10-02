@@ -74,10 +74,14 @@ func (f Facade) receiptStatusEntry(ctx context.Context, entry StatusEntry, inten
 			entry.Blockers = append(entry.Blockers, fmt.Sprintf("%s is %s", detail.ID, detail.Health))
 		}
 	}
+	for _, blocker := range skillDiscoveryBlockers(observation.SkillDiscovery) {
+		entry.Blockers = append(entry.Blockers, blocker.Detail)
+		entry.PendingHumanActions = append(entry.PendingHumanActions, blocker.Detail)
+	}
 	// Historical host semantics and controlled-check validity cannot be inferred
 	// from a receipt. Persisted obligations remain authoritative, with no runtime
 	// observations imported from the current manifest or adapter resource graph.
-	entry.Readiness, entry.Conditions = evaluateReadiness(readinessEvaluation{Pack: policy, Surface: intent.Surface, Scope: ReadinessScopeGlobal, Projections: entry.ProjectionDetails, Resolutions: resolutions, UnobservedRequirements: unobserved, Revision: observation.Revision, ObservedAt: f.observationTime()})
+	entry.Readiness, entry.Conditions = evaluateReadiness(readinessEvaluation{Pack: policy, Surface: intent.Surface, Scope: ReadinessScopeGlobal, Projections: entry.ProjectionDetails, Resolutions: resolutions, UnobservedRequirements: unobserved, Observation: ReadinessObservation{SkillDiscovery: observation.SkillDiscovery}, Revision: observation.Revision, ObservedAt: f.observationTime()})
 	sort.Strings(entry.Evidence)
 	sort.Strings(entry.Blockers)
 	sort.Strings(entry.MissingRequirements)

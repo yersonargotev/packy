@@ -92,7 +92,7 @@ func TestBuildCatalogSnapshotIdentifiesAndPackagesExactValidatedContent(t *testi
 	if err := json.Unmarshal(files["catalog-index.json"], &index); err != nil {
 		t.Fatal(err)
 	}
-	if index.SchemaVersion != 2 || index.Source.Repository != "yersonargotev/packy-catalog" || index.Source.Commit != strings.Repeat("a", 40) {
+	if index.SchemaVersion != 3 || index.Source.Repository != "yersonargotev/packy-catalog" || index.Source.Commit != strings.Repeat("a", 40) {
 		t.Fatalf("index identity = %#v", index)
 	}
 	if index.Builder != "yersonargotev/packy@"+strings.Repeat("b", 40) || len(index.Packs) != 2 {

@@ -20,6 +20,7 @@ import (
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/reportredaction"
+	"github.com/yersonargotev/packy/internal/skilldiscovery"
 	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/toolbin"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -380,6 +381,9 @@ func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilityp
 }
 
 func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview, dryRun bool) error {
+	if err := renderResourceDefinitions(cmd.OutOrStdout(), report.ResourceDefinitions); err != nil {
+		return err
+	}
 	header := "Project install preview"
 	if dryRun {
 		header = "Project install dry-run"
@@ -880,6 +884,13 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 }
 
 func projectRuntimeAdapter(ctx context.Context, opts Options, surface capabilitypack.Surface, snapshot workstation.Snapshot) capabilitypack.SurfaceAdapter {
+	if surface == "" {
+		return projectOfflineAdapter(surface)
+	}
+	return discoveryAdapter(surface, nativeProjectRuntimeAdapter(ctx, opts, surface, snapshot), snapshot.Home(), snapshot.ConfigurationHome(), "")
+}
+
+func nativeProjectRuntimeAdapter(ctx context.Context, opts Options, surface capabilitypack.Surface, snapshot workstation.Snapshot) capabilitypack.SurfaceAdapter {
 	if adapter := opts.SurfaceAdapters[surface]; adapter != nil {
 		return adapter
 	}
@@ -902,7 +913,7 @@ func projectRuntimeAdapter(ctx context.Context, opts Options, surface capability
 		}
 		return withControlledCheckFacts(ctx, opts, surface, adapter)
 	}
-	return withControlledCheckFacts(ctx, opts, surface, projectOfflineAdapter(surface))
+	return withControlledCheckFacts(ctx, opts, surface, nativeProjectOfflineAdapter(surface))
 }
 
 func projectStatusAdapters(ctx context.Context, opts Options, snapshot workstation.Snapshot) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
@@ -1085,7 +1096,7 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 		return capabilitypack.Facade{}, err
 	}
 	codexAdapter := codex.NewSurfaceAdapterWithConfig(composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
-	openCodeAdapter := opencode.NewSurfaceAdapter(composition.catalogRoot, composition.skills.Root(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+	openCodeAdapter := opencode.NewSurfaceAdapter(composition.catalogRoot, composition.openCode.SkillsDir(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 	store := capabilitypack.NewFileActivationStore(composition.state.File())
 	claudeLayout := composition.claude
 	claudeExecutable, _ := opts.ClaudeLookPath("claude")
@@ -1099,12 +1110,16 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	if opts.ClaudeRuntimeEvidence != nil {
 		claudeAdapter = claudeAdapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
 	}
+	cwd, err := opts.Getwd()
+	if err != nil {
+		return capabilitypack.Facade{}, err
+	}
 	adapters := opts.SurfaceAdapters
 	if adapters == nil {
 		adapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceCodex:    withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceCodex, codexAdapter),
-			capabilitypack.SurfaceOpenCode: withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceOpenCode, openCodeAdapter),
-			capabilitypack.SurfaceClaude:   withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceClaude, claudeAdapter),
+			capabilitypack.SurfaceCodex:    withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceCodex, discoveryAdapter(capabilitypack.SurfaceCodex, codexAdapter, composition.claude.Home, composition.openCode.ConfigurationHome(), cwd)),
+			capabilitypack.SurfaceOpenCode: withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceOpenCode, discoveryAdapter(capabilitypack.SurfaceOpenCode, openCodeAdapter, composition.claude.Home, composition.openCode.ConfigurationHome(), cwd)),
+			capabilitypack.SurfaceClaude:   withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceClaude, discoveryAdapter(capabilitypack.SurfaceClaude, claudeAdapter, composition.claude.Home, composition.openCode.ConfigurationHome(), cwd)),
 		}
 	}
 	return capabilitypack.NewFacade(composition.catalog,
@@ -1680,11 +1695,17 @@ func renderProjectVerification(cmd *cobra.Command, report capabilitypack.Project
 }
 
 func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
-	if surface == "" {
-		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceClaude: claudeProjectAdapter(""), capabilitypack.SurfaceCodex: codex.NewSurfaceAdapterWithConfig("", "", "", ""), capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter("", "", "", ""),
-		}, capabilitypack.SurfaceCodex)
+	if surface != "" {
+		return discoveryAdapter(surface, nativeProjectOfflineAdapter(surface), "", "", "")
 	}
+	return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+		capabilitypack.SurfaceCodex:    projectOfflineAdapter(capabilitypack.SurfaceCodex),
+		capabilitypack.SurfaceClaude:   projectOfflineAdapter(capabilitypack.SurfaceClaude),
+		capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
+	}, capabilitypack.SurfaceCodex)
+}
+
+func nativeProjectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
 	if surface == capabilitypack.SurfaceClaude {
 		return claudeProjectAdapter("")
 	}
@@ -1695,20 +1716,33 @@ func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.Surfac
 }
 
 func projectInstallAdapter(surface capabilitypack.Surface, catalogRoot, skillsRoot, codexPrompt, codexConfig, openCodeConfig, openCodePrompt string) capabilitypack.SurfaceAdapter {
+	home := filepath.Dir(filepath.Dir(skillsRoot))
+	configHome := filepath.Dir(filepath.Dir(openCodeConfig))
+	adapters := map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+		capabilitypack.SurfaceClaude:   claudeProjectAdapter(catalogRoot),
+		capabilitypack.SurfaceCodex:    codex.NewSurfaceAdapterWithConfig(catalogRoot, skillsRoot, codexPrompt, codexConfig),
+		capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter(catalogRoot, opencode.NewCanonicalLayout(configHome).SkillsDir(), openCodeConfig, openCodePrompt),
+	}
+	for host, adapter := range adapters {
+		adapters[host] = discoveryAdapter(host, adapter, home, configHome, "")
+	}
 	if surface == "" {
-		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceClaude:   claudeProjectAdapter(catalogRoot),
-			capabilitypack.SurfaceCodex:    codex.NewSurfaceAdapterWithConfig(catalogRoot, skillsRoot, codexPrompt, codexConfig),
-			capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter(catalogRoot, skillsRoot, openCodeConfig, openCodePrompt),
-		}, capabilitypack.SurfaceCodex)
+		return capabilitypack.NewProjectSurfaceAdapterSet(adapters, capabilitypack.SurfaceCodex)
 	}
-	if surface == capabilitypack.SurfaceClaude {
-		return claudeProjectAdapter(catalogRoot)
+	return adapters[surface]
+}
+
+func discoveryAdapter(surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter, home, configHome, cwd string) capabilitypack.SurfaceAdapter {
+	roots := map[capabilitypack.Surface]string{}
+	if home != "" && home != "." {
+		roots[capabilitypack.SurfaceCodex] = skilllayout.NewGlobalLayout(home).Root()
+		roots[capabilitypack.SurfaceClaude] = claudecode.NewCanonicalLayout(home).SkillsDir
 	}
-	if surface == capabilitypack.SurfaceOpenCode {
-		return opencode.NewSurfaceAdapter(catalogRoot, skillsRoot, openCodeConfig, openCodePrompt)
+	if configHome != "" && configHome != "." {
+		roots[capabilitypack.SurfaceOpenCode] = opencode.NewCanonicalLayout(configHome).SkillsDir()
 	}
-	return codex.NewSurfaceAdapterWithConfig(catalogRoot, skillsRoot, codexPrompt, codexConfig)
+	observer := skilldiscovery.Observer{Surface: surface, GlobalRoots: roots, WorkingDirectory: cwd}
+	return capabilitypack.WithSkillDiscoveryObserver(adapter, observer.Observe)
 }
 
 func claudeProjectAdapter(catalogRoot string) capabilitypack.SurfaceAdapter {
@@ -1782,6 +1816,11 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
+	}
+	if entry.HistoricalEvidence.Available {
+		if err := renderResourceDefinitions(cmd.OutOrStdout(), entry.Contract.ResourceDefinitions); err != nil {
+			return err
+		}
 	}
 	if entry.HistoricalEvidence.Message != "" {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Historical evidence: unavailable; %s\n", entry.HistoricalEvidence.Message); err != nil {

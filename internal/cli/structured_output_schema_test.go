@@ -20,12 +20,12 @@ var structuredOutputFixtures = []struct {
 	{"v1", "pack-audit.json", "pack-audit.schema.json"},
 	{"v1", "pack-list.json", "pack-list.schema.json"},
 	{"v3", "doctor.json", "doctor.schema.json"},
-	{"v6", "pack-show.json", "pack-show.schema.json"},
-	{"v12", "pack-status.json", "pack-status.schema.json"},
-	{"v12", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
-	{"v12", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
-	{"v12", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
-	{"v12", "pack-lifecycle-unavailable-preview.json", "pack-lifecycle.schema.json"},
+	{"v7", "pack-show.json", "pack-show.schema.json"},
+	{"v13", "pack-status.json", "pack-status.schema.json"},
+	{"v13", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
+	{"v13", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
+	{"v13", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
+	{"v13", "pack-lifecycle-unavailable-preview.json", "pack-lifecycle.schema.json"},
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
@@ -161,7 +161,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 
 func TestLifecycleSchemaRejectsInvalidContractDiffBaseline(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v12", "pack-lifecycle-preview.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v13", "pack-lifecycle-preview.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestPackAuditSchemaRejectsWrongVersionAndUnknownFields(t *testing.T) {
 
 func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v12", "pack-status.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v13", "pack-status.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing
 
 func TestPackLifecycleSchemaRejectsIncompleteReadinessCondition(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v12", "pack-lifecycle-preview.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v13", "pack-lifecycle-preview.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +635,28 @@ func validateProjectStructuredOutput(t *testing.T, root, schemaName, instance st
 			return err
 		}
 	}
-	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/project/v1.0.0/" + schemaName)
+	schemaURL := "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/" + schemaName
+	var versioned struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal([]byte(instance), &versioned); err != nil {
+		return err
+	}
+	if schemaName == "project-preview.schema.json" && versioned.SchemaVersion == 4 {
+		data, err := os.ReadFile(filepath.Join(root, "schemas", "project", "v4", schemaName))
+		if err != nil {
+			return err
+		}
+		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
+		schemaURL = "https://yersonargotev.github.io/packy/schemas/project/v4/" + schemaName
+		if err := compiler.AddResource(schemaURL, document); err != nil {
+			return err
+		}
+	}
+	schema, err := compiler.Compile(schemaURL)
 	if err != nil {
 		return err
 	}

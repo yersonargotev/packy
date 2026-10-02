@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	ProjectInstallPreviewSchemaVersion = 3
+	ProjectInstallPreviewSchemaVersion = 4
 	projectContractSchemaV1            = 1
 )
 
@@ -111,6 +111,7 @@ type ProjectSensitiveChange struct {
 }
 
 type ProjectNoticeContribution struct {
+	text        string
 	Resource    ResourceIdentity `json:"resource"`
 	License     string           `json:"license,omitempty"`
 	Attribution string           `json:"attribution,omitempty"`
@@ -135,34 +136,35 @@ type ProjectProjectionPlan struct {
 }
 
 type JSONProjectInstallPreview struct {
-	SchemaVersion     int                       `json:"schema_version"`
-	Report            string                    `json:"report"`
-	DryRun            bool                      `json:"dry_run"`
-	ProjectRoot       string                    `json:"project_root"`
-	Pack              ProjectManifestPack       `json:"pack"`
-	Surface           Surface                   `json:"surface"`
-	Selection         ProjectSelectionPreview   `json:"selection"`
-	Manifest          ProjectContractProposal   `json:"manifest"`
-	Lock              ProjectLockProposal       `json:"lock"`
-	Notices           ProjectNoticesProposal    `json:"notices"`
-	Projections       []ProjectProjectionPlan   `json:"projections"`
-	Retirements       []ProjectProjectionPlan   `json:"retirements,omitempty"`
-	SensitiveChanges  []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
-	Requirements      []string                  `json:"requirements"`
-	Blockers          []ProjectInstallBlocker   `json:"blockers"`
-	Disposition       ProjectInstallDisposition `json:"disposition"`
-	Observation       string                    `json:"observation"`
-	ExpectedReadiness ReadinessStatus           `json:"expected_readiness"`
-	Conditions        []ReadinessCondition      `json:"conditions"`
-	projectRoot       string
-	pack              Pack
-	actions           []ProjectionAction
-	noticeContent     string
-	noticeMode        uint32
-	noticeBefore      string
-	noticeIntact      bool
-	request           ProjectInstallRequest
-	updateRequest     ProjectUpdateRequest
+	ResourceDefinitions []ResourceDefinition      `json:"resource_definitions"`
+	SchemaVersion       int                       `json:"schema_version"`
+	Report              string                    `json:"report"`
+	DryRun              bool                      `json:"dry_run"`
+	ProjectRoot         string                    `json:"project_root"`
+	Pack                ProjectManifestPack       `json:"pack"`
+	Surface             Surface                   `json:"surface"`
+	Selection           ProjectSelectionPreview   `json:"selection"`
+	Manifest            ProjectContractProposal   `json:"manifest"`
+	Lock                ProjectLockProposal       `json:"lock"`
+	Notices             ProjectNoticesProposal    `json:"notices"`
+	Projections         []ProjectProjectionPlan   `json:"projections"`
+	Retirements         []ProjectProjectionPlan   `json:"retirements,omitempty"`
+	SensitiveChanges    []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
+	Requirements        []string                  `json:"requirements"`
+	Blockers            []ProjectInstallBlocker   `json:"blockers"`
+	Disposition         ProjectInstallDisposition `json:"disposition"`
+	Observation         string                    `json:"observation"`
+	ExpectedReadiness   ReadinessStatus           `json:"expected_readiness"`
+	Conditions          []ReadinessCondition      `json:"conditions"`
+	projectRoot         string
+	pack                Pack
+	actions             []ProjectionAction
+	noticeContent       string
+	noticeMode          uint32
+	noticeBefore        string
+	noticeIntact        bool
+	request             ProjectInstallRequest
+	updateRequest       ProjectUpdateRequest
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -558,6 +560,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	projections := make([]ProjectProjectionPlan, 0, len(observation.Projections))
 	actions := make([]ProjectionAction, 0, len(observation.Projections))
 	blockers := append([]ProjectInstallBlocker(nil), compositionBlockers...)
+	blockers = append(blockers, projectCompositionBlockers(skillDiscoveryBlockers(observation.SkillDiscovery))...)
 	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
 	var existingInstallation ProjectInstallation
 	existingContract := false
@@ -630,7 +633,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
-		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
+		if projection.Action.Kind == ActionOpenCodeProjectSkillTree || projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o700
 		}
 		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
@@ -661,7 +664,11 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	notices := make([]ProjectNoticeContribution, 0)
 	for _, resource := range intentPack.Resources {
 		if resource.Kind == "notice" {
-			notices = append(notices, ProjectNoticeContribution{Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, License: resource.License, Attribution: resource.Attribution})
+			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(f.catalog.catalogRoot), resource.Source))
+			if err != nil {
+				return JSONProjectInstallPreview{}, fmt.Errorf("read selected notice %q: %w", resource.ID, err)
+			}
+			notices = append(notices, ProjectNoticeContribution{Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, License: resource.License, Attribution: resource.Attribution, text: string(content)})
 		}
 	}
 	requirements := projectRequirements(selectedPack)
@@ -724,7 +731,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		Observation: observation.Readiness, Revision: observation.Revision, ObservedAt: f.observationTime(),
 	})
 	report := JSONProjectInstallPreview{
-		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
+		ResourceDefinitions: ResourceDefinitionsFor(selectedPack, request.Surface),
+		SchemaVersion:       ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV1, Packs: manifestPacks},
@@ -837,6 +845,9 @@ func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
 		case blocker.Kind == BlockerAlias:
 			code = "native_name_collision"
 			remediation = "supply an explicit valid --alias for one colliding resource"
+		case blocker.Kind == BlockerHostDiscovery:
+			code = "host_discovery_conflict"
+			remediation = "keep one effective definition per discovered skill name; separately controlled launch environments do not establish persistent isolation"
 		case blocker.Kind == BlockerCompatibility:
 			code = "unrepresentable_resource"
 			remediation = "choose a surface whose native binding or declared degradation represents the complete closure"
@@ -844,7 +855,11 @@ func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
 			code = "resource_conflict"
 			remediation = "repair the conflicting admitted resource contracts before installation"
 		}
-		result = append(result, ProjectInstallBlocker{Code: code, Detail: blocker.Subject + ": " + blocker.Detail, Remediation: remediation})
+		resource := ResourceIdentity{}
+		if blocker.Kind == BlockerHostDiscovery {
+			resource = ResourceIdentity{Kind: "skill", ID: strings.TrimPrefix(blocker.Subject, "skill:")}
+		}
+		result = append(result, ProjectInstallBlocker{Code: code, Resource: resource, Detail: blocker.Subject + ": " + blocker.Detail, Remediation: remediation})
 	}
 	return result
 }
@@ -855,7 +870,7 @@ func selectProjectPackResources(pack Pack, selection ResourceSelection, surface 
 		return Pack{}, err
 	}
 	if selection.Mode == SelectionAll {
-		return clonePack(pack), nil
+		return ResolvePackForSurface(pack, surface), nil
 	}
 	return selectPackResourcesForSurface(pack, selection, surface)
 }
@@ -1024,7 +1039,7 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 		}
 		return "merge_structured_file"
 	case "skill":
-		if surface == SurfaceCodex || surface == SurfaceClaude {
+		if surface == SurfaceCodex || surface == SurfaceClaude || surface == SurfaceOpenCode {
 			return "copy_tree"
 		}
 	}

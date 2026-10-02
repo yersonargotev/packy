@@ -282,6 +282,7 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, err
 		}
+		observed = strings.TrimPrefix(observed, "sha256:")
 		item := capabilitypack.ObservedProjection{ID: locked.Resource.String(), Goal: goal, Exists: exists, ObservedFingerprint: observed, AdapterProvenance: "claude-project/v1/locked-" + locked.Mode, Action: action}
 		if goal == capabilitypack.ProjectionPresent {
 			item.DesiredFingerprint = locked.DesiredFingerprint
@@ -521,7 +522,13 @@ func mergeProjectMCP(content []byte, name, command string, args []string) ([]byt
 	}
 	if inspection.Exists {
 		if inspection.ObservedFingerprint != inspection.DesiredFingerprint {
-			return nil, fmt.Errorf("Claude project MCP server %q already exists with unmanaged settings", name)
+			// Only plan replacement bytes here. The lifecycle planner must
+			// authorize the original observed entry against its receipt.
+			without, err := removeProjectMCP(content, name)
+			if err != nil {
+				return nil, err
+			}
+			return mergeProjectMCP(without, name, command, args)
 		}
 		return append([]byte(nil), content...), nil
 	}

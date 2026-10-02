@@ -83,10 +83,10 @@ func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 		projection.AdapterProvenance = provenance
 		if projection.Action.Kind == capabilitypack.ActionOpenCodeSkillLink && projection.Action.Target != "" {
 			projection.ProjectionKey = "path:" + filepath.Clean(projection.Action.Target)
-			projection.Shared = true
-			projection.DiscoverableBy = []capabilitypack.Surface{capabilitypack.SurfaceCodex}
+			projection.Shared = false
+			projection.DiscoverableBy = nil
 			projection.Action.ProjectionKey = projection.ProjectionKey
-			projection.Action.Shared = true
+			projection.Action.Shared = false
 			projection.Action.DiscoverableBy = append([]capabilitypack.Surface(nil), projection.DiscoverableBy...)
 		}
 	}
@@ -254,11 +254,11 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
-			merged, err := MergeMCPProjection(currentConfig, a.configFile, resource.ID, command, resource.Args)
+			merged, err := planMCPProjection(currentConfig, a.configFile, resource.ID, command, resource.Args)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
-			desiredConfig, err = MergeMCPProjection(desiredConfig, a.configFile, resource.ID, command, resource.Args)
+			desiredConfig, err = planMCPProjection(desiredConfig, a.configFile, resource.ID, command, resource.Args)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
@@ -552,7 +552,7 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 	executor := localprojection.Executor{
 		Host:         "OpenCode",
 		SymlinkKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionOpenCodeSkillLink: true},
-		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true},
+		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionOpenCodeProjectSkillTree: true},
 		FileKinds: map[capabilitypack.ProjectionActionKind]bool{
 			capabilitypack.ActionOpenCodeInstructionFile: true, capabilitypack.ActionOpenCodePrimaryPrompt: true, capabilitypack.ActionOpenCodeConfigReference: true, capabilitypack.ActionOpenCodeMCPConfig: true,
 			capabilitypack.ActionOpenCodeAgentFile: true, capabilitypack.ActionOpenCodeCommandFile: true, capabilitypack.ActionOpenCodeAssetFile: true,

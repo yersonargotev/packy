@@ -283,7 +283,7 @@ func writeAuthoringCatalog(t *testing.T) string {
 		t.Fatal(err)
 	}
 	manifest := `{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "seed",
   "version": "1.0.0",
   "description": "Seed Pack",

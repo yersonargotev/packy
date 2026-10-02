@@ -115,6 +115,7 @@ func SelectionValidityFor(pack Pack, surface Surface) SelectionValidity {
 }
 
 func selectionAvailability(pack Pack, selection ResourceSelection, surface Surface) (SelectionAvailability, error) {
+	pack = ResolvePackForSurface(pack, surface)
 	selection, err := canonicalSelection(selection)
 	if err != nil {
 		return SelectionAvailability{}, err
@@ -209,6 +210,7 @@ func surfaceSelectionRoots(pack Pack, selection ResourceSelection, surface Surfa
 }
 
 func selectPackResourcesForSurface(pack Pack, selection ResourceSelection, surface Surface) (Pack, error) {
+	pack = ResolvePackForSurface(pack, surface)
 	selection, err := canonicalSelection(selection)
 	if err != nil {
 		return Pack{}, err

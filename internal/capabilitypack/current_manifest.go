@@ -41,6 +41,8 @@ type managedOriginWire struct {
 }
 
 type currentResourceWire struct {
+	Variants          ResourceVariants   `json:"variants,omitempty"`
+	Origin            *ResourceOrigin    `json:"origin,omitempty"`
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
 	Source            string             `json:"source,omitempty"`
@@ -62,16 +64,9 @@ type currentResourceWire struct {
 
 type managedCurrentResourceWire struct {
 	currentResourceWire
-	Origin *managedResourceOriginWire `json:"origin,omitempty"`
 }
 
-type managedResourceOriginWire struct {
-	ID           string `json:"id"`
-	Path         string `json:"path"`
-	Relationship string `json:"relationship"`
-}
-
-// LoadCurrentManifest loads one materialized Pack schema v2 contract from a
+// LoadCurrentManifest loads one materialized Pack schema v3 contract from a
 // Catalog Snapshot. It rejects manifests outside the current catalog model.
 func LoadCurrentManifest(path, packRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
@@ -95,8 +90,8 @@ func loadManagedCurrentManifest(data []byte, path, packRoot string, validateSour
 	if err := strictDecode(data, &managed); err != nil {
 		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
 	}
-	if managed.SchemaVersion != 2 {
-		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 2", path)
+	if managed.SchemaVersion != 3 {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 3", path)
 	}
 	if managed.Origins == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field origins is required", path)
@@ -138,6 +133,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 		}
 		pack.Resources = append(pack.Resources, Resource{
 			Kind: wire.Kind, ID: wire.ID, Source: wire.Source, Command: wire.Command,
+			Variants: wire.Variants, Origin: wire.Origin,
 			Args: wire.Args, Description: wire.Description, Mode: wire.Mode,
 			Tools: wire.Tools, Permissions: wire.Permissions, Arguments: wire.Arguments,
 			License: wire.License, Attribution: wire.Attribution,
@@ -255,7 +251,7 @@ func validateCurrentPack(pack Pack) error {
 			acquisitions[key] = identity
 		}
 	}
-	return nil
+	return validateVariants(pack)
 }
 
 func validateClaudeCompositionCapabilities(pack Pack, identities map[string]bool) error {

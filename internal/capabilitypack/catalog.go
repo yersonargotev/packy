@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -47,6 +48,9 @@ const (
 )
 
 type Resource struct {
+	Variants          []ResourceVariant
+	Origin            *ResourceOrigin
+	ResolvedVariant   Surface
 	Kind              string
 	ID                string
 	Source            string
@@ -692,37 +696,42 @@ func (c Catalog) catalogMetadataIfPresent(id string) (Pack, bool) {
 }
 
 func clonePack(pack Pack) Pack {
-	pack.Surfaces = append([]Surface(nil), pack.Surfaces...)
-	pack.ReadinessObligations = append([]ReadinessObligation(nil), pack.ReadinessObligations...)
-	pack.Requires.Tools = append([]string(nil), pack.Requires.Tools...)
-	pack.Resources = append([]Resource(nil), pack.Resources...)
+	pack.Surfaces = slices.Clone(pack.Surfaces)
+	pack.ReadinessObligations = slices.Clone(pack.ReadinessObligations)
+	pack.Requires.Tools = slices.Clone(pack.Requires.Tools)
+	pack.Resources = slices.Clone(pack.Resources)
 	for i := range pack.Resources {
-		pack.Resources[i].Args = append([]string(nil), pack.Resources[i].Args...)
-		pack.Resources[i].Tools = append([]string(nil), pack.Resources[i].Tools...)
-		pack.Resources[i].Permissions = append([]string(nil), pack.Resources[i].Permissions...)
-		pack.Resources[i].Requires = append([]string(nil), pack.Resources[i].Requires...)
-		pack.Resources[i].Conflicts = append([]string(nil), pack.Resources[i].Conflicts...)
-		pack.Resources[i].RequiresTools = append([]string(nil), pack.Resources[i].RequiresTools...)
-		pack.Resources[i].Notices = append([]string(nil), pack.Resources[i].Notices...)
-		pack.Resources[i].Bindings = append([]Binding(nil), pack.Resources[i].Bindings...)
-		pack.Resources[i].SurfaceExclusions = append([]SurfaceExclusion(nil), pack.Resources[i].SurfaceExclusions...)
+		pack.Resources[i].Variants = cloneVariants(pack.Resources[i].Variants)
+		if pack.Resources[i].Origin != nil {
+			origin := *pack.Resources[i].Origin
+			pack.Resources[i].Origin = &origin
+		}
+		pack.Resources[i].Args = slices.Clone(pack.Resources[i].Args)
+		pack.Resources[i].Tools = slices.Clone(pack.Resources[i].Tools)
+		pack.Resources[i].Permissions = slices.Clone(pack.Resources[i].Permissions)
+		pack.Resources[i].Requires = slices.Clone(pack.Resources[i].Requires)
+		pack.Resources[i].Conflicts = slices.Clone(pack.Resources[i].Conflicts)
+		pack.Resources[i].RequiresTools = slices.Clone(pack.Resources[i].RequiresTools)
+		pack.Resources[i].Notices = slices.Clone(pack.Resources[i].Notices)
+		pack.Resources[i].Bindings = slices.Clone(pack.Resources[i].Bindings)
+		pack.Resources[i].SurfaceExclusions = slices.Clone(pack.Resources[i].SurfaceExclusions)
 		for j := range pack.Resources[i].Bindings {
 			binding := &pack.Resources[i].Bindings[j]
-			binding.Capabilities = append([]SurfaceCapability(nil), binding.Capabilities...)
+			binding.Capabilities = slices.Clone(binding.Capabilities)
 			for k := range binding.Capabilities {
 				if binding.Capabilities[k].ClaudeCompositeSkill != nil {
 					copy := *binding.Capabilities[k].ClaudeCompositeSkill
-					copy.Dependencies = append([]ResourceIdentity(nil), copy.Dependencies...)
-					copy.References = append([]ResourceIdentity(nil), copy.References...)
+					copy.Dependencies = slices.Clone(copy.Dependencies)
+					copy.References = slices.Clone(copy.References)
 					binding.Capabilities[k].ClaudeCompositeSkill = &copy
 				}
 				if binding.Capabilities[k].ClaudeAgentDocument != nil {
 					copy := *binding.Capabilities[k].ClaudeAgentDocument
-					copy.Skills = append([]ResourceIdentity(nil), copy.Skills...)
-					copy.Authority.Authorities = append([]AuthorityRecord(nil), copy.Authority.Authorities...)
+					copy.Skills = slices.Clone(copy.Skills)
+					copy.Authority.Authorities = slices.Clone(copy.Authority.Authorities)
 					for n := range copy.Authority.Authorities {
-						copy.Authority.Authorities[n].Declarations = append([]string(nil), copy.Authority.Authorities[n].Declarations...)
-						copy.Authority.Authorities[n].ClaudeTools = append([]string(nil), copy.Authority.Authorities[n].ClaudeTools...)
+						copy.Authority.Authorities[n].Declarations = slices.Clone(copy.Authority.Authorities[n].Declarations)
+						copy.Authority.Authorities[n].ClaudeTools = slices.Clone(copy.Authority.Authorities[n].ClaudeTools)
 					}
 					binding.Capabilities[k].ClaudeAgentDocument = &copy
 				}
@@ -741,15 +750,15 @@ func clonePack(pack Pack) Pack {
 			}
 			if binding.Hook != nil {
 				copy := *binding.Hook
-				copy.Args = append([]string(nil), copy.Args...)
-				copy.Authorities = append([]string(nil), copy.Authorities...)
+				copy.Args = slices.Clone(copy.Args)
+				copy.Authorities = slices.Clone(copy.Authorities)
 				binding.Hook = &copy
 			}
 		}
 	}
-	pack.Contract.OptionalModes = append([]OptionalMode(nil), pack.Contract.OptionalModes...)
+	pack.Contract.OptionalModes = slices.Clone(pack.Contract.OptionalModes)
 	for i := range pack.Contract.OptionalModes {
-		pack.Contract.OptionalModes[i].Authorities = append([]string(nil), pack.Contract.OptionalModes[i].Authorities...)
+		pack.Contract.OptionalModes[i].Authorities = slices.Clone(pack.Contract.OptionalModes[i].Authorities)
 	}
 	return pack
 }
@@ -1455,7 +1464,11 @@ func sortedByID[T any](values []T, id func(T) string) bool {
 }
 
 func validatePackResourceSources(pack Pack, fallbackRoot string) error {
+	var bodies []Resource
 	for _, resource := range pack.Resources {
+		bodies = append(bodies, DeclaredResourceBodies(resource)...)
+	}
+	for _, resource := range bodies {
 		root := resource.CatalogRootOr(fallbackRoot)
 		if resource.Kind == "skill" || resource.Kind == "instruction" || resource.Kind == "agent" || resource.Kind == "command" || resource.Kind == "asset" || resource.Kind == "notice" {
 			if err := validateSource(root, resource); err != nil {

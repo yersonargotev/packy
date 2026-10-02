@@ -221,6 +221,10 @@ func renderProjectNoticeBlock(preview JSONProjectInstallPreview) string {
 	}
 	for _, notice := range preview.Notices.Contributions {
 		fmt.Fprintf(&out, "## %s\n\nLicense: %s\n\n%s\n\n", notice.Resource, notice.License, notice.Attribution)
+		if notice.text != "" {
+			out.WriteString(notice.text)
+			out.WriteString("\n\n")
+		}
 	}
 	out.WriteString(end)
 	return out.String()
@@ -571,7 +575,7 @@ func projectActionDesiredFingerprint(action ProjectionAction) string {
 }
 
 func projectTreeAction(kind ProjectionActionKind) bool {
-	return kind == ActionCodexProjectSkillTree || kind == ActionClaudeProjectSkillTree
+	return kind == ActionOpenCodeProjectSkillTree || kind == ActionCodexProjectSkillTree || kind == ActionClaudeProjectSkillTree
 }
 
 func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, error) {

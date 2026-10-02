@@ -30,9 +30,45 @@ packs/
 
 The validator discovers manifests only at `packs/*/pack.json`; there is
 no handwritten registry. Each manifest and the deterministic union of its
-resource and typed capability source roots form its Declared Pack Closure.
+common resource, variant, and typed capability source roots form its
+Declared Pack Closure.
 Every source is relative to its Pack root, so distinct Packs may use the same
 relative path without sharing physical files. Undeclared files are rejected.
+
+## Reviewed surface variants
+
+The current contract is [Pack manifest v3](../schemas/pack/v3/pack.schema.json)
+and Catalog Snapshot index v3. Older generations are rejected as a complete
+snapshot; refresh failures preserve the selected snapshot. Adopt this clean cut
+engine-first, then publish the complete catalog with the immutable engine revision.
+
+A resource can declare a `variants` array sorted uniquely by surface. Each
+entry supplies a `surface` and applicable typed fields, for example:
+
+```json
+"variants": [
+  {
+    "surface": "codex",
+    "source": "skills/guide/codex",
+    "origin": {"id": "upstream", "path": "skills/guide", "relationship": "adapted"}
+  }
+]
+```
+
+The selected surface automatically chooses its reviewed effective resource;
+logical kind and ID, bindings, and surface exclusions remain unchanged. Omitted
+fields inherit the common definition. Present arrays and objects replace whole
+values, empty arrays clear allowed fields, and null is invalid. Invalid declared
+variants never fall back to common content. Source-only assets and notices
+resolve under their consumer's surface without acquiring a projection binding.
+
+Retain all original and adapted trees in the declared closure. Changing an
+imported source requires explicit variant provenance and notice coverage.
+Validation checks every body and every surface's effective dependency graph,
+even when a particular operation does not select that body. Skill projections
+and receipts cover the entire selected tree, including references, scripts, and
+metadata. Distinct variants still obey physical ownership and host discovery
+constraints; variants alone do not promise simultaneous host coexistence.
 
 ## CLI authoring
 
@@ -69,12 +105,26 @@ packy catalog import example-pack \
   --notice notice:upstream-mit
 ```
 
-The supported imported kinds are `instruction`, `notice`, and `skill`. Import
+The supported new-resource import kinds are `instruction`, `notice`, and `skill`. Import
 a notice with explicit `--license` and `--attribution`; a notice records its
 own attribution, while every other imported resource must name at least one
 existing notice with `--notice`. Standard upstream notice filenames are
 detected only to improve missing-information diagnostics. They are never used
 to infer licensing, resource kinds, destinations, hosts, or relationships.
+
+To import a surface body for an existing file-backed logical resource, use
+`--variant-surface codex` instead of `--host`. Keep its existing `--kind` and
+`--resource-id`, and choose a separate Pack-relative `--destination`. This adds
+one reviewed variant without changing its bindings or the original tree; an
+existing variant is never overwritten. The same operation accepts existing
+agents, commands, and assets as well as skills, instructions, and notices.
+MCP and lifecycle resources have no file body to import. Review and adapt the
+imported bytes in the Catalog Project; Packy does not execute adaptation code.
+
+Variant imports explicitly record provenance. Omitted dependency/conflict
+options inherit the common fields; provided arrays replace them. Notice
+variants must retain the complete original notice bytes, license, and original
+attribution, and may append additional adaptation attribution and text.
 
 Each operation stages only the affected Pack, composes it with the unchanged
 worktree Packs for whole-catalog validation, and then atomically exchanges only
@@ -96,7 +146,10 @@ packy catalog upstream-refresh example-pack \
 Before preparing the update, Packy verifies the current exact copies against
 the previously pinned commit. Unexpected local changes stop the operation.
 Packy then acquires the selected commit and presents the old-to-new upstream
-differences for every adapted resource. In an interactive terminal, the
+differences for every adapted common or surface body, labeling surface variants
+explicitly. Inherited source/provenance is refreshed once. Exact source roots
+that overlap a distinct maintained tree are rejected; place original and
+adapted bodies in separate roots. In an interactive terminal, the
 maintainer must explicitly confirm that each maintained adaptation reconciles
 those changes; a declined or non-interactive request remains unapplied.
 

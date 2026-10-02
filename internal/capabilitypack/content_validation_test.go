@@ -242,7 +242,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
 		t.Fatal(err)
 	}
 	manifest := []byte(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "resource-descriptions",
   "version": "1.0.0",
   "description": "Synthetic resource description fixture",
@@ -317,7 +317,7 @@ func TestValidatePackContentReportsCurrentContractErrors(t *testing.T) {
 		mutate func(map[string]any)
 		want   string
 	}{
-		{"wrong schema version", func(m map[string]any) { m["schema_version"] = 4 }, "schema_version must be 2"},
+		{"wrong schema version", func(m map[string]any) { m["schema_version"] = 4 }, "schema_version must be 3"},
 		{"runtime modes", func(m map[string]any) { currentFixtureResource(m)["runtime_modes"] = []any{} }, "unknown field"},
 		{"root migrations", func(m map[string]any) { m["root_migrations"] = []any{} }, "unknown field"},
 		{"cross-Pack capabilities", func(m map[string]any) { m["provides"] = []any{"cap:example"} }, "unknown field"},
@@ -435,7 +435,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
 		t.Fatal(err)
 	}
 	manifest := `{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "` + id + `",
   "version": "1.0.0",
   "description": "Example Pack",
@@ -501,7 +501,7 @@ func writePortableFixture(t *testing.T, bundle, id, source string) {
 	if err := os.WriteFile(filepath.Join(packRoot, source), []byte("inert\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"schema_version":2,"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}]}`
+	manifest := `{"schema_version":3,"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}]}`
 	if err := os.WriteFile(filepath.Join(packRoot, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

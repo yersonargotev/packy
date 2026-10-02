@@ -83,7 +83,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		target := filepath.Join(projectRoot, ".agents", "skills", name)
+		target := filepath.Join(projectRoot, ".opencode", "skills", name)
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
 		desired, err := localprojection.FingerprintCopiedTree(source)
 		if err != nil {
@@ -93,7 +93,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("inspect %s target: %w", identity, err)
 		}
-		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/shared-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceCodex}, Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the shared project skill tree", identity), PreviewOnly: true}}, true, nil
+		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v2/native-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionOpenCodeProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the native OpenCode project skill tree", identity), PreviewOnly: true}}, true, nil
 	case "agent":
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
@@ -134,7 +134,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		merged, err := MergeMCPProjection(current, target, resource.ID, resource.Command, resource.Args)
+		merged, err := planMCPProjection(current, target, resource.ID, resource.Command, resource.Args)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
@@ -267,7 +267,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		expected := ""
 		switch projection.Resource.Kind {
 		case "skill":
-			expected = filepath.Join(".agents", "skills", name)
+			expected = filepath.Join(".opencode", "skills", name)
 		case "instruction":
 			expected = "AGENTS.md"
 		case "agent":
@@ -293,7 +293,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		var err error
 		switch projection.Resource.Kind {
 		case "skill":
-			action.Kind = capabilitypack.ActionCodexProjectSkillTree
+			action.Kind = capabilitypack.ActionOpenCodeProjectSkillTree
 			observed, exists, err = projectTreeFingerprint(target)
 		case "instruction":
 			action.Kind = capabilitypack.ActionOpenCodeInstructionFile

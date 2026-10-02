@@ -288,7 +288,7 @@ func writePublicationCatalogPack(t *testing.T, root, id, version, content string
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": %q,
   "version": %q,
   "description": "Publication fixture",
