@@ -15,6 +15,9 @@ func TestCanonicalLayoutOwnsOpenCodePaths(t *testing.T) {
 	if layout.ConfigFile() != filepath.Join(configHome, "opencode", "opencode.json") {
 		t.Fatalf("ConfigFile = %q", layout.ConfigFile())
 	}
+	if layout.SkillsDir() != filepath.Join(configHome, "opencode", "skills") {
+		t.Fatalf("SkillsDir = %q", layout.SkillsDir())
+	}
 	if layout.PromptFile() != filepath.Join(configHome, "opencode", "packy.md") {
 		t.Fatalf("PromptFile = %q", layout.PromptFile())
 	}

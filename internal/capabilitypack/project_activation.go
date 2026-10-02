@@ -209,6 +209,9 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if err != nil {
 		return report, err
 	}
+	if blockers := skillDiscoveryBlockers(observation.SkillDiscovery); len(blockers) > 0 {
+		return report, errors.New(blockers[0].Detail)
+	}
 	report.actions = append([]ProjectionAction(nil), observation.ProjectActivationActions...)
 	for _, action := range report.actions {
 		if effect, ok := projectActivationEffectPreview(action); ok {

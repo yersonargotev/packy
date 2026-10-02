@@ -49,7 +49,7 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 	if err != nil {
 		t.Fatalf("Claude project status for synthetic Pack: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), issue457RichInstallArgs(packID, "opencode")...); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), []string{"install", packID, "--surface", "opencode", "--resource", "skill:helper", "--resource", "agent:reviewer"}...); err != nil {
 		t.Fatalf("add OpenCode project surface: %v\n%s", err, out)
 	}
 	missingSkill := filepath.Join(project, ".claude", "skills", "helper")
@@ -63,7 +63,7 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 	if out, err := executeCommand(t, NewRootCommand(opts), issue457RichInstallArgs(packID, "claude")...); err != nil {
 		t.Fatalf("reconcile Claude receipt: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), issue457RichInstallArgs(packID, "opencode")...); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), []string{"install", packID, "--surface", "opencode", "--resource", "skill:helper", "--resource", "agent:reviewer"}...); err != nil {
 		t.Fatalf("reconcile OpenCode receipt: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(filepath.Join(missingSkill, "SKILL.md")); err != nil {

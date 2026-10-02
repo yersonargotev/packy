@@ -550,7 +550,7 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 	var removedTarget, retainedTarget string
 	for key, surfaces := range projectionSurfaces {
 		switch {
-		case surfaces[capabilitypack.SurfaceCodex] && surfaces[capabilitypack.SurfaceOpenCode]:
+		case surfaces[capabilitypack.SurfaceOpenCode]:
 			retainedTarget = key.target
 		case surfaces[capabilitypack.SurfaceCodex] && !surfaces[capabilitypack.SurfaceOpenCode]:
 			removedTarget = key.target
@@ -563,7 +563,7 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, removedTarget) || !slices.Contains(preview.Diff.Retained, retainedTarget) {
+	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, removedTarget) || slices.Contains(preview.Diff.Removed, retainedTarget) {
 		t.Fatalf("selected-surface uninstall preview = %#v", preview)
 	}
 	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {})
