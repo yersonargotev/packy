@@ -68,6 +68,9 @@ func TestFailedAcquisitionPreservesPreviousSelection(t *testing.T) {
 			r.Assets[1].Data = []byte(strings.Repeat("0", 64) + "  catalog-snapshot.tar.gz\n")
 			r.Assets[1].SHA256 = digest(r.Assets[1].Data)
 		}, "checksum"},
+		{"retired manifest generation", func(r *catalogstore.Release) {
+			replaceManifest(t, r, strings.Replace(validManifest("newer", "2.0.0"), `"schema_version":3`, `"schema_version":2`, 1))
+		}, "newer Packy engine"},
 		{"unknown engine vocabulary", func(r *catalogstore.Release) {
 			replaceManifest(t, r, strings.Replace(validManifest("newer", "2.0.0"), `"resources":[`, `"future_engine_field":true,"resources":[`, 1))
 		}, "newer Packy engine"},

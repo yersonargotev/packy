@@ -58,7 +58,7 @@ type ResourceOrigin = capabilitypack.ResourceOrigin
 
 // Resource is one Pack resource plus its declared provenance.
 type Resource struct {
-	Variants          []capabilitypack.ResourceVariant  `json:"variants,omitempty"`
+	Variants          capabilitypack.ResourceVariants   `json:"variants,omitempty"`
 	Kind              string                            `json:"kind"`
 	ID                string                            `json:"id"`
 	Source            string                            `json:"source,omitempty"`
@@ -79,7 +79,7 @@ type Resource struct {
 	SurfaceExclusions []capabilitypack.SurfaceExclusion `json:"surface_exclusions"`
 }
 
-// Manifest is the strict schema v2 root pack.json contract.
+// Manifest is the strict schema v3 root pack.json contract.
 type Manifest struct {
 	SchemaVersion        int                                  `json:"schema_version"`
 	ID                   string                               `json:"id"`

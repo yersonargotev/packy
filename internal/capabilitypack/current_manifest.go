@@ -41,7 +41,7 @@ type managedOriginWire struct {
 }
 
 type currentResourceWire struct {
-	Variants          []ResourceVariant  `json:"variants,omitempty"`
+	Variants          ResourceVariants   `json:"variants,omitempty"`
 	Origin            *ResourceOrigin    `json:"origin,omitempty"`
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
@@ -66,13 +66,7 @@ type managedCurrentResourceWire struct {
 	currentResourceWire
 }
 
-type managedResourceOriginWire struct {
-	ID           string `json:"id"`
-	Path         string `json:"path"`
-	Relationship string `json:"relationship"`
-}
-
-// LoadCurrentManifest loads one materialized Pack schema v2 contract from a
+// LoadCurrentManifest loads one materialized Pack schema v3 contract from a
 // Catalog Snapshot. It rejects manifests outside the current catalog model.
 func LoadCurrentManifest(path, packRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)

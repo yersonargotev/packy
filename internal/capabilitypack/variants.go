@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ResourceOrigin identifies the reviewed relationship of one resource body.
@@ -11,6 +12,21 @@ type ResourceOrigin struct {
 	ID           string `json:"id"`
 	Path         string `json:"path"`
 	Relationship string `json:"relationship"`
+}
+
+// ResourceVariants is an optional non-null collection of reviewed overrides.
+type ResourceVariants []ResourceVariant
+
+func (v *ResourceVariants) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return fmt.Errorf("variants must not be null")
+	}
+	var values []ResourceVariant
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	*v = values
+	return nil
 }
 
 // ResourceVariant replaces explicitly present typed fields for one surface.
@@ -230,8 +246,31 @@ func validateVariants(pack Pack) error {
 			if variant.Source != nil && *variant.Source != resource.Source && resource.Origin != nil && variant.Origin == nil {
 				return fmt.Errorf("resource %q variant %q changes imported source without explicit origin", identity, variant.Surface)
 			}
+			if variant.Command != nil && resource.Kind != "mcp_server" {
+				return fmt.Errorf("resource %q variant command is only applicable to mcp_server", identity)
+			}
+			if variant.Args != nil && resource.Kind != "mcp_server" {
+				return fmt.Errorf("resource %q variant args are only applicable to mcp_server", identity)
+			}
+			if (variant.Mode != nil || variant.Tools != nil || variant.Permissions != nil) && resource.Kind != "agent" {
+				return fmt.Errorf("resource %q variant authority fields are only applicable to agent", identity)
+			}
+			if variant.Arguments != nil && resource.Kind != "command" {
+				return fmt.Errorf("resource %q variant arguments are only applicable to command", identity)
+			}
+			if (variant.License != nil || variant.Attribution != nil) && resource.Kind != "notice" {
+				return fmt.Errorf("resource %q variant legal fields are only applicable to notice", identity)
+			}
+			if (variant.Source != nil || variant.Origin != nil) && (resource.Kind == "mcp_server" || resource.Kind == "lifecycle") {
+				return fmt.Errorf("resource %q variant cannot have source or origin", identity)
+			}
 			effective := ResolveResourceForSurface(resource, variant.Surface)
-			if err := validateResourceV3(effective, pack.Surfaces, nil); err != nil {
+			if strings.TrimSpace(effective.Description) == "" {
+				return fmt.Errorf("resource %q variant %q description is required", identity, variant.Surface)
+			}
+
+			effective = resourceForSurfaceValidation(effective, variant.Surface)
+			if err := validateResourceV3(effective, []Surface{variant.Surface}, nil); err != nil {
 				return fmt.Errorf("resource %q variant %q: %w", identity, variant.Surface, err)
 			}
 		}
@@ -242,6 +281,14 @@ func validateVariants(pack Pack) error {
 		for _, resource := range effective.Resources {
 			identities[resource.Kind+":"+resource.ID] = true
 		}
+		validation := clonePack(effective)
+		for i, resource := range validation.Resources {
+			validation.Resources[i] = resourceForSurfaceValidation(resource, surface)
+		}
+		if err := validateClaudeCompositionCapabilities(validation, identities); err != nil {
+			return fmt.Errorf("surface %q effective capability graph: %w", surface, err)
+		}
+		effective = withSurfaceCapabilityDependencies(effective, surface)
 		if err := validateDependencies(effective.Resources, identities); err != nil {
 			return fmt.Errorf("surface %q effective graph: %w", surface, err)
 		}
@@ -264,4 +311,21 @@ func validateVariants(pack Pack) error {
 		}
 	}
 	return nil
+}
+
+func resourceForSurfaceValidation(resource Resource, surface Surface) Resource {
+	bindings := []Binding{}
+	for _, binding := range resource.Bindings {
+		if binding.Surface == surface {
+			bindings = append(bindings, binding)
+		}
+	}
+	exclusions := []SurfaceExclusion{}
+	for _, exclusion := range resource.SurfaceExclusions {
+		if exclusion.Surface == surface {
+			exclusions = append(exclusions, exclusion)
+		}
+	}
+	resource.Bindings, resource.SurfaceExclusions = bindings, exclusions
+	return resource
 }

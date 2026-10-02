@@ -30,9 +30,45 @@ packs/
 
 The validator discovers manifests only at `packs/*/pack.json`; there is
 no handwritten registry. Each manifest and the deterministic union of its
-resource and typed capability source roots form its Declared Pack Closure.
+common resource, variant, and typed capability source roots form its Declared
+Pack Closure.
 Every source is relative to its Pack root, so distinct Packs may use the same
 relative path without sharing physical files. Undeclared files are rejected.
+
+## Reviewed surface variants
+
+The current contract is [Pack manifest v3](../schemas/pack/v3/pack.schema.json)
+and Catalog Snapshot index v3. Older generations are rejected as a complete
+snapshot; refresh failures preserve the selected snapshot. Adopt this clean cut
+engine-first, then publish the complete catalog with the immutable engine revision.
+
+A resource can declare a `variants` array sorted uniquely by surface. Each
+entry supplies a `surface` and applicable typed fields, for example:
+
+```json
+"variants": [
+  {
+    "surface": "codex",
+    "source": "skills/guide/codex",
+    "origin": {"id": "upstream", "path": "skills/guide", "relationship": "adapted"}
+  }
+]
+```
+
+The selected surface automatically chooses its reviewed effective resource;
+logical kind and ID, bindings, and surface exclusions remain unchanged. Omitted
+fields inherit the common definition. Present arrays and objects replace whole
+values, empty arrays clear allowed fields, and null is invalid. Invalid declared
+variants never fall back to common content. Source-only assets and notices
+resolve under their consumer's surface without acquiring a projection binding.
+
+Retain all original and adapted trees in the declared closure. Changing an
+imported source requires explicit variant provenance and notice coverage.
+Validation checks every body and every surface's effective dependency graph,
+even when a particular operation does not select that body. Skill projections
+and receipts cover the entire selected tree, including references, scripts, and
+metadata. Distinct variants still obey physical ownership and host discovery
+constraints; variants alone do not promise simultaneous host coexistence.
 
 ## CLI authoring
 

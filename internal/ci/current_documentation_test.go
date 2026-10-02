@@ -28,6 +28,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0038-promote-releases-from-managed-pack-projects.md"),
 		filepath.Join(root, "docs", "adr", "0039-publish-an-independent-canonical-pack-catalog.md"),
 		filepath.Join(root, "docs", "adr", "0040-adopt-pack-local-catalog-layout.md"),
+		filepath.Join(root, "docs", "adr", "0041-keep-logical-resource-identity-across-surface-variants.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)

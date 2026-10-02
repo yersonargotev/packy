@@ -60,7 +60,14 @@ type ResourceOrigin struct {
 	Relationship Relationship `json:"relationship"`
 }
 
+type ResourceVariant struct {
+	Surface Surface         `json:"surface"`
+	Source  string          `json:"source"`
+	Origin  *ResourceOrigin `json:"origin"`
+}
+
 type Resource struct {
+	Variants          []ResourceVariant  `json:"variants,omitempty"`
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
 	Source            string             `json:"source,omitempty"`
@@ -151,6 +158,7 @@ type SurfaceExclusion struct {
 type Fixture struct {
 	manifest    Manifest
 	files       map[string][]byte
+	fileModes   map[string]os.FileMode
 	originFiles map[string]map[string][]byte
 	operational ResourceIdentity
 }
@@ -507,6 +515,11 @@ func (f Fixture) WriteCatalog(root string) error {
 		if err := writeFile(packRoot, relative, data); err != nil {
 			return err
 		}
+		if mode, ok := f.fileModes[relative]; ok {
+			if err := os.Chmod(filepath.Join(packRoot, relative), mode); err != nil {
+				return err
+			}
+		}
 	}
 	data, err := json.MarshalIndent(f.manifest, "", "  ")
 	if err != nil {
@@ -523,6 +536,11 @@ func (f Fixture) WriteProject(projectRoot, originsRoot string) (map[string]strin
 	for relative, data := range f.files {
 		if err := writeFile(projectRoot, relative, data); err != nil {
 			return nil, err
+		}
+		if mode, ok := f.fileModes[relative]; ok {
+			if err := os.Chmod(filepath.Join(projectRoot, relative), mode); err != nil {
+				return nil, err
+			}
 		}
 	}
 	data, err := json.MarshalIndent(f.manifest, "", "  ")
@@ -551,9 +569,13 @@ func (f Fixture) WriteProject(projectRoot, originsRoot string) (map[string]strin
 func (f Fixture) clone() Fixture {
 	result := Fixture{
 		manifest:    f.Manifest(),
+		fileModes:   make(map[string]os.FileMode, len(f.fileModes)),
 		files:       make(map[string][]byte, len(f.files)),
 		originFiles: make(map[string]map[string][]byte, len(f.originFiles)),
 		operational: f.operational,
+	}
+	for path, mode := range f.fileModes {
+		result.fileModes[path] = mode
 	}
 	for path, data := range f.files {
 		result.files[path] = append([]byte(nil), data...)
@@ -689,4 +711,47 @@ func writeFile(root, relative string, data []byte) error {
 		return fmt.Errorf("write fixture file %q: %w", relative, err)
 	}
 	return nil
+}
+
+// SkillVariants keeps one logical skill and its reviewed original, with complete
+// adapted trees for the requested surfaces. Other surfaces inherit the original.
+func SkillVariants(id string, surfaces ...Surface) Fixture {
+	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode})
+	f.fileModes = map[string]os.FileMode{}
+	f.manifest.Resources = []Resource{noticeResource(id), derivedResource(id, "skill", "guide", "skills/common", "Reviewed variant guide", []Binding{
+		binding(SurfaceClaude, "skill", "guide", "/guide", "exclusive", nil),
+		binding(SurfaceCodex, "skill", "guide", "$guide", "exclusive", nil),
+		binding(SurfaceOpenCode, "skill", "guide", "guide", "exclusive", nil),
+	})}
+	f.operational = ResourceIdentity{Kind: "skill", ID: "guide"}
+	f.files[noticePath(id)] = noticeBytes(id)
+	resource := &f.manifest.Resources[1]
+	resource.Origin.Path = "guide"
+	for _, file := range []string{"SKILL.md", "references/detail.md", "agents/openai.yaml", "scripts/run.sh"} {
+		data := []byte("reviewed common " + file + "\n")
+		if file == "SKILL.md" {
+			data = []byte("---\nname: guide\ndescription: Reviewed guide.\n---\n\nreviewed common\n")
+		}
+		f.files["skills/common/"+file] = data
+		f.originFiles[originID(id)]["guide/"+file] = append([]byte(nil), data...)
+	}
+	for _, surface := range surfaces {
+		source := "skills/" + string(surface)
+		resource.Variants = append(resource.Variants, ResourceVariant{Surface: surface, Source: source, Origin: &ResourceOrigin{ID: originID(id), Path: "guide", Relationship: RelationshipAdapted}})
+		for _, file := range []string{"SKILL.md", "references/detail.md", "agents/openai.yaml", "scripts/run.sh"} {
+			if file == "scripts/run.sh" {
+				f.fileModes[source+"/"+file] = 0755
+			}
+			f.files[source+"/"+file] = []byte(strings.ReplaceAll(string(f.files["skills/common/"+file]), "reviewed common", "reviewed "+string(surface)))
+		}
+	}
+	sort.Slice(resource.Variants, func(i, j int) bool { return resource.Variants[i].Surface < resource.Variants[j].Surface })
+	return f
+}
+
+// WithVariantBytes updates a reviewed adaptation without changing the original.
+func (f Fixture) WithVariantBytes(surface Surface, relative string, data []byte) Fixture {
+	result := f.clone()
+	result.files["skills/"+string(surface)+"/"+relative] = append([]byte(nil), data...)
+	return result
 }

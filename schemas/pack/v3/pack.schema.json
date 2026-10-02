@@ -902,6 +902,498 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "skill"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "agent"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "command"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "instruction"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "asset"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "notice"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "mcp_server"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "origin"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "source"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "lifecycle"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "variants": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "args"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "arguments"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "attribution"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "mode"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "origin"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "permissions"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "source"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "tools"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },
