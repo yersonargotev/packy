@@ -19,6 +19,19 @@ and effective provenance.
 - Structured reports advance to show v7, global status/lifecycle v13, and
   project installation/update preview v4. Installed receipts retain their
   minimal content-integrity contract.
+- `packy catalog import --variant-surface <surface>` adds a reviewed variant
+  to an existing logical resource while preserving its common definition.
+  Upstream Refresh includes variant origins, identifies adaptations by surface
+  for reconciliation, and protects maintained adaptations and overlapping
+  source trees from unintended replacement.
+- Project notice contributions include the selected legal text as well as
+  license and attribution. Notice variants must preserve the original legal
+  text, license, and attribution.
+- Receipt-owned MCP configuration can be updated globally and in projects for
+  OpenCode, and in Claude projects, without being mistaken for unmanaged
+  content; foreign entries and owned drift still block. Initial Codex project
+  MCP installation and Claude
+  project fingerprint verification are also corrected.
 
 ## Adoption before upgrading
 
