@@ -77,6 +77,7 @@ type ResourceStatus struct {
 // ReadinessObservation is fresh host-owned evidence. Observed distinguishes a
 // negative observation from an adapter that cannot inspect that dimension.
 type ReadinessObservation struct {
+	SkillDiscovery        []SkillDiscoveryFact
 	AuthorizationObserved bool
 	Authorized            bool
 	UsabilityObserved     bool
@@ -590,6 +591,9 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{ObservationOnly: true, Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
 	if inspectErr != nil {
 		return StatusEntry{}, inspectErr
+	}
+	for _, blocker := range skillDiscoveryBlockers(observation.SkillDiscovery) {
+		entry.Blockers = append(entry.Blockers, blocker.Detail)
 	}
 	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)

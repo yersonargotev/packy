@@ -64,6 +64,7 @@ const (
 	ActionCodexWorkflowSkill       ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile           ProjectionActionKind = "codex-asset-file"
 	ActionCodexProjectSkillTree    ProjectionActionKind = "codex-project-skill-tree"
+	ActionOpenCodeProjectSkillTree ProjectionActionKind = "opencode-project-skill-tree"
 	ActionClaudeProjectSkillTree   ProjectionActionKind = "claude-project-skill-tree"
 	ActionClaudeProjectFile        ProjectionActionKind = "claude-project-file"
 	ActionClaudeProjectInstruction ProjectionActionKind = "claude-project-instruction"
@@ -269,7 +270,8 @@ type ObservedProjectEffect struct {
 }
 
 type SurfaceInspection struct {
-	Revision string
+	SkillDiscovery []SkillDiscoveryFact
+	Revision       string
 	// ControlledCheck describes the host facts used to bind an explicit runtime
 	// check. Empty fields are normalized by the capability-pack domain so older
 	// adapters remain safe: they can never accidentally share evidence across a
@@ -969,6 +971,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	}
 	targetCollisionBlockers := distinctResourceTargetCollisions(observation.Projections)
 	composition.blockers = append(composition.blockers, targetCollisionBlockers...)
+	composition.blockers = append(composition.blockers, skillDiscoveryBlockers(observation.SkillDiscovery)...)
 
 	actions := make([]ProjectionAction, 0, len(observation.Projections))
 	executableAdapterActions := make([]ProjectionAction, 0)
@@ -1893,11 +1896,12 @@ func observationDigest(o SurfaceInspection) string {
 	sort.Strings(pending)
 	return digestJSON(struct {
 		Revision            string
+		SkillDiscovery      []SkillDiscoveryFact `json:",omitempty"`
 		Projections         []fingerprintProjection
 		RuntimeModes        []runtimeModeFingerprint `json:",omitempty"`
 		Readiness           ReadinessStatus
 		PendingHumanActions []string
-	}{Revision: o.Revision, Projections: projections, RuntimeModes: runtimeModeFingerprints(o.RuntimeModeResults), PendingHumanActions: pending})
+	}{Revision: o.Revision, SkillDiscovery: o.SkillDiscovery, Projections: projections, RuntimeModes: runtimeModeFingerprints(o.RuntimeModeResults), PendingHumanActions: pending})
 }
 
 type runtimeObservationFingerprint struct {
@@ -2218,6 +2222,37 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		return SurfaceInspection{}, err
 	}
 	observation = cloneSurfaceInspection(observation)
+	for _, fact := range observation.SkillDiscovery {
+		if fact.Name == "" || fact.Target == "" || fact.OtherTarget == "" || fact.Fingerprint == "" || fact.OtherFingerprint == "" || (fact.Host != SurfaceCodex && fact.Host != SurfaceClaude && fact.Host != SurfaceOpenCode) {
+			return SurfaceInspection{}, errors.New("surface adapter returned malformed skill discovery facts")
+		}
+	}
+	sort.Slice(observation.SkillDiscovery, func(i, j int) bool {
+		left, right := observation.SkillDiscovery[i], observation.SkillDiscovery[j]
+		if left.Target != right.Target {
+			return left.Target < right.Target
+		}
+		return left.OtherTarget < right.OtherTarget
+	})
+	if len(observation.SkillDiscovery) > 0 {
+		observation.Revision = digestJSON(struct {
+			Revision  string
+			Discovery []SkillDiscoveryFact
+		}{observation.Revision, observation.SkillDiscovery})
+	}
+	observation.Readiness.SkillDiscovery = append([]SkillDiscoveryFact(nil), observation.SkillDiscovery...)
+	for _, fact := range observation.SkillDiscovery {
+		if fact.Fingerprint == fact.OtherFingerprint && fact.Fingerprint != "unverified" {
+			observation.Readiness.Evidence = append(observation.Readiness.Evidence, fmt.Sprintf("%s also discovers an equivalent skill tree %q at %s; this grants no ownership and does not confirm runtime loading", fact.Host, fact.Name, portableProjectionTarget(fact.OtherTarget)))
+		}
+	}
+	for _, blocker := range skillDiscoveryBlockers(observation.SkillDiscovery) {
+		observation.PendingHumanActions = append(observation.PendingHumanActions, blocker.Detail)
+		observation.Readiness.PendingHumanActions = append(observation.Readiness.PendingHumanActions, blocker.Detail)
+		observation.Readiness.UsabilityObserved = false
+		observation.Readiness.Usable = false
+	}
+
 	if provider, ok := adapter.(interface {
 		controlledCheckDescriptor() ControlledCheckDescriptor
 	}); ok {
@@ -2493,6 +2528,7 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 }
 
 func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
+	value.SkillDiscovery = append([]SkillDiscoveryFact(nil), value.SkillDiscovery...)
 	value.ControlledCheck.Instructions = append([]string(nil), value.ControlledCheck.Instructions...)
 	value.Projections = append([]ObservedProjection(nil), value.Projections...)
 	value.OccupiedNames = append([]OccupiedName(nil), value.OccupiedNames...)
@@ -2511,6 +2547,7 @@ func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
 	}
 	value.PendingHumanActions = append([]string(nil), value.PendingHumanActions...)
 	value.Unrepresentable = append([]UnrepresentableResource(nil), value.Unrepresentable...)
+	value.Readiness.SkillDiscovery = append([]SkillDiscoveryFact(nil), value.Readiness.SkillDiscovery...)
 	value.Readiness.PendingHumanActions = append([]string(nil), value.Readiness.PendingHumanActions...)
 	value.Readiness.Evidence = append([]string(nil), value.Readiness.Evidence...)
 	value.Readiness.OptionalAuthorities = cloneOptionalAuthorities(value.Readiness.OptionalAuthorities)

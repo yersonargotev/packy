@@ -18,6 +18,10 @@ func NewCanonicalLayout(configurationHome string) CanonicalLayout {
 	}
 }
 
+func (l CanonicalLayout) SkillsDir() string {
+	return filepath.Join(l.configurationHome, "opencode", "skills")
+}
+
 func (l CanonicalLayout) ConfigurationHome() string { return l.configurationHome }
 func (l CanonicalLayout) ConfigFile() string        { return l.configFile }
 func (l CanonicalLayout) PromptFile() string        { return l.promptFile }

@@ -107,7 +107,13 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		return report, errors.New("project uninstall could not identify one exact installed surface")
 	}
 	report.Projections = append([]ProjectProjectionStatus(nil), status.Packs[0].Projections...)
-	report.Blockers = append(report.Blockers, status.Packs[0].Blockers...)
+	// Removing an owned projection can resolve a discovery conflict. Discovery
+	// grants no authority over the other tree and must not prevent safe cleanup.
+	for _, blocker := range status.Packs[0].Blockers {
+		if blocker.Code != "host_discovery_conflict" {
+			report.Blockers = append(report.Blockers, blocker)
+		}
+	}
 	scopedInstallation := projectInstallationForPack(installation, pack.ID)
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{
 		ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionAbsent,

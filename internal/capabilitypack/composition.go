@@ -18,6 +18,7 @@ const (
 	BlockerAlias                    BlockerKind = "alias"
 	BlockerSharing                  BlockerKind = "sharing"
 	BlockerCompatibility            BlockerKind = "compatibility"
+	BlockerHostDiscovery            BlockerKind = "host-discovery"
 	BlockerResourceConflict         BlockerKind = "resource-conflict"
 	BlockerSelectionUnavailable     BlockerKind = "selection-unavailable"
 	BlockerTargetCollision          BlockerKind = "target-collision"

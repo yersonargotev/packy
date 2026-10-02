@@ -139,6 +139,9 @@ func evaluateReadiness(input readinessEvaluation) (ReadinessStatus, []ReadinessC
 			Evidence: []string{"projection:" + projection.ID}, Freshness: freshness("projection:" + projection.ID),
 		})
 	}
+	for _, blocker := range skillDiscoveryBlockers(input.Observation.SkillDiscovery) {
+		conditions = append(conditions, ReadinessCondition{Type: ConditionRuntimeUsability, Scope: baseScope, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: blocker.Detail, Evidence: []string{"discovery:" + blocker.Subject}, Freshness: freshness("discovery:" + blocker.Subject)})
+	}
 	for _, resolution := range input.Resolutions {
 		value, reason, message := ReadinessTrue, ReasonRequirementAvailable, fmt.Sprintf("external requirement %s is available", resolution.Tool)
 		if !resolution.Available {
@@ -162,6 +165,9 @@ func evaluateReadiness(input readinessEvaluation) (ReadinessStatus, []ReadinessC
 			value, reason, message := observedReadiness(input.Observation.AuthorizationObserved, input.Observation.Authorized, ReasonAuthorizationConfirmed, ReasonAuthorizationDenied, ReasonAuthorizationUnknown, "surface authorization is confirmed", "surface authorization was denied", "surface authorization cannot be observed")
 			conditions = append(conditions, ReadinessCondition{Type: ConditionSurfaceAuthorization, Scope: baseScope, Dimension: ReadinessAuthorized, Value: value, Reason: reason, Message: message, Evidence: readinessEvidence(input.Observation.Evidence, input.Revision), Freshness: freshness(string(obligation))})
 		case ReadinessRuntimeUsability:
+			if len(skillDiscoveryBlockers(input.Observation.SkillDiscovery)) > 0 {
+				continue
+			}
 			value, reason, message, evidence, checkFreshness := controlledCheckReadiness(input.ControlledCheck)
 			if input.ControlledCheck != nil && input.ControlledCheck.State == ControlledCheckStale {
 				// A stale human result is deliberately not mixed with a fresh

@@ -180,7 +180,7 @@ func TestProjectInspectionRepresentsEverySupportedOpenCodeResourceKind(t *testin
 	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
 		t.Fatal(err)
 	}
-	for _, relative := range []string{".agents/skills/one/SKILL.md", "AGENTS.md", ".opencode/agents/one.md", ".opencode/commands/one.md", "opencode.json", ".opencode/packy-hooks/one.json", ".opencode/assets/one/one.md"} {
+	for _, relative := range []string{".opencode/skills/one/SKILL.md", "AGENTS.md", ".opencode/agents/one.md", ".opencode/commands/one.md", "opencode.json", ".opencode/packy-hooks/one.json", ".opencode/assets/one/one.md"} {
 		if _, err := os.Stat(filepath.Join(project, relative)); err != nil {
 			t.Fatalf("missing %s: %v", relative, err)
 		}

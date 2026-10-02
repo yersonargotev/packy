@@ -164,7 +164,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 				if got := status("opencode").Selection; !slices.Equal(got.Roots, []string{"skill:helper"}) {
 					t.Fatalf("other surface selection changed: %#v", got)
 				}
-				if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "helper")); err != nil {
+				if _, err := os.Stat(filepath.Join(project, ".opencode", "skills", "helper")); err != nil {
 					t.Fatalf("other surface projection removed: %v", err)
 				}
 			}

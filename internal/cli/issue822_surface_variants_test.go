@@ -35,6 +35,9 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 		if surface == "claude" {
 			relative = ".claude/skills/guide"
 		}
+		if surface == "opencode" {
+			relative = "xdg/opencode/skills/guide"
+		}
 		target := filepath.Join(fixture.home, relative)
 		for _, file := range []string{"SKILL.md", "references/detail.md", "agents/openai.yaml"} {
 			data, err := os.ReadFile(filepath.Join(target, file))
@@ -46,7 +49,7 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 		if surface == "codex" {
 			before := snapshotTree(t, target)
 			if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "opencode"); err == nil {
-				t.Fatalf("distinct shared physical target accepted: %s", out)
+				t.Fatalf("unverified divergent discovery accepted: %s", out)
 			}
 			if snapshotTree(t, target) != before {
 				t.Fatal("collision modified installed tree")
@@ -106,6 +109,9 @@ func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T)
 		if surface == "claude" {
 			relative = ".claude/skills/guide"
 			body = "common"
+		}
+		if surface == "opencode" {
+			relative = ".opencode/skills/guide"
 		}
 		target := filepath.Join(project, relative)
 		data, err := os.ReadFile(filepath.Join(target, "references/detail.md"))

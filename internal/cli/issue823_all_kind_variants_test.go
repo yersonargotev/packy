@@ -330,6 +330,12 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 			for _, args := range [][]string{{"activate", pack.ID(), "--surface", surface, "--dry-run", "--json"}, {"verify", "--json"}, {"status", pack.ID(), "--surface", surface, "--project", "--json"}} {
 				command := exec.Command(binary, args...)
 				command.Dir = project
+				if args[0] == "activate" {
+					// Global selection is independent of the project installation's
+					// same-name generated skills and their discovery policy.
+					command.Dir = t.TempDir()
+					writeTestGitWorktree(t, command.Dir)
+				}
 				command.Env = append([]string{}, environment...)
 				output, err := command.CombinedOutput()
 				if err != nil {

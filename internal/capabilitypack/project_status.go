@@ -390,6 +390,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				return report, inspectErr
 			}
 			blockers := append([]ProjectInstallBlocker{}, contractBlockers...)
+			blockers = append(blockers, projectCompositionBlockers(skillDiscoveryBlockers(observation.SkillDiscovery))...)
 			for _, resolution := range resolutions {
 				if !resolution.Available {
 					blockers = append(blockers, ProjectInstallBlocker{Code: "external_requirement_missing", Detail: "required executable " + resolution.Tool + " is missing", Remediation: "install the required executable and rerun project status"})

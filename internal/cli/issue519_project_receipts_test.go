@@ -349,7 +349,7 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 	}
 }
 
-func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t *testing.T) {
+func TestIssue626ProjectUpdateRetiresOnlyItsOwnNativeProjection(t *testing.T) {
 	workflow := testsupport.ResourceIdentity{Kind: "skill", ID: "workflow"}
 	helper := testsupport.ResourceIdentity{Kind: "skill", ID: "helper"}
 	pack := testsupport.CapabilityRich("retirement-shared").WithRetainedRequirements(workflow, helper)
@@ -364,7 +364,7 @@ func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t
 			t.Fatalf("install dependency fixture on %s: %v\n%s", surface, err, out)
 		}
 	}
-	retiredPath := filepath.Join(project, ".agents", "skills", "helper", "SKILL.md")
+	retiredPath := filepath.Join(project, ".opencode", "skills", "helper", "SKILL.md")
 	if _, err := os.Stat(retiredPath); err != nil {
 		t.Fatalf("shared dependency was not installed: %v", err)
 	}

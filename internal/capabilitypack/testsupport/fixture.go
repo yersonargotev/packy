@@ -798,11 +798,13 @@ func SkillVariantDependencies(id string) Fixture {
 		binding(SurfaceOpenCode, "skill", "helper", "helper", "exclusive", nil),
 	})
 	helper.Origin.Path = "guide"
+	helper.Origin.Relationship = RelationshipAdapted
 	for path, data := range f.files {
 		if strings.HasPrefix(path, "skills/common/") {
 			f.files[strings.Replace(path, "skills/common/", "skills/helper/", 1)] = append([]byte(nil), data...)
 		}
 	}
+	f.files["skills/helper/SKILL.md"] = []byte(strings.Replace(string(f.files["skills/helper/SKILL.md"]), "name: guide", "name: helper", 1))
 	f.manifest.Resources = append(f.manifest.Resources, helper)
 	requires := []string{"skill:helper"}
 	f.manifest.Resources[1].Variants[0].Requires = &requires

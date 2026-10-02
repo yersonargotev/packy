@@ -560,6 +560,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	projections := make([]ProjectProjectionPlan, 0, len(observation.Projections))
 	actions := make([]ProjectionAction, 0, len(observation.Projections))
 	blockers := append([]ProjectInstallBlocker(nil), compositionBlockers...)
+	blockers = append(blockers, projectCompositionBlockers(skillDiscoveryBlockers(observation.SkillDiscovery))...)
 	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
 	var existingInstallation ProjectInstallation
 	existingContract := false
@@ -632,7 +633,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
-		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
+		if projection.Action.Kind == ActionOpenCodeProjectSkillTree || projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o700
 		}
 		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
@@ -844,6 +845,9 @@ func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
 		case blocker.Kind == BlockerAlias:
 			code = "native_name_collision"
 			remediation = "supply an explicit valid --alias for one colliding resource"
+		case blocker.Kind == BlockerHostDiscovery:
+			code = "host_discovery_conflict"
+			remediation = "keep one effective definition per discovered skill name; separately controlled launch environments do not establish persistent isolation"
 		case blocker.Kind == BlockerCompatibility:
 			code = "unrepresentable_resource"
 			remediation = "choose a surface whose native binding or declared degradation represents the complete closure"
@@ -851,7 +855,11 @@ func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
 			code = "resource_conflict"
 			remediation = "repair the conflicting admitted resource contracts before installation"
 		}
-		result = append(result, ProjectInstallBlocker{Code: code, Detail: blocker.Subject + ": " + blocker.Detail, Remediation: remediation})
+		resource := ResourceIdentity{}
+		if blocker.Kind == BlockerHostDiscovery {
+			resource = ResourceIdentity{Kind: "skill", ID: strings.TrimPrefix(blocker.Subject, "skill:")}
+		}
+		result = append(result, ProjectInstallBlocker{Code: code, Resource: resource, Detail: blocker.Subject + ": " + blocker.Detail, Remediation: remediation})
 	}
 	return result
 }
@@ -1031,7 +1039,7 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 		}
 		return "merge_structured_file"
 	case "skill":
-		if surface == SurfaceCodex || surface == SurfaceClaude {
+		if surface == SurfaceCodex || surface == SurfaceClaude || surface == SurfaceOpenCode {
 			return "copy_tree"
 		}
 	}
