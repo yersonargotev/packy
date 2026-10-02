@@ -1,8 +1,9 @@
 # Adopt a new catalog generation
 
 Packy does not convert installations created by an incompatible catalog
-generation. This includes the legacy Installed Source model and Catalog
-Snapshot schema v1. Adopt the current catalog with a clean, explicit handoff.
+generation. This includes the legacy Installed Source model, Catalog
+Snapshot schema v1/v2, and the move from shared Codex/OpenCode skill roots to
+native OpenCode roots. Adopt the current catalog with a clean, explicit handoff.
 Keep the previous Packy binary and every source directory or retained snapshot
 it references until the handoff is complete.
 
@@ -10,6 +11,36 @@ This procedure changes only Packy-owned installations and receipts. It does
 not convert or delete source directories, personal files, credentials, Engram
 Memory, or configuration owned by Codex, Claude Code, OpenCode, or another
 tool.
+
+## Surface variants and the previous shared skill root
+
+The variant-aware engine uses Pack manifest and Catalog Snapshot schema v3.
+Its OpenCode skill targets are `$XDG_CONFIG_HOME/opencode/skills` globally
+(defaulting to `$HOME/.config/opencode/skills`) and `.opencode/skills` in a
+project. Earlier installations can still own skills under `$HOME/.agents/skills`
+and project `.agents/skills`, shared with Codex. Moving the new target does not
+transfer or remove those earlier receipts.
+
+Before replacing the engine or acquiring the incompatible snapshot, use the
+previous engine to deactivate old global installations, deactivate personal
+project activations, and uninstall affected project installations in every
+worktree. Preserve the old engine and its referenced snapshots until those
+steps complete. Do not move or delete `.agents/skills` wholesale: it can contain
+Codex installations and unmanaged user skills. If both surfaces own a shared
+projection, remove each affected receipt through the old engine and let its
+ownership rules decide whether the shared path can be removed.
+
+Only then upgrade and explicitly reinstall each desired surface. Native
+OpenCode paths do not disable its compatibility discovery of Codex/Claude
+skills. Review the new [host-discovery checks](skill-discovery.md); divergent
+same-name intent can remain blocked after a clean handoff. An external-skills
+environment flag on one launch is not proof that all launches are isolated.
+
+The coordinated rollout is engine-first, then complete catalog validation and
+publication against the released immutable engine revision. These instructions
+do not assert that either release or catalog publication has already happened.
+Do not perform the handoff until that compatible engine/catalog pair is
+available. No automatic state converter or old-root cleanup is provided.
 
 ## 1. Inventory with the previous Packy
 

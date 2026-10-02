@@ -39,6 +39,11 @@ External requirements such as Engram are host prerequisites, not relationships
 between Packs. Multiple Packs can coexist, but each lifecycle command acts on
 one Pack and installed Pack receipt.
 
+For skill variants, review the [native roots and host-discovery limits](skill-discovery.md).
+OpenCode compatibility discovery can block divergent same-name skills even
+when their physical targets differ. Existing shared-root installations require
+the [clean adoption procedure](catalog-adoption.md).
+
 ## Controlled runtime checks
 
 When Packy cannot observe host runtime behavior, preview and perform the
