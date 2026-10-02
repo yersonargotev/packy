@@ -64,6 +64,42 @@ provide a reliable duplicate winner. The
 is a launch requirement, not a persistent configuration setting. V2 website
 precedence documentation was not treated as evidence for a stable binary.
 
+### OpenCode actual skill and auxiliary tool calls
+
+A follow-up used a localhost-only deterministic OpenAI-compatible SSE provider
+with the actual `opencode run --pure --format json` process. Configuration
+followed the [official custom-provider contract](https://opencode.ai/docs/providers/):
+`@ai-sdk/openai-compatible`, a localhost `baseURL`, one enabled fixture provider,
+and a fake local-only key. Both primary and small model used that provider.
+Default plugins and model-catalog fetching were disabled. Permissions denied
+tools by default and allowed skill/read plus external-directory access limited
+to the disposable fixture.
+
+The provider requested `skill` with `name: same-name`, then `read` for the
+native skill's `references/evidence.txt`, then returned a fixed completion.
+The actual host tool results, also present in the subsequent provider request,
+contained the native body and auxiliary bytes:
+
+| Scope | Completed `skill` output | Completed `read` output |
+| --- | --- | --- |
+| Global | `opencode-global BODY` and native config-root base directory | `opencode-global AUXILIARY` |
+| Project | `opencode-project BODY` and native project base directory | `opencode-project AUXILIARY` |
+
+Both runs exited zero with three localhost requests and empty stderr. The
+`skill` result listed the native helper path; `read` returned its actual file
+content. Divergent same-name Codex/Claude global/project fixtures existed in
+both runs, but their four markers were absent from selected tool outputs.
+Each process explicitly carried `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`. The
+native global fixture was removed before the project run, so no same-host
+global/project duplicate precedence is assumed.
+
+This verifies installed `1.18.15` tool dispatch, native body loading, and actual
+auxiliary consumption in both scopes under the stated permission and launch
+baseline. The provider chose the tool calls; it performed no inference. This
+is not semantic workflow execution, latest-version acceptance, persistent
+isolation, or evidence that normal launches disable compatibility discovery.
+The ordinary Packy coexistence block remains necessary.
+
 ## Codex native discovery
 
 Generated the installed app-server JSON schemas and launched
@@ -77,11 +113,39 @@ with the fixture project cwd and `forceReload: true`, following the
 - No Claude or OpenCode probe appeared; the skill error list was empty.
 - No thread, turn, or model request was started.
 
-This verifies native discovery on `0.160.0`. It does not verify body execution
-or auxiliary reads. The
+This initial probe verifies native discovery on `0.160.0`; the separate tool
+transport probe below adds body dispatch and auxiliary consumption evidence. The
 [official skill-location contract](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)
 describes native `.agents/skills` roots and duplicate definitions without
 promising a duplicate winner.
+
+### Codex explicit dispatch and auxiliary tool transport
+
+A follow-up used separate global/project fixtures with divergent `same-name`
+skills in the three hosts' native roots. Each ran real `codex-cli 0.160.0`
+with fresh HOME/XDG/CODEX_HOME/TMPDIR, a read-only Codex sandbox, and only a fake
+noncredential key. An ephemeral localhost server supplied two deterministic
+Responses SSE replies. The custom provider used `wire_api="responses"`,
+`requires_openai_auth=false`, a localhost `base_url`, and disabled WebSockets,
+following the [official provider reference](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server).
+No user account/configuration or remote model endpoint was supplied.
+
+`codex exec --ephemeral --json ... '$same-name'` added the actual native skill
+path and `CODEX_BODY_824` to the first request before any provider response.
+Neither `CLAUDE_BODY_824` nor `OPENCODE_BODY_824` appeared. The provider then
+requested one `exec_command` running `/bin/cat` on the native helper with a
+non-login shell. The real host executed the command, emitted exit code zero
+and `CODEX_AUXILIARY_824`, and included those bytes as `function_call_output`
+in the second request. Both CLI runs exited zero after the fixed final reply,
+with exactly two local requests each. The fake model ID produced a harmless
+fallback-metadata warning; no entitlement or model capability was inferred.
+
+Native body selection and actual auxiliary consumption are thus verified in
+both scopes for this binary. The provider explicitly selected the helper path;
+this is host dispatch/tool transport, not autonomous reference selection,
+inference, semantic correctness, or a successful real-model workflow. The
+independent scope fixtures do not establish native global/project duplicate
+precedence. They do show that these Codex dispatches ignored the foreign roots.
 
 ## Claude discovery, dispatch, and auxiliary expansion
 
@@ -131,7 +195,8 @@ and [SDK initialization protocol implementation](https://github.com/anthropics/c
 | OpenCode isolation flag | Only the explicitly configured probe process. |
 | Claude body selection | Global body expanded before inference. |
 | Claude auxiliary consumption | Global dynamic context with explicit additional-directory permission. |
-| Codex/OpenCode auxiliary consumption | Not verified. |
+| Codex body/helper dispatch | Both scopes, real native dispatch and shell read; deterministic local provider, no inference. |
+| OpenCode body/helper dispatch | Both scopes, actual skill/read tools; explicit external-discovery disabling flag, no inference. |
 | Claude project auxiliary consumption | Not verified. |
 | Latest stable Claude/OpenCode behavior | Source/docs evidence only; binaries not exercised. |
 | Successful model-backed workflows | Not performed for any host. |

@@ -57,10 +57,14 @@ or launch context behaves identically. Claude `2.1.287` and OpenCode `1.18.34`
 were available at the time but were not the binaries exercised.
 
 Actual binaries demonstrated native Codex/Claude discovery and OpenCode
-compatibility discovery. Claude additionally expanded its selected global body
+compatibility discovery. Separate global/project Codex runs dispatched the
+native body and executed a helper read. Separate global/project OpenCode runs
+loaded the native body and read its helper under the explicit external-skills
+disabling flag. Local deterministic providers requested those real host tool
+calls; no model inference occurred. Claude expanded its selected global body
 and read its auxiliary file through permitted native dynamic context before
-inference. Codex/OpenCode auxiliary reads, Claude project auxiliary reads, and
-successful model-backed workflows across the three hosts remain unverified.
+inference. Claude project auxiliary reads and successful model-backed workflows
+across the three hosts remain unverified.
 The [dated evidence](research/evidence/skill-discovery-2026-10-02.md) records
 methods, versions, sources, and the exact limits. A successful Packy projection
 or update is not evidence that a complete host workflow succeeded.
