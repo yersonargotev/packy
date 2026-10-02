@@ -331,6 +331,9 @@ func validatePack(ctx context.Context, contentRoot, manifestRelative string, res
 	if err != nil {
 		return Validation{}, err
 	}
+	if err := validateNoticeVariants(contentRoot, manifest.Resources); err != nil {
+		return Validation{}, err
+	}
 	manifestDigest := digestBytes(manifestData)
 	files = append(files, FileRecord{Path: manifestRelative, Mode: canonicalMode(manifestInfo.Mode()), SHA256: manifestDigest})
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })

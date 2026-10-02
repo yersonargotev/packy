@@ -333,6 +333,7 @@ func newCatalogImportCommand(opts Options) *cobra.Command {
 	flags.StringVar(&request.Relationship, "relationship", "", "exact-copy or adapted")
 	flags.StringVar(&request.Kind, "kind", "", "resource kind (instruction, notice, or skill)")
 	flags.StringVar(&request.ResourceID, "resource-id", "", "Pack-local resource id")
+	flags.StringVar(&request.VariantSurface, "variant-surface", "", "import a reviewed body for one surface of an existing logical resource")
 	flags.StringVar(&request.Description, "description", "", "resource description")
 	flags.StringSliceVar(&hosts, "host", nil, "explicit CLI host for the resource (repeatable)")
 	flags.StringSliceVar(&notices, "notice", nil, "notice resource identity (repeatable)")

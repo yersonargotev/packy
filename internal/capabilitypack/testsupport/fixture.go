@@ -61,13 +61,43 @@ type ResourceOrigin struct {
 }
 
 type ResourceVariant struct {
+	Description string            `json:"description,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	Args        *[]string         `json:"args,omitempty"`
+	Mode        string            `json:"mode,omitempty"`
+	Tools       *[]string         `json:"tools,omitempty"`
+	Permissions *[]string         `json:"permissions,omitempty"`
+	Arguments   *CommandArguments `json:"arguments,omitempty"`
+	Attribution string            `json:"attribution,omitempty"`
+
 	Requires *[]string       `json:"requires,omitempty"`
 	Surface  Surface         `json:"surface"`
-	Source   string          `json:"source"`
-	Origin   *ResourceOrigin `json:"origin"`
+	Source   string          `json:"source,omitempty"`
+	Origin   *ResourceOrigin `json:"origin,omitempty"`
+}
+
+type CommandArguments struct {
+	Mode        string `json:"mode"`
+	Placeholder string `json:"placeholder,omitempty"`
+}
+
+type CommandHook struct {
+	Type           string   `json:"type"`
+	Event          string   `json:"event"`
+	Matcher        string   `json:"matcher"`
+	Command        string   `json:"command"`
+	Args           []string `json:"args"`
+	TimeoutSeconds int      `json:"timeout_seconds"`
+	Blocking       bool     `json:"blocking"`
+	Failure        string   `json:"failure"`
+	Authorities    []string `json:"authorities"`
 }
 
 type Resource struct {
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Arguments *CommandArguments `json:"arguments,omitempty"`
+
 	Variants          []ResourceVariant  `json:"variants,omitempty"`
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
@@ -87,6 +117,8 @@ type Resource struct {
 }
 
 type Binding struct {
+	Degradation  string       `json:"degradation,omitempty"`
+	Hook         *CommandHook `json:"hook,omitempty"`
 	Surface      Surface      `json:"surface"`
 	Projection   string       `json:"projection"`
 	Name         string       `json:"name"`

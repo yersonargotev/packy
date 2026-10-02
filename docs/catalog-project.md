@@ -105,12 +105,26 @@ packy catalog import example-pack \
   --notice notice:upstream-mit
 ```
 
-The supported imported kinds are `instruction`, `notice`, and `skill`. Import
+The supported new-resource import kinds are `instruction`, `notice`, and `skill`. Import
 a notice with explicit `--license` and `--attribution`; a notice records its
 own attribution, while every other imported resource must name at least one
 existing notice with `--notice`. Standard upstream notice filenames are
 detected only to improve missing-information diagnostics. They are never used
 to infer licensing, resource kinds, destinations, hosts, or relationships.
+
+To import a surface body for an existing file-backed logical resource, use
+`--variant-surface codex` instead of `--host`. Keep its existing `--kind` and
+`--resource-id`, and choose a separate Pack-relative `--destination`. This adds
+one reviewed variant without changing its bindings or the original tree; an
+existing variant is never overwritten. The same operation accepts existing
+agents, commands, and assets as well as skills, instructions, and notices.
+MCP and lifecycle resources have no file body to import. Review and adapt the
+imported bytes in the Catalog Project; Packy does not execute adaptation code.
+
+Variant imports explicitly record provenance. Omitted dependency/conflict
+options inherit the common fields; provided arrays replace them. Notice
+variants must retain the complete original notice bytes, license, and original
+attribution, and may append additional adaptation attribution and text.
 
 Each operation stages only the affected Pack, composes it with the unchanged
 worktree Packs for whole-catalog validation, and then atomically exchanges only
@@ -132,7 +146,10 @@ packy catalog upstream-refresh example-pack \
 Before preparing the update, Packy verifies the current exact copies against
 the previously pinned commit. Unexpected local changes stop the operation.
 Packy then acquires the selected commit and presents the old-to-new upstream
-differences for every adapted resource. In an interactive terminal, the
+differences for every adapted common or surface body, labeling surface variants
+explicitly. Inherited source/provenance is refreshed once. Exact source roots
+that overlap a distinct maintained tree are rejected; place original and
+adapted bodies in separate roots. In an interactive terminal, the
 maintainer must explicitly confirm that each maintained adaptation reconciles
 those changes; a declined or non-interactive request remains unapplied.
 
