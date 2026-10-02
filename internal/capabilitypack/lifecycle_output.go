@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 12
+const LifecycleJSONSchemaVersion = 13
 
 type ResourceRole string
 
@@ -76,6 +76,7 @@ func (graph ResourceGraph) MarshalJSON() ([]byte, error) {
 // every lifecycle entry point. Renderers must not reconstruct these facts
 // from a manifest.
 type LifecycleContract struct {
+	ResourceDefinitions   []ResourceDefinition `json:"resource_definitions"`
 	Compatibility         Compatibility        `json:"compatibility,omitempty"`
 	CompatibilityObserved bool                 `json:"-"`
 	Counts                ResourceCounts       `json:"logical_resource_counts"`
@@ -124,8 +125,10 @@ type LifecycleBinding struct {
 // LifecycleContractFor derives the complete portable contract for one
 // surface. Every slice is allocated so JSON preserves [] rather than null.
 func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) LifecycleContract {
+	pack = ResolvePackForSurface(pack, surface)
 	contract := LifecycleContract{
-		Compatibility: compatibilityFor(pack, surface), CompatibilityObserved: true,
+		ResourceDefinitions: ResourceDefinitionsFor(pack, surface),
+		Compatibility:       compatibilityFor(pack, surface), CompatibilityObserved: true,
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []LifecycleExclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
@@ -532,6 +535,7 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
 	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
 	contract.ResourceGraph = ResourceGraphForSurface(p.pack, p.selection, p.surface, false)
+	contract.ResourceDefinitions = definitionsInGraph(contract.ResourceDefinitions, contract.ResourceGraph)
 	if p.selectionValidity.Roots != nil {
 		contract.SelectionValidity = p.selectionValidity
 	}

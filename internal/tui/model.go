@@ -84,6 +84,7 @@ type PreviewPhase struct {
 }
 
 type Preview struct {
+	ResourceDefinitions                 []string
 	ID, Digest, Operation, Disposition  string
 	PackID, PackVersion, Surface, Scope string
 	ProjectRoot                         string
@@ -129,6 +130,7 @@ type Pack struct {
 }
 
 type Resource struct {
+	Definitions         []string
 	Identity            string
 	Description         string
 	Role                string
@@ -1569,6 +1571,9 @@ func (m Model) renderDetailContent(pack Pack) string {
 			line += "\n  " + mutedStyle.Render(resource.Description)
 		}
 		lines = append(lines, line)
+		for _, definition := range resource.Definitions {
+			lines = append(lines, "  "+definition)
+		}
 		if len(resource.Requirements) > 0 {
 			lines = append(lines, "  "+dimStyle.Render("requires ")+strings.Join(resource.Requirements, ", "))
 		}
@@ -1843,6 +1848,7 @@ func (m Model) renderPreview(preview Preview) string {
 	if len(preview.Resources) == 0 {
 		lines = append(lines, "  none")
 	}
+	lines = append(lines, preview.ResourceDefinitions...)
 	for _, resource := range preview.Resources {
 		line := "  " + resource.Identity + " [" + resource.Role + "]"
 		if len(resource.DependencyChain) > 1 {

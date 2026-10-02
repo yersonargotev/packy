@@ -1,0 +1,60 @@
+{
+  "schema_version": 7,
+  "report": "pack-show",
+  "catalog_state": "current",
+  "id": "engram",
+  "version": "1.0.1",
+  "description": "Persistent memory for agent work",
+  "catalog_identity": {
+    "pack_id": "engram",
+    "version": "1.0.1",
+    "schema_version": 1,
+    "limitation": "The selected or retained immutable Catalog Snapshot is the Pack content and provenance authority."
+  },
+  "surfaces": [
+    "claude",
+    "codex",
+    "opencode"
+  ],
+  "requires": {
+    "tools": [
+      "engram"
+    ]
+  },
+  "resource_counts": {},
+  "resource_inventory": [
+    {
+      "resource": {
+        "kind": "instruction",
+        "id": "engram-memory"
+      },
+      "description": "Guides agents to recall prior project work and preserve durable decisions and discoveries",
+      "role": "operational",
+      "dependencies": [],
+      "notices": []
+    },
+    {
+      "resource": {
+        "kind": "lifecycle",
+        "id": "engram-memory"
+      },
+      "description": "Runs Engram's host setup so Codex and OpenCode receive their native memory integration",
+      "role": "operational",
+      "dependencies": [],
+      "notices": []
+    },
+    {
+      "resource": {
+        "kind": "mcp_server",
+        "id": "engram"
+      },
+      "description": "Makes Engram memory tools available to agents through MCP",
+      "role": "operational",
+      "dependencies": [],
+      "notices": []
+    }
+  ],
+  "lifecycle_availability": {},
+  "surface_contracts": [],
+  "resource_graph": {}
+}
