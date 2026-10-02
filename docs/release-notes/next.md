@@ -6,7 +6,7 @@ surfaces inherit the common definition when no variant is declared; invalid
 variants fail validation. Preview and inspection expose the selected definition
 and effective provenance.
 
-## Changes
+## Changes since the previous release
 
 - Pack manifests and Catalog Snapshots use schema v3. Complete catalog
   validation includes common content and every variant's source and legal
@@ -35,3 +35,20 @@ validation and publication pinned to that engine. These notes do not announce
 that catalog migration or publication has occurred. Reinstall explicitly only
 when the compatible engine/catalog pair is available. No automatic migration
 or old-root cleanup is introduced.
+
+## Initialize and activate explicitly
+
+After the compatible engine/catalog pair is available and any previous
+installation has completed the clean handoff, initialize the catalog and
+preview explicit activation:
+
+```sh
+packy init
+packy list
+packy activate engram --surface codex --dry-run
+packy activate engram --surface codex
+```
+
+Claude Code **2.1.203 or newer** remains the engine's supported floor. The
+separate discovery evidence records the exact newer binaries exercised; it
+does not turn that floor into a claim of verified workflows on every version.
