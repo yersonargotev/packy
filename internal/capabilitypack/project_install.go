@@ -111,6 +111,7 @@ type ProjectSensitiveChange struct {
 }
 
 type ProjectNoticeContribution struct {
+	text        string
 	Resource    ResourceIdentity `json:"resource"`
 	License     string           `json:"license,omitempty"`
 	Attribution string           `json:"attribution,omitempty"`
@@ -662,7 +663,11 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	notices := make([]ProjectNoticeContribution, 0)
 	for _, resource := range intentPack.Resources {
 		if resource.Kind == "notice" {
-			notices = append(notices, ProjectNoticeContribution{Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, License: resource.License, Attribution: resource.Attribution})
+			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(f.catalog.catalogRoot), resource.Source))
+			if err != nil {
+				return JSONProjectInstallPreview{}, fmt.Errorf("read selected notice %q: %w", resource.ID, err)
+			}
+			notices = append(notices, ProjectNoticeContribution{Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, License: resource.License, Attribution: resource.Attribution, text: string(content)})
 		}
 	}
 	requirements := projectRequirements(selectedPack)

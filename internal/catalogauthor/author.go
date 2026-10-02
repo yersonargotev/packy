@@ -42,24 +42,25 @@ type CreateRequest struct {
 
 // ImportRequest describes one explicit Pack Import from an immutable origin.
 type ImportRequest struct {
-	ProjectRoot  string
-	PackID       string
-	Version      string
-	Repository   string
-	Commit       string
-	OriginID     string
-	OriginPath   string
-	Destination  string
-	Relationship string
-	Kind         string
-	ResourceID   string
-	Description  string
-	Hosts        []string
-	Notices      []string
-	License      string
-	Attribution  string
-	Requires     []string
-	Conflicts    []string
+	VariantSurface string
+	ProjectRoot    string
+	PackID         string
+	Version        string
+	Repository     string
+	Commit         string
+	OriginID       string
+	OriginPath     string
+	Destination    string
+	Relationship   string
+	Kind           string
+	ResourceID     string
+	Description    string
+	Hosts          []string
+	Notices        []string
+	License        string
+	Attribution    string
+	Requires       []string
+	Conflicts      []string
 }
 
 // RefreshRequest describes one Upstream Refresh.
@@ -209,15 +210,21 @@ func importResource(ctx context.Context, request ImportRequest, resolver catalog
 		return Result{}, fmt.Errorf("resource notice is required; import a notice resource first and provide --notice notice:<id>")
 	}
 
-	resource, err := buildResource(request, manifest)
-	if err != nil {
-		return Result{}, err
-	}
 	if err := addOrigin(&manifest, origin); err != nil {
 		return Result{}, err
 	}
-	if err := addResource(&manifest, resource); err != nil {
-		return Result{}, err
+	if request.VariantSurface != "" {
+		if err := addImportedVariant(&manifest, request); err != nil {
+			return Result{}, err
+		}
+	} else {
+		resource, err := buildResource(request, manifest)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := addResource(&manifest, resource); err != nil {
+			return Result{}, err
+		}
 	}
 
 	stagedDestination := filepath.Join(stage, filepath.FromSlash(request.Destination))
@@ -307,17 +314,31 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver catal
 		return RefreshResult{}, fmt.Errorf("selected upstream commit is already pinned for origin %q", request.OriginID)
 	}
 
-	var exactCopies, adaptations []cataloglayout.Resource
-	for _, resource := range manifest.Resources {
-		if resource.Origin == nil || resource.Origin.ID != request.OriginID {
-			continue
+	var exactCopies, adaptations []cataloglayout.ResourceBody
+	seen := map[string]cataloglayout.ResourceBody{}
+	for _, logical := range manifest.Resources {
+		for _, resource := range cataloglayout.DeclaredResourceBodies(logical) {
+			if resource.Origin == nil || resource.Origin.ID != request.OriginID {
+				continue
+			}
+			// Inherited source/provenance is one physical body, even when metadata varies.
+			if prior, ok := seen[resource.Source]; ok {
+				if *prior.Origin != *resource.Origin {
+					return RefreshResult{}, fmt.Errorf("source %q has incompatible provenance across reviewed bodies", resource.Source)
+				}
+				continue
+			}
+			seen[resource.Source] = resource
+			if resource.Origin.Relationship == cataloglayout.RelationshipAdapted {
+				adaptations = append(adaptations, resource)
+			}
+			if resource.Origin.Relationship == cataloglayout.RelationshipExactCopy {
+				exactCopies = append(exactCopies, resource)
+			}
 		}
-		if resource.Origin.Relationship == cataloglayout.RelationshipAdapted {
-			adaptations = append(adaptations, resource)
-		}
-		if resource.Origin.Relationship == cataloglayout.RelationshipExactCopy {
-			exactCopies = append(exactCopies, resource)
-		}
+	}
+	if err := validateRefreshRoots(manifest.Resources, exactCopies); err != nil {
+		return RefreshResult{}, err
 	}
 	if len(exactCopies) == 0 && len(adaptations) == 0 {
 		return RefreshResult{}, fmt.Errorf("origin %q has no resources", request.OriginID)
@@ -346,6 +367,9 @@ func refreshUpstream(ctx context.Context, request RefreshRequest, resolver catal
 
 	for _, resource := range adaptations {
 		identity := resource.Kind + ":" + resource.ID
+		if resource.Surface != "" {
+			identity += " (" + string(resource.Surface) + " variant)"
+		}
 		changes, err := adaptationChanges(
 			filepath.Join(oldRoot, filepath.FromSlash(resource.Origin.Path)),
 			filepath.Join(newRoot, filepath.FromSlash(resource.Origin.Path)),
@@ -970,4 +994,77 @@ func sortedCopy(values []string) []string {
 	result := append([]string{}, values...)
 	sort.Strings(result)
 	return result
+}
+
+// Replacing an exact source must never erase another maintained source tree.
+func validateRefreshRoots(resources []cataloglayout.Resource, exact []cataloglayout.ResourceBody) error {
+	for _, replacing := range exact {
+		for _, logical := range resources {
+			for _, other := range cataloglayout.DeclaredResourceBodies(logical) {
+				if other.Source == "" {
+					continue
+				}
+				overlap := other.Source == replacing.Source || strings.HasPrefix(other.Source, replacing.Source+"/") || strings.HasPrefix(replacing.Source, other.Source+"/")
+				same := other.Source == replacing.Source && other.Origin != nil && replacing.Origin != nil && *other.Origin == *replacing.Origin
+				if overlap && !same {
+					return fmt.Errorf("cannot refresh exact-copy source %q: overlaps maintained source %q; use separate reviewed body roots", replacing.Source, other.Source)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Variant imports explicitly extend an existing logical resource. Its bindings
+// remain authoritative; importing a body never grants new surface support.
+func addImportedVariant(manifest *cataloglayout.Manifest, request ImportRequest) error {
+	if len(request.Hosts) != 0 {
+		return fmt.Errorf("variant import uses --variant-surface and does not accept --host")
+	}
+	if request.Relationship != cataloglayout.RelationshipExactCopy && request.Relationship != cataloglayout.RelationshipAdapted {
+		return fmt.Errorf("relationship must be exact-copy or adapted")
+	}
+	surface := capabilitypack.Surface(request.VariantSurface)
+	if !slices.Contains(manifest.Surfaces, surface) {
+		return fmt.Errorf("variant surface %q is not declared by the Pack", surface)
+	}
+	for i := range manifest.Resources {
+		resource := &manifest.Resources[i]
+		if resource.Kind != request.Kind || resource.ID != request.ResourceID {
+			continue
+		}
+		if resource.Source == "" {
+			return fmt.Errorf("resource %s:%s does not accept a source variant", resource.Kind, resource.ID)
+		}
+		for _, existing := range resource.Variants {
+			if existing.Surface == surface {
+				return fmt.Errorf("resource %s:%s already has a %s variant", resource.Kind, resource.ID, surface)
+			}
+		}
+		variant := capabilitypack.ResourceVariant{Surface: surface, Source: &request.Destination, Description: &request.Description, Origin: &cataloglayout.ResourceOrigin{ID: request.OriginID, Path: request.OriginPath, Relationship: request.Relationship}}
+		if request.Notices != nil {
+			values := sortedCopy(request.Notices)
+			variant.Notices = &values
+		}
+		if request.Requires != nil {
+			values := sortedCopy(request.Requires)
+			variant.Requires = &values
+		}
+		if request.Conflicts != nil {
+			values := sortedCopy(request.Conflicts)
+			variant.Conflicts = &values
+		}
+		if request.License != "" {
+			variant.License = &request.License
+		}
+		if request.Attribution != "" {
+			variant.Attribution = &request.Attribution
+		}
+		resource.Variants = append(resource.Variants, variant)
+		slices.SortFunc(resource.Variants, func(a, b capabilitypack.ResourceVariant) int {
+			return strings.Compare(string(a.Surface), string(b.Surface))
+		})
+		return nil
+	}
+	return fmt.Errorf("variant import requires an existing logical resource %s:%s", request.Kind, request.ResourceID)
 }

@@ -254,11 +254,11 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
-			merged, err := MergeMCPProjection(currentConfig, a.configFile, resource.ID, command, resource.Args)
+			merged, err := planMCPProjection(currentConfig, a.configFile, resource.ID, command, resource.Args)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
-			desiredConfig, err = MergeMCPProjection(desiredConfig, a.configFile, resource.ID, command, resource.Args)
+			desiredConfig, err = planMCPProjection(desiredConfig, a.configFile, resource.ID, command, resource.Args)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
