@@ -286,7 +286,7 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": %q,
   "version": %q,
   "description": "Synthetic Claude composition",

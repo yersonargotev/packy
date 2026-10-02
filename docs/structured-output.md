@@ -12,10 +12,11 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
-| `packy show PACK --json` | `schemas/cli/v6/pack-show.schema.json` |
-| global Pack status | `schemas/cli/v12/pack-status.schema.json` |
-| global Pack lifecycle | `schemas/cli/v12/pack-lifecycle.schema.json` |
-| project Pack lifecycle | `schemas/project/v1.0.0/` |
+| `packy show PACK --json` | `schemas/cli/v7/pack-show.schema.json` |
+| global Pack status | `schemas/cli/v13/pack-status.schema.json` |
+| global Pack lifecycle | `schemas/cli/v13/pack-lifecycle.schema.json` |
+| project installation/update preview | `schemas/project/v4/project-preview.schema.json` |
+| other project Pack lifecycle | `schemas/project/v1.0.0/` |
 
 Canonical fixtures live under `internal/cli/testdata/`. Repository tests compile
 the schema selected by each document's `schema_version`, validate fixtures and
@@ -62,7 +63,7 @@ secret material are never recorded or emitted.
 Arrays representing sets use their schema-defined deterministic order. Arrays
 representing work preserve execution order.
 
-Pack show v6 exposes `catalog_state` as `current` when describing a Pack in the
+Pack show v7 exposes `catalog_state` as `current` when describing a Pack in the
 selected Catalog Snapshot, or `retained` when an installed Pack is resolved
 from its retained snapshot after withdrawal from the selected catalog. Its
 `catalog_identity` identifies the representative Pack metadata within an
@@ -83,7 +84,7 @@ material, or MCP environment values. Environment-bearing command arguments keep
 the key and replace the value with `<redacted>`. Paths that would disclose a
 real home or project root use their documented placeholders.
 
-Global status v12 preserves the applied identity and selected resource identities
+Global status v13 preserves the applied identity and selected resource identities
 in `intent`, separately from catalog-current `pack_version`. When the installed
 manifest is no longer available, `historical_evidence.available` is false and
 its message explains the unavailable resource, dependency, and contract facts.
@@ -94,7 +95,7 @@ longer supports them. A newer catalog version is distinct from an applicable
 update: human output, Doctor, and the TUI do not recommend an update on a
 surface the current catalog has retired.
 
-Global lifecycle v12 exposes `contract_diff.baseline_available`. When the applied
+Global lifecycle v13 exposes `contract_diff.baseline_available`. When the applied
 Pack version's contract cannot be reconstructed, it is false and
 `unavailable_reason` is `historical_contract_unavailable`. All four classification
 arrays are empty because added, changed, removed, and retained classifications
@@ -104,3 +105,17 @@ planned actions, and readiness remain available independently of the comparison.
 When the installed version matches the current catalog, Packy reconstructs the
 baseline using the receipt's selected resources. Available comparisons set
 `baseline_available` to true and omit `unavailable_reason`.
+
+## Selected resource definitions
+
+Show v7 and global status/lifecycle v13 expose `resource_definitions` in the
+surface lifecycle contract. Project installation/update preview v4 exposes the
+same domain facts at the top level. Each entry preserves the logical resource
+identity and identifies its `surface`, `definition` (`common` or
+`surface_variant`), effective Pack-relative `source` when applicable, imported
+`origin` when present, and selected legal `notices`. CLI and TUI explanations
+use those same facts. Excluded resources do not appear as selected definitions.
+Preview definitions follow the selected closure; receipts continue to seal
+canonical identities and actual projected bytes without persisting provenance.
+Historical schema generations remain immutable documentation; producers emit
+only their current generation. Project receipt and lock schemas are unchanged.

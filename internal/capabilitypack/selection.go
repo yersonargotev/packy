@@ -321,7 +321,7 @@ func resolveResourceClosure(pack Pack, roots []ResourceIdentity) ([]Resource, ma
 }
 
 func resourceSelectionFacts(pack Pack, selection ResourceSelection, surface Surface, active bool) []ResourceSelectionStatus {
-	pack = withSurfaceCapabilityDependencies(pack, surface)
+	pack = withSurfaceCapabilityDependencies(ResolvePackForSurface(pack, surface), surface)
 	selection, _ = canonicalSelection(selection)
 	selected := map[string]bool{}
 	if active {

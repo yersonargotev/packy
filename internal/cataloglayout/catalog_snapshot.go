@@ -76,7 +76,7 @@ func BuildCatalogSnapshot(ctx context.Context, projectRoot string, validation Ca
 	}
 
 	index := CatalogSnapshotIndex{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Source: CatalogSnapshotSource{
 			Repository: source.Repository,
 			Commit:     source.Commit,

@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const packShowJSONSchemaVersion = 6
+const packShowJSONSchemaVersion = 7
 
 func sortedStrings(values []string) []string {
 	result := append([]string{}, values...)
@@ -173,6 +173,9 @@ func joinOrNoneReported(values []string) string {
 }
 
 func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContract) error {
+	if err := renderResourceDefinitions(w, contract.ResourceDefinitions); err != nil {
+		return err
+	}
 	if contract.CompatibilityObserved {
 		if _, err := fmt.Fprintf(w, "Compatibility: %s\n", contract.Compatibility); err != nil {
 			return err
@@ -270,4 +273,13 @@ func renderShowAliases(aliases []capabilitypack.SurfaceAlias) string {
 		result = append(result, alias.Kind+":"+alias.ID+"="+alias.Name)
 	}
 	return strings.Join(result, ", ")
+}
+
+func renderResourceDefinitions(w io.Writer, definitions []capabilitypack.ResourceDefinition) error {
+	for _, definition := range definitions {
+		if _, err := fmt.Fprintf(w, "Definition: %s\n", definition.Summary()); err != nil {
+			return err
+		}
+	}
+	return nil
 }

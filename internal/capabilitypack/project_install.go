@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	ProjectInstallPreviewSchemaVersion = 3
+	ProjectInstallPreviewSchemaVersion = 4
 	projectContractSchemaV1            = 1
 )
 
@@ -135,34 +135,35 @@ type ProjectProjectionPlan struct {
 }
 
 type JSONProjectInstallPreview struct {
-	SchemaVersion     int                       `json:"schema_version"`
-	Report            string                    `json:"report"`
-	DryRun            bool                      `json:"dry_run"`
-	ProjectRoot       string                    `json:"project_root"`
-	Pack              ProjectManifestPack       `json:"pack"`
-	Surface           Surface                   `json:"surface"`
-	Selection         ProjectSelectionPreview   `json:"selection"`
-	Manifest          ProjectContractProposal   `json:"manifest"`
-	Lock              ProjectLockProposal       `json:"lock"`
-	Notices           ProjectNoticesProposal    `json:"notices"`
-	Projections       []ProjectProjectionPlan   `json:"projections"`
-	Retirements       []ProjectProjectionPlan   `json:"retirements,omitempty"`
-	SensitiveChanges  []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
-	Requirements      []string                  `json:"requirements"`
-	Blockers          []ProjectInstallBlocker   `json:"blockers"`
-	Disposition       ProjectInstallDisposition `json:"disposition"`
-	Observation       string                    `json:"observation"`
-	ExpectedReadiness ReadinessStatus           `json:"expected_readiness"`
-	Conditions        []ReadinessCondition      `json:"conditions"`
-	projectRoot       string
-	pack              Pack
-	actions           []ProjectionAction
-	noticeContent     string
-	noticeMode        uint32
-	noticeBefore      string
-	noticeIntact      bool
-	request           ProjectInstallRequest
-	updateRequest     ProjectUpdateRequest
+	ResourceDefinitions []ResourceDefinition      `json:"resource_definitions"`
+	SchemaVersion       int                       `json:"schema_version"`
+	Report              string                    `json:"report"`
+	DryRun              bool                      `json:"dry_run"`
+	ProjectRoot         string                    `json:"project_root"`
+	Pack                ProjectManifestPack       `json:"pack"`
+	Surface             Surface                   `json:"surface"`
+	Selection           ProjectSelectionPreview   `json:"selection"`
+	Manifest            ProjectContractProposal   `json:"manifest"`
+	Lock                ProjectLockProposal       `json:"lock"`
+	Notices             ProjectNoticesProposal    `json:"notices"`
+	Projections         []ProjectProjectionPlan   `json:"projections"`
+	Retirements         []ProjectProjectionPlan   `json:"retirements,omitempty"`
+	SensitiveChanges    []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
+	Requirements        []string                  `json:"requirements"`
+	Blockers            []ProjectInstallBlocker   `json:"blockers"`
+	Disposition         ProjectInstallDisposition `json:"disposition"`
+	Observation         string                    `json:"observation"`
+	ExpectedReadiness   ReadinessStatus           `json:"expected_readiness"`
+	Conditions          []ReadinessCondition      `json:"conditions"`
+	projectRoot         string
+	pack                Pack
+	actions             []ProjectionAction
+	noticeContent       string
+	noticeMode          uint32
+	noticeBefore        string
+	noticeIntact        bool
+	request             ProjectInstallRequest
+	updateRequest       ProjectUpdateRequest
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -724,7 +725,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		Observation: observation.Readiness, Revision: observation.Revision, ObservedAt: f.observationTime(),
 	})
 	report := JSONProjectInstallPreview{
-		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
+		ResourceDefinitions: ResourceDefinitionsFor(selectedPack, request.Surface),
+		SchemaVersion:       ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV1, Packs: manifestPacks},
@@ -855,7 +857,7 @@ func selectProjectPackResources(pack Pack, selection ResourceSelection, surface 
 		return Pack{}, err
 	}
 	if selection.Mode == SelectionAll {
-		return clonePack(pack), nil
+		return ResolvePackForSurface(pack, surface), nil
 	}
 	return selectPackResourcesForSurface(pack, selection, surface)
 }

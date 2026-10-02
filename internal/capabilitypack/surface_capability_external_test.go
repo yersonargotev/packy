@@ -277,7 +277,7 @@ func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": %q,
   "version": "1.0.0",
   "description": "Synthetic OpenCode primary prompt tracer",
@@ -326,7 +326,7 @@ func writeProjectInstructionPack(t *testing.T, bundle, packID string, surface ca
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": %q,
   "version": "1.0.0",
   "description": "Synthetic capability tracer",

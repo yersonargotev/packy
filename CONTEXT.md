@@ -226,3 +226,22 @@ faulty release is corrected by a newer version.
 ### Packy Home
 
 The `~/.packy` root containing Packy's workstation receipts and state.
+
+### Surface variant
+
+A reviewed adaptation of one Pack resource for a particular CLI surface,
+preserving the resource's kind, logical identity, and purpose.
+
+### Common definition
+
+The reviewed resource definition shared by supported surfaces that do not
+declare a specific variant.
+
+### Effective resource
+
+The definition of a logical Pack resource applicable to one CLI surface.
+
+### Host coexistence
+
+The ability to keep adaptations for multiple CLI surfaces installed and have
+each host discover its intended definition without damaging another installation.

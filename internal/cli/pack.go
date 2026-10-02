@@ -380,6 +380,9 @@ func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilityp
 }
 
 func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview, dryRun bool) error {
+	if err := renderResourceDefinitions(cmd.OutOrStdout(), report.ResourceDefinitions); err != nil {
+		return err
+	}
 	header := "Project install preview"
 	if dryRun {
 		header = "Project install dry-run"
@@ -1782,6 +1785,11 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
+	}
+	if entry.HistoricalEvidence.Available {
+		if err := renderResourceDefinitions(cmd.OutOrStdout(), entry.Contract.ResourceDefinitions); err != nil {
+			return err
+		}
 	}
 	if entry.HistoricalEvidence.Message != "" {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Historical evidence: unavailable; %s\n", entry.HistoricalEvidence.Message); err != nil {

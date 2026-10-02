@@ -51,7 +51,7 @@ func writeCatalogFixture(t *testing.T, root, id, version, content string) {
 	if err := os.WriteFile(source, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	manifest := fmt.Sprintf("{\"schema_version\":2,\"id\":%q,\"version\":%q,\"description\":\"Fixture Pack\",\"selectable\":true,\"surfaces\":[\"codex\"],\"readiness_obligations\":[\"runtime-usability\",\"surface-authorization\"],\"external_requirements\":[],\"origins\":[],\"resources\":[{\"kind\":\"skill\",\"id\":%q,\"source\":%q,\"description\":\"Fixture skill\",\"requires\":[],\"conflicts\":[],\"bindings\":[{\"surface\":\"codex\",\"projection\":\"skill\",\"name\":%q,\"invocation\":%q,\"mode\":\"native\",\"sharing\":\"exclusive\",\"capabilities\":[]}],\"surface_exclusions\":[]}]}\n", id, version, id, "skills/"+id, id, "$"+id)
+	manifest := fmt.Sprintf("{\"schema_version\":3,\"id\":%q,\"version\":%q,\"description\":\"Fixture Pack\",\"selectable\":true,\"surfaces\":[\"codex\"],\"readiness_obligations\":[\"runtime-usability\",\"surface-authorization\"],\"external_requirements\":[],\"origins\":[],\"resources\":[{\"kind\":\"skill\",\"id\":%q,\"source\":%q,\"description\":\"Fixture skill\",\"requires\":[],\"conflicts\":[],\"bindings\":[{\"surface\":\"codex\",\"projection\":\"skill\",\"name\":%q,\"invocation\":%q,\"mode\":\"native\",\"sharing\":\"exclusive\",\"capabilities\":[]}],\"surface_exclusions\":[]}]}\n", id, version, id, "skills/"+id, id, "$"+id)
 	manifestPath := filepath.Join(packRoot, "pack.json")
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatal(err)

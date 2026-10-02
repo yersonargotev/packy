@@ -40,6 +40,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 	if got, want := pack.Resources, []Resource{
 		{
 			Kind: "instruction", ID: "guide", Source: "instructions/managed-loader.md",
+			Origin:      &ResourceOrigin{ID: "upstream", Path: "guidance.md", Relationship: "adapted"},
 			catalogRoot: packRoot,
 			Description: "Projects the managed guidance", Requires: []string{}, Conflicts: []string{},
 			RequiresTools: []string{}, Notices: []string{"notice:upstream-license"},
@@ -73,9 +74,9 @@ func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
 		{
 			name: "wrong schema",
 			mutate: func(manifest string) string {
-				return strings.Replace(manifest, `"schema_version": 2`, `"schema_version": 1`, 1)
+				return strings.Replace(manifest, `"schema_version": 3`, `"schema_version": 1`, 1)
 			},
-			wantErr: "schema_version must be 2",
+			wantErr: "schema_version must be 3",
 		},
 		{
 			name: "legacy exclusions",
@@ -162,7 +163,7 @@ func writeManagedCurrentManifestFixture(t *testing.T, catalogRoot string) (strin
 		t.Fatal(err)
 	}
 	manifest := []byte(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "managed-loader",
   "version": "2.3.4",
   "description": "Managed loader fixture",

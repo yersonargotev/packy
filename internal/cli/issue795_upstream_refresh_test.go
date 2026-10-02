@@ -185,7 +185,7 @@ func writeUpstreamRefreshFixture(t *testing.T, relationship cataloglayout.Relati
 	writeAuthoringFile(t, filepath.Join(project, "packs", "seed", "skills", "seed", "SKILL.md"), "# Old upstream\n")
 	writeAuthoringFile(t, filepath.Join(project, "packs", "seed", "notices", "seed"), "Catalog-authored notice\n")
 	manifest := `{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "seed",
   "version": "1.0.0",
   "description": "Seed Pack",

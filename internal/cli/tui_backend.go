@@ -696,6 +696,7 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 		Diff:           tui.PreviewDiff{BaselineAvailable: report.ContractDiff.BaselineAvailable, UnavailableReason: report.ContractDiff.UnavailableReason, Added: report.ContractDiff.Added, Changed: report.ContractDiff.Changed, Removed: report.ContractDiff.Removed, Retained: report.ContractDiff.Retained},
 		PendingActions: append([]string(nil), report.PendingHumanActions...),
 	}
+	preview.ResourceDefinitions = definitionSummaries(report.Contract.ResourceDefinitions)
 	for _, resource := range report.ResourceGraph.Resources {
 		preview.Resources = append(preview.Resources, tui.PreviewResource{
 			Identity: resource.Resource.String(), Role: string(resource.Role), DependencyChain: resourceIdentitiesForTUI(resource.DependencyChain),
@@ -731,7 +732,8 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, projectRoot, operation string) tui.Preview {
 	surface := string(report.Surface)
 	preview := tui.Preview{
-		ID: report.Observation, Digest: report.Observation, Operation: operation, Disposition: string(report.Disposition),
+		ResourceDefinitions: definitionSummaries(report.ResourceDefinitions),
+		ID:                  report.Observation, Digest: report.Observation, Operation: operation, Disposition: string(report.Disposition),
 		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: surface, Scope: "project",
 		ProjectRoot:    projectRoot,
 		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
@@ -1028,6 +1030,12 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 }
 
 func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
+	definitions := map[string][]string{}
+	for _, surface := range detail.Pack.Surfaces {
+		for _, definition := range capabilitypack.ResourceDefinitionsFor(detail.Pack, surface) {
+			definitions[definition.Resource.String()] = append(definitions[definition.Resource.String()], definition.Summary())
+		}
+	}
 	raw := make(map[string]capabilitypack.Resource, len(detail.Pack.Resources))
 	for _, resource := range detail.Pack.Resources {
 		raw[resource.Kind+":"+resource.ID] = resource
@@ -1056,7 +1064,7 @@ func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
 		}
 		requirements = append(requirements, manifestResource.RequiresTools...)
 		result = append(result, tui.Resource{
-			Identity: identity, Description: resource.Description, Role: string(resource.Role),
+			Identity: identity, Description: resource.Description, Role: string(resource.Role), Definitions: definitions[identity],
 			Requirements: requirements, Conflicts: append([]string(nil), manifestResource.Conflicts...),
 			SurfaceCapabilities: surfaceCapabilitiesForTUI(manifestResource),
 			SelectionClosures:   closures,
@@ -1179,6 +1187,14 @@ func readinessConditionsForTUI(values []capabilitypack.ReadinessCondition) []tui
 			Dimension: string(value.Dimension), Value: string(value.Value), Reason: string(value.Reason), Message: value.Message,
 			Evidence: append([]string(nil), value.Evidence...), ObservedAt: value.Freshness.ObservedAt, ValidityIdentity: value.Freshness.ValidityIdentity,
 		})
+	}
+	return result
+}
+
+func definitionSummaries(definitions []capabilitypack.ResourceDefinition) []string {
+	result := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		result = append(result, definition.Summary())
 	}
 	return result
 }

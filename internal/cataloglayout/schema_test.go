@@ -11,7 +11,7 @@ import (
 )
 
 func TestPackSchemaAcceptsCanonicalDocument(t *testing.T) {
-	compiled := compileSchema(t, filepath.Join("..", "..", "schemas", "pack", "v2", "pack.schema.json"), "pack.schema.json")
+	compiled := compileSchema(t, filepath.Join("..", "..", "schemas", "pack", "v3", "pack.schema.json"), "pack.schema.json")
 	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(validManifest)))
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +22,7 @@ func TestPackSchemaAcceptsCanonicalDocument(t *testing.T) {
 }
 
 func TestPackSchemaRejectsDocumentsRejectedByTheContractValidator(t *testing.T) {
-	schemaPath := filepath.Join("..", "..", "schemas", "pack", "v2", "pack.schema.json")
+	schemaPath := filepath.Join("..", "..", "schemas", "pack", "v3", "pack.schema.json")
 	compiled := compileSchema(t, schemaPath, "pack.schema.json")
 	tests := []struct {
 		name string
@@ -89,7 +89,7 @@ func TestPackSchemaAcceptsOriginRootPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled := compileSchema(t, filepath.Join("..", "..", "schemas", "pack", "v2", "pack.schema.json"), "pack.schema.json")
+	compiled := compileSchema(t, filepath.Join("..", "..", "schemas", "pack", "v3", "pack.schema.json"), "pack.schema.json")
 	if err := compiled.Validate(instance); err != nil {
 		t.Fatal(err)
 	}

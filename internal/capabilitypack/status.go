@@ -541,6 +541,9 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	if entry.Contract.AuthorityDisclosure == "" {
 		entry.Contract = LifecycleContractFor(pack, surface, nil)
 	}
+	if entry.Intent.Active || ownedResidual {
+		entry.Contract.ResourceDefinitions = definitionsInGraph(entry.Contract.ResourceDefinitions, ResourceGraphForSurface(evidencePack, selection, surface, false))
+	}
 	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, surface, entry.Intent.Active || ownedResidual)
 	graph := ResourceGraphForSurface(evidencePack, selection, surface, true)
 	facts := make(map[string]ResourceClosureFact, len(graph.Resources))
