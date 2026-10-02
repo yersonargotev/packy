@@ -41,6 +41,8 @@ type managedOriginWire struct {
 }
 
 type currentResourceWire struct {
+	Variants          []ResourceVariant  `json:"variants,omitempty"`
+	Origin            *ResourceOrigin    `json:"origin,omitempty"`
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
 	Source            string             `json:"source,omitempty"`
@@ -62,7 +64,6 @@ type currentResourceWire struct {
 
 type managedCurrentResourceWire struct {
 	currentResourceWire
-	Origin *managedResourceOriginWire `json:"origin,omitempty"`
 }
 
 type managedResourceOriginWire struct {
@@ -95,8 +96,8 @@ func loadManagedCurrentManifest(data []byte, path, packRoot string, validateSour
 	if err := strictDecode(data, &managed); err != nil {
 		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
 	}
-	if managed.SchemaVersion != 2 {
-		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 2", path)
+	if managed.SchemaVersion != 3 {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 3", path)
 	}
 	if managed.Origins == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field origins is required", path)
@@ -138,6 +139,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 		}
 		pack.Resources = append(pack.Resources, Resource{
 			Kind: wire.Kind, ID: wire.ID, Source: wire.Source, Command: wire.Command,
+			Variants: wire.Variants, Origin: wire.Origin,
 			Args: wire.Args, Description: wire.Description, Mode: wire.Mode,
 			Tools: wire.Tools, Permissions: wire.Permissions, Arguments: wire.Arguments,
 			License: wire.License, Attribution: wire.Attribution,
@@ -178,6 +180,9 @@ func ValidateProjectPack(pack Pack, projectRoot string) error {
 }
 
 func validateCurrentPack(pack Pack) error {
+	if err := validateVariants(pack); err != nil {
+		return err
+	}
 	if !idPattern.MatchString(pack.ID) {
 		return fmt.Errorf("Pack %q field id must be lowercase kebab-case", pack.ID)
 	}

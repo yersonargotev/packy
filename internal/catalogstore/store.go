@@ -322,8 +322,8 @@ func validateSnapshot(root string, release Release) (cataloglayout.CatalogSnapsh
 	if err != nil {
 		return cataloglayout.CatalogSnapshotIndex{}, err
 	}
-	if index.SchemaVersion != 2 {
-		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index schema_version must be 2")
+	if index.SchemaVersion != 3 {
+		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index schema_version must be 3")
 	}
 	if index.Source.Repository != officialRepository || index.Source.Commit != release.Commit || release.Tag != "catalog-"+index.Source.Commit {
 		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index source, release tag, and commit identities do not match")

@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	SchemaVersion                    = 2
+	SchemaVersion                    = 3
 	maxIndexedEntries                = 1024
 	maxIndexedPathDepth              = 32
 	maxIndexedFileBytes              = int64(8 << 20)
@@ -46,7 +46,7 @@ type Origin struct {
 }
 
 // Relationship is one reviewed whole-resource provenance relationship.
-type Relationship string
+type Relationship = string
 
 const (
 	RelationshipExactCopy Relationship = "exact-copy"
@@ -54,14 +54,11 @@ const (
 )
 
 // ResourceOrigin describes a whole-resource provenance relationship.
-type ResourceOrigin struct {
-	ID           string       `json:"id"`
-	Path         string       `json:"path"`
-	Relationship Relationship `json:"relationship"`
-}
+type ResourceOrigin = capabilitypack.ResourceOrigin
 
 // Resource is one Pack resource plus its declared provenance.
 type Resource struct {
+	Variants          []capabilitypack.ResourceVariant  `json:"variants,omitempty"`
 	Kind              string                            `json:"kind"`
 	ID                string                            `json:"id"`
 	Source            string                            `json:"source,omitempty"`
@@ -300,7 +297,7 @@ func validatePack(ctx context.Context, contentRoot, manifestRelative string, res
 	resolved := map[string]string{}
 	originBudget := &indexBudget{}
 	comparisonBudget := &indexBudget{}
-	for _, resource := range manifest.Resources {
+	for _, resource := range declaredBodies(manifest.Resources) {
 		if err := ctx.Err(); err != nil {
 			return Validation{}, err
 		}
@@ -645,6 +642,7 @@ func validateManifest(manifest Manifest, projectRoot string) error {
 	for _, resource := range manifest.Resources {
 		pack.Resources = append(pack.Resources, capabilitypack.Resource{
 			Kind: resource.Kind, ID: resource.ID, Source: resource.Source,
+			Variants: resource.Variants, Origin: resource.Origin,
 			Command: resource.Command, Args: resource.Args, Description: resource.Description,
 			Mode: resource.Mode, Tools: resource.Tools, Permissions: resource.Permissions,
 			Arguments: resource.Arguments, License: resource.License, Attribution: resource.Attribution,
@@ -691,12 +689,12 @@ func validateManagedResources(manifest Manifest) error {
 		origins[origin.ID] = true
 	}
 	notices := map[string]bool{}
-	for _, resource := range manifest.Resources {
+	for _, resource := range declaredBodies(manifest.Resources) {
 		if resource.Kind == "notice" {
 			notices[resourceIdentity(resource)] = true
 		}
 	}
-	for _, resource := range manifest.Resources {
+	for _, resource := range declaredBodies(manifest.Resources) {
 		identity := resourceIdentity(resource)
 		if err := validateCanonicalLayout(resource); err != nil {
 			return fmt.Errorf("resource %q: %w", identity, err)
@@ -821,7 +819,7 @@ func validateOriginRelationship(ctx context.Context, projectRoot string, resourc
 
 func declaredClosure(ctx context.Context, projectRoot string, manifest Manifest, manifestSize int64) ([]FileRecord, error) {
 	var roots []declaredRoot
-	for _, resource := range manifest.Resources {
+	for _, resource := range declaredBodies(manifest.Resources) {
 		identity := resourceIdentity(resource)
 		if resource.Source != "" {
 			roots = append(roots, declaredRoot{resource.Source, identity})

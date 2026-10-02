@@ -58,7 +58,7 @@ func TestValidateProjectRejectsMalformedManifestAndOriginRelationships(t *testin
 		edit func(map[string]any)
 		want string
 	}{
-		{"schema version", func(manifest map[string]any) { manifest["schema_version"] = 1 }, "schema_version must be 2"},
+		{"schema version", func(manifest map[string]any) { manifest["schema_version"] = 1 }, "schema_version must be 3"},
 		{"null origins", func(manifest map[string]any) { manifest["origins"] = nil }, "origins is a required non-null array"},
 		{"unknown origin", func(manifest map[string]any) { resource(manifest)["origin"].(map[string]any)["id"] = "missing" }, "unknown origin"},
 		{"invalid relationship", func(manifest map[string]any) {
@@ -366,7 +366,7 @@ func deepCopyMap(t *testing.T, value map[string]any) map[string]any {
 }
 
 const validManifest = `{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "example",
   "version": "1.0.0",
   "description": "Example Managed Pack",
@@ -444,7 +444,7 @@ const validManifest = `{
 `
 
 const lifecycleManifest = `{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "example",
   "version": "1.0.0",
   "description": "Example Managed Pack",

@@ -591,7 +591,7 @@ func baseFixture(id string, surfaces []Surface) Fixture {
 	origin := originID(id)
 	return Fixture{
 		manifest: Manifest{
-			SchemaVersion: 2, ID: id, Version: "1.0.0",
+			SchemaVersion: 3, ID: id, Version: "1.0.0",
 			Description: "Synthetic " + id + " Pack fixture", Selectable: true,
 			Surfaces:             surfaces,
 			ReadinessObligations: []string{"runtime-usability", "surface-authorization"},

@@ -100,7 +100,7 @@ func writeCatalogPack(t *testing.T, root, id, version, content, source string) {
 	packRoot := filepath.Join(root, "packs", id)
 	writeFile(t, filepath.Join(packRoot, source, "SKILL.md"), content, 0o644)
 	manifest := fmt.Sprintf(`{
-  "schema_version": 2,
+  "schema_version": 3,
   "id": %q,
   "version": %q,
   "description": "Fixture Pack",

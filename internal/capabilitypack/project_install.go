@@ -855,7 +855,7 @@ func selectProjectPackResources(pack Pack, selection ResourceSelection, surface 
 		return Pack{}, err
 	}
 	if selection.Mode == SelectionAll {
-		return clonePack(pack), nil
+		return ResolvePackForSurface(pack, surface), nil
 	}
 	return selectPackResourcesForSurface(pack, selection, surface)
 }

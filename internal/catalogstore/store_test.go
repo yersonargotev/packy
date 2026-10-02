@@ -247,7 +247,7 @@ func snapshotArchive(t *testing.T, commit, manifest string) []byte {
 	closure := digestFileIndex(files)
 	packs := []cataloglayout.CatalogSnapshotPack{{ID: manifestID(t, manifest), Version: manifestVersion(t, manifest), ManifestSHA256: digest(manifestBytes), ClosureSHA256: closure, Files: files}}
 	encodedPacks, _ := json.Marshal(packs)
-	index := cataloglayout.CatalogSnapshotIndex{SchemaVersion: 2, Source: cataloglayout.CatalogSnapshotSource{Repository: officialRepository, Commit: commit}, Builder: "yersonargotev/packy@" + strings.Repeat("b", 40), CatalogSHA256: digest(encodedPacks), Packs: packs}
+	index := cataloglayout.CatalogSnapshotIndex{SchemaVersion: 3, Source: cataloglayout.CatalogSnapshotSource{Repository: officialRepository, Commit: commit}, Builder: "yersonargotev/packy@" + strings.Repeat("b", 40), CatalogSHA256: digest(encodedPacks), Packs: packs}
 	indexBytes, _ := json.Marshal(index)
 
 	var output bytes.Buffer
@@ -276,7 +276,7 @@ func writeTar(t *testing.T, tw *tar.Writer, name string, data []byte) {
 }
 
 func validManifest(id, version string) string {
-	return fmt.Sprintf(`{"schema_version":2,"id":%q,"version":%q,"description":"Fixture Pack","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"skill","id":%q,"source":%q,"description":"Fixture skill","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],"surface_exclusions":[]}]}`, id, version, id, "skills/"+id, id, "$"+id)
+	return fmt.Sprintf(`{"schema_version":3,"id":%q,"version":%q,"description":"Fixture Pack","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"skill","id":%q,"source":%q,"description":"Fixture skill","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],"surface_exclusions":[]}]}`, id, version, id, "skills/"+id, id, "$"+id)
 }
 
 func manifestID(t *testing.T, data string) string {
