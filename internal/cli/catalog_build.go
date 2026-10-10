@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -36,22 +38,37 @@ func newCatalogBuildCommand(opts Options) *cobra.Command {
 	}
 	command := &cobra.Command{
 		DisableFlagParsing: true,
-		Use:                "build", Short: "Build a complete validated Catalog Snapshot with this executable's identity",
-
+		Use:                "build",
+		Short:              "Build a complete validated Catalog Snapshot with this executable's identity",
 		Args: func(cmd *cobra.Command, args []string) error {
 			// Discover output mode across unknown flags before strict parsing can stop.
 			// Both passes use pflag's actual flag/value rules, including the -- boundary.
 			flags := cmd.Flags()
 			flags.ParseErrorsAllowlist.UnknownFlags = true
 			requestedJSON := false
-			_ = flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
-				if flag.Name == "json" {
-					if requested, err := strconv.ParseBool(value); err == nil {
-						requestedJSON = requested
+
+			discoveryArgs := slices.Clone(args)
+			for {
+				err := flags.ParseAll(discoveryArgs, func(flag *pflag.Flag, value string) error {
+					if flag.Name == "json" {
+						if requested, err := strconv.ParseBool(value); err == nil {
+							requestedJSON = requested
+						}
+					}
+					return nil
+				})
+				var syntaxError *pflag.InvalidSyntaxError
+				if !errors.As(err, &syntaxError) {
+					break
+				}
+				// Replace only malformed tokens in discovery; strict parsing retains the
+				// original arguments and error. Empty positional values preserve arity.
+				for i, argument := range discoveryArgs {
+					if argument == syntaxError.GetSpecifiedFlag() {
+						discoveryArgs[i] = ""
 					}
 				}
-				return nil
-			})
+			}
 			flags.ParseErrorsAllowlist.UnknownFlags = false
 			if err := flags.Parse(args); err != nil {
 				jsonOutput = requestedJSON

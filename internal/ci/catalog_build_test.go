@@ -178,11 +178,26 @@ func TestCatalogBuildExecutable(t *testing.T) {
 	for _, args := range [][]string{
 		{"--builder", "example/other", "--json"},
 		{"--help=invalid", "--json"},
+		{"---builder", "example/other", "--json"},
+		{"--=invalid", "--json"},
 		{"--json=invalid", "--json"},
 	} {
 		t.Run("JSON after "+args[0], func(t *testing.T) {
 			stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", "build"}, args...)...)
 			assertCatalogBuildFailure(t, stdout, stderr, err, "invalid_arguments")
+		})
+	}
+
+	for _, args := range [][]string{
+		{"--project", "--json"},
+		{"--", "--json"},
+		{"---invalid", "--json=false"},
+	} {
+		t.Run("human argument semantics "+args[0], func(t *testing.T) {
+			stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", "build"}, args...)...)
+			if err == nil || len(stdout) != 0 || len(stderr) == 0 {
+				t.Fatalf("human argument failure: %v stdout=%s stderr=%s", err, stdout, stderr)
+			}
 		})
 	}
 	t.Run("build help", func(t *testing.T) {
