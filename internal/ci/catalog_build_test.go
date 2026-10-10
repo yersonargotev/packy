@@ -174,6 +174,24 @@ func TestCatalogBuildExecutable(t *testing.T) {
 			})
 		}
 	})
+
+	for _, args := range [][]string{
+		{"--builder", "example/other", "--json"},
+		{"--help=invalid", "--json"},
+		{"--json=invalid", "--json"},
+	} {
+		t.Run("JSON after "+args[0], func(t *testing.T) {
+			stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", "build"}, args...)...)
+			assertCatalogBuildFailure(t, stdout, stderr, err, "invalid_arguments")
+		})
+	}
+	t.Run("build help", func(t *testing.T) {
+		stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, "catalog", "build", "--help")
+		if err != nil || len(stdout) == 0 || len(stderr) != 0 {
+			t.Fatalf("help: %v stdout=%s stderr=%s", err, stdout, stderr)
+		}
+	})
+
 	t.Run("baseline version violation", func(t *testing.T) {
 		baseline := t.TempDir()
 		writePublicationCatalogPack(t, baseline, "alpha", "1.0.0", "original\n")

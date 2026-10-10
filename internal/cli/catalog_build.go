@@ -3,8 +3,10 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
@@ -33,14 +35,40 @@ func newCatalogBuildCommand(opts Options) *cobra.Command {
 		return err
 	}
 	command := &cobra.Command{
-		Use: "build", Short: "Build a complete validated Catalog Snapshot with this executable's identity",
+		DisableFlagParsing: true,
+		Use:                "build", Short: "Build a complete validated Catalog Snapshot with this executable's identity",
+
 		Args: func(cmd *cobra.Command, args []string) error {
-			if err := cobra.NoArgs(cmd, args); err != nil {
+			// Discover output mode across unknown flags before strict parsing can stop.
+			// Both passes use pflag's actual flag/value rules, including the -- boundary.
+			flags := cmd.Flags()
+			flags.ParseErrorsAllowlist.UnknownFlags = true
+			requestedJSON := false
+			_ = flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+				if flag.Name == "json" {
+					if requested, err := strconv.ParseBool(value); err == nil {
+						requestedJSON = requested
+					}
+				}
+				return nil
+			})
+			flags.ParseErrorsAllowlist.UnknownFlags = false
+			if err := flags.Parse(args); err != nil {
+				jsonOutput = requestedJSON
+				return failure(cmd, "invalid_arguments", err)
+			}
+			if help, _ := flags.GetBool("help"); help {
+				return nil
+			}
+			if err := cobra.NoArgs(cmd, flags.Args()); err != nil {
 				return failure(cmd, "invalid_arguments", err)
 			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if help, _ := cmd.Flags().GetBool("help"); help {
+				return cmd.Help()
+			}
 			resolver, cleanup, err := resolveCatalogOrigins(opts)
 			if err != nil {
 				return failure(cmd, "origin_setup_failed", err)
@@ -74,6 +102,5 @@ func newCatalogBuildCommand(opts Options) *cobra.Command {
 	command.Flags().StringVar(&sourceCommit, "source-commit", "", "Catalog Project full commit label")
 	command.Flags().StringVar(&outputDir, "out-dir", "dist", "new output directory")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	command.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return failure(cmd, "invalid_arguments", err) })
 	return command
 }
