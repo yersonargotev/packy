@@ -200,9 +200,8 @@ identity to verify the executable independently of the current directory.
 
 The Catalog Project remains pinned to its previous immutable Packy release
 until the complete supporting release is adopted. Removing the source-only
-validator from current Packy does not alter that old release. Snapshot
-construction and publication continue using their existing entry points until
-their own deliveries migrate them.
+validator from current Packy does not alter that old release. The supported CLI provides snapshot construction and publication;
+the Catalog Project adopts them with the complete supporting immutable release.
 
 The validator strictly checks every Pack's typed manifest vocabulary,
 dependencies, conflicts, origins, exact-copy or adapted relationships,
@@ -296,3 +295,51 @@ is [catalog-build v1](../schemas/cli/v1/catalog-build.schema.json).
 The obsolete source-only snapshot command has been removed. The Catalog Project
 remains pinned to its previous immutable release until the complete supporting
 Packy release is available; this engine change does not update that pin.
+
+
+### Publish prepared assets
+
+```sh
+packy catalog publish --repository yersonargotev/packy-catalog \
+  --commit <full-reviewed-catalog-commit> --dist <prepared-assets-directory>
+```
+
+Run the installed Packy executable from any directory. No Packy source checkout,
+Go runtime, `jq`, or checksum utility is needed. Install the GitHub CLI (`gh`) on
+`PATH` and authenticate it through `GH_TOKEN` (as in the official workflow) or
+`gh auth login`. The credential must have release read/write access to the
+intended repository (`contents: write` in GitHub Actions). The repository must
+have native release immutability enabled. Temporary space for sealed copies of
+the prepared assets and downloaded verification bytes must be writable.
+
+The command consumes exactly `catalog-snapshot.tar.gz` and `SHA256SUMS`, verifies
+the archive checksum, and never builds or executes Catalog Project resources.
+It checks the exact `catalog-<commit>` tag, full target commit, complete remote
+asset set, and matching bytes. It creates a draft, uploads only missing matching
+assets, verifies the complete download, and publishes through GitHub's native
+immutability control. Unchanged immutable releases succeed without mutation;
+matching interrupted drafts can resume. Different targets, unexpected or
+conflicting assets, missing published assets, and mutable publications fail.
+Transport errors stop the operation; repeat the same command to recover a
+matching draft after an interrupted upload or lost response.
+
+Official authority remains with the reviewed preparation and publication
+workflow described above. The workflow binds prepared bytes to the protected
+Catalog commit and issues the artifact attestation with `id-token: write` and
+`attestations: write` before publication. This command neither creates an
+attestation nor certifies caller-supplied commit labels. Publishing local
+candidate fixtures does not make them attested official Catalog Snapshots;
+normal consumer verification remains required.
+
+Default output describes publication, completed interruption, or an unchanged
+release. With `--json`, the version 1 `catalog-publication` report has `result`
+`published`, `resumed`, or `unchanged`, plus `repository`, `commit`, `tag`, and
+`archive_sha256`. Failure reports `result: "failed"` and an actionable `error`
+with code `invalid_arguments`, `assets_invalid`, `transport_failed`, or
+`publication_conflict` (`publication_failed` is reserved for unexpected errors).
+Success exits zero; failures exit nonzero. JSON is on stdout and diagnostics
+on stderr; an output-write failure may only have stderr diagnostics. The offline
+schema is [catalog-publication v1](../schemas/cli/v1/catalog-publication.schema.json).
+The former source-only publisher script is removed after migrating its Packy
+callers; the Catalog Project continues using its previous immutable release
+until adoption.

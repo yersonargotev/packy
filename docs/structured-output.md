@@ -10,6 +10,7 @@ persists the resulting installed Pack receipt, not the preview.
 | Command family | Schema |
 | --- | --- |
 | `packy catalog validate --json` | `schemas/cli/v1/catalog-validation.schema.json` |
+| `packy catalog publish --json` | `schemas/cli/v1/catalog-publication.schema.json` |
 | `packy version --json` | `schemas/cli/v1/packy-version.schema.json` |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
@@ -29,6 +30,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 | Command | `report` |
 | --- | --- |
 | `packy catalog validate --json` | `catalog-validation` |
+| `packy catalog publish --json` | `catalog-publication` |
 | `packy version --json` | `packy-version` |
 | `packy audit --json` | `packy-audit` |
 | `packy list --json` | `pack-list` |

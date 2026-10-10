@@ -56,8 +56,8 @@ func testCatalogPublicationExecutable(t *testing.T, catalogCLI string) {
 
 	fakeGH, baselineReleaseRoot := catalogPublicationFixture(t)
 	candidateReleaseRoot := t.TempDir()
-	publishIssue798Snapshot(t, root, fakeGH, baselineReleaseRoot, baselineCommit, baselineDist)
-	publishIssue798Snapshot(t, root, fakeGH, candidateReleaseRoot, candidateCommit, candidateDist)
+	publishIssue798Snapshot(t, catalogCLI, fakeGH, baselineReleaseRoot, baselineCommit, baselineDist)
+	publishIssue798Snapshot(t, catalogCLI, fakeGH, candidateReleaseRoot, candidateCommit, candidateDist)
 
 	releasePath := filepath.Join(t.TempDir(), "catalog-release.json")
 	writeIssue798Release(t, releasePath, publishedIssue798Release(t, baselineReleaseRoot, baselineCommit))
@@ -95,7 +95,7 @@ func testCatalogPublicationExecutable(t *testing.T, catalogCLI string) {
 }
 
 func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
-	root := repositoryRoot(t)
+	executable, _ := buildCatalogCLI(t)
 	dist := t.TempDir()
 	archive := []byte("deterministic snapshot bytes\n")
 	if err := os.WriteFile(filepath.Join(dist, "catalog-snapshot.tar.gz"), archive, 0o644); err != nil {
@@ -107,16 +107,11 @@ func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
 
 	fakeGH, releaseRoot := catalogPublicationFixture(t)
 
-	script := filepath.Join(root, "scripts", "publish-catalog-snapshot.sh")
 	run := func() (string, error) {
-		command := exec.Command(script,
-			"--repository", "example/catalog",
-			"--commit", strings.Repeat("a", 40),
-			"--dist", dist,
-		)
-		command.Env = testprocess.Env(t, "GH_BIN="+fakeGH, "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+strings.Repeat("a", 40))
-		output, err := command.CombinedOutput()
-		return string(output), err
+		environment := testprocess.Env(t, "PATH="+filepath.Dir(fakeGH), "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+strings.Repeat("a", 40))
+		stdout, stderr, err := runCatalogCLI(t, environment, t.TempDir(), executable,
+			"catalog", "publish", "--repository", "example/catalog", "--commit", strings.Repeat("a", 40), "--dist", dist)
+		return string(stdout) + string(stderr), err
 	}
 
 	output, err := run()
@@ -167,14 +162,13 @@ func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
 		t.Fatalf("conflicting retry: output=%q err=%v", output, err)
 	}
 
+	t.Run("structured publication contract", func(t *testing.T) { testCatalogPublicationContract(t, executable) })
+
 	failureRoot := t.TempDir()
-	command := exec.Command(script,
-		"--repository", "example/catalog",
-		"--commit", strings.Repeat("a", 40),
-		"--dist", dist,
-	)
-	command.Env = testprocess.Env(t, "GH_BIN="+fakeGH, "FAKE_RELEASE_ROOT="+failureRoot, "FAKE_CATALOG_COMMIT="+strings.Repeat("a", 40), "FAKE_API_FAILURE=true")
-	outputBytes, err := command.CombinedOutput()
+	environment := testprocess.Env(t, "PATH="+filepath.Dir(fakeGH), "FAKE_RELEASE_ROOT="+failureRoot, "FAKE_CATALOG_COMMIT="+strings.Repeat("a", 40), "FAKE_API_FAILURE=true")
+	stdout, stderr, err := runCatalogCLI(t, environment, t.TempDir(), executable,
+		"catalog", "publish", "--repository", "example/catalog", "--commit", strings.Repeat("a", 40), "--dist", dist)
+	outputBytes := append(stdout, stderr...)
 	if err == nil || !strings.Contains(string(outputBytes), "could not determine Catalog Snapshot release state") {
 		t.Fatalf("failed lookup: output=%q err=%v", outputBytes, err)
 	}
@@ -205,12 +199,12 @@ func runIssue798Process(t *testing.T, environment []string, directory, executabl
 	return string(output)
 }
 
-func publishIssue798Snapshot(t *testing.T, root, fakeGH, releaseRoot, commit, dist string) {
+func publishIssue798Snapshot(t *testing.T, executable, fakeGH, releaseRoot, commit, dist string) {
 	t.Helper()
-	command := exec.Command(filepath.Join(root, "scripts", "publish-catalog-snapshot.sh"),
-		"--repository", "example/catalog", "--commit", commit, "--dist", dist)
-	command.Env = testprocess.Env(t, "GH_BIN="+fakeGH, "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+commit)
-	output, err := command.CombinedOutput()
+	environment := testprocess.Env(t, "PATH="+filepath.Dir(fakeGH), "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+commit)
+	stdout, stderr, err := runCatalogCLI(t, environment, t.TempDir(), executable,
+		"catalog", "publish", "--repository", "example/catalog", "--commit", commit, "--dist", dist)
+	output := append(stdout, stderr...)
 	if err != nil || !strings.Contains(string(output), "published immutable Catalog Snapshot") {
 		t.Fatalf("publish Catalog Snapshot %s: %v\n%s", commit, err, output)
 	}
@@ -323,6 +317,15 @@ func catalogPublicationFixture(t *testing.T) (string, string) {
 	if err := os.WriteFile(fakeGH, []byte(fakeCatalogPublicationGH), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	for _, name := range []string{"bash", "basename", "cp", "mkdir", "touch"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(path, filepath.Join(filepath.Dir(fakeGH), name)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return fakeGH, t.TempDir()
 }
 
@@ -330,13 +333,15 @@ const fakeCatalogPublicationGH = `#!/usr/bin/env bash
 set -euo pipefail
 release="$FAKE_RELEASE_ROOT/release"
 emit_release() {
-  asset_count="$(find "$release" -type f ! -name target ! -name draft ! -name immutable ! -name listed | wc -l | tr -d ' ')"
-  case "$asset_count" in
-    0) assets='[]' ;;
-    1) assets='[{}]' ;;
-    2) assets='[{},{}]' ;;
-    *) exit 2 ;;
-  esac
+  assets='['
+  separator=''
+  for asset in "$release"/*; do
+    case "$(basename "$asset")" in target|draft|immutable|listed) continue ;; esac
+    [[ -f "$asset" ]] || continue
+    assets="$assets$separator{}"
+    separator=','
+  done
+  assets="$assets]"
   printf '{"tag_name":"catalog-%s","target_commitish":"%s","draft":%s,"immutable":%s,"assets":%s}\n' \
     "$FAKE_CATALOG_COMMIT" "$(<"$release/target")" "$(<"$release/draft")" "$(<"$release/immutable")" "$assets"
 }
@@ -373,16 +378,20 @@ case "$1 $2" in
       if [[ "$1" == --dir ]]; then destination="$2"; break; fi
       shift
     done
-    [[ ! -f "$release/catalog-snapshot.tar.gz" ]] || cp "$release/catalog-snapshot.tar.gz" "$destination/"
-    [[ ! -f "$release/SHA256SUMS" ]] || cp "$release/SHA256SUMS" "$destination/"
+    [[ "${FAKE_DOWNLOAD_FAILURE:-false}" != true ]] || exit 2
+    for asset in "$release"/*; do
+      case "$(basename "$asset")" in target|draft|immutable|listed) continue ;; esac
+      [[ ! -f "$asset" ]] || cp "$asset" "$destination/"
+    done
     ;;
   "release upload")
+    [[ "${FAKE_UPLOAD_FAILURE:-}" != "$(basename "$4")" ]] || exit 2
     cp "$4" "$release/$(basename "$4")"
     ;;
   "release edit")
     [[ " $* " == *" --draft=false "* ]]
     printf 'false\n' > "$release/draft"
-    printf 'true\n' > "$release/immutable"
+    printf '%s\n' "${FAKE_PUBLISHED_IMMUTABLE:-true}" > "$release/immutable"
     ;;
   *) exit 2 ;;
 esac

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Catalog publication v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "catalog-publication"
+    },
+    "result": {
+      "enum": [
+        "published",
+        "resumed",
+        "unchanged",
+        "failed"
+      ]
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^catalog-[0-9a-f]{40}$"
+    },
+    "archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_arguments",
+            "assets_invalid",
+            "transport_failed",
+            "publication_conflict",
+            "publication_failed"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "result": {
+          "enum": [
+            "published",
+            "resumed",
+            "unchanged"
+          ]
+        }
+      },
+      "required": [
+        "repository",
+        "commit",
+        "tag",
+        "archive_sha256"
+      ],
+      "not": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "properties": {
+        "result": {
+          "const": "failed"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "repository"
+            ]
+          },
+          {
+            "required": [
+              "commit"
+            ]
+          },
+          {
+            "required": [
+              "tag"
+            ]
+          },
+          {
+            "required": [
+              "archive_sha256"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
