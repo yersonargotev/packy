@@ -1,6 +1,6 @@
 ---
 name: deliver-issue
-description: Deliver one approved Packy GitHub issue through implementation, local validation and manual CLI verification, final Standards and Spec review, required CI, protected merge, and cleanup. Use only when the user explicitly asks to deliver a numbered Packy issue end to end.
+description: Deliver one approved Packy GitHub issue through implementation, local validation and manual CLI verification, final Standards and Spec review, required CI, protected merge, and cleanup. Use for explicit numbered Packy delivery requests, including requests named issue-delivery; the repository workflow supersedes generic orchestration.
 ---
 
 # Deliver Issue

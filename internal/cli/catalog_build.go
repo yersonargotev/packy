@@ -2,13 +2,9 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"slices"
-	"strconv"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
@@ -37,55 +33,9 @@ func newCatalogBuildCommand(opts Options) *cobra.Command {
 		return err
 	}
 	command := &cobra.Command{
-		DisableFlagParsing: true,
-		Use:                "build",
-		Short:              "Build a complete validated Catalog Snapshot with this executable's identity",
-		Args: func(cmd *cobra.Command, args []string) error {
-			// Discover output mode across unknown flags before strict parsing can stop.
-			// Both passes use pflag's actual flag/value rules, including the -- boundary.
-			flags := cmd.Flags()
-			flags.ParseErrorsAllowlist.UnknownFlags = true
-			requestedJSON := false
-
-			discoveryArgs := slices.Clone(args)
-			for {
-				err := flags.ParseAll(discoveryArgs, func(flag *pflag.Flag, value string) error {
-					if flag.Name == "json" {
-						if requested, err := strconv.ParseBool(value); err == nil {
-							requestedJSON = requested
-						}
-					}
-					return nil
-				})
-				var syntaxError *pflag.InvalidSyntaxError
-				if !errors.As(err, &syntaxError) {
-					break
-				}
-				// Replace only malformed tokens in discovery; strict parsing retains the
-				// original arguments and error. Empty positional values preserve arity.
-				for i, argument := range discoveryArgs {
-					if argument == syntaxError.GetSpecifiedFlag() {
-						discoveryArgs[i] = ""
-					}
-				}
-			}
-			flags.ParseErrorsAllowlist.UnknownFlags = false
-			if err := flags.Parse(args); err != nil {
-				jsonOutput = requestedJSON
-				return failure(cmd, "invalid_arguments", err)
-			}
-			if help, _ := flags.GetBool("help"); help {
-				return nil
-			}
-			if err := cobra.NoArgs(cmd, flags.Args()); err != nil {
-				return failure(cmd, "invalid_arguments", err)
-			}
-			return nil
-		},
+		Use:   "build",
+		Short: "Build a complete validated Catalog Snapshot with this executable's identity",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if help, _ := cmd.Flags().GetBool("help"); help {
-				return cmd.Help()
-			}
 			resolver, cleanup, err := resolveCatalogOrigins(opts)
 			if err != nil {
 				return failure(cmd, "origin_setup_failed", err)
@@ -119,5 +69,6 @@ func newCatalogBuildCommand(opts Options) *cobra.Command {
 	command.Flags().StringVar(&sourceCommit, "source-commit", "", "Catalog Project full commit label")
 	command.Flags().StringVar(&outputDir, "out-dir", "dist", "new output directory")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	configureCatalogArguments(command, &jsonOutput, failure)
 	return command
 }

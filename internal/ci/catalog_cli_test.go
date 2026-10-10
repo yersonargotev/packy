@@ -20,8 +20,17 @@ import (
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
-func TestCatalogValidationExecutable(t *testing.T) {
+func TestCatalogExecutable(t *testing.T) {
 	executable, sourceCommit := buildCatalogCLI(t)
+	t.Run("validate", func(t *testing.T) { testCatalogValidationExecutable(t, executable, sourceCommit) })
+	t.Run("build", func(t *testing.T) { testCatalogBuildExecutable(t, executable, sourceCommit) })
+	t.Run("publication", func(t *testing.T) { testCatalogPublicationExecutable(t, executable) })
+}
+
+func testCatalogValidationExecutable(t *testing.T, executable, sourceCommit string) {
+	t.Run("argument output contract", func(t *testing.T) {
+		testCatalogArgumentOutput(t, executable, "validate")
+	})
 	project := t.TempDir()
 	writePublicationCatalogPack(t, project, "alpha", "1.0.0", "inert skill\n")
 	environment := testprocess.Env(t)
@@ -375,4 +384,55 @@ func buildCatalogCLI(t *testing.T) (string, string) {
 		t.Fatalf("build executable: %v\n%s", err, output)
 	}
 	return executable, sourceCommit
+}
+
+func testCatalogArgumentOutput(t *testing.T, executable, command string) {
+	t.Helper()
+	environment := testprocess.Env(t)
+	directory := t.TempDir()
+	for _, args := range [][]string{
+		{"--builder", "example/other", "--json"},
+		{"--unknown", "value", "--json"},
+		{"--json", "--unknown", "value"},
+		{"--help=invalid", "--json"},
+		{"--json", "--help=invalid"},
+		{"---invalid", "--json"},
+		{"--json", "---invalid"},
+		{"--=invalid", "--json"},
+		{"--json", "--=invalid"},
+		{"--json=invalid", "--json"},
+		{"--json", "--json=invalid"},
+		{"--json", "--project"},
+		{"unexpected", "--json"},
+		{"--json=false", "--unknown", "--json=true"},
+	} {
+		t.Run("JSON "+strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", command}, args...)...)
+			if command == "build" {
+				assertCatalogBuildFailure(t, stdout, stderr, err, "invalid_arguments")
+			} else {
+				assertCatalogResult(t, stdout, stderr, err, false, "invalid_arguments")
+			}
+		})
+	}
+	for _, args := range [][]string{
+		{"--project"},
+		{"--project", "--json"},
+		{"--", "--json"},
+		{"---invalid", "--json=false"},
+		{"--json", "--unknown", "--json=false"},
+	} {
+		t.Run("human "+strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", command}, args...)...)
+			if err == nil || len(stdout) != 0 || len(stderr) == 0 {
+				t.Fatalf("human argument failure: %v stdout=%s stderr=%s", err, stdout, stderr)
+			}
+		})
+	}
+	t.Run("help", func(t *testing.T) {
+		stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, "catalog", command, "--help")
+		if err != nil || len(stdout) == 0 || len(stderr) != 0 {
+			t.Fatalf("help: %v stdout=%s stderr=%s", err, stdout, stderr)
+		}
+	})
 }

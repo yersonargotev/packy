@@ -15,7 +15,7 @@ import (
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
-func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testing.T) {
+func testCatalogPublicationExecutable(t *testing.T, catalogCLI string) {
 	root := repositoryRoot(t)
 	baseline := t.TempDir()
 	writePublicationCatalogPack(t, baseline, "alpha", "1.0.0", "old alpha\n")
@@ -27,7 +27,6 @@ func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testi
 
 	bin := t.TempDir()
 	buildEnvironment := testprocess.GoOfflineEnv(t)
-	catalogCLI, _ := buildCatalogCLI(t)
 	buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, "packy"), "./internal/cli/testdata/issue798packy")
 
 	validation := runIssue798Process(t, testprocess.Env(t), root, catalogCLI,
