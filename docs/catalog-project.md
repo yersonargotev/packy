@@ -226,7 +226,7 @@ pinned engine release, with read-only permissions. It cannot publish and receive
 
 A successful validation of a reviewed merge on the Catalog Project's protected
 `main` branch starts publication automatically. The read-only preparation job
-uses Packy's pinned `catalogsnapshot` tool to build exactly two files:
+uses `packy catalog build` from the pinned Packy release to build exactly two files:
 
 - `catalog-snapshot.tar.gz`, containing `catalog-index.json` and the complete
   deterministic union of every declared Pack closure under `packs/<pack-id>/`; and
@@ -248,7 +248,51 @@ release or completes a matching draft. A published mutable release, a different
 target, an unexpected asset, or changed bytes are rejected.
 
 Consumers verify the archive checksum and the GitHub artifact attestation for
-`yersonargotev/packy-catalog`. Together with the embedded source and builder
-commits, this proves the official publisher, artifact integrity, and exact Pack
-bytes. Catalog acquisition and local snapshot selection are implemented by the
-separate consumer lifecycle work.
+`yersonargotev/packy-catalog`. These checks authenticate the official publisher
+and artifact integrity. The publication workflow must also bind the prepared
+assets to the reviewed Catalog Project commit; source and builder labels alone
+do not prove that published bytes match that commit.
+
+### Build a local candidate
+
+```sh
+packy catalog build --project <catalog-project-root> \
+  --source-repository yersonargotev/packy-catalog \
+  --source-commit <full-catalog-commit> --out-dir <new-output-directory>
+```
+
+The command revalidates the complete candidate, including provenance, closures,
+and runtime fitness, before construction. Add `--baseline <baseline-project>`
+to enforce independent Pack version changes during the same build. Catalog
+resources remain inert. The existing constructor seals validated inputs,
+rejects input drift and unsafe paths, refuses an existing output directory,
+and stages the complete asset set before making it available.
+
+`--source-repository` and `--source-commit` are caller-supplied labels for local
+candidate bytes. They do not inspect Git, require a clean checkout, or certify
+that the input matches a reviewed commit. Official publication must establish
+that correspondence separately through its reviewed preparation workflow and
+publisher verification. A local build is not a Catalog Publication.
+
+The index's `builder` is always `yersonargotev/packy@<embedded-source-commit>`
+from the executing release binary. There is no `--builder` override. Unstamped
+development binaries whose embedded commit is `unknown` cannot build snapshots;
+use a release-stamped binary. `packy version --json` exposes the same commit.
+Repeated builds with identical validated input and labels retain the existing
+same-platform deterministic bytes; cross-platform byte identity is not promised.
+
+Default output reports the source, builder, digests, and included Packs. With
+`--json`, the version 1 `catalog-build` report returns `result: "built"`, the
+complete `index`, `archive_path`, `checksum_path`, and `archive_sha256`. A failure
+returns a nonzero exit status and `result: "failed"` with `error.code` and
+`error.message`; codes are `invalid_arguments`, `origin_setup_failed`,
+`validation_failed`, and `build_failed`. Invalid labels, unavailable embedded
+builder identity, input drift, and filesystem output failures are `build_failed`.
+If output itself cannot be written, the command exits nonzero without a complete
+report. Treat only a complete success report **and** zero exit status as success;
+assets may already exist when writing the final report fails. The JSON contract
+is [catalog-build v1](../schemas/cli/v1/catalog-build.schema.json).
+
+The obsolete source-only snapshot command has been removed. The Catalog Project
+remains pinned to its previous immutable release until the complete supporting
+Packy release is available; this engine change does not update that pin.

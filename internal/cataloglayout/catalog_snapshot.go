@@ -28,8 +28,8 @@ var (
 	builderIdentityPattern   = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$`)
 )
 
-// CatalogSnapshotSource binds a snapshot to its reviewed source and exact
-// builder revision.
+// CatalogSnapshotSource labels the candidate source and exact builder revision.
+// These labels alone do not establish official publication provenance.
 type CatalogSnapshotSource struct {
 	Repository string `json:"repository"`
 	Commit     string `json:"commit"`

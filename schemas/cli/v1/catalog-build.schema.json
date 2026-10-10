@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Catalog build v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "catalog-build"
+    },
+    "result": {
+      "enum": [
+        "built",
+        "failed"
+      ]
+    },
+    "index": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "source",
+        "builder",
+        "catalog_sha256",
+        "packs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "repository",
+            "commit"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "builder": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$"
+        },
+        "catalog_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "packs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "manifest_sha256",
+              "closure_sha256",
+              "files"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "manifest_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "closure_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "mode",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "mode": {
+                      "enum": [
+                        "100644",
+                        "100755"
+                      ]
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "archive_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checksum_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_arguments",
+            "origin_setup_failed",
+            "validation_failed",
+            "build_failed"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "result": {
+          "const": "built"
+        }
+      },
+      "required": [
+        "index",
+        "archive_path",
+        "checksum_path",
+        "archive_sha256"
+      ],
+      "not": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "properties": {
+        "result": {
+          "const": "failed"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "index"
+            ]
+          },
+          {
+            "required": [
+              "archive_path"
+            ]
+          },
+          {
+            "required": [
+              "checksum_path"
+            ]
+          },
+          {
+            "required": [
+              "archive_sha256"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -27,16 +27,10 @@ func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testi
 
 	bin := t.TempDir()
 	buildEnvironment := testprocess.GoOfflineEnv(t)
-	tools := map[string]string{
-		"catalogcli":      "./cmd/packy",
-		"catalogsnapshot": "./internal/tools/catalogsnapshot",
-		"packy":           "./internal/cli/testdata/issue798packy",
-	}
-	for name, packagePath := range tools {
-		buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, name), packagePath)
-	}
+	catalogCLI, _ := buildCatalogCLI(t)
+	buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, "packy"), "./internal/cli/testdata/issue798packy")
 
-	validation := runIssue798Process(t, testprocess.Env(t), root, filepath.Join(bin, "catalogcli"),
+	validation := runIssue798Process(t, testprocess.Env(t), root, catalogCLI,
 		"catalog", "validate", "--project", candidate, "--baseline", baseline)
 	for _, want := range []string{"validated Catalog Project packs=3", "alpha@1.1.0", "beta@1.0.0", "stable@2.0.0"} {
 		if !strings.Contains(validation, want) {
@@ -46,17 +40,15 @@ func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testi
 
 	baselineCommit := strings.Repeat("3", 40)
 	candidateCommit := strings.Repeat("4", 40)
-	builder := "yersonargotev/packy@" + strings.Repeat("5", 40)
 	baselineDist := filepath.Join(t.TempDir(), "dist")
 	candidateDist := filepath.Join(t.TempDir(), "dist")
 	for _, snapshot := range []struct {
 		project, commit, dist string
 	}{{baseline, baselineCommit, baselineDist}, {candidate, candidateCommit, candidateDist}} {
-		output := runIssue798Process(t, testprocess.Env(t), root, filepath.Join(bin, "catalogsnapshot"),
+		output := runIssue798Process(t, testprocess.Env(t), root, catalogCLI, "catalog", "build",
 			"--project", snapshot.project,
 			"--source-repository", "yersonargotev/packy-catalog",
 			"--source-commit", snapshot.commit,
-			"--builder", builder,
 			"--out-dir", snapshot.dist)
 		if !strings.Contains(output, "built Catalog Snapshot") {
 			t.Fatalf("snapshot build output:\n%s", output)

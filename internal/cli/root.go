@@ -203,7 +203,7 @@ func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Comm
 			}})
 		},
 	})
-	command.AddCommand(newCatalogValidateCommand(opts), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
+	command.AddCommand(newCatalogValidateCommand(opts), newCatalogBuildCommand(opts), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
 	return command
 }
 
