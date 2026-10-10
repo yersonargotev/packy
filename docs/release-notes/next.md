@@ -11,6 +11,10 @@ and effective provenance.
 - `packy catalog validate` validates a complete Catalog Project and optional
   `--baseline` through the installed executable, with readable output and
   versioned `--json` results. No Packy source checkout or Go runtime is needed.
+- `packy catalog publish` publishes or verifies prepared immutable Catalog
+  Snapshots through authenticated `gh`, preserving unchanged retry and draft
+  recovery with versioned JSON. Official preparation and attestation remain
+  workflow-owned; the source-only publisher script is removed.
 - `packy version --json` exposes the release version and exact source commit.
   Release builds compile the recorded Git tree and validate embedded identity.
 
