@@ -21,22 +21,7 @@ import (
 )
 
 func TestCatalogValidationExecutable(t *testing.T) {
-	root := repositoryRoot(t)
-	executable := filepath.Join(t.TempDir(), "packy")
-	buildEnvironment := testprocess.GoOfflineEnv(t)
-	commitOutput, stderr, err := runCatalogCLI(t, testprocess.Env(t), root, "git", "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatalf("source commit: %v %s", err, stderr)
-	}
-	sourceCommit := strings.TrimSpace(string(commitOutput))
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags=-X github.com/yersonargotev/packy/internal/version.Value=v0.0.0 -X github.com/yersonargotev/packy/internal/version.SourceCommit="+sourceCommit, "-o", executable, "./cmd/packy")
-	build.Env = buildEnvironment
-	build.Dir = root
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build executable: %v\n%s", err, output)
-	}
+	executable, sourceCommit := buildCatalogCLI(t)
 	project := t.TempDir()
 	writePublicationCatalogPack(t, project, "alpha", "1.0.0", "inert skill\n")
 	environment := testprocess.Env(t)
@@ -369,4 +354,25 @@ func writeCatalogOriginPack(t *testing.T, candidate, commit string) {
 		resource["notices"] = []string{"notice:mit"}
 		m["resources"] = []any{map[string]any{"kind": "notice", "id": "mit", "source": "notices/mit", "description": "MIT notice", "license": "MIT", "attribution": "Example", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}}, resource}
 	})
+}
+
+func buildCatalogCLI(t *testing.T) (string, string) {
+	t.Helper()
+	root := repositoryRoot(t)
+	executable := filepath.Join(t.TempDir(), "packy")
+	buildEnvironment := testprocess.GoOfflineEnv(t)
+	commitOutput, stderr, err := runCatalogCLI(t, testprocess.Env(t), root, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("source commit: %v %s", err, stderr)
+	}
+	sourceCommit := strings.TrimSpace(string(commitOutput))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags=-X github.com/yersonargotev/packy/internal/version.Value=v0.0.0 -X github.com/yersonargotev/packy/internal/version.SourceCommit="+sourceCommit, "-o", executable, "./cmd/packy")
+	build.Env = buildEnvironment
+	build.Dir = root
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build executable: %v\n%s", err, output)
+	}
+	return executable, sourceCommit
 }

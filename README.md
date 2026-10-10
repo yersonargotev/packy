@@ -183,6 +183,17 @@ Project checkout with:
 packy catalog validate --project <catalog-project-root>
 ```
 
+Build validated candidate assets with the executing release identity:
+
+```sh
+packy catalog build --project <catalog-project-root> \
+  --source-repository <owner/repository> --source-commit <full-commit> \
+  --out-dir <new-output-directory>
+```
+
+See [Catalog Snapshots](docs/catalog-project.md#catalog-snapshots) for local
+source-label semantics, JSON output, and publication provenance.
+
 Run the sandboxed general repository check with:
 
 ```sh
