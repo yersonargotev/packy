@@ -129,7 +129,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	})
 	requireDocumentationText(t, root, "docs/catalog-project.md", []string{
 		"yersonargotev/packy-catalog", "packs/*/pack.json", "Declared Pack Closure",
-		"catalogvalidate", "strictly greater SemVer", "inert data", "same validator",
+		"packy catalog validate", "strictly greater SemVer", "inert data", "same validator",
 		"initial Packy engine release", "same installed Packy executable",
 	})
 	for _, path := range []string{"CONTEXT.md", "README.md", "docs/capability-packs.md", "docs/catalog-project.md", "docs/release-notes/next.md"} {

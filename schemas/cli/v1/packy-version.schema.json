@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Packy executable identity v1",
+  "required": [
+    "schema_version",
+    "report",
+    "version",
+    "source_commit"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "packy-version"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^(unknown|[0-9a-f]{40})$"
+    }
+  }
+}

@@ -180,7 +180,7 @@ Run focused tests for touched behavior while iterating. Validate a Catalog
 Project checkout with:
 
 ```sh
-go run ./internal/tools/catalogvalidate --project <catalog-project-root>
+packy catalog validate --project <catalog-project-root>
 ```
 
 Run the sandboxed general repository check with:

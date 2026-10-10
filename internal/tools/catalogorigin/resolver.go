@@ -5,6 +5,7 @@ package catalogorigin
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"os"
@@ -19,15 +20,29 @@ import (
 type Resolver struct {
 	temporary string
 	resolved  map[string]string
+	caBundle  []byte
 }
 
 // New creates an empty origin resolver.
 func New() (*Resolver, error) {
+	// Honor the explicit certificate bundle on every host, including systems
+	// whose native Go trust store does not read SSL_CERT_FILE itself.
+	var caBundle []byte
+	if path := os.Getenv("SSL_CERT_FILE"); path != "" {
+		var err error
+		caBundle, err = os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read origin SSL_CERT_FILE: %w", err)
+		}
+		if !x509.NewCertPool().AppendCertsFromPEM(caBundle) {
+			return nil, fmt.Errorf("origin SSL_CERT_FILE contains no PEM certificates")
+		}
+	}
 	temporary, err := os.MkdirTemp("", "packy-catalog-origins-")
 	if err != nil {
 		return nil, fmt.Errorf("create temporary origin directory: %w", err)
 	}
-	return &Resolver{temporary: temporary, resolved: map[string]string{}}, nil
+	return &Resolver{temporary: temporary, resolved: map[string]string{}, caBundle: caBundle}, nil
 }
 
 // Close removes the resolver's owned temporary checkouts.
@@ -48,6 +63,7 @@ func (r *Resolver) Resolve(ctx context.Context, origin cataloglayout.Origin) (st
 	repository, err := git.PlainCloneContext(ctx, target, false, &git.CloneOptions{
 		URL:      "https://github.com/" + origin.Repository + ".git",
 		Tags:     git.AllTags,
+		CABundle: r.caBundle,
 		Progress: io.Discard,
 	})
 	if err != nil {

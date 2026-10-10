@@ -9,6 +9,8 @@ persists the resulting installed Pack receipt, not the preview.
 
 | Command family | Schema |
 | --- | --- |
+| `packy catalog validate --json` | `schemas/cli/v1/catalog-validation.schema.json` |
+| `packy version --json` | `schemas/cli/v1/packy-version.schema.json` |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
@@ -26,6 +28,8 @@ live producer examples, and reject the checked-in negative project fixtures.
 
 | Command | `report` |
 | --- | --- |
+| `packy catalog validate --json` | `catalog-validation` |
+| `packy version --json` | `packy-version` |
 | `packy audit --json` | `packy-audit` |
 | `packy list --json` | `pack-list` |
 | `packy doctor --json` | `doctor` |
@@ -119,3 +123,18 @@ Preview definitions follow the selected closure; receipts continue to seal
 canonical identities and actual projected bytes without persisting provenance.
 Historical schema generations remain immutable documentation; producers emit
 only their current generation. Project receipt and lock schemas are unchanged.
+
+## Catalog validation and executable identity
+
+Catalog validation v1 reports the complete inert candidate and optional baseline
+check. A valid result contains the ordered Pack identities, versions, manifest
+and closure digests, file counts, and fitness row count. An invalid result
+contains `error.code` (`validation_failed`, `origin_setup_failed`, or
+`invalid_arguments`) and an actionable message; it never claims partial success.
+Validation messages may include the explicitly supplied Catalog Project paths.
+Both validation and output failures exit nonzero. Argument parsing failures
+before `--json` takes effect and failures writing stdout may provide only stderr.
+
+Executable identity v1 reports the embedded `version` and `source_commit`.
+Unstamped development builds use `dev` and `unknown`; the release builder derives
+the commit from Git and compiles its immutable tree with both values embedded.

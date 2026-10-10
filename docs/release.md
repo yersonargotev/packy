@@ -88,3 +88,13 @@ immutable commits.
 
 The workflow creates each version once. The final package smoke runs only after
 the GitHub Release and Homebrew formula are published and verified.
+
+## Executable source identity
+
+Release construction requires a clean source checkout and builds an archive of
+its exact Git HEAD, with Go workspace and ambient build flags disabled. Every
+platform binary embeds that commit and the selected version. `packy version
+--json` exposes both using the versioned executable-identity schema. Release
+artifact validation checks the host binary's identity against the build source,
+and the published release notes identify that same source commit. The four
+archive names and checksum manifest remain unchanged.

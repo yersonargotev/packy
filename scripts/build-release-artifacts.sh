@@ -24,6 +24,11 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+source_commit="$(git -C "$repo_root" rev-parse HEAD)"
+[[ -z "$(git -C "$repo_root" status --porcelain --untracked-files=normal)" ]] || {
+  echo "release builds require a clean source checkout" >&2
+  exit 1
+}
 mkdir -p "$out_dir"
 out_dir="$(cd "$out_dir" && pwd)"
 if find "$out_dir" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
@@ -41,7 +46,11 @@ platforms=(
 staging="$(mktemp -d "${TMPDIR:-/tmp}/packy-release-build.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 archives=()
-cd "$repo_root"
+# Build the recorded commit's immutable tree, even if the operator changes the
+# checkout while cross-compilation is running.
+mkdir "$staging/source"
+git -C "$repo_root" archive "$source_commit" | tar -x -C "$staging/source"
+cd "$staging/source"
 for platform in "${platforms[@]}"; do
   goos="${platform%/*}"
   goarch="${platform#*/}"
@@ -49,9 +58,9 @@ for platform in "${platforms[@]}"; do
   archive="packy_${version}_${goos}_${goarch}.tar.gz"
   mkdir -p "$platform_dir"
   echo "building $archive"
-  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+  GOWORK=off GOFLAGS= GOENV=off CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
     go build -trimpath \
-      -ldflags="-s -w -X github.com/yersonargotev/packy/internal/version.Value=${version}" \
+      -ldflags="-s -w -X github.com/yersonargotev/packy/internal/version.Value=${version} -X github.com/yersonargotev/packy/internal/version.SourceCommit=${source_commit}" \
       -o "$platform_dir/packy" ./cmd/packy
   COPYFILE_DISABLE=1 tar -C "$platform_dir" -czf "$out_dir/$archive" packy
   archives+=("$archive")
