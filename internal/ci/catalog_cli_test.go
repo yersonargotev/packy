@@ -194,6 +194,28 @@ func TestCatalogValidationExecutable(t *testing.T) {
 			assertCatalogResult(t, stdout, stderr, err, false, code)
 		}
 	})
+	t.Run("exact origin bytes", func(t *testing.T) {
+		commit, proxy, caFile := catalogGitOrigin(t)
+		candidate := t.TempDir()
+		writeCatalogOriginPack(t, candidate, commit)
+		untrusted := testprocess.Env(t, "HTTPS_PROXY="+proxy)
+		stdout, stderr, err := runCatalogCLI(t, untrusted, directory, executable, "catalog", "validate", "--project", candidate, "--json")
+		assertCatalogResult(t, stdout, stderr, err, false, "validation_failed")
+		if !bytes.Contains(stdout, []byte("certificate")) {
+			t.Fatalf("untrusted origin did not fail TLS verification: %s", stdout)
+		}
+		isolated := testprocess.Env(t, "HTTPS_PROXY="+proxy, "SSL_CERT_FILE="+caFile)
+		stdout, stderr, err = runCatalogCLI(t, isolated, directory, executable, "catalog", "validate", "--project", candidate, "--json")
+		assertCatalogResult(t, stdout, stderr, err, true, "")
+		if err := os.WriteFile(filepath.Join(candidate, "packs", "alpha", "skills", "alpha", "SKILL.md"), []byte("divergent local bytes\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err = runCatalogCLI(t, isolated, directory, executable, "catalog", "validate", "--project", candidate, "--json")
+		assertCatalogResult(t, stdout, stderr, err, false, "validation_failed")
+		if !bytes.Contains(stdout, []byte("exact-copy")) {
+			t.Fatalf("expected origin-byte comparison failure: %s", stdout)
+		}
+	})
 	t.Run("controlled origin acquisition failure", func(t *testing.T) {
 		var requests atomic.Int32
 		proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,22 +224,7 @@ func TestCatalogValidationExecutable(t *testing.T) {
 		}))
 		defer proxy.Close()
 		candidate := t.TempDir()
-		writePublicationCatalogPack(t, candidate, "alpha", "1.0.0", "upstream skill\n")
-		notice := filepath.Join(candidate, "packs", "alpha", "notices", "mit")
-		if err := os.MkdirAll(filepath.Dir(notice), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(notice, []byte("MIT License\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		mutateCatalogManifest(t, candidate, func(m map[string]any) {
-			m["origins"] = []any{map[string]any{"id": "upstream", "repository": "example/upstream", "commit": strings.Repeat("a", 40)}}
-			resources := m["resources"].([]any)
-			resource := resources[0].(map[string]any)
-			resource["origin"] = map[string]any{"id": "upstream", "path": "skill", "relationship": "exact-copy"}
-			resource["notices"] = []string{"notice:mit"}
-			m["resources"] = []any{map[string]any{"kind": "notice", "id": "mit", "source": "notices/mit", "description": "MIT notice", "license": "MIT", "attribution": "Example", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}}, resource}
-		})
+		writeCatalogOriginPack(t, candidate, strings.Repeat("a", 40))
 		isolated := testprocess.Env(t, "HTTPS_PROXY="+proxy.URL, "HTTP_PROXY="+proxy.URL)
 		stdout, stderr, err := runCatalogCLI(t, isolated, directory, executable, "catalog", "validate", "--project", candidate, "--json")
 		assertCatalogResult(t, stdout, stderr, err, false, "validation_failed")
@@ -342,4 +349,24 @@ func validateCatalogCLISchema(t *testing.T, name string, data []byte) {
 	if err := schema.Validate(value); err != nil {
 		t.Fatalf("%s: %v\n%s", name, err, data)
 	}
+}
+
+func writeCatalogOriginPack(t *testing.T, candidate, commit string) {
+	t.Helper()
+	writePublicationCatalogPack(t, candidate, "alpha", "1.0.0", "upstream skill\n")
+	notice := filepath.Join(candidate, "packs", "alpha", "notices", "mit")
+	if err := os.MkdirAll(filepath.Dir(notice), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notice, []byte("MIT License\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mutateCatalogManifest(t, candidate, func(m map[string]any) {
+		m["origins"] = []any{map[string]any{"id": "upstream", "repository": "example/upstream", "commit": commit}}
+		resources := m["resources"].([]any)
+		resource := resources[0].(map[string]any)
+		resource["origin"] = map[string]any{"id": "upstream", "path": "skill", "relationship": "exact-copy"}
+		resource["notices"] = []string{"notice:mit"}
+		m["resources"] = []any{map[string]any{"kind": "notice", "id": "mit", "source": "notices/mit", "description": "MIT notice", "license": "MIT", "attribution": "Example", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}}, resource}
+	})
 }

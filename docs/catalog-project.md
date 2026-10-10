@@ -208,7 +208,11 @@ The validator strictly checks every Pack's typed manifest vocabulary,
 dependencies, conflicts, origins, exact-copy or adapted relationships,
 required notices, safe resource paths, deterministic closure, and complete
 runtime-fitness matrix. Exact copies are compared with their pinned public
-upstream commits. Catalog files are read as inert data and never executed.
+upstream commits. Origin acquisition honors `HTTPS_PROXY` and an explicit
+`SSL_CERT_FILE` PEM bundle on every supported host, adding that bundle to system
+trust while retaining certificate and hostname verification. This permits
+controlled origin transports without changing the declared upstream identity.
+Catalog files are read as inert data and never executed.
 
 For an existing Pack, any manifest-contract or referenced-byte change requires
 a strictly greater SemVer. Content with the same identity must retain its
