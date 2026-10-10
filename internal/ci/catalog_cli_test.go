@@ -25,6 +25,7 @@ func TestCatalogExecutable(t *testing.T) {
 	t.Run("validate", func(t *testing.T) { testCatalogValidationExecutable(t, executable, sourceCommit) })
 	t.Run("build", func(t *testing.T) { testCatalogBuildExecutable(t, executable, sourceCommit) })
 	t.Run("publication", func(t *testing.T) { testCatalogPublicationExecutable(t, executable) })
+	t.Run("candidate", func(t *testing.T) { testCatalogCandidateExecutable(t, executable) })
 }
 
 func testCatalogValidationExecutable(t *testing.T, executable, sourceCommit string) {

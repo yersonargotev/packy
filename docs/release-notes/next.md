@@ -8,6 +8,11 @@ and effective provenance.
 
 ## Changes since the previous release
 
+- `packy catalog candidate` exercises complete local snapshot assets through
+  the normal executable in an explicitly disposable authoring workspace.
+  Preview, project install, verification, and uninstall preserve interactive
+  consent and ownership; local candidates never select an official catalog or
+  enable host execution, global operations, or personal activation.
 - `packy catalog validate` validates a complete Catalog Project and optional
   `--baseline` through the installed executable, with readable output and
   versioned `--json` results. No Packy source checkout or Go runtime is needed.

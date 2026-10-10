@@ -297,6 +297,69 @@ remains pinned to its previous immutable release until the complete supporting
 Packy release is available; this engine change does not update that pin.
 
 
+### Exercise a local candidate
+
+Use the ordinary Packy executable to test the assets from `catalog build` in
+an explicit disposable authoring workspace:
+
+```sh
+packy catalog candidate --snapshot /absolute/path/to/dist \
+  --workspace /absolute/path/to/new-workspace -- list --json
+packy catalog candidate --snapshot /absolute/path/to/dist \
+  --workspace /absolute/path/to/new-workspace -- show example-pack --json
+packy catalog candidate --snapshot /absolute/path/to/dist \
+  --workspace /absolute/path/to/new-workspace -- install example-pack \
+  --surface codex --dry-run --json
+packy catalog candidate --snapshot /absolute/path/to/dist \
+  --workspace /absolute/path/to/new-workspace -- install example-pack --surface codex
+packy catalog candidate --snapshot /absolute/path/to/dist \
+  --workspace /absolute/path/to/new-workspace -- verify --json
+packy catalog candidate --snapshot /absolute/path/to/dist \
+  --workspace /absolute/path/to/new-workspace -- uninstall example-pack --surface codex
+```
+
+Both paths must be absolute and the workspace's parent must already exist.
+The workspace itself must not exist on first use; Packy prepares and validates
+the complete candidate before creating it. `snapshot/`, `home/`, `config/`, and
+an initialized Git `project/` all belong to that workspace. Subsequent commands
+use the same workspace and identical snapshot assets. The marker
+`local-candidate.json` records local provenance and the exact archive digest.
+A different candidate requires a new workspace; rejected input preserves the
+previous workspace. Retained snapshot drift, a damaged Git boundary, missing isolation directories,
+symlinks, and unowned existing workspaces are rejected. Do not concurrently
+edit or operate on a workspace. Remove your disposable workspace when finished;
+Packy does not automatically remove authoring evidence.
+
+The interface accepts the existing archive/checksum format with the official
+Catalog Project source label, validates every Pack (including unselected Packs),
+and checks engine compatibility, exact file identities, and safe extraction.
+Local source and builder labels remain unauthenticated. Every operation reports
+**local authoring candidate** provenance on stderr; it neither manufactures an
+attestation nor writes an official catalog selection. Ordinary `init` and
+`catalog refresh` retain their official publisher/attestation requirements.
+This interface is not a custom-catalog source for ordinary use.
+
+Only `list`, `show`, `install`, `verify`, and `uninstall` are available after
+the required `--` separator. Install/uninstall always target `workspace/project`;
+the invoking directory and ambient HOME/configuration are never lifecycle roots.
+Codex, OpenCode, and Claude project adapters retain their normal resource and
+ownership constraints. Host/model execution, global operations, and personal
+project activation (including the post-install activation offer) are unavailable.
+This checks configured project state, not actual host runtime usability.
+
+Arguments after `--` have the ordinary operation's semantics and JSON contract.
+Preview is read-only after workspace preparation. Applying installation or
+uninstall requires normal interactive approval; piping `yes` or choosing JSON
+does not grant consent. Test harnesses can use a controlled PTY for stdin.
+JSON reports stay on stdout and candidate diagnostics stay on stderr. Failures
+exit nonzero; preparation failures have stderr diagnostics without a lifecycle
+report. Resources remain inert and all workspace writes stay disposable.
+
+Packy's focused fixtures cover engine mechanisms, integrity, ownership,
+consent, and failure preservation. Catalog tests own actual Pack content
+expectations and can now invoke this supported interface without compiling an
+injected-source executable or importing Packy internals.
+
 ### Publish prepared assets
 
 ```sh
