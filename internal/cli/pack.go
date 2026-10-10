@@ -323,7 +323,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			} else {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project installation")
 			}
-			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 {
+			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 || opts.localCandidate != nil {
 				return err
 			}
 			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "Readiness: configured=%s, authorized=%s, usable=%s\n", result.Readiness.Configured, result.Readiness.Authorized, result.Readiness.Usable); err != nil {
@@ -2153,6 +2153,14 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 // the transaction spanning validation, discovery, and later resource reads.
 func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
 	catalogRoot := sources.catalogRoot
+	if sources.snapshot.Tag == "local-candidate" {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
+			if snapshotID != sources.snapshot.ID {
+				return "", fmt.Errorf("snapshot %q is outside this candidate workspace", snapshotID)
+			}
+			return catalogRoot, nil
+		})
+	}
 	if !sources.isDefault {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}

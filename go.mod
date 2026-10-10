@@ -9,6 +9,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/creack/pty v1.1.24
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/sergi/go-diff v1.4.0

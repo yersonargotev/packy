@@ -43,6 +43,7 @@ type Options struct {
 	CatalogSource          catalogstore.Source
 	CatalogOriginResolver  cataloglayout.OriginResolver
 	catalogRootOverride    string
+	localCandidate         *catalogstore.Snapshot
 }
 
 func (o Options) withDefaults() Options {
@@ -203,7 +204,7 @@ func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Comm
 			}})
 		},
 	})
-	command.AddCommand(newCatalogValidateCommand(opts), newCatalogBuildCommand(opts), newCatalogPublishCommand(), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
+	command.AddCommand(newCatalogValidateCommand(opts), newCatalogBuildCommand(opts), newCatalogPublishCommand(), newCatalogCandidateCommand(opts), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
 	return command
 }
 
@@ -484,6 +485,9 @@ type invocationSources struct {
 }
 
 func resolveInvocationSources(ctx context.Context, opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
+	if opts.localCandidate != nil {
+		return invocationSources{catalogRoot: opts.localCandidate.Root, snapshot: *opts.localCandidate}, nil
+	}
 	explicit := strings.TrimSpace(opts.catalogRootOverride)
 	if explicit != "" {
 		if !filepath.IsAbs(explicit) {
