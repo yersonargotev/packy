@@ -12,6 +12,7 @@ import (
 	"reflect"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 )
 
@@ -43,6 +44,15 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 		return Workspace{}, fmt.Errorf("resolve candidate workspace parent: %w", err)
 	}
 	root = filepath.Join(parent, filepath.Base(filepath.Clean(root)))
+	_, statErr := os.Lstat(root)
+	exists := statErr == nil
+	if exists {
+		if err := validateWorkspace(root); err != nil {
+			return Workspace{}, err
+		}
+	} else if !os.IsNotExist(statErr) {
+		return Workspace{}, statErr
+	}
 	stage, err := os.MkdirTemp(parent, ".packy-candidate-")
 	if err != nil {
 		return Workspace{}, err
@@ -53,10 +63,7 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 		return Workspace{}, err
 	}
 	expected := marker{SchemaVersion: 1, Provenance: "local-candidate", Root: root, ArchiveSHA256: archiveSHA}
-	if _, err := os.Lstat(root); err == nil {
-		if err := validateWorkspace(root); err != nil {
-			return Workspace{}, err
-		}
+	if exists {
 		data, err := os.ReadFile(filepath.Join(root, markerName))
 		if err != nil {
 			return Workspace{}, errors.New("candidate workspace already exists without local-candidate ownership")
@@ -73,8 +80,6 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 			return Workspace{}, errors.New("retained local candidate differs from supplied snapshot")
 		}
 		return workspace(root, retained, archiveSHA), nil
-	} else if !os.IsNotExist(err) {
-		return Workspace{}, err
 	}
 	for _, name := range []string{"home", "config", "project"} {
 		if err := os.Mkdir(filepath.Join(stage, name), 0o700); err != nil {
@@ -123,6 +128,11 @@ func validateWorkspace(root string) error {
 		if err != nil || !info.IsDir() {
 			return fmt.Errorf("candidate workspace directory %q is missing", name)
 		}
+	}
+	project := filepath.Join(root, "project")
+	discovered, err := capabilitypack.DiscoverProjectRoot(project)
+	if err != nil || discovered != project {
+		return errors.New("candidate workspace Git boundary is damaged; refusing an enclosing project")
 	}
 	return nil
 }

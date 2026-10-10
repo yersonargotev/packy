@@ -325,7 +325,7 @@ an initialized Git `project/` all belong to that workspace. Subsequent commands
 use the same workspace and identical snapshot assets. The marker
 `local-candidate.json` records local provenance and the exact archive digest.
 A different candidate requires a new workspace; rejected input preserves the
-previous workspace. Retained snapshot drift, missing isolation directories,
+previous workspace. Retained snapshot drift, a damaged Git boundary, missing isolation directories,
 symlinks, and unowned existing workspaces are rejected. Do not concurrently
 edit or operate on a workspace. Remove your disposable workspace when finished;
 Packy does not automatically remove authoring evidence.

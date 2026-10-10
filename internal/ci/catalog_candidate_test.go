@@ -191,6 +191,28 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 			}
 		})
 	}
+	t.Run("damaged Git boundary preserves enclosing project", func(t *testing.T) {
+		parent := t.TempDir()
+		if out, diagnostic, err := runCatalogCLI(t, environment, directory, "git", "init", "-q", parent); err != nil {
+			t.Fatalf("initialize enclosing disposable project: %v %s %s", err, out, diagnostic)
+		}
+		if err := os.WriteFile(filepath.Join(parent, "personal.txt"), []byte("preserve enclosing project\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		workspace := filepath.Join(parent, "workspace")
+		prefix := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}
+		if out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, append(append([]string{}, prefix...), "list", "--json")...); err != nil {
+			t.Fatalf("prepare nested workspace: %v %s %s", err, out, diagnostic)
+		}
+		if err := os.Remove(filepath.Join(workspace, "project", ".git", "HEAD")); err != nil {
+			t.Fatal(err)
+		}
+		before := catalogTreeState(t, []string{parent})
+		out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, append(append([]string{}, prefix...), "install", "alpha", "--surface", "codex", "--json")...)
+		if err == nil || !bytes.Contains(diagnostic, []byte("candidate workspace Git boundary")) || !reflect.DeepEqual(before, catalogTreeState(t, []string{parent})) {
+			t.Fatalf("damaged inner Git boundary escaped isolation: %v %s %s", err, out, diagnostic)
+		}
+	})
 	t.Run("candidate rejection", func(t *testing.T) {
 		files := catalogBuildArchive(t, readIssue798File(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
 		for _, tc := range []struct {
