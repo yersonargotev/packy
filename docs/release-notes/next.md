@@ -8,6 +8,12 @@ and effective provenance.
 
 ## Changes since the previous release
 
+- `packy catalog validate` validates a complete Catalog Project and optional
+  `--baseline` through the installed executable, with readable output and
+  versioned `--json` results. No Packy source checkout or Go runtime is needed.
+- `packy version --json` exposes the release version and exact source commit.
+  Release builds compile the recorded Git tree and validate embedded identity.
+
 - Pack manifests and Catalog Snapshots use schema v3. Complete catalog
   validation includes common content and every variant's source and legal
   closure; this is a clean cut without a legacy reader or converter.

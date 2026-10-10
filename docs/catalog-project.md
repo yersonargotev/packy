@@ -163,20 +163,46 @@ it.
 
 ## Validation
 
-From a Packy checkout, validate a candidate Catalog Project with:
+Using a Packy executable, validate a candidate Catalog Project with:
 
 ```sh
-go run ./internal/tools/catalogvalidate --project /path/to/packy-catalog
+packy catalog validate --project /path/to/packy-catalog
 ```
 
 To validate a content change and its independent Pack versions, supply the
 target-branch checkout as a baseline:
 
 ```sh
-go run ./internal/tools/catalogvalidate \
+packy catalog validate \
   --project /path/to/candidate \
   --baseline /path/to/baseline
 ```
+
+Neither operation requires Go or a Packy source checkout at runtime. `--project`
+defaults to the current directory. Validation never installs or activates Packs
+and does not initialize or refresh the workstation catalog.
+
+Add `--json` for the versioned `catalog-validation` report. Success returns
+`result: "valid"`, all Packs in identity order with their manifest/closure
+SHA-256 digests and file counts, and the runtime-fitness row count. Failure
+returns `result: "invalid"` and an `error` with a stable `code` and actionable
+`message`; no partial validated Pack list is reported. Exit status is zero on
+success and nonzero on invalid input, origin acquisition failure, or output
+failure. JSON goes to stdout; diagnostic errors go to stderr. CLI syntax errors
+before `--json` is parsed and output failures may have only stderr diagnostics.
+The offline schema is
+[`catalog-validation.schema.json`](../schemas/cli/v1/catalog-validation.schema.json).
+
+`packy version --json` reports `schema_version: 1`, `report: "packy-version"`,
+`version`, and `source_commit`. Official release binaries embed the full source
+commit; unstamped development builds report `dev` and `unknown`. Use this
+identity to verify the executable independently of the current directory.
+
+The Catalog Project remains pinned to its previous immutable Packy release
+until the complete supporting release is adopted. Removing the source-only
+validator from current Packy does not alter that old release. Snapshot
+construction and publication continue using their existing entry points until
+their own deliveries migrate them.
 
 The validator strictly checks every Pack's typed manifest vocabulary,
 dependencies, conflicts, origins, exact-copy or adapted relationships,
@@ -189,8 +215,8 @@ a strictly greater SemVer. Content with the same identity must retain its
 version. A new Pack may introduce any valid SemVer without changing unrelated
 Pack versions.
 
-Pull-request CI in the Catalog Project runs this same validator with read-only
-permissions. It cannot publish and receives no publication credentials.
+Pull-request CI in the Catalog Project uses the same validator through its
+pinned engine release, with read-only permissions. It cannot publish and receives no publication credentials.
 
 ## Catalog Snapshots
 

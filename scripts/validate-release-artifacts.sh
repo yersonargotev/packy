@@ -76,6 +76,10 @@ case "$(uname -s)/$(uname -m)" in
   *) echo "unsupported validation host: $(uname -s)/$(uname -m)" >&2; exit 1 ;;
 esac
 
+# Verification executes with disposable user paths, never personal state.
+export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/xdg"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+
 install_root="$scratch/install"
 mkdir -p "$install_root/bin" "$scratch/extracted"
 tar -C "$scratch/extracted" -xzf "$dist/packy_${version}_${host_platform}.tar.gz"
@@ -89,4 +93,14 @@ install -m 0755 "$scratch/extracted/packy" "$install_root/bin/packy"
   exit 1
 }
 
-echo "validated checksums, archive contents, installation, and packy version $version"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source_commit="$(git -C "$script_dir/.." rev-parse HEAD)"
+identity="$("$install_root/bin/packy" version --json)"
+jq -e --arg version "$version" --arg commit "$source_commit" \
+  '.schema_version == 1 and .report == "packy-version" and .version == $version and .source_commit == $commit' \
+  <<<"$identity" >/dev/null || {
+  echo "installed binary identity differs from the release source" >&2
+  exit 1
+}
+
+echo "validated checksums, archive contents, installation, and packy version $version source $source_commit"

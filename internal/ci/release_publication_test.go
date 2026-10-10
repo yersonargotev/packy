@@ -15,6 +15,7 @@ func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 		"push:",
 		"tags:",
 		"scripts/build-release-artifacts.sh",
+		"Source commit: `%s`",
 		"scripts/validate-release-artifacts.sh",
 		"scripts/generate-homebrew-formula.sh",
 		"gh release create",
@@ -126,9 +127,14 @@ func TestReleaseArtifactsAreArchivesWithOneChecksumManifest(t *testing.T) {
 			t.Errorf("release build or validation is missing %q", required)
 		}
 	}
-	for _, required := range []string{"tar -tzf", "sha256sum", "--version", "packy version"} {
+	for _, required := range []string{"tar -tzf", "sha256sum", "--version", "packy version", "source_commit", "version --json"} {
 		if !strings.Contains(validate, required) {
 			t.Errorf("release validation is missing %q", required)
+		}
+	}
+	for _, required := range []string{"git -C", "rev-parse HEAD", "archive \"$source_commit\"", "internal/version.SourceCommit=${source_commit}", "clean source checkout", "GOWORK=off GOFLAGS= GOENV=off"} {
+		if !strings.Contains(build, required) {
+			t.Errorf("release build omits source identity guarantee %q", required)
 		}
 	}
 	if strings.Contains(strings.ToLower(build), "sbom") {

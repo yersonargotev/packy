@@ -150,18 +150,6 @@ and receive a new Preview. Packy never retries it automatically.
 	return root
 }
 
-func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the Packy version",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "packy version %s\n", packyversion.Value)
-			return err
-		},
-	}
-}
-
 func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var homeFlag string
 
@@ -215,7 +203,7 @@ func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Comm
 			}})
 		},
 	})
-	command.AddCommand(newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
+	command.AddCommand(newCatalogValidateCommand(opts), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
 	return command
 }
 

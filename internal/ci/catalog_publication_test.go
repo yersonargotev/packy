@@ -28,7 +28,7 @@ func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testi
 	bin := t.TempDir()
 	buildEnvironment := testprocess.GoOfflineEnv(t)
 	tools := map[string]string{
-		"catalogvalidate": "./internal/tools/catalogvalidate",
+		"catalogcli":      "./cmd/packy",
 		"catalogsnapshot": "./internal/tools/catalogsnapshot",
 		"packy":           "./internal/cli/testdata/issue798packy",
 	}
@@ -36,8 +36,8 @@ func TestIssue798ReviewedContentPublicationIsAcquiredBySameInstalledCLI(t *testi
 		buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, name), packagePath)
 	}
 
-	validation := runIssue798Process(t, testprocess.Env(t), root, filepath.Join(bin, "catalogvalidate"),
-		"--project", candidate, "--baseline", baseline)
+	validation := runIssue798Process(t, testprocess.Env(t), root, filepath.Join(bin, "catalogcli"),
+		"catalog", "validate", "--project", candidate, "--baseline", baseline)
 	for _, want := range []string{"validated Catalog Project packs=3", "alpha@1.1.0", "beta@1.0.0", "stable@2.0.0"} {
 		if !strings.Contains(validation, want) {
 			t.Fatalf("candidate validation omitted %q:\n%s", want, validation)
