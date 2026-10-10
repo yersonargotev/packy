@@ -33,9 +33,11 @@
 
 Issues are tracked in GitHub through the `gh` CLI; external pull requests are not a triage surface. See `docs/agents/issue-tracker.md`.
 
-Explicit requests to deliver one approved issue end to end use the project-local
-`.agents/skills/deliver-issue` gate and its canonical
-`workflows/issue-delivery.md` contract.
+Explicit requests to deliver one approved issue end to end use `$deliver-issue`,
+the project-local `.agents/skills/deliver-issue/SKILL.md` gate. A request named
+`$issue-delivery` routes to the same local gate; its generic orchestration is
+superseded by `workflows/issue-delivery.md`. Start with the gate's complete
+three-file bootstrap read before exploring or qualifying the issue.
 
 ### Triage labels
 

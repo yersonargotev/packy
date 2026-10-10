@@ -44,12 +44,6 @@ func newCatalogValidateCommand(opts Options) *cobra.Command {
 	}
 	command := &cobra.Command{
 		Use: "validate", Short: "Validate a complete inert Catalog Project and optional baseline",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if err := cobra.NoArgs(cmd, args); err != nil {
-				return failure(cmd, "invalid_arguments", err)
-			}
-			return nil
-		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			resolver, cleanup, err := resolveCatalogOrigins(opts)
 			if err != nil {
@@ -81,6 +75,6 @@ func newCatalogValidateCommand(opts Options) *cobra.Command {
 	command.Flags().StringVar(&project, "project", ".", "Catalog Project root")
 	command.Flags().StringVar(&baseline, "baseline", "", "baseline Catalog Project root for independent Pack version validation")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	command.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return failure(cmd, "invalid_arguments", err) })
+	configureCatalogArguments(command, &jsonOutput, failure)
 	return command
 }

@@ -43,8 +43,13 @@ run by naming this file, repository-root `AGENTS.md`, and
 filesystem read reads all three complete files in one operation. The skill
 contains only this bootstrap and the phase gates; workflow behavior stays here.
 
-Wayfinding regression proof uses three independent fresh `deliver-issue`
-invocations. Every invocation must read the three named files in its first
+Packy requests named `issue-delivery` route to this same local gate through
+`AGENTS.md`; the generic sequence does not add gates or reorder this workflow.
+Use `$deliver-issue` as the canonical user entry point.
+
+Wayfinding regression proof uses three independent fresh read-only invocations,
+including both `deliver-issue` and generic-named `issue-delivery` requests.
+Every invocation must select the local gate and read the three named files in its first
 filesystem operation, with `workflows/issue-delivery.md` resolved exactly as
 written and no failed probe of a guessed path. A path-resolution command alone
 does not exercise this agent-document boundary and is not regression proof.
@@ -71,6 +76,13 @@ an override of a required repository control. Technical failures that can be
 diagnosed and repaired within the approved issue remain autonomous.
 
 ## Workspace isolation
+
+Allocate one run-owned temporary root and record its exact resolved path in the
+session. Put check logs, binary builds, disposable HOME/config state, drafts,
+and any temporary worktree in named subdirectories of that root. Let test
+frameworks own their fixture cleanup; when invoking tests, place their outer
+temporary directory under the run root. Do not reconstruct ownership from a
+later glob or temporary-directory inventory.
 
 At startup, record the operator checkout's branch, HEAD, worktree status, and
 fetched `origin/main`. Use the operator checkout only when it is clean, on
@@ -107,6 +119,12 @@ dependencies, relevant repository contracts, and starting commit are known,
 and no competing delivery exists.
 
 ## Local implementation loop
+
+Discover relevant filenames with `rg --files` before choosing files to read.
+Use bounded searches over the owning package or document set and targeted
+reads; narrow an overflowing result rather than repeating it. Consult
+`gh <command> --help` when installed option combinations are uncertain, and
+use the structured issue read in `docs/agents/issue-tracker.md`.
 
 Create one short issue branch from the qualified starting commit. Plan an
 acceptance matrix that maps every issue criterion to its owning implementation
@@ -264,7 +282,11 @@ keyword despite the verified merge, close the issue explicitly with a link to
 that pull request.
 
 Delete only the workflow-owned remote and local issue branch after verified
-merge. Remove its temporary worktree and disposable test state. Recheck that
+merge. Query the exact remote branch first; verified absence after GitHub's
+automatic deletion is already success. If deletion races with automatic
+deletion, read the exact branch again and accept only verified absence.
+Remove any owned temporary worktree through Git before deleting the run-owned
+temporary root and its disposable test state. Recheck that
 the operator checkout retains its exact recorded branch, HEAD, and status when
 a temporary worktree was used. When the operator checkout was the selected
 workspace, return it to clean `main` and fast-forward it to the verified
