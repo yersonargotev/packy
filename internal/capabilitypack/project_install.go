@@ -634,7 +634,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
 		if projection.Action.Kind == ActionOpenCodeProjectSkillTree || projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
-			mode, fileMode = "copy_tree", 0o700
+			mode, fileMode = "copy_tree", 0o755
 		}
 		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode

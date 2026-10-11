@@ -83,7 +83,7 @@ func TestReplaceTreePublishesOneExactTreeAndPreservesTargetOnFailedVerification(
 		{Path: "references/checklist.md", Content: []byte("reference\n"), Mode: 0o644},
 		{Path: "scripts/inert.sh", Content: []byte("#!/bin/sh\nexit 97\n"), Mode: 0o755},
 	}
-	fingerprint, err := FingerprintTreeFiles(files)
+	fingerprint, err := FingerprintTreeFiles(files, 0o700)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestReplaceTreesRollsBackEarlierPublicationWhenLaterPublicationFails(t *tes
 	changes := make([]TreeChange, len(targets))
 	for i, target := range targets {
 		files := []TreeFile{{Path: "SKILL.md", Content: []byte("new-" + string(rune('1'+i))), Mode: 0o644}}
-		fingerprint, err := FingerprintTreeFiles(files)
+		fingerprint, err := FingerprintTreeFiles(files, 0o700)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -192,7 +192,7 @@ func TestApplyFilesystemChangesRollsBackMixedCommitAndRecoversIncludingDeletion(
 		t.Fatal(err)
 	}
 	treeFiles := []TreeFile{{Path: "SKILL.md", Content: []byte("new"), Mode: 0o644}}
-	treeFingerprint, err := FingerprintTreeFiles(treeFiles)
+	treeFingerprint, err := FingerprintTreeFiles(treeFiles, 0o700)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestReplaceTreesRollsBackEarlierPublicationWhenCurrentRestoreFails(t *testi
 			t.Fatal(err)
 		}
 		files := []TreeFile{{Path: "SKILL.md", Content: []byte("new"), Mode: 0o644}}
-		fingerprint, err := FingerprintTreeFiles(files)
+		fingerprint, err := FingerprintTreeFiles(files, 0o700)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -298,13 +298,13 @@ func TestReplaceTreesRollsBackEarlierPublicationWhenCurrentRestoreFails(t *testi
 }
 
 func TestExactTreeFingerprintRejectsUnsafeOrUnexpectedEntries(t *testing.T) {
-	if _, err := FingerprintTreeFiles([]TreeFile{{Path: "../escape", Content: []byte("x"), Mode: 0o644}}); err == nil {
+	if _, err := FingerprintTreeFiles([]TreeFile{{Path: "../escape", Content: []byte("x"), Mode: 0o644}}, 0o700); err == nil {
 		t.Fatal("traversal path was accepted")
 	}
-	if _, err := FingerprintTreeFiles([]TreeFile{{Path: "duplicate", Content: []byte("a"), Mode: 0o644}, {Path: "duplicate", Content: []byte("b"), Mode: 0o644}}); err == nil {
+	if _, err := FingerprintTreeFiles([]TreeFile{{Path: "duplicate", Content: []byte("a"), Mode: 0o644}, {Path: "duplicate", Content: []byte("b"), Mode: 0o644}}, 0o700); err == nil {
 		t.Fatal("duplicate path was accepted")
 	}
-	if _, err := FingerprintTreeFiles([]TreeFile{{Path: "bad-mode", Content: []byte("x"), Mode: 0o600}}); err == nil {
+	if _, err := FingerprintTreeFiles([]TreeFile{{Path: "bad-mode", Content: []byte("x"), Mode: 0o600}}, 0o700); err == nil {
 		t.Fatal("noncanonical mode was accepted")
 	}
 	root := t.TempDir()

@@ -49,7 +49,7 @@ func (a Observer) Observe(_ context.Context, transition capabilitypack.SurfaceTr
 					name, nameErr = skillName(file.Content, filepath.Base(p.Action.Target))
 				}
 			}
-			fingerprint, err = localprojection.FingerprintTreeFiles(files)
+			fingerprint, err = localprojection.FingerprintTreeFiles(files, 0o700)
 			if nameErr != nil {
 				err = nameErr
 			}
@@ -195,7 +195,7 @@ func readTree(root string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	fp, err := localprojection.FingerprintCopiedTree(resolved)
+	fp, err := localprojection.FingerprintCopiedTree(resolved, 0o700)
 	if err != nil {
 		return name, "unverified", nil
 	}

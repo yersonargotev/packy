@@ -26,11 +26,15 @@ func TestClaudeProjectUsesDeclaredCompositeSkillCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	projectFingerprint, err := fingerprintCompositeFiles(composite.Files, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var action capabilitypack.ProjectionAction
 	for _, projection := range inspection.Projections {
 		if projection.ID == "skill:example" {
-			if projection.DesiredFingerprint != composite.TreeFingerprint {
-				t.Fatalf("project fingerprint = %q, want composite %q", projection.DesiredFingerprint, composite.TreeFingerprint)
+			if projection.DesiredFingerprint != projectFingerprint || projection.Action.FileMode != 0o755 {
+				t.Fatalf("project fingerprint = %q, mode = %o, want %q and 0755", projection.DesiredFingerprint, projection.Action.FileMode, projectFingerprint)
 			}
 			action = projection.Action
 		}

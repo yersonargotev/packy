@@ -153,7 +153,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		}
 		target := filepath.Join(projectRoot, ".agents", "skills", bindingName)
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
-		desired, err := localprojection.FingerprintCopiedTree(source)
+		desired, err := localprojection.FingerprintCopiedTree(source, 0o755)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint %s source: %w", identity, err)
 		}
@@ -165,7 +165,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
 			ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/copied-skill-tree",
 			ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
-			Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
+			Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, FileMode: 0o755, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
 		})
 	}
 	sort.Slice(projections, func(i, j int) bool { return projections[i].ID < projections[j].ID })
