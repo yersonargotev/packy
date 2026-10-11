@@ -66,9 +66,19 @@ jobs:
             release-metadata
           if-no-files-found: error
 
+  contracts:
+    needs: [prepare]
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/release-contracts.yml
+    with:
+      version: ${{ needs.prepare.outputs.tag }}
+      bundle: packy-release-${{ needs.prepare.outputs.tag }}
+
   publish:
     name: Publish immutable GitHub Release
-    needs: prepare
+    needs: [prepare, contracts]
     if: github.repository == 'yersonargotev/packy' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: release

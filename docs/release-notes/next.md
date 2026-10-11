@@ -22,6 +22,13 @@ and effective provenance.
   workflow-owned; the source-only publisher script is removed.
 - `packy version --json` exposes the release version and exact source commit.
   Release builds compile the recorded Git tree and validate embedded identity.
+- `packy catalog build` constructs validated complete snapshot assets using the
+  executing binary's embedded builder identity, preserving baseline enforcement,
+  input-change detection, and deterministic construction.
+- Release publication now requires the same full Catalog CLI contract to pass
+  against each staged Darwin/Linux amd64/arm64 binary on a matching native
+  runner. The tested archives are published unchanged; workflow artifacts retain
+  contract results, identities, and checksums for Catalog adoption.
 
 - Pack manifests and Catalog Snapshots use schema v3. Complete catalog
   validation includes common content and every variant's source and legal
