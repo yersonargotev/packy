@@ -2153,13 +2153,8 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 // the transaction spanning validation, discovery, and later resource reads.
 func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
 	catalogRoot := sources.catalogRoot
-	if sources.snapshot.Tag == "local-candidate" {
-		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
-			if snapshotID != sources.snapshot.ID {
-				return "", fmt.Errorf("snapshot %q is outside this candidate workspace", snapshotID)
-			}
-			return catalogRoot, nil
-		})
+	if sources.candidate != nil {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, sources.candidate.Resolve)
 	}
 	if !sources.isDefault {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
