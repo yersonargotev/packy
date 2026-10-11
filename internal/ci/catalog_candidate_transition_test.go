@@ -353,7 +353,7 @@ func variantArray(resource map[string]any) []any {
 }
 
 func testCandidateTransitionRejections(t *testing.T, executable string, environment []string, directory, baseline, candidate, baselineSHA string) {
-	for _, scenario := range []string{"unowned", "missing HEAD", "empty HEAD", "missing objects", "symlink escape", "redirected global root", "retained source drift", "retained index drift", "occupied transition destination", "incompatible snapshot", "invalid snapshot", "stale project Apply", "stale global Apply", "output failure"} {
+	for _, scenario := range []string{"unowned", "missing HEAD", "empty HEAD", "missing objects", "symlink escape", "redirected global root", "retained source drift", "retained index drift", "occupied transition destination", "incompatible snapshot", "invalid snapshot", "stale project Apply", "stale global Apply", "stale project index", "stale global index", "output failure"} {
 		t.Run(scenario, func(t *testing.T) {
 			workspace := filepath.Join(t.TempDir(), "workspace")
 			prefix := func(assets string) []string {
@@ -427,8 +427,8 @@ func testCandidateTransitionRejections(t *testing.T, executable string, environm
 					t.Fatalf("failed transition output changed state: %v %s", err, diagnostic.String())
 				}
 				return
-			case "stale project Apply", "stale global Apply":
-				testCandidateStaleApply(t, executable, environment, directory, workspace, prefix(baseline), scenario == "stale global Apply")
+			case "stale project Apply", "stale global Apply", "stale project index", "stale global index":
+				testCandidateStaleApply(t, executable, environment, directory, workspace, prefix(baseline), strings.Contains(scenario, "global"), strings.HasSuffix(scenario, "index"))
 				return
 			}
 			before := catalogTreeState(t, []string{workspace, directory})
@@ -442,8 +442,8 @@ func testCandidateTransitionRejections(t *testing.T, executable string, environm
 }
 
 // Consent is withheld until the real child has emitted its exact preview. An
-// unrelated edit then makes Apply fail its production freshness check.
-func testCandidateStaleApply(t *testing.T, executable string, environment []string, directory, workspace string, prefix []string, global bool) {
+// workspace or retained-source edit then makes Apply fail before mutation.
+func testCandidateStaleApply(t *testing.T, executable string, environment []string, directory, workspace string, prefix []string, global, indexDrift bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -480,7 +480,7 @@ func testCandidateStaleApply(t *testing.T, executable string, environment []stri
 		}
 	}
 	unrelated := filepath.Join(workspace, "project", "packy.json")
-	if global {
+	if global && !indexDrift {
 		unrelated = filepath.Join(workspace, "home", ".agents", "skills", "foreign", "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(unrelated), 0o755); err != nil {
 			cancel()
@@ -488,7 +488,12 @@ func testCandidateStaleApply(t *testing.T, executable string, environment []stri
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(unrelated, []byte("---\nname: guide\ndescription: Foreign conflict.\n---\nForeign\n"), 0o644); err != nil {
+	edited := []byte("---\nname: guide\ndescription: Foreign conflict.\n---\nForeign\n")
+	if indexDrift {
+		unrelated = filepath.Join(workspace, "snapshots", strings.Repeat("a", 40), "catalog-index.json")
+		edited = append(readIssue798File(t, unrelated), '\n')
+	}
+	if err := os.WriteFile(unrelated, edited, 0o644); err != nil {
 		cancel()
 		command.Wait()
 		t.Fatal(err)

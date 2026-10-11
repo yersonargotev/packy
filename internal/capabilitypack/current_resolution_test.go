@@ -98,6 +98,12 @@ func TestIntentPackResolversDoNotNestLocksAcrossRetainedSnapshots(t *testing.T) 
 	release := make(chan struct{})
 	resolver := func(expectedID, targetBundle string) func(context.Context, string) (string, error) {
 		return func(ctx context.Context, snapshotID string) (string, error) {
+			if snapshotID == snapshotA && expectedID == snapshotB {
+				return bundleA, nil
+			}
+			if snapshotID == snapshotB && expectedID == snapshotA {
+				return bundleB, nil
+			}
 			if snapshotID != expectedID {
 				return "", errors.New("unexpected snapshot identity")
 			}
