@@ -297,68 +297,132 @@ remains pinned to its previous immutable release until the complete supporting
 Packy release is available; this engine change does not update that pin.
 
 
-### Exercise a local candidate
+### Exercise local candidates
 
-Use the ordinary Packy executable to test the assets from `catalog build` in
-an explicit disposable authoring workspace:
+Use the ordinary Packy executable to exercise complete local snapshot assets in
+an explicit disposable authoring workspace. Neither Go nor a Packy source
+checkout is required. Both paths must be absolute; the workspace's parent must
+already exist and the workspace itself must not exist on first use:
 
 ```sh
-packy catalog candidate --snapshot /absolute/path/to/dist \
-  --workspace /absolute/path/to/new-workspace -- list --json
-packy catalog candidate --snapshot /absolute/path/to/dist \
-  --workspace /absolute/path/to/new-workspace -- show example-pack --json
-packy catalog candidate --snapshot /absolute/path/to/dist \
-  --workspace /absolute/path/to/new-workspace -- install example-pack \
-  --surface codex --dry-run --json
-packy catalog candidate --snapshot /absolute/path/to/dist \
-  --workspace /absolute/path/to/new-workspace -- install example-pack --surface codex
-packy catalog candidate --snapshot /absolute/path/to/dist \
-  --workspace /absolute/path/to/new-workspace -- verify --json
-packy catalog candidate --snapshot /absolute/path/to/dist \
-  --workspace /absolute/path/to/new-workspace -- uninstall example-pack --surface codex
+packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
+  --workspace /absolute/path/to/workspace -- list --json
+packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
+  --workspace /absolute/path/to/workspace -- install example-pack \
+  --surface codex --resource skill:guide --dry-run --json
+packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
+  --workspace /absolute/path/to/workspace -- install example-pack \
+  --surface codex --resource skill:guide
 ```
 
-Both paths must be absolute and the workspace's parent must already exist.
-The workspace itself must not exist on first use; Packy prepares and validates
-the complete candidate before creating it. `snapshot/`, `home/`, `config/`, and
-an initialized Git `project/` all belong to that workspace. Subsequent commands
-use the same workspace and identical snapshot assets. The marker
-`local-candidate.json` records local provenance and the exact archive digest.
-A different candidate requires a new workspace; rejected input preserves the
-previous workspace. Retained snapshot drift, a damaged Git boundary, missing isolation directories,
-symlinks, and unowned existing workspaces are rejected. Do not concurrently
-edit or operate on a workspace. Remove your disposable workspace when finished;
-Packy does not automatically remove authoring evidence.
+Packy validates the complete candidate before creating the workspace. Its
+`snapshots/`, `home/`, `config/`, and initialized Git `project/` are disposable
+owned state. The version-2 `local-candidate.json` ownership marker records the
+current selection and retained snapshot identities. Older disposable workspace
+formats are rejected; create a new workspace rather than editing the marker.
+Ordinary candidate calls require the selected snapshot's identical assets.
 
-The interface accepts the existing archive/checksum format with the official
-Catalog Project source label, validates every Pack (including unselected Packs),
-and checks engine compatibility, exact file identities, and safe extraction.
-Local source and builder labels remain unauthenticated. Every operation reports
-**local authoring candidate** provenance on stderr; it neither manufactures an
-attestation nor writes an official catalog selection. Ordinary `init` and
-`catalog refresh` retain their official publisher/attestation requirements.
-This interface is not a custom-catalog source for ordinary use.
+To change snapshot availability while preserving all installed baseline state,
+use the explicit transition operation. Obtain the baseline archive digest from
+its `catalog build --json` report or `SHA256SUMS`; the outer `--snapshot` selects
+the proposed candidate assets:
 
-Only `list`, `show`, `install`, `verify`, and `uninstall` are available after
-the required `--` separator. Install/uninstall always target `workspace/project`;
-the invoking directory and ambient HOME/configuration are never lifecycle roots.
-Codex, OpenCode, and Claude project adapters retain their normal resource and
-ownership constraints. Host/model execution, global operations, and personal
-project activation (including the post-install activation offer) are unavailable.
-This checks configured project state, not actual host runtime usability.
+```sh
+packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
+  --workspace /absolute/path/to/workspace -- transition \
+  --expect-archive-sha256 <current-baseline-archive-sha256> --json
+packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
+  --workspace /absolute/path/to/workspace -- update example-pack \
+  --surface codex --project
+packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
+  --workspace /absolute/path/to/workspace -- update example-pack \
+  --surface claude --project
+```
 
-Arguments after `--` have the ordinary operation's semantics and JSON contract.
-Preview is read-only after workspace preparation. Applying installation or
-uninstall requires normal interactive approval; piping `yes` or choosing JSON
-does not grant consent. Test harnesses can use a controlled PTY for stdin.
-JSON reports stay on stdout and candidate diagnostics stay on stderr. Failures
-exit nonzero; preparation failures have stderr diagnostics without a lifecycle
-report. Resources remain inert and all workspace writes stay disposable.
+Transition requires an existing owned workspace, the exact expected current
+archive digest, and a different snapshot identity. It validates all retained
+sources and the complete proposed snapshot, then changes selection without
+changing projections, receipts, project intent, or unrelated files. Retained
+snapshots remain immutable and resolve the installed receipts of surfaces that
+have not yet been updated or removed. An identity reused with different bytes,
+a stale expected digest, invalid/incompatible input, damaged isolation, or
+retained-source drift is rejected without replacing prior usable state. Failed
+preparation/selection preserves installed state. Transition changes availability
+only; each subsequent lifecycle Apply requires its own normal consent.
 
-Packy's focused fixtures cover engine mechanisms, integrity, ownership,
-consent, and failure preservation. Catalog tests own actual Pack content
-expectations and can now invoke this supported interface without compiling an
-injected-source executable or importing Packy internals.
+Available operations after the required `--` separator are `list`, `show`,
+`install`, `verify`, `uninstall`, `update`, `activate`, `deactivate`, and
+`transition`. Project `install`, `verify`, `uninstall`, and `update --project`
+always target `workspace/project`. Global `activate`, `deactivate`, and `update`
+use only `workspace/home` and `workspace/config`:
+
+```sh
+packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
+  --workspace /absolute/path/to/global-workspace -- activate example-pack \
+  --surface codex --resource skill:guide
+# Transition this workspace with the candidate assets and its observed digest.
+packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
+  --workspace /absolute/path/to/global-workspace -- update example-pack \
+  --surface codex
+packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
+  --workspace /absolute/path/to/global-workspace -- deactivate example-pack \
+  --surface codex
+```
+
+The invoking directory, enclosing projects, ambient HOME, and XDG roots are not
+lifecycle destinations. Native global skill links may point only into retained
+workspace snapshots; redirected roots, project symlinks, external links,
+missing isolation directories, damaged Git boundaries, and unowned workspaces
+are rejected. Surface adapters retain normal selection, effective dependencies,
+coexistence, drift, ownership, and exact-preview freshness checks. `activate`
+and `deactivate` with `--project` remain unavailable. Post-install personal
+project activation offers remain suppressed.
+
+Candidate source/builder labels are explicitly unauthenticated. Preparation
+checks the existing archive/checksum format, official Catalog Project source
+label, whole-catalog compatibility, safe extraction, and exact retained file
+identities. It never fabricates attestation or selects an official catalog.
+Ordinary `init` and `catalog refresh` retain official publisher verification;
+this authoring route is not a custom-catalog source for ordinary use. Resources
+remain inert. Host/model execution, authentication, and external executable
+acquisition are unavailable; the interface proves configured state rather than
+actual host runtime usability.
+
+Arguments after `--` retain the ordinary operation's versioned JSON contract.
+Preview is read-only after workspace preparation. Every applicable lifecycle
+Apply requires normal interactive consent; JSON and piped `yes` are not
+consent. JSON reports go to stdout and candidate diagnostics go to stderr.
+Failures exit nonzero; workspace preparation failures before lifecycle dispatch
+have stderr diagnostics without a lifecycle report.
+
+`transition --json` emits schema version 1, report
+`catalog-candidate-transition`, provenance `local-candidate`, and result
+`transitioned` with `snapshot_id`, `archive_sha256`, and
+`previous_archive_sha256`. Rejections emit result `failed` with stable error
+code `invalid_arguments` or `transition_failed` and an actionable message.
+The offline contract is
+[`catalog-candidate-transition.schema.json`](../schemas/cli/v1/catalog-candidate-transition.schema.json).
+Outer CLI parsing/lock failures and output failures may have only stderr
+diagnostics. A failed transition report write restores the previous selection and removes
+newly retained candidate bytes.
+
+Callers must run bounded child processes with explicit disposable HOME and XDG
+environments. For Apply, attach a controlled PTY to stdin and approve the
+observed preview; keep stdout/stderr separate when reading structured reports.
+Use a timeout, terminate and reap the owned child on failure, close PTY handles,
+and clean up only the explicitly owned workspace after collecting evidence.
+Do not concurrently edit or operate on a workspace. Candidate CLI operations
+serialize on the workspace parent directory; external edits still invalidate
+source/preview identity rather than granting consent. Packy retains snapshots
+until the caller removes the disposable workspace and does not automatically
+remove authoring evidence.
+
+Packy's inert synthetic contracts own lifecycle mechanisms and run against the
+same release-stamped executable on Darwin and Linux, amd64 and arm64. The
+Catalog owns actual Pack content assertions. Integration of candidate-interface
+changes alone does not unblock Catalog #57: a separately authorized immutable
+supporting Packy release and reviewed adoption of its single release declaration
+must precede downstream migration and deletion of legacy probes.
 
 ### Publish prepared assets
 

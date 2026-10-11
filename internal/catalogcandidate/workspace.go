@@ -118,8 +118,9 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 
 // Transition changes only snapshot availability, retaining every immutable
 // source needed by installed receipts. The expected archive binds the request to
-// the observed current selection. Failure leaves the previous selection usable.
-func Transition(ctx context.Context, assetsRoot, root, expectedArchive string) (Workspace, error) {
+// the observed current selection. A failed acknowledgement restores the previous
+// selection and removes newly retained bytes, so failed reporting is unapplied.
+func Transition(ctx context.Context, assetsRoot, root, expectedArchive string, acknowledge func(Workspace) error) (Workspace, error) {
 	root, err := resolveRoot(assetsRoot, root)
 	if err != nil {
 		return Workspace{}, err
@@ -156,6 +157,10 @@ func Transition(ctx context.Context, assetsRoot, root, expectedArchive string) (
 		updated.Snapshots[id] = value
 	}
 	updated.Snapshots[snapshot.ID] = identity
+	previousMarker := filepath.Join(stage, "previous-marker.json")
+	if err := writeMarker(previousMarker, recorded); err != nil {
+		return Workspace{}, err
+	}
 	markerStage := filepath.Join(stage, markerName)
 	if err := writeMarker(markerStage, updated); err != nil {
 		return Workspace{}, err
@@ -186,7 +191,17 @@ func Transition(ctx context.Context, assetsRoot, root, expectedArchive string) (
 		return Workspace{}, fmt.Errorf("select transitioned candidate: %w", err)
 	}
 	snapshot.Root = destination
-	return workspace(root, snapshot, updated), nil
+	result := workspace(root, snapshot, updated)
+	if acknowledge != nil {
+		if err := acknowledge(result); err != nil {
+			rollbackErr := os.Rename(previousMarker, filepath.Join(root, markerName))
+			if rollbackErr == nil && !retained {
+				rollbackErr = os.RemoveAll(destination)
+			}
+			return Workspace{}, errors.Join(err, rollbackErr)
+		}
+	}
+	return result, nil
 }
 
 // Resolve validates receipt-referenced sources in this workspace only.

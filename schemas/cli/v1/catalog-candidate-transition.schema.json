@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Catalog candidate transition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report",
+    "result",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "catalog-candidate-transition"
+    },
+    "result": {
+      "enum": [
+        "transitioned",
+        "failed"
+      ]
+    },
+    "provenance": {
+      "const": "local-candidate"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "previous_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_arguments",
+            "transition_failed"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "transitioned"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "snapshot_id",
+          "archive_sha256",
+          "previous_archive_sha256"
+        ],
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "error"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "snapshot_id"
+              ]
+            },
+            {
+              "required": [
+                "archive_sha256"
+              ]
+            },
+            {
+              "required": [
+                "previous_archive_sha256"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

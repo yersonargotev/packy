@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/catalogcandidate"
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
 	"github.com/yersonargotev/packy/internal/claudecode"
-	"path/filepath"
 )
 
 func newCatalogCandidateCommand(opts Options) *cobra.Command {
@@ -46,7 +46,7 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Local authoring candidate: snapshot=%s archive_sha256=%s; not an official Catalog Publication; project=%s\n", workspace.Snapshot.ID, workspace.ArchiveSHA256, workspace.Project); err != nil {
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Local authoring candidate: snapshot=%s archive_sha256=%s; not an official Catalog Publication; source/builder labels are unauthenticated; project=%s\n", workspace.Snapshot.ID, workspace.ArchiveSHA256, workspace.Project); err != nil {
 				return err
 			}
 			isolated := opts
@@ -110,16 +110,21 @@ func executeCandidateTransition(parent *cobra.Command, assetsRoot, workspaceRoot
 		return err
 	}
 	command := &cobra.Command{Use: "transition", SilenceUsage: true, SilenceErrors: true, RunE: func(cmd *cobra.Command, _ []string) error {
-		workspace, err := catalogcandidate.Transition(cmd.Context(), assetsRoot, workspaceRoot, expected)
+		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), "Local authoring candidate transition: source/builder labels are unauthenticated; not an official Catalog Publication"); err != nil {
+			return failure(cmd, "transition_failed", err)
+		}
+		_, err := catalogcandidate.Transition(cmd.Context(), assetsRoot, workspaceRoot, expected, func(workspace catalogcandidate.Workspace) error {
+			report := candidateTransitionReport{SchemaVersion: 1, Report: "catalog-candidate-transition", Result: "transitioned", Provenance: "local-candidate", SnapshotID: workspace.Snapshot.ID, ArchiveSHA256: workspace.ArchiveSHA256, PreviousArchiveSHA256: expected}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(report)
+			}
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "Local authoring candidate transitioned: snapshot=%s archive_sha256=%s; not an official Catalog Publication\n", report.SnapshotID, report.ArchiveSHA256)
+			return err
+		})
 		if err != nil {
 			return failure(cmd, "transition_failed", err)
 		}
-		report := candidateTransitionReport{SchemaVersion: 1, Report: "catalog-candidate-transition", Result: "transitioned", Provenance: "local-candidate", SnapshotID: workspace.Snapshot.ID, ArchiveSHA256: workspace.ArchiveSHA256, PreviousArchiveSHA256: expected}
-		if jsonOutput {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(report)
-		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Local authoring candidate transitioned: snapshot=%s archive_sha256=%s; not an official Catalog Publication\n", report.SnapshotID, report.ArchiveSHA256)
-		return err
+		return nil
 	}}
 	command.Flags().StringVar(&expected, "expect-archive-sha256", "", "observed current candidate archive digest")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")

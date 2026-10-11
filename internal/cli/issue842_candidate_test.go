@@ -2,9 +2,12 @@ package cli
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -41,6 +44,35 @@ func TestCandidateTransitionPreservesInstalledBaselineForTargetedUpdate(t *testi
 	}
 	run(candidate, "uninstall", pack.ID(), "--surface", "claude")
 	run(candidate, "uninstall", pack.ID(), "--surface", "codex")
+}
+
+func TestCandidateTransitionOutputFailurePreservesPriorUsableWorkspace(t *testing.T) {
+	pack := testsupport.PortableAllSurfaces("output")
+	baseline, digest := candidateTestAssets(t, strings.Repeat("a", 40), pack)
+	candidate, _ := candidateTestAssets(t, strings.Repeat("b", 40), pack.Candidate())
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	opts := Options{Terminal: &fakeTerminal{}}
+	prefix := func(assets string) []string {
+		return []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), append(prefix(baseline), "list", "--json")...); err != nil {
+		t.Fatalf("prepare: %v %s", err, out)
+	}
+	withoutTimes := regexp.MustCompile(` mod=[0-9]+`)
+	before := withoutTimes.ReplaceAllString(snapshotTree(t, workspace), "")
+	command := NewRootCommand(opts)
+	command.SetOut(failingWriter{err: errors.New("closed output")})
+	command.SetErr(io.Discard)
+	command.SetArgs(append(prefix(candidate), "transition", "--expect-archive-sha256", digest, "--json"))
+	if err := command.Execute(); err == nil {
+		t.Fatal("closed output accepted")
+	}
+	if withoutTimes.ReplaceAllString(snapshotTree(t, workspace), "") != before {
+		t.Fatal("failed transition report changed prior usable bytes/modes")
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), append(prefix(baseline), "list", "--json")...); err != nil {
+		t.Fatalf("previous selection is unusable: %v %s", err, out)
+	}
 }
 
 func candidateTestAssets(t *testing.T, commit string, pack testsupport.Fixture) (string, string) {

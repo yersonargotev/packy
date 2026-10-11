@@ -64,6 +64,7 @@ func testCatalogExecutable(t *testing.T, executable, version, sourceCommit strin
 	t.Run("build", func(t *testing.T) { testCatalogBuildExecutable(t, executable, sourceCommit) })
 	t.Run("publication", func(t *testing.T) { testCatalogPublicationExecutable(t, executable) })
 	t.Run("candidate", func(t *testing.T) { testCatalogCandidateExecutable(t, executable) })
+	t.Run("candidate transitions", func(t *testing.T) { testCatalogCandidateTransitionsExecutable(t, executable) })
 }
 
 func testCatalogValidationExecutable(t *testing.T, executable string) {
@@ -337,7 +338,13 @@ func catalogTreeState(t *testing.T, roots []string) map[string]string {
 				return err
 			}
 			state[path] = info.Mode().String()
-			if !entry.IsDir() {
+			if entry.Type()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(path)
+				if err != nil {
+					return err
+				}
+				state[path] += target
+			} else if !entry.IsDir() {
 				state[path] += string(readIssue798File(t, path))
 			}
 			return nil
