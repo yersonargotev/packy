@@ -22,13 +22,51 @@ import (
 
 func TestCatalogExecutable(t *testing.T) {
 	executable, sourceCommit := buildCatalogCLI(t)
-	t.Run("validate", func(t *testing.T) { testCatalogValidationExecutable(t, executable, sourceCommit) })
+	testCatalogExecutable(t, executable, "v0.0.0", sourceCommit)
+}
+
+// Release jobs supply the extracted artifact; this entry point never rebuilds it.
+func TestCatalogReleaseExecutable(t *testing.T) {
+	executable := os.Getenv("PACKY_RELEASE_BINARY")
+	if executable == "" {
+		t.Skip("staged release binary not supplied")
+	}
+	version := os.Getenv("PACKY_RELEASE_VERSION")
+	if version == "" || !filepath.IsAbs(executable) {
+		t.Fatal("release contracts require an absolute binary path and expected version")
+	}
+	commit, stderr, err := runCatalogCLI(t, testprocess.Env(t), repositoryRoot(t), "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("release source commit: %v %s", err, stderr)
+	}
+	testCatalogExecutable(t, executable, version, strings.TrimSpace(string(commit)))
+}
+
+func testCatalogExecutable(t *testing.T, executable, version, sourceCommit string) {
+	t.Run("identity", func(t *testing.T) {
+		stdout, stderr, err := runCatalogCLI(t, testprocess.Env(t), t.TempDir(), executable, "version", "--json")
+		if err != nil {
+			t.Fatalf("identity: %v\n%s\n%s", err, stdout, stderr)
+		}
+		validateCatalogCLISchema(t, "packy-version", stdout)
+		var identity struct {
+			Version      string `json:"version"`
+			SourceCommit string `json:"source_commit"`
+		}
+		if err := json.Unmarshal(stdout, &identity); err != nil {
+			t.Fatal(err)
+		}
+		if identity.Version != version || identity.SourceCommit != sourceCommit {
+			t.Fatalf("identity = %s; want version %s source %s", stdout, version, sourceCommit)
+		}
+	})
+	t.Run("validate", func(t *testing.T) { testCatalogValidationExecutable(t, executable) })
 	t.Run("build", func(t *testing.T) { testCatalogBuildExecutable(t, executable, sourceCommit) })
 	t.Run("publication", func(t *testing.T) { testCatalogPublicationExecutable(t, executable) })
 	t.Run("candidate", func(t *testing.T) { testCatalogCandidateExecutable(t, executable) })
 }
 
-func testCatalogValidationExecutable(t *testing.T, executable, sourceCommit string) {
+func testCatalogValidationExecutable(t *testing.T, executable string) {
 	t.Run("argument output contract", func(t *testing.T) {
 		testCatalogArgumentOutput(t, executable, "validate")
 	})
@@ -57,25 +95,6 @@ func testCatalogValidationExecutable(t *testing.T, executable, sourceCommit stri
 		}
 		if result.SchemaVersion != 1 || result.Report != "catalog-validation" || result.Result != "valid" || len(result.Packs) != 1 || result.Packs[0].ID != "alpha" || result.Packs[0].Version != "1.0.0" || result.FitnessRows == 0 {
 			t.Fatalf("unexpected validation: %s", stdout)
-		}
-	})
-	t.Run("release identity", func(t *testing.T) {
-		stdout, stderr, err := runCatalogCLI(t, environment, directory, executable, "version", "--json")
-		if err != nil {
-			t.Fatalf("identity: %v\n%s\n%s", err, stdout, stderr)
-		}
-		validateCatalogCLISchema(t, "packy-version", stdout)
-		var identity struct {
-			SchemaVersion int    `json:"schema_version"`
-			Report        string `json:"report"`
-			Version       string `json:"version"`
-			SourceCommit  string `json:"source_commit"`
-		}
-		if err := json.Unmarshal(stdout, &identity); err != nil {
-			t.Fatal(err)
-		}
-		if identity.SchemaVersion != 1 || identity.Report != "packy-version" || identity.Version != "v0.0.0" || identity.SourceCommit != sourceCommit {
-			t.Fatalf("identity = %s", stdout)
 		}
 	})
 	t.Run("baseline and failures", func(t *testing.T) {

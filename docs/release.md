@@ -49,7 +49,8 @@ Users moving from `v0.1.x` first follow the
 4. Present the exact version, commit, validation, release-note evidence as a
    summary or diff, and publication effects for approval.
 5. Create the version tag on the current `main` commit and push that tag.
-6. Wait for the Release workflow to build and validate the artifacts, create
+6. Wait for the Release workflow to build and validate the artifacts, execute
+   the complete Catalog contract on all four staged binaries, create
    the GitHub Release, update `yersonargotev/homebrew-tap`, and test the
    installed Homebrew binary. The publication approval covers protected
    `release` and `homebrew` deployments only for the same workflow run,
@@ -73,7 +74,25 @@ Each archive contains one executable named `packy`. `SHA256SUMS` contains one
 digest for each archive.
 
 `scripts/validate-release-artifacts.sh` verifies the artifact names, archive
-contents, checksums, and the installed binary's `--version` output.
+contents, checksums, and the native binary's version and source identity.
+`scripts/test-release-contracts.sh --version <tag> --dist <dir> --platform
+<os_arch> --evidence <dir>` then extracts that target's staged binary and runs
+the same functional cases for identity, validation, construction, publication,
+and candidate acceptance. It requires a matching native runtime. The four jobs
+use Darwin amd64/arm64 and Linux amd64/arm64 runners; compilation and version
+smoke checks do not replace these cases. Ordinary CI exercises the same gate
+with unpublished `v0.0.0` artifacts.
+
+Contract cases use controlled origin/publication transports, disposable user
+paths and candidate workspaces, and PTYs for interactive destructive consent.
+They neither publish real Catalog content nor require live host/model services.
+Existing deterministic snapshot tests remain; cross-platform archive-byte
+identity is not required. Each job retains `identity.json`, `SHA256SUMS`,
+artifact-validation output, and Go's `contracts.jsonl` test events as workflow
+artifacts. A target or contract failure prevents GitHub Release publication.
+The Release workflow publishes the same retained archives that these jobs test,
+without rebuilding them.
+
 `scripts/generate-homebrew-formula.sh` generates `Formula/packy.rb` from the
 same version and checksum manifest. The release workflow then tests the
 published Homebrew installation.
@@ -95,6 +114,6 @@ Release construction requires a clean source checkout and builds an archive of
 its exact Git HEAD, with Go workspace and ambient build flags disabled. Every
 platform binary embeds that commit and the selected version. `packy version
 --json` exposes both using the versioned executable-identity schema. Release
-artifact validation checks the host binary's identity against the build source,
+artifact validation checks each native binary's identity against the build source,
 and the published release notes identify that same source commit. The four
 archive names and checksum manifest remain unchanged.

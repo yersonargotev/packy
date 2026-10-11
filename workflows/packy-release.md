@@ -39,6 +39,14 @@ Run focused checks and `./scripts/validate-packy.sh` with sandboxed `HOME` and
 artifact validation, formula generation, and required CI all pass for the
 frozen commit and selected version.
 
+The tag-triggered workflow additionally executes the same complete Catalog CLI
+contract against all four staged release archives in native compatible
+Darwin/Linux amd64/arm64 runtimes before publication. Every target must pass;
+ordinary CI exercises this same staged-artifact gate with unpublished fixtures.
+Retain the release-run contract evidence, identities, and four archive checksums
+for Catalog adoption. No live Catalog Publication or model/host service is part
+of contract proof.
+
 ## Approve
 
 Before the tag push, present the prior release, version, commit, validation

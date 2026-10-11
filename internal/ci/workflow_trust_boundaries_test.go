@@ -114,6 +114,9 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 		{name: "broadened default permission", workflow: "ci.yml", mutate: func(text string) string {
 			return strings.Replace(text, "permissions: {}", "permissions:\n  contents: write", 1)
 		}, check: assertMinimumPermissions},
+		{name: "contract artifact write authority", workflow: "release-contracts.yml", mutate: func(text string) string {
+			return strings.Replace(text, "actions: read", "actions: write", 1)
+		}, check: assertMinimumPermissions},
 		{name: "persisted pull request credential", workflow: "ci.yml", mutate: func(text string) string {
 			return strings.Replace(text, "persist-credentials: false", "persist-credentials: true", 1)
 		}, check: assertCheckoutCredentials},
@@ -140,7 +143,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"ci.yml", "release.yml", "security.yml", "security-pr.yml"} {
+	for _, name := range []string{"ci.yml", "release-contracts.yml", "release.yml", "security.yml", "security-pr.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -148,11 +151,18 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	if !strings.Contains(ci.content, "pull_request:") {
 		t.Fatal("fork and Dependabot contributions lack the read-only pull-request path")
 	}
-	for job, lines := range ci.jobs {
-		permissions, _ := permissionBlock(lines, 4)
-		want := map[string]string{"contents": "read"}
-		if !reflect.DeepEqual(permissions, want) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
-			t.Fatalf("CI job %q does not keep fork and Dependabot work read-only and secretless", job)
+	for _, name := range []string{"ci.yml", "release-contracts.yml"} {
+		for job, lines := range workflows[name].jobs {
+			permissions, _ := permissionBlock(lines, 4)
+			want := minimumJobPermissions[workflows[name].path][job]
+			if want == nil || !reflect.DeepEqual(permissions, want) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
+				t.Fatalf("%s job %q does not keep fork and Dependabot work read-only and secretless", name, job)
+			}
+			for permission, level := range permissions {
+				if level != "read" {
+					t.Errorf("%s job %q grants %s: %s to untrusted work", name, job, permission, level)
+				}
+			}
 		}
 	}
 
@@ -294,10 +304,16 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
 	".github/workflows/ci.yml": {
-		"validate": {"contents": "read"},
+		"validate":          {"contents": "read"},
+		"release-artifacts": {"contents": "read"},
+		"release-contracts": {"actions": "read", "contents": "read"},
+	},
+	".github/workflows/release-contracts.yml": {
+		"contracts": {"actions": "read", "contents": "read"},
 	},
 	".github/workflows/release.yml": {
 		"prepare":       {"contents": "read"},
+		"contracts":     {"actions": "read", "contents": "read"},
 		"publish":       {"actions": "read", "contents": "write"},
 		"homebrew":      {"actions": "read", "contents": "read"},
 		"package-smoke": {"actions": "read", "contents": "read"},

@@ -3,9 +3,60 @@ package ci_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
+
+func TestReleasePublicationRequiresFourPlatformCatalogContracts(t *testing.T) {
+	type job struct {
+		Needs    yaml.Node `yaml:"needs"`
+		Uses     string    `yaml:"uses"`
+		Strategy struct {
+			Matrix struct {
+				Include []struct {
+					Platform string `yaml:"platform"`
+					Runner   string `yaml:"runner"`
+				} `yaml:"include"`
+			} `yaml:"matrix"`
+		} `yaml:"strategy"`
+	}
+	readWorkflow := func(name string) map[string]job {
+		t.Helper()
+		var workflow struct {
+			Jobs map[string]job `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal([]byte(readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", name))), &workflow); err != nil {
+			t.Fatal(err)
+		}
+		return workflow.Jobs
+	}
+	release := readWorkflow("release.yml")
+	var publicationDependencies []string
+	publication := release["publish"]
+	if err := publication.Needs.Decode(&publicationDependencies); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(publicationDependencies, "contracts") || release["contracts"].Uses != "./.github/workflows/release-contracts.yml" {
+		t.Fatal("immutable publication must depend on the complete release contract workflow")
+	}
+	contracts := readWorkflow("release-contracts.yml")
+	want := map[string]string{"darwin_amd64": "macos-15-intel", "darwin_arm64": "macos-15", "linux_amd64": "ubuntu-24.04", "linux_arm64": "ubuntu-24.04-arm"}
+	for _, target := range contracts["contracts"].Strategy.Matrix.Include {
+		if want[target.Platform] != target.Runner {
+			t.Errorf("unsupported or incompatible contract target: %s on %s", target.Platform, target.Runner)
+		}
+		delete(want, target.Platform)
+	}
+	if len(want) != 0 {
+		t.Fatalf("release contracts omit targets: %v", want)
+	}
+	if readWorkflow("ci.yml")["release-contracts"].Uses != "./.github/workflows/release-contracts.yml" {
+		t.Fatal("ordinary CI must exercise the same staged-binary release gate")
+	}
+}
 
 func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 	root := repositoryRoot(t)
