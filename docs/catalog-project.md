@@ -321,6 +321,9 @@ owned state. The version-2 `local-candidate.json` ownership marker records the
 current selection and retained snapshot identities. Older disposable workspace
 formats are rejected; create a new workspace rather than editing the marker.
 Ordinary candidate calls require the selected snapshot's identical assets.
+Every lifecycle observation revalidates the captured ownership, Git boundary,
+and retained sources, including after interactive approval. Removing or editing
+the ownership marker during consent rejects Apply without lifecycle mutation.
 
 To change snapshot availability while preserving all installed baseline state,
 use the explicit transition operation. Obtain the baseline archive digest from

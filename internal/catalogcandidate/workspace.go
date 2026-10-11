@@ -204,23 +204,23 @@ func Transition(ctx context.Context, assetsRoot, root, expectedArchive string, a
 	return result, nil
 }
 
-// Resolve validates receipt-referenced sources in this workspace only.
+// Resolve validates the captured workspace ownership and retained sources before
+// each catalog observation, including after interactive consent.
 func (w Workspace) Resolve(ctx context.Context, snapshotID string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	identity, ok := w.retained[snapshotID]
-	if !ok {
+	if _, ok := w.retained[snapshotID]; !ok {
 		return "", fmt.Errorf("snapshot %q is outside this candidate workspace", snapshotID)
 	}
-	if err := validateWorkspace(w.root); err != nil {
-		return "", err
-	}
-	snapshot, err := inspectRetained(w.root, snapshotID, identity)
+	recorded, err := inspectWorkspace(w.root)
 	if err != nil {
 		return "", err
 	}
-	return snapshot.Root, nil
+	if recorded.SnapshotID != w.Snapshot.ID || !reflect.DeepEqual(recorded.Snapshots, w.retained) {
+		return "", errors.New("candidate workspace ownership changed during lifecycle observation")
+	}
+	return snapshotPath(w.root, snapshotID), nil
 }
 
 func resolveRoot(assetsRoot, root string) (string, error) {
