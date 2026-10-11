@@ -1122,13 +1122,19 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 			capabilitypack.SurfaceClaude:   withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceClaude, discoveryAdapter(capabilitypack.SurfaceClaude, claudeAdapter, composition.claude.Home, composition.openCode.ConfigurationHome(), cwd)),
 		}
 	}
+	acquirers := externalToolAcquirers(composition.engram)
+	var executor capabilitypack.ExternalExecutor = runnerExternalExecutor{runner: opts.Runner}
+	if opts.localCandidate != nil {
+		acquirers = nil
+		executor = nil
+	}
 	return capabilitypack.NewFacade(composition.catalog,
 		capabilitypack.WithActivation(store, adapters),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(filepath.Dir(composition.state.File()))),
 		capabilitypack.WithExternalEffects(
 			composition.tools,
-			externalToolAcquirers(composition.engram),
-			runnerExternalExecutor{runner: opts.Runner},
+			acquirers,
+			executor,
 		),
 	), nil
 }
@@ -2153,13 +2159,8 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 // the transaction spanning validation, discovery, and later resource reads.
 func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
 	catalogRoot := sources.catalogRoot
-	if sources.snapshot.Tag == "local-candidate" {
-		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
-			if snapshotID != sources.snapshot.ID {
-				return "", fmt.Errorf("snapshot %q is outside this candidate workspace", snapshotID)
-			}
-			return catalogRoot, nil
-		})
+	if sources.candidate != nil {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, sources.candidate.Resolve)
 	}
 	if !sources.isDefault {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)

@@ -49,7 +49,7 @@ func TestCandidateWorkspaceRejectsConflictsAndRetainedDriftWithoutMutation(t *te
 	}{
 		{"existing unrelated directory", func(root string) { writeAuthoringFile(t, filepath.Join(root, "personal.txt"), "keep\n") }},
 		{"retained source drift", func(root string) {
-			writeAuthoringFile(t, filepath.Join(root, "snapshot", "packs", pack.ID(), "instructions", pack.ID()+".md"), "drift\n")
+			writeAuthoringFile(t, filepath.Join(root, "snapshots", strings.Repeat("a", 40), "packs", pack.ID(), "instructions", pack.ID()+".md"), "drift\n")
 		}},
 		{"missing Git boundary", func(root string) {
 			if err := os.RemoveAll(filepath.Join(root, "project", ".git")); err != nil {

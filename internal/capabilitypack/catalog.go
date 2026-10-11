@@ -483,9 +483,20 @@ func DiscoverValidatedForDurableIntents(ctx context.Context, catalogRoot string,
 
 // DiscoverRetainedForDurableIntents loads one immutable retained Catalog
 // Snapshot. Historical lifecycle reads resolve through the supplied snapshot
-// resolver instead of following the currently selected catalog.
+// resolver instead of following the currently selected catalog. The resolver
+// also validates the selected snapshot before discovery and every observation;
+// it must be read-only and must not acquire a catalog lock.
 func DiscoverRetainedForDurableIntents(ctx context.Context, catalogRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
-	catalog, err := discoverProductionCatalog(ctx, catalogRoot, false, nil)
+	catalog, err := discoverProductionCatalog(ctx, catalogRoot, false, func(ctx context.Context) error {
+		root, err := resolveSnapshot(ctx, snapshotID)
+		if err != nil {
+			return err
+		}
+		if filepath.Clean(root) != filepath.Clean(catalogRoot) {
+			return fmt.Errorf("retained Catalog Snapshot %s resolved outside its selected root", snapshotID)
+		}
+		return nil
+	})
 	if err != nil {
 		return Catalog{}, err
 	}

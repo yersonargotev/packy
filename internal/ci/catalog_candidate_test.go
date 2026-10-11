@@ -130,7 +130,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 			if err == nil || !reflect.DeepEqual(beforeFailure, catalogTreeState(t, []string{workspace})) {
 				t.Fatalf("different candidate replaced prior usable state: %v %s %s", err, out, diagnostic)
 			}
-			for _, args := range [][]string{{"activate", "alpha", "--surface", surface}, {"catalog", "refresh"}, {"install", "missing", "--surface", surface, "--json"}} {
+			for _, args := range [][]string{{"activate", "alpha", "--surface", surface, "--project"}, {"catalog", "refresh"}, {"install", "missing", "--surface", surface, "--json"}} {
 				out, diagnostic, err = run(args...)
 				if err == nil || !reflect.DeepEqual(beforeFailure, catalogTreeState(t, []string{workspace})) {
 					t.Fatalf("failed operation changed workspace: %v %s %s", err, out, diagnostic)

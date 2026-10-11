@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/catalogauthor"
+	"github.com/yersonargotev/packy/internal/catalogcandidate"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/claudecode"
@@ -43,7 +44,7 @@ type Options struct {
 	CatalogSource          catalogstore.Source
 	CatalogOriginResolver  cataloglayout.OriginResolver
 	catalogRootOverride    string
-	localCandidate         *catalogstore.Snapshot
+	localCandidate         *catalogcandidate.Workspace
 }
 
 func (o Options) withDefaults() Options {
@@ -482,11 +483,12 @@ type invocationSources struct {
 	isDefault   bool
 	snapshot    catalogstore.Snapshot
 	store       *catalogstore.Store
+	candidate   *catalogcandidate.Workspace
 }
 
 func resolveInvocationSources(ctx context.Context, opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
 	if opts.localCandidate != nil {
-		return invocationSources{catalogRoot: opts.localCandidate.Root, snapshot: *opts.localCandidate}, nil
+		return invocationSources{catalogRoot: opts.localCandidate.Snapshot.Root, snapshot: opts.localCandidate.Snapshot, candidate: opts.localCandidate}, nil
 	}
 	explicit := strings.TrimSpace(opts.catalogRootOverride)
 	if explicit != "" {
