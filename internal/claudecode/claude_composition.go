@@ -150,7 +150,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	if err != nil {
 		return compositeSkill{}, err
 	}
-	treeFP, err := fingerprintCompositeFiles(files)
+	treeFP, err := fingerprintCompositeFiles(files, 0o700)
 	if err != nil {
 		return compositeSkill{}, err
 	}
@@ -468,12 +468,12 @@ func canonicalizeCompositeFiles(files []compositeFile) error {
 	return nil
 }
 
-func fingerprintCompositeFiles(files []compositeFile) (string, error) {
+func fingerprintCompositeFiles(files []compositeFile, directoryMode fs.FileMode) (string, error) {
 	treeFiles := make([]localprojection.TreeFile, len(files))
 	for i, file := range files {
 		treeFiles[i] = localprojection.TreeFile{Path: file.Path, Content: file.Content, Mode: fs.FileMode(file.Mode)}
 	}
-	return localprojection.FingerprintTreeFiles(treeFiles)
+	return localprojection.FingerprintTreeFiles(treeFiles, directoryMode)
 }
 
 type compositeSkillPayload struct {
@@ -556,7 +556,7 @@ func decodeCompositeSkillPayload(data []byte) (compositeSkill, error) {
 	if !sort.SliceIsSorted(p.Files, func(i, j int) bool { return p.Files[i].Path < p.Files[j].Path }) {
 		return compositeSkill{}, errors.New("unsorted composite skill payload")
 	}
-	fingerprint, err := fingerprintCompositeFiles(p.Files)
+	fingerprint, err := fingerprintCompositeFiles(p.Files, 0o700)
 	if err != nil || fingerprint != p.TreeFingerprint {
 		return compositeSkill{}, errors.New("composite skill tree fingerprint mismatch")
 	}

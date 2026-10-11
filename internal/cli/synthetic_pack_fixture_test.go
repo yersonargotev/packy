@@ -52,8 +52,11 @@ func newSyntheticCLIFixture(t *testing.T, terminal Terminal, packs ...testsuppor
 		byID[manifest.ID] = pack
 	}
 	home := t.TempDir()
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
 	return syntheticCLIFixture{
 		options: Options{
+			Getwd: func() (string, error) { return project, nil },
 			Env: MapEnv{
 				"HOME":            home,
 				"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),

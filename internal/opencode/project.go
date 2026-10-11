@@ -85,7 +85,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		}
 		target := filepath.Join(projectRoot, ".opencode", "skills", name)
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
-		desired, err := localprojection.FingerprintCopiedTree(source)
+		desired, err := localprojection.FingerprintCopiedTree(source, 0o755)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("fingerprint %s source: %w", identity, err)
 		}
@@ -93,7 +93,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("inspect %s target: %w", identity, err)
 		}
-		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v2/native-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionOpenCodeProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the native OpenCode project skill tree", identity), PreviewOnly: true}}, true, nil
+		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v2/native-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionOpenCodeProjectSkillTree, FileMode: 0o755, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the native OpenCode project skill tree", identity), PreviewOnly: true}}, true, nil
 	case "agent":
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil

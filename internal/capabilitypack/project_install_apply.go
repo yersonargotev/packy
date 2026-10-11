@@ -544,7 +544,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 				_ = os.RemoveAll(backupRoot)
 				return nil, err
 			}
-			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Source: backup, Target: action.Target, Version: action.Precondition, Precondition: "missing"})
+			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Source: backup, Target: action.Target, FileMode: uint32(info.Mode().Perm()), Version: action.Precondition, Precondition: "missing"})
 			continue
 		}
 		if !info.Mode().IsRegular() {

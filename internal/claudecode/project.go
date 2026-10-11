@@ -86,7 +86,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
 		}
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
-		desired, err := localprojection.FingerprintCopiedTree(source)
+		desired, err := localprojection.FingerprintCopiedTree(source, 0o755)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("fingerprint %s source: %w", identity, err)
 		}
@@ -95,7 +95,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "claude-project/v1/copied-skill-tree", Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, PreviewOnly: true}}, true, nil
+		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "claude-project/v1/copied-skill-tree", Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectSkillTree, FileMode: 0o755, Source: source, Target: target, Version: desired, Precondition: observed, PreviewOnly: true}}, true, nil
 	case "command":
 		if !bound || binding.Projection != "skill" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
@@ -197,8 +197,12 @@ func (a *SurfaceAdapter) claudeProjectCompositeProjection(pack capabilitypack.Pa
 	for i, file := range composite.Files {
 		files[i] = capabilitypack.ProjectionTreeFile{Path: file.Path, Content: append([]byte(nil), file.Content...), Mode: file.Mode}
 	}
-	action := capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectSkillTree, Target: target, Version: composite.TreeFingerprint, Precondition: observed, PreviewOnly: true, TreeFiles: files}
-	return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: composite.TreeFingerprint, AdapterProvenance: "claude-project/v1/composite-skill", Action: action}, true, nil
+	fingerprint, err := fingerprintCompositeFiles(composite.Files, 0o755)
+	if err != nil {
+		return capabilitypack.ObservedProjection{}, false, err
+	}
+	action := capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectSkillTree, FileMode: 0o755, Target: target, Version: fingerprint, Precondition: observed, PreviewOnly: true, TreeFiles: files}
+	return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: fingerprint, AdapterProvenance: "claude-project/v1/composite-skill", Action: action}, true, nil
 }
 
 func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal, inspectionScope capabilitypack.ProjectInspectionScope) (capabilitypack.SurfaceInspection, error) {

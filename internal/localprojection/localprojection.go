@@ -56,6 +56,7 @@ func (e Executor) Apply(actions []capabilitypack.ProjectionAction) error {
 			case e.SymlinkKinds[action.Kind]:
 				change.SymlinkSource = action.Source
 			case e.TreeKinds[action.Kind]:
+				change.FileMode = fs.FileMode(action.FileMode)
 				var files []TreeFile
 				if action.TreeFiles != nil {
 					files = make([]TreeFile, len(action.TreeFiles))
@@ -130,13 +131,13 @@ func exactTreeFiles(root string) ([]TreeFile, error) {
 }
 
 // FingerprintCopiedTree returns the exact fingerprint a regular source tree
-// will have after Packy materializes it with project-owned directory modes.
-func FingerprintCopiedTree(root string) (string, error) {
+// will have after Packy materializes it with the selected directory mode.
+func FingerprintCopiedTree(root string, directoryMode fs.FileMode) (string, error) {
 	files, err := exactTreeFiles(root)
 	if err != nil {
 		return "", err
 	}
-	return FingerprintTreeFiles(files)
+	return FingerprintTreeFiles(files, directoryMode)
 }
 
 func ensureDir(dir string) ([]string, error) {
@@ -220,12 +221,15 @@ func FingerprintTree(root string) (string, error) {
 
 // FingerprintTreeFiles binds every relative path, file mode, and byte sequence
 // before a composite tree reaches a host-visible path.
-func FingerprintTreeFiles(files []TreeFile) (string, error) {
+func FingerprintTreeFiles(files []TreeFile, directoryMode fs.FileMode) (string, error) {
+	if directoryMode != 0o700 && directoryMode != 0o755 {
+		return "", fmt.Errorf("invalid tree directory mode %04o", directoryMode)
+	}
 	normalized, err := normalizedTreeFiles(files)
 	if err != nil {
 		return "", err
 	}
-	entries := []ExactTreeEntry{{Path: ".", Mode: 0o700, Directory: true}}
+	entries := []ExactTreeEntry{{Path: ".", Mode: directoryMode, Directory: true}}
 	directories := map[string]bool{".": true}
 	for _, file := range normalized {
 		for dir := filepath.ToSlash(filepath.Dir(filepath.FromSlash(file.Path))); dir != "."; dir = filepath.ToSlash(filepath.Dir(filepath.FromSlash(dir))) {
@@ -235,7 +239,7 @@ func FingerprintTreeFiles(files []TreeFile) (string, error) {
 	}
 	for path := range directories {
 		if path != "." {
-			entries = append(entries, ExactTreeEntry{Path: path, Mode: 0o700, Directory: true})
+			entries = append(entries, ExactTreeEntry{Path: path, Mode: directoryMode, Directory: true})
 		}
 	}
 	return fingerprintExactTreeEntries(entries), nil
@@ -461,11 +465,15 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 			if err != nil {
 				return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
 			}
-			fingerprint, err := FingerprintTreeFiles(normalized)
+			directoryMode := change.FileMode
+			if directoryMode == 0 {
+				directoryMode = 0o700
+			}
+			fingerprint, err := FingerprintTreeFiles(normalized, directoryMode)
 			if err != nil || fingerprint != change.ExpectedTreeFingerprint {
 				return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("tree payload does not match sealed fingerprint")}
 			}
-			if err := stageTree(stage, normalized, fingerprint); err != nil {
+			if err := stageTree(stage, normalized, fingerprint, directoryMode); err != nil {
 				return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
 			}
 		}
@@ -585,13 +593,13 @@ func ReplaceTree(target string, files []TreeFile, expectedFingerprint string) er
 	return ReplaceTrees([]TreeChange{{ID: target, Target: target, Files: files, ExpectedFingerprint: expectedFingerprint}})
 }
 
-func stageTree(stage string, files []TreeFile, expectedFingerprint string) error {
-	if err := os.Mkdir(stage, 0o700); err != nil {
+func stageTree(stage string, files []TreeFile, expectedFingerprint string, directoryMode fs.FileMode) error {
+	if err := os.Mkdir(stage, directoryMode); err != nil {
 		return err
 	}
 	for _, file := range files {
 		path := filepath.Join(stage, filepath.FromSlash(file.Path))
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), directoryMode); err != nil {
 			return fmt.Errorf("stage composite tree: %w", err)
 		}
 		if err := os.WriteFile(path, file.Content, file.Mode.Perm()); err != nil {
@@ -600,6 +608,17 @@ func stageTree(stage string, files []TreeFile, expectedFingerprint string) error
 		if err := os.Chmod(path, file.Mode.Perm()); err != nil {
 			return fmt.Errorf("stage composite tree mode: %w", err)
 		}
+	}
+	if err := filepath.WalkDir(stage, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, directoryMode)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("stage tree directory mode: %w", err)
 	}
 	fingerprint, err := FingerprintExactTree(stage)
 	if err != nil {

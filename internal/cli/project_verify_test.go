@@ -11,6 +11,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func installSyntheticVerificationProject(t *testing.T, pack testsupport.Fixture) (Options, string) {
@@ -58,6 +59,41 @@ func TestProjectVerifyPassesOfflineWithoutPersonalState(t *testing.T) {
 	}
 	if snapshotTree(t, project) != before {
 		t.Fatal("verification mutated the project")
+	}
+}
+
+func TestProjectVerifyPassesAfterGitCheckout(t *testing.T) {
+	for _, surface := range []string{"codex", "claude", "opencode"} {
+		t.Run(surface, func(t *testing.T) {
+			pack := testsupport.SkillVariants("verify-checkout", testsupport.Surface(surface))
+			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+			project := t.TempDir()
+			environment := testprocess.Env(t)
+			git := func(directory string, args ...string) {
+				t.Helper()
+				cmd := exec.Command("git", args...)
+				cmd.Dir, cmd.Env = directory, environment
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("git %v: %v\n%s", args, err, out)
+				}
+			}
+			git(project, "init", "--quiet")
+			opts := fixture.options
+			opts.Getwd = func() (string, error) { return project, nil }
+			if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--json"); err != nil {
+				t.Fatalf("install: %v\n%s", err, out)
+			}
+			git(project, "add", ".")
+			git(project, "-c", "user.name=Packy test", "-c", "user.email=packy@example.invalid", "commit", "--quiet", "--no-gpg-sign", "-m", "Install project Pack")
+			checkout := filepath.Join(t.TempDir(), "checkout")
+			git(project, "clone", "--quiet", "--no-local", project, checkout)
+			opts.Getwd = func() (string, error) { return checkout, nil }
+			opts.Env = MapEnv{}
+			out, err := executeCommand(t, NewRootCommand(opts), "verify", "--json")
+			if err != nil {
+				t.Fatalf("verify Git checkout: %v\n%s", err, out)
+			}
+		})
 	}
 }
 
