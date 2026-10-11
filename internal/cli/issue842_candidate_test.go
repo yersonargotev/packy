@@ -58,3 +58,20 @@ func candidateTestAssets(t *testing.T, commit string, pack testsupport.Fixture) 
 	}
 	return assets, digest
 }
+
+func TestCandidateGlobalLifecycleUsesOnlyOwnedDisposableRoots(t *testing.T) {
+	pack := testsupport.SkillVariants("global", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+	assets, _ := candidateTestAssets(t, strings.Repeat("a", 40), pack)
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+	before := snapshotTree(t, fixture.home)
+	for _, operation := range []string{"activate", "deactivate"} {
+		args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", operation, pack.ID(), "--surface", "codex"}
+		if out, err := executeCommand(t, NewRootCommand(fixture.options), args...); err != nil {
+			t.Fatalf("%s: %v\n%s", operation, err, out)
+		}
+	}
+	if snapshotTree(t, fixture.home) != before {
+		t.Fatal("global candidate changed ambient home")
+	}
+}

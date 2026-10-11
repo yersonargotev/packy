@@ -8,7 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/catalogcandidate"
+	"github.com/yersonargotev/packy/internal/catalogtransaction"
 	"github.com/yersonargotev/packy/internal/claudecode"
+	"path/filepath"
 )
 
 func newCatalogCandidateCommand(opts Options) *cobra.Command {
@@ -16,19 +18,27 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "candidate --snapshot <assets-directory> --workspace <new-directory> -- <operation> [args...]",
 		Short: "Exercise a local candidate in an isolated authoring workspace",
-		Long:  "Exercise local snapshot assets without official publisher authority. Only list, show, project install, verify, and uninstall are supported. A new disposable workspace is required; reuse is limited to the same candidate bytes. Normal interactive approval is required for Apply; JSON is never consent. Host execution and personal/global activation are unavailable.",
+		Long:  "Exercise local snapshot assets without official publisher authority. Use list, show, install, verify, uninstall, update, activate, deactivate, or explicit snapshot transition. All lifecycle roots are disposable and owned by the workspace. Normal interactive approval is required for Apply; JSON is never consent. Host execution and personal project activation are unavailable.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.ArgsLenAtDash() != 0 || len(args) == 0 {
 				return errors.New("candidate requires -- followed by a supported operation")
 			}
 			switch args[0] {
-			case "list", "show", "install", "verify", "uninstall", "update", "transition":
+			case "list", "show", "install", "verify", "uninstall", "update", "activate", "deactivate", "transition":
 				return nil
 			default:
-				return fmt.Errorf("unsupported candidate operation %q; use list, show, install, verify, or uninstall", args[0])
+				return fmt.Errorf("unsupported candidate operation %q; use list, show, install, verify, uninstall, update, activate, deactivate, or transition", args[0])
 			}
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !filepath.IsAbs(workspaceRoot) {
+				return errors.New("candidate workspace must be an explicit absolute path")
+			}
+			guard, err := catalogtransaction.Acquire(cmd.Context(), filepath.Dir(filepath.Clean(workspaceRoot)))
+			if err != nil {
+				return err
+			}
+			defer guard.Release()
 			if args[0] == "transition" {
 				return executeCandidateTransition(cmd, assetsRoot, workspaceRoot, args[1:])
 			}
@@ -49,6 +59,18 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 			isolated.catalogRootOverride = ""
 			resolver := newWorkstationResolver(isolated)
 			root := &cobra.Command{Use: "candidate", SilenceUsage: true, SilenceErrors: true}
+			activate, deactivate := newPackActivateCommand(isolated, resolver), newPackDeactivateCommand(isolated, resolver)
+			for _, operation := range []*cobra.Command{activate, deactivate} {
+				originalArgs := operation.Args
+				operation.Args = func(cmd *cobra.Command, args []string) error {
+					project, _ := cmd.Flags().GetBool("project")
+					if project {
+						return errors.New("personal project activation is unavailable in candidate workspaces")
+					}
+					return originalArgs(cmd, args)
+				}
+			}
+			root.AddCommand(activate, deactivate)
 			root.AddCommand(newPackListCommand(isolated, resolver), newPackShowCommand(isolated, resolver), newPackInstallCommand(isolated, resolver), newProjectVerifyCommand(isolated.Getwd), newPackUninstallCommand(isolated, resolver), newPackUpdateCommand(isolated, resolver))
 			root.SetIn(cmd.InOrStdin())
 			root.SetOut(cmd.OutOrStdout())

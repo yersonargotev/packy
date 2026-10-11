@@ -1122,13 +1122,19 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 			capabilitypack.SurfaceClaude:   withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceClaude, discoveryAdapter(capabilitypack.SurfaceClaude, claudeAdapter, composition.claude.Home, composition.openCode.ConfigurationHome(), cwd)),
 		}
 	}
+	acquirers := externalToolAcquirers(composition.engram)
+	var executor capabilitypack.ExternalExecutor = runnerExternalExecutor{runner: opts.Runner}
+	if opts.localCandidate != nil {
+		acquirers = nil
+		executor = nil
+	}
 	return capabilitypack.NewFacade(composition.catalog,
 		capabilitypack.WithActivation(store, adapters),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(filepath.Dir(composition.state.File()))),
 		capabilitypack.WithExternalEffects(
 			composition.tools,
-			externalToolAcquirers(composition.engram),
-			runnerExternalExecutor{runner: opts.Runner},
+			acquirers,
+			executor,
 		),
 	), nil
 }
