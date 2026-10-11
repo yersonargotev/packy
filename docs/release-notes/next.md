@@ -1,81 +1,48 @@
-# {{TAG}} — Reviewed surface variants
+# {{TAG}} — Supported Catalog tooling
 
-Pack resources can retain one logical identity while selecting reviewed
-surface-specific content, dependencies, and typed execution settings. Supported
-surfaces inherit the common definition when no variant is declared; invalid
-variants fail validation. Preview and inspection expose the selected definition
-and effective provenance.
+Catalog maintainers can validate, construct, publish, and exercise reviewed
+Catalog content using the installed Packy executable, without a Packy source
+checkout or Go runtime. Each release binary identifies its version and exact
+source commit, and publication requires the complete functional contract to
+pass on all four supported release targets.
 
 ## Changes since the previous release
 
+- `packy catalog validate` validates a complete Catalog Project and optional
+  `--baseline`, including provenance, exact-copy content, and runtime fitness.
+  It keeps resources inert and provides readable output and versioned `--json`
+  results with identifiable errors and reliable exit statuses.
+- `packy catalog build` constructs complete snapshot assets with the executing
+  binary's embedded builder identity, preserving baseline enforcement,
+  input-change detection, and deterministic construction. Callers cannot
+  independently relabel the builder.
+- `packy catalog publish` publishes or verifies prepared immutable Catalog
+  Snapshots through authenticated `gh`, preserving unchanged retry and draft
+  recovery with versioned JSON. Official preparation and attestation remain
+  workflow-owned.
 - `packy catalog candidate` exercises complete local snapshot assets through
   the normal executable in an explicitly disposable authoring workspace.
   Preview, project install, verification, and uninstall preserve interactive
   consent and ownership; local candidates never select an official catalog or
   enable host execution, global operations, or personal activation.
-- `packy catalog validate` validates a complete Catalog Project and optional
-  `--baseline` through the installed executable, with readable output and
-  versioned `--json` results. No Packy source checkout or Go runtime is needed.
-- `packy catalog publish` publishes or verifies prepared immutable Catalog
-  Snapshots through authenticated `gh`, preserving unchanged retry and draft
-  recovery with versioned JSON. Official preparation and attestation remain
-  workflow-owned; the source-only publisher script is removed.
 - `packy version --json` exposes the release version and exact source commit.
   Release builds compile the recorded Git tree and validate embedded identity.
-- `packy catalog build` constructs validated complete snapshot assets using the
-  executing binary's embedded builder identity, preserving baseline enforcement,
-  input-change detection, and deterministic construction.
-- Release publication now requires the same full Catalog CLI contract to pass
+- Release publication requires the same full Catalog CLI contract to pass
   against each staged Darwin/Linux amd64/arm64 binary on a matching native
   runner. The tested archives are published unchanged; workflow artifacts retain
   contract results, identities, and checksums for Catalog adoption.
+- Source-only Catalog validation/construction tools and the publisher script
+  are removed. Use the supported `packy catalog` commands instead.
 
-- Pack manifests and Catalog Snapshots use schema v3. Complete catalog
-  validation includes common content and every variant's source and legal
-  closure; this is a clean cut without a legacy reader or converter.
-- OpenCode skills use native global `$XDG_CONFIG_HOME/opencode/skills`
-  (defaulting to `$HOME/.config/opencode/skills`) and project `.opencode/skills`
-  roots. Divergent same-name compatibility discovery with Codex/Claude remains
-  blocked when isolation is unverified; separate paths alone do not prove host
-  usability. See [discovery evidence and limits](../skill-discovery.md).
-- Structured reports advance to show v7, global status/lifecycle v13, and
-  project installation/update preview v4. Installed receipts retain their
-  minimal content-integrity contract.
-- `packy catalog import --variant-surface <surface>` adds a reviewed variant
-  to an existing logical resource while preserving its common definition.
-  Upstream Refresh includes variant origins, identifies adaptations by surface
-  for reconciliation, and protects maintained adaptations and overlapping
-  source trees from unintended replacement.
-- Project notice contributions include the selected legal text as well as
-  license and attribution. Notice variants must preserve the original legal
-  text, license, and attribution.
-- Receipt-owned MCP configuration can be updated globally and in projects for
-  OpenCode, and in Claude projects, without being mistaken for unmanaged
-  content; foreign entries and owned drift still block. Initial Codex project
-  MCP installation and Claude
-  project fingerprint verification are also corrected.
+## Catalog adoption
 
-## Adoption before upgrading
+See the [Catalog command documentation](https://github.com/yersonargotev/packy/blob/main/docs/catalog-project.md)
+for arguments, JSON contracts, publication authority, and candidate-workspace
+limits. Catalog content releases remain independent of Packy releases. This
+engine release does not publish or select new Catalog content automatically.
 
-Keep the previous engine and its referenced snapshots. Use it to inventory,
-preview, deactivate old global/personal activations, and uninstall affected
-project installations in every worktree before replacing the binary. This
-includes old Codex/OpenCode shared `.agents/skills` installations. Follow the
-[clean adoption procedure](../catalog-adoption.md); do not move or delete shared
-skill directories wholesale. Personal data, credentials, Memory, unmanaged
-content, and other hosts' installations remain protected.
-
-The rollout requires an immutable engine release followed by complete catalog
-validation and publication pinned to that engine. These notes do not announce
-that catalog migration or publication has occurred. Reinstall explicitly only
-when the compatible engine/catalog pair is available. No automatic migration
-or old-root cleanup is introduced.
-
-## Initialize and activate explicitly
-
-After the compatible engine/catalog pair is available and any previous
-installation has completed the clean handoff, initialize the catalog and
-preview explicit activation:
+For a new installation, acquire the official catalog and preview activation
+before changing a CLI surface:
 
 ```sh
 packy init
