@@ -15,7 +15,8 @@ import (
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
-func testCatalogPublicationExecutable(t *testing.T, catalogCLI string) {
+func TestCatalogPublicationAndConsumption(t *testing.T) {
+	catalogCLI, _ := buildCatalogCLI(t)
 	root := repositoryRoot(t)
 	baseline := t.TempDir()
 	writePublicationCatalogPack(t, baseline, "alpha", "1.0.0", "old alpha\n")
@@ -94,8 +95,7 @@ func testCatalogPublicationExecutable(t *testing.T, catalogCLI string) {
 	}
 }
 
-func TestCatalogSnapshotPublicationIsImmutableAndIdempotent(t *testing.T) {
-	executable, _ := buildCatalogCLI(t)
+func testCatalogPublicationExecutable(t *testing.T, executable string) {
 	dist := t.TempDir()
 	archive := []byte("deterministic snapshot bytes\n")
 	if err := os.WriteFile(filepath.Join(dist, "catalog-snapshot.tar.gz"), archive, 0o644); err != nil {

@@ -3,6 +3,7 @@ package ci_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestReleasePublicationRequiresFourPlatformCatalogContracts(t *testing.T) {
 	if err := publication.Needs.Decode(&publicationDependencies); err != nil {
 		t.Fatal(err)
 	}
-	if !containsString(publicationDependencies, "contracts") || release["contracts"].Uses != "./.github/workflows/release-contracts.yml" {
+	if !slices.Contains(publicationDependencies, "contracts") || release["contracts"].Uses != "./.github/workflows/release-contracts.yml" {
 		t.Fatal("immutable publication must depend on the complete release contract workflow")
 	}
 	contracts := readWorkflow("release-contracts.yml")
@@ -55,15 +56,6 @@ func TestReleasePublicationRequiresFourPlatformCatalogContracts(t *testing.T) {
 	if readWorkflow("ci.yml")["release-contracts"].Uses != "./.github/workflows/release-contracts.yml" {
 		t.Fatal("ordinary CI must exercise the same staged-binary release gate")
 	}
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {

@@ -62,7 +62,7 @@ func TestDeveloperDocumentationExplainsStaticAnalysis(t *testing.T) {
 	}
 }
 
-func TestOrdinaryPullRequestCIContainsOnlyGeneralValidation(t *testing.T) {
+func TestOrdinaryPullRequestCIKeepsValidationAndControlledReleaseContracts(t *testing.T) {
 	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
 	if strings.Count(workflow, "\n  validate:") != 1 || strings.Count(workflow, "./scripts/validate-packy.sh --ci") != 1 {
 		t.Fatal("ordinary CI must expose one general validation job and invoke it once")
@@ -70,7 +70,7 @@ func TestOrdinaryPullRequestCIContainsOnlyGeneralValidation(t *testing.T) {
 	if !strings.Contains(workflow, "timeout-minutes: 8") {
 		t.Fatal("ordinary CI must allow a cold Go cache to complete before cleanup")
 	}
-	for _, retired := range []string{"floor-smoke", "vercel-acceptance-gate", "run-claude-smoke.sh", "run-codex-smoke.sh", "run-opencode-smoke.sh", "upload-artifact"} {
+	for _, retired := range []string{"floor-smoke", "vercel-acceptance-gate", "run-claude-smoke.sh", "run-codex-smoke.sh", "run-opencode-smoke.sh", "gh release create", "HOMEBREW_TAP_TOKEN", "environment: release"} {
 		if strings.Contains(workflow, retired) {
 			t.Errorf("ordinary CI retains release or supported-CLI work %q", retired)
 		}
