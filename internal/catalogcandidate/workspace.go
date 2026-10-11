@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -285,7 +286,19 @@ func validateWorkspace(root string) error {
 		if err != nil {
 			return err
 		}
-		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() && !entry.Type().IsRegular() {
+		if entry.Type()&os.ModeSymlink != 0 {
+			// Global skill projections link to retained immutable source trees.
+			// Isolation roots and project projections must never be redirected.
+			relative, _ := filepath.Rel(root, path)
+			parts := strings.Split(filepath.ToSlash(relative), "/")
+			global := len(parts) == 4 && parts[2] == "skills" && (parts[0] == "home" && (parts[1] == ".agents" || parts[1] == ".claude") || parts[0] == "config" && parts[1] == "opencode")
+			target, err := filepath.EvalSymlinks(path)
+			if !global || err != nil || !strings.HasPrefix(target, filepath.Join(root, "snapshots")+string(filepath.Separator)) {
+				return fmt.Errorf("candidate workspace contains an unsafe path %q", path)
+			}
+			return nil
+		}
+		if !entry.IsDir() && !entry.Type().IsRegular() {
 			return fmt.Errorf("candidate workspace contains an unsafe path %q", path)
 		}
 		return nil
