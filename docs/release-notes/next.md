@@ -1,6 +1,8 @@
 # {{TAG}} — Isolated Catalog transitions and Git-safe project skills
 
-## Changes since v0.2.27
+## Changes since the previous release
+
+The previous stable release is `v0.2.27`.
 
 - `packy catalog candidate` now supports explicit baseline-to-candidate
   transitions within one owned disposable workspace. `transition
@@ -40,5 +42,15 @@ trust boundaries. Catalog content releases remain independent of Packy releases;
 this engine release does not publish or select new Catalog content automatically.
 Downstream adoption of this supporting release requires its own reviewed Catalog
 release declaration before retiring legacy probes.
+
+For a new installation, acquire the official catalog and preview activation
+before changing a CLI surface:
+
+```sh
+packy init
+packy list
+packy activate engram --surface codex --dry-run
+packy activate engram --surface codex
+```
 
 Claude Code **2.1.203 or newer** remains the engine's supported floor.
