@@ -121,15 +121,6 @@ if ((${#changed_paths[@]} == 0)); then
   exit 0
 fi
 
-if [[ "$code" == false ]]; then
-  echo "mode=focused"
-  echo "reason=only documentation paths changed"
-  printf 'changed paths=%s\n' "${changed_paths[*]}"
-  echo "scope=documentation-only"
-  echo "package scope=(none)"
-  exit 0
-fi
-
 # Match general validation's isolation while retaining the caller's Go caches.
 go_cache="${GOCACHE:-$(go env GOCACHE)}"
 go_mod_cache="${GOMODCACHE:-$(go env GOMODCACHE)}"
@@ -138,6 +129,16 @@ sandbox="$(mktemp -d "${TMPDIR:-/tmp}/packy-validation.XXXXXX")"
 export HOME="$sandbox/home" XDG_CONFIG_HOME="$sandbox/xdg"
 export GOCACHE="$go_cache" GOMODCACHE="$go_mod_cache" GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+
+if [[ "$code" == false ]]; then
+  echo "mode=focused"
+  echo "reason=only documentation paths changed"
+  printf 'changed paths=%s\n' "${changed_paths[*]}"
+  echo "scope=documentation-only"
+  echo "package scope=./internal/ci (documentation contracts)"
+  go test ./internal/ci -run '^Test(.*Document.*|Issue422OperatorPathsTeachInitializationThenExplicitActivation|ReleaseGateRequiresFreshDecisionEvidence)$'
+  exit 0
+fi
 
 for owner in "${owners[@]}"; do
   if ! go list "$owner" >/dev/null 2>&1; then general "changed package cannot be resolved: $owner"; fi
