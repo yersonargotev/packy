@@ -71,6 +71,14 @@ When the workflow requests a protected environment approval, read back the
 pending deployment before approving it and apply the publication approval only
 to the matching environment, workflow run, version, and commit.
 
+Use `gh run watch <run-id> --compact --interval 45 --exit-status` for progress.
+Keep the watcher resumable while checking protected-environment waits. Filter
+run and pending-deployment reads with `--jq` to the run ID, version, commit,
+job status, environment name/ID, and approval eligibility needed by the current
+gate; inspect additional deployment fields only to establish that same identity.
+Report stage changes, failures, and decisions. During an unchanged wait, use
+a brief heartbeat when the host requires updates.
+
 Never move, delete, or reuse a published tag. Never edit, replace, clobber, or
 recover a published release or its assets. Any fault is corrected on `main` and
 published as a newer version.
@@ -90,9 +98,25 @@ is removed without changing pre-existing operator state.
 
 ## Repository-change exception
 
-If publication exposes a required repository change, stop publication and
-deliver that change through `deliver-issue`. Resume with a new version after the
-change reaches `main`; never repair the failed version in place.
+Before a tag is pushed, invoking `release-packy` authorizes a correction confined
+to `docs/release-notes/next.md` when Establish finds incomplete or inaccurate
+notes. Create or adopt exactly one issue for that correction, record the release
+request and this inherited authority in its body, and apply `status:approved`.
+Its objective and acceptance criteria must cover the observed release delta and
+note contracts. Pass that issue number to `deliver-issue` and complete its full
+protected integration, review, validation, closure, and cleanup. This bounded
+handoff requires no additional confirmation. If a competing delivery exists,
+resolve ownership through the issue workflow before proceeding.
+
+Changes beyond that file, or required after a tag has been pushed, need separate
+approval of their numbered issue before delivery. Stop publication and present
+the observed change and scope for that decision.
+
+After delivery reaches `main`, restart Establish and discard proof and publication
+approval tied to the earlier commit. A candidate version that remains unused may
+be selected again before any tag push. Once a tag has been pushed, correct the
+cause on `main` and select a newer unused version; never repair that version
+in place. The exact-version/commit publication brief remains mandatory.
 
 **Complete when:** `deliver-issue` reaches its Definition of done and a new
 Establish run can begin from the resulting `origin/main` commit.

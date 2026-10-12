@@ -59,7 +59,11 @@ does not exercise this agent-document boundary and is not regression proof.
 The user explicitly requests delivery of one numbered GitHub issue. The issue
 must already carry `status:approved`; applying that label alone never starts a
 run. The trigger names exactly one issue and does not authorize unrelated issue
-work.
+work. The bounded pre-tag release-note correction authorized by
+[`packy-release.md`](packy-release.md#repository-change-exception) is also an
+explicit delivery trigger: the release workflow supplies exactly one approved
+issue number and records its inherited authority. That exception's scope and
+approval rules remain owned by the release contract.
 
 The explicit request authorizes the workflow to implement, push, open and
 maintain the pull request, wait for required CI, merge through branch
