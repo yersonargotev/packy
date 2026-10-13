@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ import (
 
 // catalogGitOrigin serves one local Git repository over verified HTTPS through
 // a loopback-only proxy. No request is forwarded to a live origin service.
-func catalogGitOrigin(t *testing.T) (commit, proxyURL, certificateFile string) {
+func catalogGitOrigin(t *testing.T, downloads ...*atomic.Int32) (commit, proxyURL, certificateFile string) {
 	t.Helper()
 	origin := t.TempDir()
 	environment := testprocess.Env(t)
@@ -68,6 +69,9 @@ func catalogGitOrigin(t *testing.T) (commit, proxyURL, certificateFile string) {
 			args = append(args, "--advertise-refs")
 			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
 		case "/example/upstream.git/git-upload-pack":
+			if len(downloads) > 0 {
+				downloads[0].Add(1)
+			}
 			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 		default:
 			http.NotFound(w, r)

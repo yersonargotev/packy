@@ -4,19 +4,14 @@ package catalogorigin
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 )
 
-// Resolver owns temporary exact-origin checkouts for one command invocation.
+// Resolver gives one invocation private copies of verified retained origins.
 type Resolver struct {
 	temporary string
 	resolved  map[string]string
@@ -53,29 +48,18 @@ func (r *Resolver) Close() error {
 	return os.RemoveAll(r.temporary)
 }
 
-// Resolve checks out one exact public GitHub origin commit.
+// Resolve returns a private verified checkout of one exact public GitHub origin.
 func (r *Resolver) Resolve(ctx context.Context, origin cataloglayout.Origin) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	key := origin.Repository + "\x00" + origin.Commit
 	if root := r.resolved[key]; root != "" {
 		return root, nil
 	}
-	target := filepath.Join(r.temporary, fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
-	repository, err := git.PlainCloneContext(ctx, target, false, &git.CloneOptions{
-		URL:      "https://github.com/" + origin.Repository + ".git",
-		Tags:     git.AllTags,
-		CABundle: r.caBundle,
-		Progress: io.Discard,
-	})
-	if err != nil {
-		return "", fmt.Errorf("clone public origin %s: %w", origin.Repository, err)
+	root, err := r.resolve(ctx, origin)
+	if err == nil {
+		r.resolved[key] = root
 	}
-	worktree, err := repository.Worktree()
-	if err != nil {
-		return "", fmt.Errorf("open origin worktree: %w", err)
-	}
-	if err := worktree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(origin.Commit)}); err != nil {
-		return "", fmt.Errorf("checkout origin commit %s: %w", origin.Commit, err)
-	}
-	r.resolved[key] = target
-	return target, nil
+	return root, err
 }

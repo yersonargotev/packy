@@ -473,3 +473,27 @@ schema is [catalog-publication v1](../schemas/cli/v1/catalog-publication.schema.
 The former source-only publisher script is removed after migrating its Packy
 callers; the Catalog Project continues using its previous immutable release
 until adoption.
+
+## Origin download reuse
+
+Authoring commands retain verified upstream checkouts under the operating
+system's user cache directory, in `packy/catalog-origins-v1` (on Linux,
+`$XDG_CACHE_HOME` or `~/.cache`; on macOS, `~/Library/Caches`). Each exact
+repository/full-commit pair has its own entry. Warm validation and builds avoid
+another upstream clone, but still verify source bytes and run all candidate,
+provenance, runtime-fitness, and applicable baseline checks.
+
+Each invocation uses a private temporary checkout. Retained source entries are
+sealed, copied under a cache-wide lock, and verified before use. Acquisition and
+lock waiting share a five-minute deadline. Failures never publish an incomplete
+entry; a later resolution cleans staging left by an interrupted process.
+
+Resolution evicts entries unused for seven days and retains at most eight
+entries, using least-recently-used eviction. This is an entry/age bound rather
+than a byte quota. To reclaim all space, delete the exact
+`packy/catalog-origins-v1` directory while all authoring commands are idle.
+A corruption error identifies the individual entry to delete before retrying;
+Packy does not silently retry corruption or switch origins. Never remove an
+active cache directory, since its directory lock coordinates authoring processes.
+Installed Catalog Snapshots and host configuration are separate and unaffected.
+See [ADR 0042](adr/0042-reuse-verified-catalog-origin-downloads.md).

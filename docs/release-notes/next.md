@@ -4,6 +4,11 @@
 
 The previous stable release is `v0.2.27`.
 
+- Catalog authoring reuses verified exact-origin downloads across validation and
+  builds. Every invocation retains complete candidate and baseline validation;
+  private temporary copies isolate consumers, while age and entry-count eviction
+  bound retained downloads. Corrupt entries are rejected with cleanup guidance.
+
 - `packy catalog candidate` now supports explicit baseline-to-candidate
   transitions within one owned disposable workspace. `transition
   --expect-archive-sha256 <current-digest>` validates and retains the proposed
