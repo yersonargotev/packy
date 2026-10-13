@@ -62,6 +62,7 @@ func testCatalogExecutable(t *testing.T, executable, version, sourceCommit strin
 	})
 	t.Run("validate", func(t *testing.T) { testCatalogValidationExecutable(t, executable) })
 	t.Run("build", func(t *testing.T) { testCatalogBuildExecutable(t, executable, sourceCommit) })
+	t.Run("origin reuse", func(t *testing.T) { testCatalogOriginReuse(t, executable) })
 	t.Run("publication", func(t *testing.T) { testCatalogPublicationExecutable(t, executable) })
 	t.Run("candidate", func(t *testing.T) { testCatalogCandidateExecutable(t, executable) })
 	t.Run("candidate transitions", func(t *testing.T) { testCatalogCandidateTransitionsExecutable(t, executable) })
