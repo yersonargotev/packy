@@ -58,15 +58,22 @@ func (r *Resolver) resolve(ctx context.Context, origin cataloglayout.Origin) (st
 		return "", err
 	}
 	defer guard.Release()
-	if err := prune(ctx, root); err != nil {
+	if err := prune(ctx, root, maxEntries); err != nil {
 		return "", err
 	}
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(origin.Repository+"\x00"+origin.Commit)))
 	entry := filepath.Join(root, key)
+	source := entry
 	if _, err := os.Lstat(entry); errors.Is(err, os.ErrNotExist) {
-		if err := r.acquire(ctx, origin, root, entry); err != nil {
+		if err := prune(ctx, root, maxEntries-1); err != nil {
 			return "", err
 		}
+		stage, err := r.acquire(ctx, origin, root)
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(stage)
+		source = stage
 	} else if err != nil {
 		return "", err
 	}
@@ -80,58 +87,70 @@ func (r *Resolver) resolve(ctx context.Context, origin cataloglayout.Origin) (st
 			_ = os.RemoveAll(target)
 		}
 	}()
-	if err := copyVerified(ctx, entry, target, origin); err != nil {
+	if err := copyVerified(ctx, source, target, origin); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", err
+		}
 		return "", fmt.Errorf("origin cache entry %s is invalid; remove this entry while authoring commands are idle and retry: %w", entry, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	now := time.Now()
-	if err := os.Chtimes(entry, now, now); err != nil {
+	if err := os.Chtimes(source, now, now); err != nil {
 		return "", err
 	}
-	if err := prune(ctx, root); err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if source != entry {
+		if err := os.Rename(source, entry); err != nil {
+			return "", err
+		}
 	}
 	success = true
 	return target, nil
 }
 
-func (r *Resolver) acquire(ctx context.Context, origin cataloglayout.Origin, root, entry string) error {
+func (r *Resolver) acquire(ctx context.Context, origin cataloglayout.Origin, root string) (result string, err error) {
 	stage, err := os.MkdirTemp(root, "stage-")
 	if err != nil {
-		return err
+		return "", err
 	}
-	defer os.RemoveAll(stage)
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(stage)
+		}
+	}()
 	checkout := filepath.Join(stage, "checkout")
 	repository, err := git.PlainCloneContext(ctx, checkout, false, &git.CloneOptions{
 		URL: "https://github.com/" + origin.Repository + ".git", Tags: git.AllTags, CABundle: r.caBundle, Progress: io.Discard,
 	})
 	if err != nil {
-		return fmt.Errorf("clone public origin %s: %w", origin.Repository, err)
+		return "", fmt.Errorf("clone public origin %s: %w", origin.Repository, err)
 	}
 	worktree, err := repository.Worktree()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := worktree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(origin.Commit)}); err != nil {
-		return fmt.Errorf("checkout origin commit %s: %w", origin.Commit, err)
+		return "", fmt.Errorf("checkout origin commit %s: %w", origin.Commit, err)
 	}
 	digest, err := copyTree(ctx, checkout, "")
 	if err != nil {
-		return err
+		return "", err
 	}
 	data, err := json.Marshal(seal{origin.Repository, origin.Commit, digest})
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.WriteFile(filepath.Join(stage, "seal.json"), data, 0600); err != nil {
-		return err
+		return "", err
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return "", err
 	}
-	return os.Rename(stage, entry)
+	return stage, nil
 }
 
 func copyVerified(ctx context.Context, entry, target string, origin cataloglayout.Origin) error {
@@ -179,7 +198,7 @@ func realDirectory(path string) error {
 
 // prune runs only under the cache-wide lock, so stages are abandoned and private
 // consumer copies remain valid even when a retained entry is evicted.
-func prune(ctx context.Context, root string) error {
+func prune(ctx context.Context, root string, limit int) error {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return err
@@ -216,7 +235,7 @@ func prune(ctx context.Context, root string) error {
 		kept = append(kept, retained{entry.Name(), info.ModTime()})
 	}
 	sort.Slice(kept, func(i, j int) bool { return kept[i].used.After(kept[j].used) })
-	for i := maxEntries; i < len(kept); i++ {
+	for i := limit; i < len(kept); i++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

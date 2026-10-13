@@ -390,3 +390,65 @@ func TestCancellationDuringDownloadLeavesNoReusableEntry(t *testing.T) {
 	client.InstallProtocol("https", upstream)
 	resolve(t, origin)
 }
+
+func TestCancellationDuringPrivateCopyDoesNotPublish(t *testing.T) {
+	loader, origin := originFixture(t)
+	// A large tracked file keeps the post-download filesystem copy observable.
+	if err := os.WriteFile(filepath.Join(loader.root, "large"), make([]byte, 32<<20), 0600); err != nil {
+		t.Fatal(err)
+	}
+	wt, err := loader.repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("large"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := wt.Commit("large source", &git.CommitOptions{Author: &object.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Unix(2, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin.Commit = hash.String()
+	temporary := t.TempDir()
+	t.Setenv("TMPDIR", temporary)
+	r, err := catalogorigin.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { _, err := r.Resolve(ctx, origin); result <- err }()
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-result:
+			t.Fatalf("resolution completed before cancellation injection: %v", err)
+		case <-deadline:
+			t.Fatal("private copy did not start")
+		case <-ticker.C:
+			copies, err := filepath.Glob(filepath.Join(temporary, "packy-catalog-origins-*", "checkout-*", "large"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(copies) == 0 {
+				continue
+			}
+			cancel()
+			err = <-result
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("copy cancellation=%v", err)
+			}
+			if strings.Contains(err.Error(), "invalid") {
+				t.Fatalf("cancellation misreported as corruption: %v", err)
+			}
+			if len(cacheEntries(t)) != 0 {
+				t.Fatal("canceled cold copy published a reusable entry")
+			}
+			return
+		}
+	}
+}

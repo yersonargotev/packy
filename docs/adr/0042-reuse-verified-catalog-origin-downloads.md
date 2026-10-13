@@ -22,7 +22,8 @@ convention. This intentionally simple coarse lock also bounds concurrent disk
 and network work. Each resolution has a five-minute deadline, including lock
 acquisition. Complete checkouts are sealed with a SHA-256 tree digest covering
 paths, types, permissions, regular-file bytes, and symlink targets, including
-Git metadata, then atomically renamed into place. Incomplete staging directories
+Git metadata. After the private consumer copy is verified and cancellation is
+checked, the complete entry is atomically renamed into place. Incomplete staging directories
 are removed on error or on the next locked resolution after interruption.
 
 Every invocation receives a private temporary copy, whose digest must match the
