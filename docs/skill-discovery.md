@@ -73,3 +73,23 @@ or update is not evidence that a complete host workflow succeeded.
 
 For an existing shared-root installation, follow the
 [clean adoption procedure](catalog-adoption.md) before upgrading and reinstalling.
+
+## Reviewed skill templates
+
+A Pack can opt a skill into the `skill-template` capability. A `pack-surface`
+binding uses `<pack-id>-<surface>-<binding-name>` as its deterministic default
+native name; a `native` binding retains its name while resolving explicit
+references to other skills. An explicit user alias overrides the default.
+
+The renderer gives `SKILL.md` the effective native name and expands only authored
+`{{packy.skill:<logical-id>}}` tokens. For example, a pstack Codex template
+containing `` `${{packy.skill:tdd}}` `` and
+`../{{packy.skill:tdd}}/SKILL.md` resolves both to its own namespaced TDD skill.
+A consumer declares the target as a direct `requires` dependency. Ordinary text
+such as shell `$tdd`, code identifiers, and historical names is left untouched.
+
+These skills use generated, receipt-owned trees rather than links to unchanged
+source. Preview observes the generated frontmatter before Apply. Catalog sources
+remain immutable, and drift and removal are checked against the final installed
+bytes. Non-template skills and unresolved collisions still block as above.
+The design is recorded in [ADR 0043](adr/0043-render-reviewed-skill-identities-and-references.md).

@@ -21,6 +21,32 @@ func TestPackSchemaAcceptsCanonicalDocument(t *testing.T) {
 	}
 }
 
+func TestPackSchemaAcceptsClosedSkillTemplateCapability(t *testing.T) {
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(validManifest), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range resource(manifest)["bindings"].([]any) {
+		binding := value.(map[string]any)
+		binding["capabilities"] = []any{map[string]any{
+			"type":           "skill-template",
+			"skill_template": map[string]any{"naming": "pack-surface"},
+		}}
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled := compileSchema(t, filepath.Join("..", "..", "schemas", "pack", "v3", "pack.schema.json"), "pack.schema.json")
+	if err := compiled.Validate(instance); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPackSchemaRejectsDocumentsRejectedByTheContractValidator(t *testing.T) {
 	schemaPath := filepath.Join("..", "..", "schemas", "pack", "v3", "pack.schema.json")
 	compiled := compileSchema(t, schemaPath, "pack.schema.json")
@@ -45,6 +71,23 @@ func TestPackSchemaRejectsDocumentsRejectedByTheContractValidator(t *testing.T) 
 			binding := resource(manifest)["bindings"].([]any)[1].(map[string]any)
 			binding["capabilities"] = []any{map[string]any{
 				"type":           "project-instruction",
+				"primary_prompt": map[string]any{"id": "guide", "source": "instructions/guide.md"},
+			}}
+		}},
+		{"skill template without typed payload", func(manifest map[string]any) {
+			binding := resource(manifest)["bindings"].([]any)[0].(map[string]any)
+			binding["capabilities"] = []any{map[string]any{"type": "skill-template"}}
+		}},
+		{"skill template with unsupported naming", func(manifest map[string]any) {
+			binding := resource(manifest)["bindings"].([]any)[0].(map[string]any)
+			binding["capabilities"] = []any{map[string]any{
+				"type": "skill-template", "skill_template": map[string]any{"naming": "custom"},
+			}}
+		}},
+		{"skill template with foreign payload", func(manifest map[string]any) {
+			binding := resource(manifest)["bindings"].([]any)[0].(map[string]any)
+			binding["capabilities"] = []any{map[string]any{
+				"type": "skill-template", "skill_template": map[string]any{"naming": "native"},
 				"primary_prompt": map[string]any{"id": "guide", "source": "instructions/guide.md"},
 			}}
 		}},

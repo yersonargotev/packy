@@ -132,3 +132,39 @@ reviewed content merge. It is not performed by local authoring validation.
 
 Project installation writes human-authored intent to `packy.json` and generated
 receipts to `packy.lock.json`. See the [project Pack lifecycle](project-pack-lifecycle.md).
+
+## Reviewed native skill names and references
+
+An author can opt a skill binding into deterministic rendering:
+
+```json
+{
+  "type": "skill-template",
+  "skill_template": { "naming": "pack-surface" }
+}
+```
+
+The generated default name is `<pack-id>-<surface>-<binding-name>`. An explicit
+user alias overrides that default. Template bindings declare the canonical
+invocation: `$<name>` for Codex, `/<name>` for Claude, and `<name>` for OpenCode.
+Preview and show output follow the resolved name, including explicit aliases. Choose `"naming": "native"` for a consumer
+that retains its own name while referencing renamed dependencies. Packy renders
+both kinds as regular, receipt-owned trees in global and project installations.
+Other Packs' installations are preserved. Remaining target or native discovery
+conflicts still block.
+
+References are authored in reviewed source as `{{packy.skill:tdd}}`, with `tdd`
+being the same Pack's logical skill ID. The source keeps its host's syntax around
+the token: `$` for a Codex invocation, a quoted name for a skill-tool call, or
+`../<token>/SKILL.md` for a sibling link. Each other referenced skill must be a
+direct `requires` dependency so custom selections retain the target. Self
+references are allowed. The renderer sets the native frontmatter `name` from the
+skill's effective binding and preserves all non-directive bytes elsewhere.
+
+The capability does not infer references from arbitrary text, replace shell
+variables, resolve conflicting engineering policies, or modify Catalog Snapshot
+bytes. Add it only after reviewing and declaring every semantic reference that
+must follow the effective name. Older engines reject this new closed capability;
+release the engine before publishing an adapted Catalog Snapshot. See
+[skill discovery](skill-discovery.md) and
+[ADR 0043](adr/0043-render-reviewed-skill-identities-and-references.md).

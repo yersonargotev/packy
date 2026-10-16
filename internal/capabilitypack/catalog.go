@@ -266,6 +266,7 @@ const (
 	SurfaceCapabilityExternalExecutableAcquisition SurfaceCapabilityType = "external-executable-acquisition"
 	SurfaceCapabilityOpenCodePrimaryPrompt         SurfaceCapabilityType = "opencode-primary-prompt"
 	SurfaceCapabilityProjectInstruction            SurfaceCapabilityType = "project-instruction"
+	SurfaceCapabilitySkillTemplate                 SurfaceCapabilityType = "skill-template"
 )
 
 // SurfaceCapability is one reviewed host-native behavior requested by a
@@ -277,6 +278,21 @@ type SurfaceCapability struct {
 	ExternalExecutableAcquisition *ExternalExecutableAcquisitionCapability `json:"external_executable_acquisition,omitempty"`
 	PrimaryPrompt                 *PrimaryPromptCapability                 `json:"primary_prompt,omitempty"`
 	ProjectInstruction            *ProjectInstructionCapability            `json:"project_instruction,omitempty"`
+	SkillTemplate                 *SkillTemplateCapability                 `json:"skill_template,omitempty"`
+}
+
+type SkillTemplateNaming string
+
+const (
+	SkillTemplateNamingNative      SkillTemplateNaming = "native"
+	SkillTemplateNamingPackSurface SkillTemplateNaming = "pack-surface"
+)
+
+// SkillTemplateCapability opts one skill source into reviewed Packy template
+// rendering. Naming controls only the default native name; explicit activation
+// aliases are applied after this default is resolved.
+type SkillTemplateCapability struct {
+	Naming SkillTemplateNaming `json:"naming"`
 }
 
 type ClaudeCompositeSkillCapability struct {
@@ -403,6 +419,7 @@ type Pack struct {
 	Requires             Requirements
 	Resources            []Resource
 	Contract             Contract
+	skillTemplateSurface Surface
 }
 
 type ResourceCounts struct {
@@ -758,6 +775,10 @@ func clonePack(pack Pack) Pack {
 					copy := *binding.Capabilities[k].ProjectInstruction
 					binding.Capabilities[k].ProjectInstruction = &copy
 				}
+				if binding.Capabilities[k].SkillTemplate != nil {
+					copy := *binding.Capabilities[k].SkillTemplate
+					binding.Capabilities[k].SkillTemplate = &copy
+				}
 			}
 			if binding.Hook != nil {
 				copy := *binding.Hook
@@ -1013,7 +1034,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ExternalExecutableAcquisition == nil {
 				return fmt.Errorf("surface capability %q requires external_executable_acquisition data", capability.Type)
 			}
-			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil || capability.SkillTemplate != nil {
 				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.ExternalExecutableAcquisition.Tool) {
@@ -1032,7 +1053,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ProjectInstruction != nil {
 				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
 			}
-			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil || capability.SkillTemplate != nil {
 				return fmt.Errorf("surface capability %q does not accept external_executable_acquisition data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.PrimaryPrompt.ID) {
@@ -1051,7 +1072,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.PrimaryPrompt != nil {
 				return fmt.Errorf("surface capability %q does not accept primary_prompt data", capability.Type)
 			}
-			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil || capability.SkillTemplate != nil {
 				return fmt.Errorf("surface capability %q does not accept external_executable_acquisition data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.ProjectInstruction.ID) {
@@ -1067,7 +1088,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ClaudeCompositeSkill == nil {
 				return fmt.Errorf("surface capability %q requires claude_composite_skill data", capability.Type)
 			}
-			if capability.ClaudeAgentDocument != nil || capability.ExternalExecutableAcquisition != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ExternalExecutableAcquisition != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil || capability.SkillTemplate != nil {
 				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
 			}
 			if capability.ClaudeCompositeSkill.Dependencies == nil || capability.ClaudeCompositeSkill.References == nil {
@@ -1080,11 +1101,27 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ClaudeAgentDocument == nil {
 				return fmt.Errorf("surface capability %q requires claude_agent_document data", capability.Type)
 			}
-			if capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+			if capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil || capability.SkillTemplate != nil {
 				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
 			}
 			if capability.ClaudeAgentDocument.Skills == nil {
 				return fmt.Errorf("surface capability %q skills is a required non-null array", capability.Type)
+			}
+		case SurfaceCapabilitySkillTemplate:
+			if resource.Kind != "skill" || binding.Projection != "skill" {
+				return fmt.Errorf("surface capability %q requires a skill binding projected as skill", capability.Type)
+			}
+			if binding.Invocation != nativeSkillInvocation(binding.Surface, binding.Name) {
+				return fmt.Errorf("surface capability %q requires the canonical native skill invocation", capability.Type)
+			}
+			if capability.SkillTemplate == nil {
+				return fmt.Errorf("surface capability %q requires skill_template data", capability.Type)
+			}
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
+			}
+			if capability.SkillTemplate.Naming != SkillTemplateNamingNative && capability.SkillTemplate.Naming != SkillTemplateNamingPackSurface {
+				return fmt.Errorf("surface capability %q naming must be native or pack-surface", capability.Type)
 			}
 		default:
 			return fmt.Errorf("surface capability %q is unsupported", capability.Type)
@@ -1494,7 +1531,7 @@ func validatePackResourceSources(pack Pack, fallbackRoot string) error {
 			}
 		}
 	}
-	return nil
+	return validateSkillTemplateSources(pack, fallbackRoot)
 }
 
 func validateSourcePath(source string) error {

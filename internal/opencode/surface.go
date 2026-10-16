@@ -12,6 +12,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 // SurfaceAdapter translates portable pack resources into OpenCode-owned
@@ -81,7 +82,7 @@ func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 			provenance = "opencode-projection/v1/" + string(projection.Action.Kind)
 		}
 		projection.AdapterProvenance = provenance
-		if projection.Action.Kind == capabilitypack.ActionOpenCodeSkillLink && projection.Action.Target != "" {
+		if (projection.Action.Kind == capabilitypack.ActionOpenCodeSkillLink || projection.Action.Kind == capabilitypack.ActionSkillTree) && projection.Action.Target != "" {
 			projection.ProjectionKey = "path:" + filepath.Clean(projection.Action.Target)
 			projection.Shared = false
 			projection.DiscoverableBy = nil
@@ -114,6 +115,7 @@ func skillOnlyReadiness(pack capabilitypack.Pack) bool {
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
 	var projections []capabilitypack.ObservedProjection
 	var revisionParts []string
+	templateNames := capabilitypack.SkillTemplateNames(pack, capabilitypack.SurfaceOpenCode)
 	desiredConfig := ""
 	configLoaded := false
 	for _, resource := range pack.Resources {
@@ -168,22 +170,37 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 		switch resource.Kind {
 		case "skill":
 			source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), filepath.Clean(resource.Source))
-			desired, err := localprojection.FingerprintTree(source)
-			if err != nil {
-				return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint skill %q: %w", resource.ID, err)
-			}
 			name, ok := openCodeBindingName(resource, "skill")
 			if !ok {
 				continue
 			}
 			target := filepath.Join(a.skillsDir, name)
-			observed, exists, err := localprojection.FingerprintPath(target)
-			if err != nil {
-				return capabilitypack.SurfaceInspection{}, err
-			}
 			id := "skill:" + name
-			projections = append(projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodeSkillLink, Source: source, Target: target, Description: fmt.Sprintf("link OpenCode skill %s at %s", resource.ID, target)}})
-			revisionParts = append(revisionParts, id+"="+observed)
+			if resource.RequestsSurfaceCapability(capabilitypack.SurfaceOpenCode, capabilitypack.SurfaceCapabilitySkillTemplate) {
+				files, desired, err := localprojection.RenderSkillTemplate(source, resource.ID, templateNames, 0o700)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("render skill template %q: %w", resource.ID, err)
+				}
+				observed, exists, err := localprojection.ObserveSkillTarget(target)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, err
+				}
+				provenance := skilltemplate.RendererVersion + "/opencode/global"
+				action := capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillTree, Target: target, TreeFiles: files, FileMode: 0o700, Version: desired, Precondition: observed, AdapterProvenance: provenance, Description: fmt.Sprintf("render OpenCode skill template %s at %s", resource.ID, target)}
+				projections = append(projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance, Action: action})
+				revisionParts = append(revisionParts, id+"="+observed)
+			} else {
+				desired, err := localprojection.FingerprintTree(source)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint skill %q: %w", resource.ID, err)
+				}
+				observed, exists, err := localprojection.ObserveSkillTarget(target)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, err
+				}
+				projections = append(projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodeSkillLink, Source: source, Target: target, Description: fmt.Sprintf("link OpenCode skill %s at %s", resource.ID, target)}})
+				revisionParts = append(revisionParts, id+"="+observed)
+			}
 			assets, err := a.consumerAssetProjections(pack, resource, id, filepath.Join(a.skillsDir, ".packy-assets"))
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
@@ -373,7 +390,7 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		mode := capabilitypack.ProjectionRemoveContent
 		projection.Action.Content = ""
 		switch projection.Action.Kind {
-		case capabilitypack.ActionOpenCodeSkillLink, capabilitypack.ActionOpenCodeInstructionFile, capabilitypack.ActionOpenCodePrimaryPrompt, capabilitypack.ActionOpenCodeAgentFile, capabilitypack.ActionOpenCodeCommandFile, capabilitypack.ActionOpenCodeAssetFile:
+		case capabilitypack.ActionOpenCodeSkillLink, capabilitypack.ActionSkillTree, capabilitypack.ActionOpenCodeInstructionFile, capabilitypack.ActionOpenCodePrimaryPrompt, capabilitypack.ActionOpenCodeAgentFile, capabilitypack.ActionOpenCodeCommandFile, capabilitypack.ActionOpenCodeAssetFile:
 			mode = capabilitypack.ProjectionDeleteTarget
 		case capabilitypack.ActionOpenCodeConfigReference:
 			configContent, err = RemoveInstructionProjection(configContent, a.configFile, a.configReferenceTarget(projection.ID))
@@ -445,9 +462,14 @@ func (a *SurfaceAdapter) inspectOwnedProjection(id, configContent string) (capab
 	switch {
 	case strings.HasPrefix(id, "skill:"):
 		target := filepath.Join(a.skillsDir, strings.TrimPrefix(id, "skill:"))
+		kind := capabilitypack.ActionOpenCodeSkillLink
 		observed, exists, err := localprojection.FingerprintPath(target)
+		if info, statErr := os.Lstat(target); statErr == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			kind = capabilitypack.ActionSkillTree
+			observed, exists, err = localprojection.ObserveExactTree(target)
+		}
 		projection.Exists, projection.ObservedFingerprint = exists, observed
-		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodeSkillLink, Target: target}
+		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: kind, Target: target}
 		return capabilitypack.RemovalCandidate(projection, capabilitypack.ProjectionDeleteTarget, "", fmt.Sprintf("remove OpenCode projection %s", id)), true, err
 	case strings.HasPrefix(id, "instruction:"):
 		resourceID := strings.TrimPrefix(id, "instruction:")
@@ -552,7 +574,7 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 	executor := localprojection.Executor{
 		Host:         "OpenCode",
 		SymlinkKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionOpenCodeSkillLink: true},
-		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionOpenCodeProjectSkillTree: true},
+		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionSkillTree: true, capabilitypack.ActionOpenCodeProjectSkillTree: true},
 		FileKinds: map[capabilitypack.ProjectionActionKind]bool{
 			capabilitypack.ActionOpenCodeInstructionFile: true, capabilitypack.ActionOpenCodePrimaryPrompt: true, capabilitypack.ActionOpenCodeConfigReference: true, capabilitypack.ActionOpenCodeMCPConfig: true,
 			capabilitypack.ActionOpenCodeAgentFile: true, capabilitypack.ActionOpenCodeCommandFile: true, capabilitypack.ActionOpenCodeAssetFile: true,
@@ -731,7 +753,7 @@ func pathsOverlap(left, right string) bool {
 	return false
 }
 func exclusivePathKind(kind capabilitypack.ProjectionActionKind) bool {
-	return kind == capabilitypack.ActionOpenCodeSkillLink || kind == capabilitypack.ActionOpenCodePrimaryPrompt || kind == capabilitypack.ActionOpenCodeAgentFile || kind == capabilitypack.ActionOpenCodeCommandFile || kind == capabilitypack.ActionOpenCodeAssetFile
+	return kind == capabilitypack.ActionOpenCodeSkillLink || kind == capabilitypack.ActionSkillTree || kind == capabilitypack.ActionOpenCodePrimaryPrompt || kind == capabilitypack.ActionOpenCodeAgentFile || kind == capabilitypack.ActionOpenCodeCommandFile || kind == capabilitypack.ActionOpenCodeAssetFile
 }
 
 func (a *SurfaceAdapter) inspectOccupiedNames() ([]capabilitypack.OccupiedName, error) {
@@ -759,7 +781,11 @@ func (a *SurfaceAdapter) inspectOccupiedNames() ([]capabilitypack.OccupiedName, 
 			if strings.HasPrefix(entry.Name(), ".") || (namespace.suffix != "" && filepath.Ext(entry.Name()) != namespace.suffix) {
 				continue
 			}
-			fingerprint, exists, err := localprojection.FingerprintPath(filepath.Join(namespace.dir, entry.Name()))
+			path := filepath.Join(namespace.dir, entry.Name())
+			fingerprint, exists, err := localprojection.FingerprintPath(path)
+			if namespace.name == "skill" {
+				fingerprint, exists, err = localprojection.ObserveSkillTarget(path)
+			}
 			if err != nil {
 				return nil, err
 			}

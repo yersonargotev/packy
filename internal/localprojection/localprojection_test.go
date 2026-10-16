@@ -69,6 +69,37 @@ func TestExecutorDeletesOnlyExplicitTarget(t *testing.T) {
 	}
 }
 
+func TestExecutorKeepsStagesDistinctForOneLogicalIDAtDifferentTargets(t *testing.T) {
+	root := t.TempDir()
+	oldTarget := filepath.Join(root, "skills", "old")
+	newTarget := filepath.Join(root, "skills", "new")
+	if err := os.MkdirAll(oldTarget, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldTarget, "SKILL.md"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := []capabilitypack.ProjectionTreeFile{{Path: "SKILL.md", Content: []byte("new\n"), Mode: 0o644}}
+	fingerprint, err := FingerprintTreeFiles([]TreeFile{{Path: "SKILL.md", Content: []byte("new\n"), Mode: 0o644}}, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := Executor{Host: "test", TreeKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true}}
+	err = executor.Apply([]capabilitypack.ProjectionAction{
+		{ID: "skill:tdd", Kind: capabilitypack.ActionCodexProjectSkillTree, Target: newTarget, TreeFiles: files, FileMode: 0o755, Version: fingerprint},
+		{ID: "skill:tdd", Kind: capabilitypack.ActionCodexProjectSkillTree, Target: oldTarget, Mode: capabilitypack.ProjectionDeleteTarget},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, readErr := os.ReadFile(filepath.Join(newTarget, "SKILL.md")); readErr != nil || string(data) != "new\n" {
+		t.Fatalf("new target = %q err=%v", data, readErr)
+	}
+	if _, statErr := os.Stat(oldTarget); !os.IsNotExist(statErr) {
+		t.Fatalf("old target remains: %v", statErr)
+	}
+}
+
 func TestReplaceTreePublishesOneExactTreeAndPreservesTargetOnFailedVerification(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "skills", "build")

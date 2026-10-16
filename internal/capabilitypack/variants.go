@@ -228,7 +228,67 @@ func ResolvePackForSurface(pack Pack, surface Surface) Pack {
 	for i, resource := range pack.Resources {
 		result.Resources[i] = ResolveResourceForSurface(resource, surface)
 	}
+	if result.skillTemplateSurface != surface && result.RequestsSurfaceCapability(surface, SurfaceCapabilitySkillTemplate) {
+		resolveSkillTemplateNames(&result, surface)
+		result.skillTemplateSurface = surface
+	}
 	return result
+}
+
+func resolveSkillTemplateNames(pack *Pack, surface Surface) {
+	prefix := pack.ID + "-" + string(surface) + "-"
+	for i := range pack.Resources {
+		resource := &pack.Resources[i]
+		for j := range resource.Bindings {
+			binding := &resource.Bindings[j]
+			if binding.Surface != surface {
+				continue
+			}
+			capability, ok := resource.SurfaceCapability(surface, SurfaceCapabilitySkillTemplate)
+			if ok && capability.SkillTemplate != nil && capability.SkillTemplate.Naming == SkillTemplateNamingPackSurface {
+				binding.Invocation = renamedSkillInvocation(*binding, prefix+binding.Name)
+				binding.Name = prefix + binding.Name
+			}
+		}
+	}
+}
+
+func renamedSkillInvocation(binding Binding, name string) string {
+	if binding.Invocation != nativeSkillInvocation(binding.Surface, binding.Name) {
+		return binding.Invocation
+	}
+	return nativeSkillInvocation(binding.Surface, name)
+}
+
+func nativeSkillInvocation(surface Surface, name string) string {
+	switch surface {
+	case SurfaceCodex:
+		return "$" + name
+	case SurfaceClaude:
+		return "/" + name
+	default:
+		return name
+	}
+}
+
+// SkillTemplateNames returns native names from an effective selected Pack.
+// The map includes ordinary skills because a templated skill may directly
+// require and reference one of them. Callers resolve variants and default
+// naming, then apply aliases, before crossing this interface.
+func SkillTemplateNames(pack Pack, surface Surface) map[string]string {
+	names := make(map[string]string)
+	for _, resource := range pack.Resources {
+		if resource.Kind != "skill" {
+			continue
+		}
+		for _, binding := range resource.Bindings {
+			if binding.Surface == surface && binding.Projection == "skill" {
+				names[resource.ID] = binding.Name
+				break
+			}
+		}
+	}
+	return names
 }
 
 // DeclaredResourceBodies includes the common body and every reviewed variant.

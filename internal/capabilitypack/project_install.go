@@ -1087,13 +1087,27 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 				DesiredFingerprint: projection.Digest, ObservedState: "installed", OwnerPack: receipt.Pack.ID, Surface: receipt.Surface,
 			})
 			name := resource.ID
+			if resource.Kind == "skill" {
+				// The receipt target is the durable effective native identity.
+				// It preserves both Pack-surface defaults and explicit aliases
+				// without requiring the current Catalog Snapshot for offline
+				// status, verification, activation, or uninstall.
+				candidate := filepath.Base(filepath.Clean(projection.Target))
+				if idPattern.MatchString(candidate) {
+					name = candidate
+				}
+			}
 			for _, alias := range receipt.Aliases {
 				if alias.Kind == resource.Kind && alias.ID == resource.ID {
 					name = alias.Name
 					break
 				}
 			}
-			lock.Bindings = append(lock.Bindings, LifecycleBinding{Surface: receipt.Surface, Kind: resource.Kind, ID: resource.ID, Projection: resource.Kind, Name: name, Invocation: name, Mode: "native", Sharing: "exclusive"})
+			invocation := name
+			if resource.Kind == "skill" {
+				invocation = nativeSkillInvocation(receipt.Surface, name)
+			}
+			lock.Bindings = append(lock.Bindings, LifecycleBinding{Surface: receipt.Surface, Kind: resource.Kind, ID: resource.ID, Projection: resource.Kind, Name: name, Invocation: invocation, Mode: "native", Sharing: "exclusive"})
 		}
 	}
 	lock.Projections, _ = mergeProjectProjections(nil, lock.Projections, nil)

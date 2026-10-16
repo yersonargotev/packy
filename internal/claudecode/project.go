@@ -12,6 +12,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.Pack, projectRoot string) (capabilitypack.SurfaceInspection, error) {
@@ -86,6 +87,20 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
 		}
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
+		if resource.RequestsSurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilitySkillTemplate) {
+			files, desired, err := localprojection.RenderSkillTemplate(source, resource.ID, capabilitypack.SkillTemplateNames(pack, capabilitypack.SurfaceClaude), 0o755)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, false, fmt.Errorf("render %s source: %w", identity, err)
+			}
+			target := filepath.Join(projectRoot, ".claude", "skills", binding.Name)
+			observed, exists, err := claudeProjectTreeFingerprint(target)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, false, err
+			}
+			provenance := skilltemplate.RendererVersion + "/claude/project"
+			action := capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectSkillTree, FileMode: 0o755, Target: target, Version: desired, Precondition: observed, AdapterProvenance: provenance, PreviewOnly: true, TreeFiles: files}
+			return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance, Action: action}, true, nil
+		}
 		desired, err := localprojection.FingerprintCopiedTree(source, 0o755)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("fingerprint %s source: %w", identity, err)

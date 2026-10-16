@@ -13,6 +13,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 const codexProjectTrustProvenance = "codex-project/v1/project-trust"
@@ -81,6 +82,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 	}
 	instructionDocument := string(instructionBytes)
 	instructionPrecondition := "missing"
+	templateNames := capabilitypack.SkillTemplateNames(pack, capabilitypack.SurfaceCodex)
 	if instructionErr == nil {
 		instructionPrecondition = localprojection.FingerprintBytes(instructionBytes)
 	}
@@ -153,6 +155,24 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		}
 		target := filepath.Join(projectRoot, ".agents", "skills", bindingName)
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
+		if resource.RequestsSurfaceCapability(capabilitypack.SurfaceCodex, capabilitypack.SurfaceCapabilitySkillTemplate) {
+			files, desired, err := localprojection.RenderSkillTemplate(source, resource.ID, templateNames, 0o755)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("render %s source: %w", identity, err)
+			}
+			observed, exists, err := projectTreeFingerprint(target)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("inspect %s target: %w", identity, err)
+			}
+			provenance := skilltemplate.RendererVersion + "/codex/project"
+			projections = append(projections, capabilitypack.ObservedProjection{
+				ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
+				ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance,
+				ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
+				Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, FileMode: 0o755, Target: target, Version: desired, Precondition: observed, AdapterProvenance: provenance, TreeFiles: files, Description: fmt.Sprintf("render %s in the Codex project skill tree", identity), PreviewOnly: true},
+			})
+			continue
+		}
 		desired, err := localprojection.FingerprintCopiedTree(source, 0o755)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint %s source: %w", identity, err)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 type SurfaceAdapter struct {
@@ -86,7 +87,7 @@ func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 			provenance = "codex-projection/v1/" + string(projection.Action.Kind)
 		}
 		projection.AdapterProvenance = provenance
-		if projection.Action.Kind == capabilitypack.ActionSkillLink && projection.Action.Target != "" {
+		if (projection.Action.Kind == capabilitypack.ActionSkillLink || projection.Action.Kind == capabilitypack.ActionSkillTree) && projection.Action.Target != "" {
 			projection.ProjectionKey = "path:" + filepath.Clean(projection.Action.Target)
 			projection.Shared = true
 			projection.DiscoverableBy = []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}
@@ -121,26 +122,42 @@ func skillOnlyReadiness(pack capabilitypack.Pack) bool {
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
 	var projections []capabilitypack.ObservedProjection
 	var revisionParts []string
+	templateNames := capabilitypack.SkillTemplateNames(pack, capabilitypack.SurfaceCodex)
 	var desiredPrompt string
 	promptLoaded := false
 	for _, resource := range pack.Resources {
 		switch resource.Kind {
 		case "skill":
 			source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), filepath.Clean(resource.Source))
-			desired, err := localprojection.FingerprintTree(source)
-			if err != nil {
-				return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint skill %q: %w", resource.ID, err)
-			}
 			name, ok := codexBindingName(resource, "skill")
 			if !ok {
 				continue
 			}
 			target := filepath.Join(a.skillsDir, name)
-			observed, exists, err := localprojection.FingerprintPath(target)
+			id := "skill:" + name
+			if resource.RequestsSurfaceCapability(capabilitypack.SurfaceCodex, capabilitypack.SurfaceCapabilitySkillTemplate) {
+				files, desired, err := localprojection.RenderSkillTemplate(source, resource.ID, templateNames, 0o700)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("render skill template %q: %w", resource.ID, err)
+				}
+				observed, exists, err := localprojection.ObserveSkillTarget(target)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, err
+				}
+				provenance := skilltemplate.RendererVersion + "/codex/global"
+				action := capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillTree, Target: target, TreeFiles: files, FileMode: 0o700, Version: desired, Precondition: observed, AdapterProvenance: provenance, Description: fmt.Sprintf("render skill template %s at %s", resource.ID, target)}
+				projections = append(projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance, Action: action})
+				revisionParts = append(revisionParts, id+"="+observed)
+				continue
+			}
+			desired, err := localprojection.FingerprintTree(source)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("fingerprint skill %q: %w", resource.ID, err)
+			}
+			observed, exists, err := localprojection.ObserveSkillTarget(target)
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
-			id := "skill:" + name
 			projections = append(projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillLink, Source: source, Target: target, Description: fmt.Sprintf("link skill %s at %s", resource.ID, target)}})
 			revisionParts = append(revisionParts, id+"="+observed)
 		case "instruction":
@@ -277,6 +294,9 @@ func (a *SurfaceAdapter) inspectOccupiedNames() ([]capabilitypack.OccupiedName, 
 			}
 			path := filepath.Join(namespace.dir, entry.Name())
 			fingerprint, exists, err := localprojection.FingerprintPath(path)
+			if namespace.name == "skill" {
+				fingerprint, exists, err = localprojection.ObserveSkillTarget(path)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -349,7 +369,7 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		mode := capabilitypack.ProjectionRemoveContent
 		content := ""
 		switch projection.Action.Kind {
-		case capabilitypack.ActionSkillLink:
+		case capabilitypack.ActionSkillLink, capabilitypack.ActionSkillTree:
 			mode = capabilitypack.ProjectionDeleteTarget
 		case capabilitypack.ActionCodexAgentFile, capabilitypack.ActionCodexWorkflowSkill, capabilitypack.ActionCodexAssetFile:
 			mode = capabilitypack.ProjectionDeleteTarget
@@ -433,9 +453,14 @@ func (a *SurfaceAdapter) inspectOwnedProjection(id, promptContent, configContent
 	switch {
 	case strings.HasPrefix(id, "skill:"):
 		target := filepath.Join(a.skillsDir, strings.TrimPrefix(id, "skill:"))
+		kind := capabilitypack.ActionSkillLink
 		observed, exists, err := localprojection.FingerprintPath(target)
+		if info, statErr := os.Lstat(target); statErr == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			kind = capabilitypack.ActionSkillTree
+			observed, exists, err = localprojection.ObserveExactTree(target)
+		}
 		projection.Exists, projection.ObservedFingerprint = exists, observed
-		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillLink, Target: target}
+		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: kind, Target: target}
 		return capabilitypack.RemovalCandidate(projection, capabilitypack.ProjectionDeleteTarget, "", fmt.Sprintf("remove Codex projection %s", id)), true, err
 	case strings.HasPrefix(id, "instruction:"):
 		resourceID := strings.TrimPrefix(id, "instruction:")
@@ -495,7 +520,7 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 	executor := localprojection.Executor{
 		Host:         "Codex",
 		SymlinkKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionSkillLink: true},
-		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true},
+		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionSkillTree: true, capabilitypack.ActionCodexProjectSkillTree: true},
 		FileKinds: map[capabilitypack.ProjectionActionKind]bool{
 			capabilitypack.ActionInstructionFile:     true,
 			capabilitypack.ActionProjectManifestFile: true,
@@ -650,7 +675,7 @@ func pathsOverlap(left, right string) bool {
 }
 
 func exclusivePathKind(kind capabilitypack.ProjectionActionKind) bool {
-	return kind == capabilitypack.ActionSkillLink || kind == capabilitypack.ActionCodexWorkflowSkill || kind == capabilitypack.ActionCodexAssetFile
+	return kind == capabilitypack.ActionSkillLink || kind == capabilitypack.ActionSkillTree || kind == capabilitypack.ActionCodexWorkflowSkill || kind == capabilitypack.ActionCodexAssetFile
 }
 
 func extractBlock(content, startMarker, endMarker string) (string, bool) {
