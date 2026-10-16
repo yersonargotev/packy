@@ -79,3 +79,95 @@ The original complete Packs remain blocked, including directory aliases. The
 implementation does not reinterpret arbitrary upstream prose. The opt-in probe
 authors an isolated, reviewed pstack candidate and leaves Matty unchanged; no
 Catalog publication or user installation is modified.
+
+### Repository validation
+
+- `./scripts/validate-packy.sh --ci`: passed formatting, vet, static analysis
+  (zero issues), the repository package suite, and capability-domain race tests.
+- `go test ./internal/cli -run '^TestIssue851' -count=1`: passed both install
+  orders on Codex, Claude, and OpenCode in global and project scope, including
+  convergence, aliases, updates, drift, stale previews, source immutability,
+  legacy-to-template adoption, and safe retirement.
+- Focused renderer tests passed malformed/reserved-token rejection, reserved
+  metadata file/directory rejection, unrelated-byte preservation, deterministic
+  metadata, source-contract changes with equal rendered bodies, and renderer
+  revisions with equal rendered bodies.
+- Independent Standards review: zero remaining findings after accepting ADR 0043
+  and recording ADR 0041's limited supersession.
+- Independent Spec review: both original blockers (durable renderer identity and
+  malformed reserved directives) fixed; zero remaining code findings.
+
+### Actual complete-Pack acceptance
+
+The opt-in [Catalog probe](../../../scripts/probes/skill-template-catalog.py)
+passed **59 commands** using engine commit
+`3c7010c8f44e7d480cac0832aec3924da0b030b9` and Catalog source commit
+`15ca0f7033d8d505a2325d20d224ba31fc66fdac`. `--focus-pair` builds the complete
+Matty/pstack dependency closures, rather than every unrelated Catalog Pack.
+
+The baseline is Matty 4.0.0 plus pstack 4.3.0. The isolated pstack 5.0.0 candidate
+opts `tdd` and `teach` into pack/surface naming on all three surfaces. Its Codex
+`poteto-help` retains its native name and gains declared dependencies and reviewed
+tokens in `SKILL.md`, `references/prompting.md`, and `references/recipes.md`.
+The candidate version is a local test label; no release is published.
+
+| Surface | Project | Global |
+| --- | --- | --- |
+| Codex | Passed | Passed |
+| Claude | Passed | Passed |
+| OpenCode | Passed | Passed |
+
+Every cell verifies original full-Pack collision and alias rejection, read-only
+availability transition, complete adapted coexistence, materialized namespaced
+frontmatter, same-Pack help routes where applicable, and unchanged Matty trees.
+Project installations also pass portable `verify`. The supplied source Catalog's
+complete Pack tree is identical before and after the run.
+
+Recorded candidate source commit: `cd66c2d7d2e0c541a32c9c4347e3a514a7f5aaa5`.
+Adapted archive SHA-256:
+`d3f47869cc94e228501c1e69ab9414a9c0dd53feb2e816a756e81ce5b548949b`.
+Baseline archive SHA-256:
+`53860a583198a3cd802d4b1b50d707e6666a2e82592f446157678ce2b6800f85`.
+
+The probe emits machine-readable `evidence.json` plus its successful owned
+workspaces. Reproduction commands and sandbox guarantees are documented in the
+[probe README](../../../scripts/probes/README.md).
+
+### Actual native-host checks
+
+The [host probe](../../../scripts/probes/skill-template-hosts.py) then passed
+against those same six successful workspaces and the installed executables:
+
+| Host | Version | Project | Global | Observed contract |
+| --- | --- | --- | --- | --- |
+| Codex | 0.163.0 | Passed | Passed | `skills/list` discovers all four identities without errors |
+| Claude Code | 2.1.220 | Passed | Passed | All four explicit commands expand to their complete expected bodies |
+| OpenCode | 1.18.15 | Passed | Passed | The actual `skill` tool loads all four complete expected bodies |
+
+The four identities are Matty's `tdd` and `teach`, plus
+`pstack-<surface>-tdd` and `pstack-<surface>-teach`. Claude and OpenCode results
+include **16 complete-body checks** across the two hosts and scopes. The check
+compares the complete expected installed body, avoiding ambiguous shared titles
+such as "Teach".
+
+Codex uses its app-server discovery API without creating a thread or model turn.
+Claude's localhost recorder returns an intentional HTTP 400 after observing skill
+expansion; every case records two requests and expected exit status 1. OpenCode's
+deterministic localhost provider requests the native skill tool and then stops;
+every case records three requests and exit status 0. Neither performs model
+inference or executes the skill workflow. OpenCode's compatibility discovery roots
+remain enabled. These results establish native discovery/body loading, not the
+semantic success of arbitrary model-driven workflows.
+
+### Merge assessment
+
+**Merge the engine change.** Repository validation, complete real-Pack acceptance,
+native discovery/body loading, and both independent review axes pass. The three
+review findings are closed: architectural authority, durable renderer identity,
+and malformed reserved directives. The residual operational risk is future host
+discovery changes; native-host probes are opt-in and should be repeated when
+updating supported host baselines.
+
+Release the engine before separately reviewing and publishing Catalog adaptations
+that request `skill-template`. This PR does not release the engine, publish the
+local candidate, alter active user Packs, or merge itself.
