@@ -97,7 +97,17 @@ def run_host(command, workspace, env):
         process.stderr.close()
 
 
-def transport_load(binary, surface, workspace, env, skill_name):
+def contains_body(value, body):
+    if isinstance(value, str):
+        return body in value.replace("\r\n", "\n")
+    if isinstance(value, dict):
+        return any(contains_body(item, body) for item in value.values())
+    if isinstance(value, list):
+        return any(contains_body(item, body) for item in value)
+    return False
+
+
+def transport_load(binary, surface, workspace, env, skill_name, expected_body):
     requests = []
     class Provider(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -151,9 +161,7 @@ def transport_load(binary, surface, workspace, env, skill_name):
         command = [binary, "run", "--pure", "--format", "json", "Load " + skill_name + " and stop. Do not execute the workflow."]
     try:
         result = run_host(command, workspace, env)
-        payload = json.dumps(requests)
-        marker = "# TDD Bug Fix" if skill_name.endswith("tdd") else "# Teach"
-        if marker not in payload:
+        if not contains_body(requests, expected_body):
             raise RuntimeError(surface + " did not load " + skill_name + ": " + result.stderr[-1000:])
         if surface == "opencode" and result.returncode != 0:
             raise RuntimeError("OpenCode failed after tool loading: " + result.stderr[-1000:])
@@ -184,7 +192,13 @@ def main():
         if surface == "codex":
             result = codex_list(binary, workspace, env)
         else:
-            result = {"loads": [transport_load(binary, surface, workspace, env, "pstack-" + surface + "-" + name) for name in ("tdd", "teach")]}
+            loads = []
+            for skill_name in ("tdd", "teach", "pstack-" + surface + "-tdd", "pstack-" + surface + "-teach"):
+                native = Path(case["skills"]) / skill_name / "SKILL.md"
+                content = native.read_text().replace("\r\n", "\n")
+                body = content.split("\n---\n", 1)[1].strip()
+                loads.append(transport_load(binary, surface, workspace, env, skill_name, body))
+            result = {"loads": loads}
         results.append({"surface": surface, "scope": scope, "version": version, **result})
     summary = {"report": "skill-template-host-loading", "result": "passed", "outcomes": results}
     (args.catalog_evidence.parent / "host-evidence.json").write_text(json.dumps(summary, indent=2) + "\n")

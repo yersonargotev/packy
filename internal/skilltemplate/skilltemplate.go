@@ -5,7 +5,12 @@ package skilltemplate
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"hash"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,11 +23,12 @@ import (
 )
 
 const (
-	// RendererVersion is included in adapter provenance so a rendering behavior
-	// change cannot silently reuse ownership sealed by an older adapter.
-	RendererVersion = "skill-template/v1"
-	directivePrefix = "{{packy.skill:"
-	directiveSuffix = "}}"
+	// RendererVersion is included in adapter provenance and rendered metadata so
+	// a rendering behavior change cannot reuse bytes sealed by an older adapter.
+	RendererVersion  = "skill-template/v1"
+	directivePrefix  = "{{packy.skill:"
+	directiveSuffix  = "}}"
+	metadataFileName = ".packy-skill-template.json"
 )
 
 var logicalIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -34,22 +40,58 @@ type File struct {
 	Mode    uint32
 }
 
+type renderMetadata struct {
+	RendererVersion      string            `json:"renderer_version"`
+	SourceContractSHA256 string            `json:"source_contract_sha256"`
+	EffectiveNames       map[string]string `json:"effective_names"`
+}
+
+type sourceContractFile struct {
+	path    string
+	content []byte
+	mode    uint32
+}
+
 // ReferencedSkills returns the canonical logical IDs named by explicit Packy
 // directives. All other bytes are ignored.
 func ReferencedSkills(data []byte) ([]string, error) {
 	seen := map[string]bool{}
 	for offset := 0; ; {
-		relative := bytes.Index(data[offset:], []byte(directivePrefix))
+		relative := bytes.Index(data[offset:], []byte("packy.skill"))
 		if relative < 0 {
 			break
 		}
-		start := offset + relative
-		valueStart := start + len(directivePrefix)
+		namespaceStart := offset + relative
+		openingStart := namespaceStart
+		for openingStart > 0 && (data[openingStart-1] == ' ' || data[openingStart-1] == '\t' || data[openingStart-1] == '\r' || data[openingStart-1] == '\n') {
+			openingStart--
+		}
+		braceStart := openingStart
+		for braceStart > 0 && data[braceStart-1] == '{' {
+			braceStart--
+		}
+		openingBraces := openingStart - braceStart
+		if openingBraces < 2 {
+			offset = namespaceStart + len("packy.skill")
+			continue
+		}
+		if openingBraces != 2 || openingStart != namespaceStart {
+			return nil, fmt.Errorf("malformed skill template directive at byte %d", braceStart)
+		}
+		start := braceStart
+		valueStart := namespaceStart + len("packy.skill")
+		if valueStart >= len(data) || data[valueStart] != ':' {
+			return nil, fmt.Errorf("malformed skill template directive at byte %d", start)
+		}
+		valueStart++
 		relativeEnd := bytes.Index(data[valueStart:], []byte(directiveSuffix))
 		if relativeEnd < 0 {
 			return nil, fmt.Errorf("unterminated skill template directive at byte %d", start)
 		}
 		end := valueStart + relativeEnd
+		if end+len(directiveSuffix) < len(data) && data[end+len(directiveSuffix)] == '}' {
+			return nil, fmt.Errorf("malformed skill template directive at byte %d", start)
+		}
 		logicalID := string(data[valueStart:end])
 		if !logicalIDPattern.MatchString(logicalID) {
 			return nil, fmt.Errorf("skill template directive at byte %d has invalid logical ID %q", start, logicalID)
@@ -69,6 +111,10 @@ func ReferencedSkills(data []byte) ([]string, error) {
 // reference directives, and sets SKILL.md's frontmatter name to the effective
 // name selected for self. It never follows links or accepts special files.
 func RenderTree(source, self string, names map[string]string) ([]File, error) {
+	return renderTree(source, self, names, RendererVersion)
+}
+
+func renderTree(source, self string, names map[string]string, rendererVersion string) ([]File, error) {
 	if !logicalIDPattern.MatchString(self) {
 		return nil, fmt.Errorf("invalid template skill logical ID %q", self)
 	}
@@ -85,12 +131,25 @@ func RenderTree(source, self string, names map[string]string) ([]File, error) {
 	}
 
 	files := []File{}
+	sourceFiles := []sourceContractFile{}
+	effectiveNames := map[string]string{self: effectiveSelf}
 	foundSkill := false
 	err = filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == source || entry.IsDir() {
+		if path == source {
+			return nil
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		if relative == metadataFileName {
+			return fmt.Errorf("template skill source contains reserved metadata path %q", metadataFileName)
+		}
+		if entry.IsDir() {
 			return nil
 		}
 		info, err := entry.Info()
@@ -101,14 +160,21 @@ func RenderTree(source, self string, names map[string]string) ([]File, error) {
 			relative, _ := filepath.Rel(source, path)
 			return fmt.Errorf("template skill source contains non-regular path %q", filepath.ToSlash(relative))
 		}
-		relative, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
+		}
+		sourceFiles = append(sourceFiles, sourceContractFile{path: relative, content: append([]byte(nil), content...), mode: uint32(info.Mode().Perm())})
+		references, err := ReferencedSkills(content)
+		if err != nil {
+			return fmt.Errorf("render template file %q: %w", relative, err)
+		}
+		for _, logicalID := range references {
+			name, ok := names[logicalID]
+			if !ok || !logicalIDPattern.MatchString(name) {
+				return fmt.Errorf("render template file %q: referenced skill %q has no valid effective name", relative, logicalID)
+			}
+			effectiveNames[logicalID] = name
 		}
 		content, err = renderDirectives(content, names)
 		if err != nil {
@@ -130,8 +196,40 @@ func RenderTree(source, self string, names map[string]string) ([]File, error) {
 	if !foundSkill {
 		return nil, fmt.Errorf("template skill source has no SKILL.md")
 	}
+	metadata, err := json.Marshal(renderMetadata{
+		RendererVersion:      rendererVersion,
+		SourceContractSHA256: sourceContractSHA256(sourceFiles),
+		EffectiveNames:       effectiveNames,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode skill template metadata: %w", err)
+	}
+	metadata = append(metadata, '\n')
+	files = append(files, File{Path: metadataFileName, Content: metadata, Mode: 0o644})
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+func sourceContractSHA256(files []sourceContractFile) string {
+	sorted := append([]sourceContractFile(nil), files...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].path < sorted[j].path })
+	digest := sha256.New()
+	digest.Write([]byte("packy-skill-template-source/v1\x00"))
+	for _, file := range sorted {
+		writeDigestBytes(digest, []byte(file.path))
+		var mode [4]byte
+		binary.BigEndian.PutUint32(mode[:], file.mode)
+		digest.Write(mode[:])
+		writeDigestBytes(digest, file.content)
+	}
+	return "sha256:" + hex.EncodeToString(digest.Sum(nil))
+}
+
+func writeDigestBytes(digest hash.Hash, value []byte) {
+	var length [8]byte
+	binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+	digest.Write(length[:])
+	digest.Write(value)
 }
 
 func renderDirectives(data []byte, names map[string]string) ([]byte, error) {

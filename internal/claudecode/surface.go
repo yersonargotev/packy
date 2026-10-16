@@ -444,8 +444,11 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 
 func inspectClaudeResidualProjection(record OwnershipRecord) (capabilitypack.ObservedProjection, error) {
 	action := capabilitypack.ProjectionAction{ID: record.ID, Kind: capabilitypack.ProjectionActionKind(record.Kind), Target: record.Target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove residual Claude projection " + record.ID}
-	observed, exists := "missing", false
-	var err error
+	var (
+		observed string
+		exists   bool
+		err      error
+	)
 	switch action.Kind {
 	case ActionSkillLink:
 		observed, exists, err = localprojection.FingerprintPath(record.Target)

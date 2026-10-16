@@ -18,7 +18,9 @@ python3 -B scripts/probes/skill-template-catalog.py \
 
 The supplied Catalog checkout must contain the reviewed Matty 4.0.0 and pstack
 4.3.0 baseline and its existing bounded `content-probes.py` candidate runner.
-The output directory must be new. The probe preserves the checkout, copies its
+The output directory must be new. Add `--focus-pair` to build only the complete
+Matty and pstack closures for a focused acceptance run; the default includes all
+Packs from the supplied checkout. The probe preserves the checkout, copies its
 complete Pack set, and authors one isolated pstack 5.0.0 candidate adaptation:
 namespace `tdd` and `teach` on each surface, render the Codex help's three files,
 and declare its direct TDD/teaching dependencies. This version is a local
@@ -43,10 +45,12 @@ python3 -B scripts/probes/skill-template-hosts.py \
 Codex uses `initialize`, `initialized`, and `skills/list` through the installed
 app-server to verify all four native identities without a thread or model turn,
 following the [official protocol](https://learn.chatgpt.com/docs/app-server).
-Claude requests each explicit namespaced command against a localhost recorder
+Claude requests both original Matty commands and both namespaced pstack commands against a localhost recorder
 that returns HTTP 400 after observing pre-inference skill expansion. A nonzero
 Claude exit is expected after that recorded expansion. OpenCode uses a localhost
-deterministic provider to request its actual skill-loading tool, then stop.
+deterministic provider to request its actual skill-loading tool for all four
+definitions, then stop. Each recorded request is checked against the complete
+expected installed body, rather than a shared heading or marker.
 Neither transport performs model inference. OpenCode's ordinary compatibility
 roots remain enabled; the probe does not claim persistent launch isolation.
 

@@ -1,12 +1,12 @@
 # Reviewed skill conflict resolution (2026-10-16)
 
-## Conclusion
+## Pre-change conclusion
 
 Packy cannot safely make the existing `--alias` mechanism resolve Matty/pstack conflicts by merely renaming directories or replacing text. The current alias is a host binding rename only. Global skill projections remain symlinks to immutable catalog trees, so their `SKILL.md` frontmatter and internal references remain unchanged. Packy's discovery observer correctly reads the frontmatter `name`, and the accepted architecture explicitly rejects automatic installation-time prompt rewriting.
 
 A safe implementation is possible only as a new, reviewed contract: declare semantic intra-Pack skill references in the manifest (or reviewed alias-aware source templates), render a deterministic derived skill tree, record the renderer identity and resulting tree digest in lifecycle/receipt evidence, and fail closed for undeclared ambiguous text. This requires an ADR superseding the relevant part of ADR 0041 and a new closed surface-capability vocabulary member. Existing schema-v3 manifests remain unchanged; older engines reject snapshots that request the new capability. It is not a small alias bug fix.
 
-## Documented facts
+## Documented pre-change facts
 
 1. **A projected directory name is not the discovered skill identity.** Native targets use the projected binding name, but `docs/skill-discovery.md:16-25` says logical identity remains separate and that a different basename does not isolate divergent trees with the same frontmatter `name`. Unverified coexistence blocks before mutation (`docs/skill-discovery.md:27-44`).
 
@@ -54,11 +54,10 @@ Do **not** merge a PR that searches/replaces `/name`, `$name`, code spans, or re
 
 I would merge a narrower first PR only if its issue explicitly includes: accepted replacement ADR; typed reference/template schema; deterministic generated-tree projection on all three surfaces and both global/project scopes; final-output receipt digests; fail-closed legacy behavior; Matty+pstack `tdd` and `teach` acceptance fixtures covering frontmatter, `$tdd`, `/tdd`, tool-call prose, and relative links; update/deactivate/drift/stale-plan tests; actual-host discovery checks at the documented baseline; and repository-wide validation. The catalog migration/publication should remain a separately reviewed follow-up after the engine contract ships.
 
-## Uncertainties / maintainer decisions
+## Design decisions and remaining limit
 
-- Whether automatic names should be deterministic (`<pack-id>-<original-name>`) or require explicit user aliases. Automatic choice is product policy and should be visible in intent/Preview; the current state model only records explicit aliases.
-- Whether semantic reference sites use source placeholders (recommended) or manifest-declared exact patches. Placeholders require reviewed catalog adaptations; exact patches preserve upstream text but are brittle and still require explicit author review.
-- Whether aliases should rewrite only direct skill invocations/links or every user-facing mention. The latter is generally wrong; documentation may intentionally discuss the original upstream name.
+- Naming is deterministic `<pack-id>-<surface>-<binding-name>` when the reviewed binding opts into `pack-surface`; explicit aliases take precedence. Preview shows the effective names and invocations.
+- Semantic reference sites use exact source placeholders and direct same-Pack dependencies. Every other user-facing mention remains authored content.
 - Actual successful model-backed workflows across all three hosts remain unverified by the existing discovery evidence (`docs/skill-discovery.md:52-72`). Filesystem and deterministic host probes alone cannot prove every natural-language reference dispatches correctly.
 
 ## Implemented contract and execution evidence
@@ -66,10 +65,17 @@ I would merge a narrower first PR only if its issue explicitly includes: accepte
 Issue: https://github.com/yersonargotev/packy/issues/851
 
 [ADR 0043](../../adr/0043-render-reviewed-skill-identities-and-references.md) records
-the proposed replacement decision. The implementation uses exact reviewed
+the accepted replacement decision. The implementation uses exact reviewed
 `{{packy.skill:<logical-id>}}` tokens rather than inferred lexical references.
 A template binding selects native or stable pack/surface naming. Direct
 dependencies keep a consumer's target in its selected same-Pack closure.
 
-Execution results are appended after running the implementation and acceptance
-checks. Source findings above describe the pre-change behavior.
+Every generated tree carries reserved `.packy-skill-template.json` metadata.
+Its renderer revision, original source-tree digest, and relevant effective names
+participate in the final receipt digest. Sources cannot supply that file. This
+makes renderer/source changes observable even if the rendered body stays equal.
+
+The original complete Packs remain blocked, including directory aliases. The
+implementation does not reinterpret arbitrary upstream prose. The opt-in probe
+authors an isolated, reviewed pstack candidate and leaves Matty unchanged; no
+Catalog publication or user installation is modified.
