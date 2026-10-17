@@ -76,10 +76,16 @@ For an existing shared-root installation, follow the
 
 ## Reviewed skill templates
 
-A Pack can opt a skill into the `skill-template` capability. A `pack-surface`
-binding uses `<pack-id>-<surface>-<binding-name>` as its deterministic default
+A Pack can opt a skill into the `skill-template` capability. A `pack`
+binding uses `<pack-id>-<binding-name>` as its deterministic default
 native name; a `native` binding retains its name while resolving explicit
 references to other skills. An explicit user alias overrides the default.
+
+For example, pstack's names are `pstack-tdd` and `pstack-teach` on every surface,
+without requiring aliases. A shared name is not proof that different variants
+can coexist in overlapping discovery roots: identical verified trees are allowed,
+while divergent trees still block. The surface selects the body and native
+target directory, rather than becoming part of the default name.
 
 The renderer gives `SKILL.md` the effective native name and expands only authored
 `{{packy.skill:<logical-id>}}` tokens. For example, a pstack Codex template

@@ -1,5 +1,10 @@
 # Reviewed skill conflict resolution (2026-10-16)
 
+The original surface-qualified naming and execution below are historical evidence
+for engine commit `3c7010c8`. The current policy uses automatic `<pack-id>-<binding-name>`
+names without user aliases. See the [short-name follow-up](skill-template-short-names-2026-10-16.md)
+for the naming investigation and current validation.
+
 ## Pre-change conclusion
 
 Packy cannot safely make the existing `--alias` mechanism resolve Matty/pstack conflicts by merely renaming directories or replacing text. The current alias is a host binding rename only. Global skill projections remain symlinks to immutable catalog trees, so their `SKILL.md` frontmatter and internal references remain unchanged. Packy's discovery observer correctly reads the frontmatter `name`, and the accepted architecture explicitly rejects automatic installation-time prompt rewriting.

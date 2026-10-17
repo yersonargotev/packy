@@ -261,10 +261,10 @@ func validateSkillTemplateNames(pack Pack) error {
 	for _, resource := range pack.Resources {
 		for _, binding := range resource.Bindings {
 			capability, ok := resource.SurfaceCapability(binding.Surface, SurfaceCapabilitySkillTemplate)
-			if !ok || capability.SkillTemplate == nil || capability.SkillTemplate.Naming != SkillTemplateNamingPackSurface {
+			if !ok || capability.SkillTemplate == nil || capability.SkillTemplate.Naming != SkillTemplateNamingPack {
 				continue
 			}
-			generated := pack.ID + "-" + string(binding.Surface) + "-" + binding.Name
+			generated := pack.ID + "-" + binding.Name
 			if len(generated) > 64 {
 				return fmt.Errorf("resource %q surface %q skill-template generated name %q exceeds 64 characters", resource.Kind+":"+resource.ID, binding.Surface, generated)
 			}

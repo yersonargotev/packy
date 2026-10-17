@@ -15,7 +15,7 @@ func TestSkillTemplateCapabilitySupportsSkillBindingsOnEverySurface(t *testing.T
 				Surface: surface, Projection: "skill", Name: "guide", Invocation: nativeSkillInvocation(surface, "guide"),
 				Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{
 					Type:          SurfaceCapabilitySkillTemplate,
-					SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface},
+					SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
 				}},
 			}
 			resource := Resource{Kind: "skill", ID: "guide", Bindings: []Binding{binding}}
@@ -43,7 +43,7 @@ func TestSkillTemplateCapabilityRejectsInvalidOrForeignData(t *testing.T) {
 		{"non-skill projection", func(_ *Resource, b *Binding) { b.Projection = "instruction" }, "requires a skill binding"},
 		{"noncanonical invocation", func(_ *Resource, b *Binding) { b.Invocation = "run guide" }, "canonical native skill invocation"},
 		{"missing data", func(_ *Resource, b *Binding) { b.Capabilities[0].SkillTemplate = nil }, "requires skill_template data"},
-		{"invalid naming", func(_ *Resource, b *Binding) { b.Capabilities[0].SkillTemplate.Naming = "custom" }, "naming must be native or pack-surface"},
+		{"invalid naming", func(_ *Resource, b *Binding) { b.Capabilities[0].SkillTemplate.Naming = "custom" }, "naming must be native or pack"},
 		{"foreign data", func(_ *Resource, b *Binding) {
 			b.Capabilities[0].PrimaryPrompt = &PrimaryPromptCapability{ID: "x", Source: "instructions/x.md"}
 		}, "does not accept other capability data"},
@@ -67,17 +67,17 @@ func TestResolvePackForSurfaceAppliesTemplateNamingOnceBeforeAliases(t *testing.
 		Kind: "skill", ID: "tdd", Bindings: []Binding{{
 			Surface: SurfaceCodex, Projection: "skill", Name: "tdd", Invocation: "$tdd", Capabilities: []SurfaceCapability{{
 				Type:          SurfaceCapabilitySkillTemplate,
-				SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface},
+				SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
 			}},
 		}},
 	}}}
 
 	resolved := ResolvePackForSurface(pack, SurfaceCodex)
 	resolvedAgain := ResolvePackForSurface(resolved, SurfaceCodex)
-	if got, want := resolvedAgain.Resources[0].Bindings[0].Name, "pstack-codex-tdd"; got != want {
+	if got, want := resolvedAgain.Resources[0].Bindings[0].Name, "pstack-tdd"; got != want {
 		t.Fatalf("resolved name = %q, want %q", got, want)
 	}
-	if got, want := resolvedAgain.Resources[0].Bindings[0].Invocation, "$pstack-codex-tdd"; got != want {
+	if got, want := resolvedAgain.Resources[0].Bindings[0].Invocation, "$pstack-tdd"; got != want {
 		t.Fatalf("resolved invocation = %q, want %q", got, want)
 	}
 	aliased := resourceWithSurfaceAlias(resolvedAgain.Resources[0], []SurfaceAlias{{Kind: "skill", ID: "tdd", Name: "red-green"}}, SurfaceCodex)
@@ -95,8 +95,8 @@ func TestResolvePackForSurfaceAppliesTemplateNamingOnceBeforeAliases(t *testing.
 func TestSkillTemplateNamesIncludesEffectiveOrdinarySkillDependencies(t *testing.T) {
 	pack := Pack{ID: "pstack", Resources: []Resource{
 		{Kind: "skill", ID: "helper", Bindings: []Binding{{Surface: SurfaceClaude, Projection: "skill", Name: "helper"}}},
-		{Kind: "skill", ID: "tdd", Bindings: []Binding{{Surface: SurfaceClaude, Projection: "skill", Name: "tdd", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface}}}}}}}}
-	want := map[string]string{"helper": "helper", "tdd": "pstack-claude-tdd"}
+		{Kind: "skill", ID: "tdd", Bindings: []Binding{{Surface: SurfaceClaude, Projection: "skill", Name: "tdd", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack}}}}}}}}
+	want := map[string]string{"helper": "helper", "tdd": "pstack-tdd"}
 	if got := SkillTemplateNames(ResolvePackForSurface(pack, SurfaceClaude), SurfaceClaude); !reflect.DeepEqual(got, want) {
 		t.Fatalf("names = %#v, want %#v", got, want)
 	}
@@ -108,12 +108,12 @@ func TestSkillTemplateNamingPreservesHostInvocationSyntax(t *testing.T) {
 			pack := Pack{ID: "pstack", Resources: []Resource{{
 				Kind: "skill", ID: "tdd", Bindings: []Binding{{
 					Surface: surface, Projection: "skill", Name: "tdd", Invocation: nativeSkillInvocation(surface, "tdd"),
-					Capabilities: []SurfaceCapability{{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface}}},
+					Capabilities: []SurfaceCapability{{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack}}},
 				}},
 			}}}
 			resolved := ResolvePackForSurface(pack, surface)
 			binding := resolved.Resources[0].Bindings[0]
-			if got, want := binding.Invocation, nativeSkillInvocation(surface, "pstack-"+string(surface)+"-tdd"); got != want {
+			if got, want := binding.Invocation, nativeSkillInvocation(surface, "pstack-tdd"); got != want {
 				t.Fatalf("resolved invocation = %q, want %q", got, want)
 			}
 		})
@@ -126,11 +126,11 @@ func TestSkillTemplateLifecycleMetadataUsesEffectiveNamesAndAliases(t *testing.T
 			pack := Pack{ID: "pstack", Surfaces: []Surface{surface}, Resources: []Resource{{
 				Kind: "skill", ID: "tdd", Bindings: []Binding{{
 					Surface: surface, Projection: "skill", Name: "tdd", Invocation: nativeSkillInvocation(surface, "tdd"),
-					Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface}}},
+					Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack}}},
 				}},
 			}}}
 			contract := LifecycleContractFor(pack, surface, nil)
-			wantName := "pstack-" + string(surface) + "-tdd"
+			wantName := "pstack-tdd"
 			if len(contract.Bindings) != 1 || contract.Bindings[0].Name != wantName || contract.Bindings[0].Invocation != nativeSkillInvocation(surface, wantName) {
 				t.Fatalf("resolved lifecycle binding = %#v", contract.Bindings)
 			}
@@ -143,17 +143,22 @@ func TestSkillTemplateLifecycleMetadataUsesEffectiveNamesAndAliases(t *testing.T
 }
 
 func TestSkillTemplateGeneratedNameHasPortableLimit(t *testing.T) {
-	pack := Pack{ID: strings.Repeat("a", 50), Resources: []Resource{{
-		Kind: "skill", ID: "guide", Bindings: []Binding{{
-			Surface: SurfaceOpenCode, Projection: "skill", Name: "guide", Capabilities: []SurfaceCapability{{
-				Type:          SurfaceCapabilitySkillTemplate,
-				SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface},
+	for _, length := range []int{58, 59} {
+		pack := Pack{ID: strings.Repeat("a", length), Resources: []Resource{{
+			Kind: "skill", ID: "guide", Bindings: []Binding{{
+				Surface: SurfaceOpenCode, Projection: "skill", Name: "guide", Capabilities: []SurfaceCapability{{
+					Type:          SurfaceCapabilitySkillTemplate,
+					SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
+				}},
 			}},
-		}},
-	}}}
-	err := validateSkillTemplateNames(pack)
-	if err == nil || !strings.Contains(err.Error(), "exceeds 64 characters") {
-		t.Fatalf("limit error = %v", err)
+		}}}
+		err := validateSkillTemplateNames(pack)
+		if length == 58 && err != nil {
+			t.Fatalf("64-character generated name was rejected: %v", err)
+		}
+		if length == 59 && (err == nil || !strings.Contains(err.Error(), "exceeds 64 characters")) {
+			t.Fatalf("65-character generated name error = %v", err)
+		}
 	}
 }
 
@@ -162,7 +167,7 @@ func TestClonePackCopiesSkillTemplateCapability(t *testing.T) {
 		Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingNative},
 	}}}}}}}
 	cloned := clonePack(pack)
-	cloned.Resources[0].Bindings[0].Capabilities[0].SkillTemplate.Naming = SkillTemplateNamingPackSurface
+	cloned.Resources[0].Bindings[0].Capabilities[0].SkillTemplate.Naming = SkillTemplateNamingPack
 	if got := pack.Resources[0].Bindings[0].Capabilities[0].SkillTemplate.Naming; got != SkillTemplateNamingNative {
 		t.Fatalf("clone mutated source capability: %q", got)
 	}
@@ -258,7 +263,7 @@ func skillTemplateValidationPack(root string, requires []string) Pack {
 			Kind: "skill", ID: "tdd", Source: "skills/tdd", Requires: requires, catalogRoot: root,
 			Bindings: []Binding{{
 				Surface: SurfaceCodex, Projection: "skill", Name: "tdd", Capabilities: []SurfaceCapability{{
-					Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPackSurface},
+					Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
 				}},
 			}},
 		},
@@ -288,14 +293,14 @@ func TestHydrateProjectLockPreservesReceiptedEffectiveSkillName(t *testing.T) {
 			ReadinessObligations: []ReadinessObligation{}, ExternalRequirements: []string{},
 			Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{},
 			Resources:   []ResourceIdentity{{Kind: "skill", ID: "tdd"}},
-			Projections: []installedProjection{{ID: "skill:tdd", Target: ".agents/skills/pstack-codex-tdd", Digest: strings.Repeat("a", 64), FileMode: 0o755}},
+			Projections: []installedProjection{{ID: "skill:tdd", Target: ".agents/skills/pstack-tdd", Digest: strings.Repeat("a", 64), FileMode: 0o755}},
 			Sensitive:   []ProjectSensitiveDisclosure{},
 		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lock.Bindings) != 1 || lock.Bindings[0].Name != "pstack-codex-tdd" || lock.Bindings[0].Invocation != "$pstack-codex-tdd" {
+	if len(lock.Bindings) != 1 || lock.Bindings[0].Name != "pstack-tdd" || lock.Bindings[0].Invocation != "$pstack-tdd" {
 		t.Fatalf("hydrated bindings = %#v", lock.Bindings)
 	}
 }

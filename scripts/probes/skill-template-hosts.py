@@ -63,7 +63,7 @@ def codex_list(binary, workspace, env):
         result = response(1)
         skills = [skill for item in result["data"] for skill in item["skills"]]
         names = {item["name"] for item in skills}
-        expected = {"tdd", "teach", "pstack-codex-tdd", "pstack-codex-teach"}
+        expected = {"tdd", "teach", "pstack-tdd", "pstack-teach"}
         if not expected <= names:
             raise RuntimeError("Codex omitted names: " + str(expected - names))
         errors = [error for item in result["data"] for error in item.get("errors", [])]
@@ -193,7 +193,7 @@ def main():
             result = codex_list(binary, workspace, env)
         else:
             loads = []
-            for skill_name in ("tdd", "teach", "pstack-" + surface + "-tdd", "pstack-" + surface + "-teach"):
+            for skill_name in ("tdd", "teach", "pstack-tdd", "pstack-teach"):
                 native = Path(case["skills"]) / skill_name / "SKILL.md"
                 content = native.read_text().replace("\r\n", "\n")
                 body = content.split("\n---\n", 1)[1].strip()

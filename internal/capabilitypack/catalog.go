@@ -284,8 +284,8 @@ type SurfaceCapability struct {
 type SkillTemplateNaming string
 
 const (
-	SkillTemplateNamingNative      SkillTemplateNaming = "native"
-	SkillTemplateNamingPackSurface SkillTemplateNaming = "pack-surface"
+	SkillTemplateNamingNative SkillTemplateNaming = "native"
+	SkillTemplateNamingPack   SkillTemplateNaming = "pack"
 )
 
 // SkillTemplateCapability opts one skill source into reviewed Packy template
@@ -1120,8 +1120,8 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalExecutableAcquisition != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
 				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
 			}
-			if capability.SkillTemplate.Naming != SkillTemplateNamingNative && capability.SkillTemplate.Naming != SkillTemplateNamingPackSurface {
-				return fmt.Errorf("surface capability %q naming must be native or pack-surface", capability.Type)
+			if capability.SkillTemplate.Naming != SkillTemplateNamingNative && capability.SkillTemplate.Naming != SkillTemplateNamingPack {
+				return fmt.Errorf("surface capability %q naming must be native or pack", capability.Type)
 			}
 		default:
 			return fmt.Errorf("surface capability %q is unsupported", capability.Type)

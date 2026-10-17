@@ -24,7 +24,7 @@ func TestSkillTemplateRendersGlobalAndProjectTrees(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPackSurface}}
+	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPack}}
 	pack := capabilitypack.ResolvePackForSurface(capabilitypack.Pack{ID: "fixture", Resources: []capabilitypack.Resource{
 		{Kind: "skill", ID: "helper", Source: "helper", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "helper", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
 		{Kind: "skill", ID: "consumer", Source: "consumer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "consumer", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
@@ -48,7 +48,7 @@ func TestSkillTemplateRendersGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	consumer := claudeTemplateProjection(t, global, "skill:fixture-claude-consumer")
+	consumer := claudeTemplateProjection(t, global, "skill:fixture-consumer")
 	assertClaudeTemplateTree(t, consumer.Action, capabilitypack.ActionSkillTree)
 	actions := make([]capabilitypack.ProjectionAction, len(global.Projections))
 	for i, projection := range global.Projections {
@@ -57,7 +57,7 @@ func TestSkillTemplateRendersGlobalAndProjectTrees(t *testing.T) {
 	if applyErr := adapter.ApplyProjections(context.Background(), actions); applyErr != nil {
 		t.Fatal(applyErr)
 	}
-	if body, err := os.ReadFile(filepath.Join(layout.SkillsDir, "fixture-claude-consumer", "SKILL.md")); err != nil || !strings.Contains(string(body), "Use fixture-claude-helper; keep /helper.") {
+	if body, err := os.ReadFile(filepath.Join(layout.SkillsDir, "fixture-consumer", "SKILL.md")); err != nil || !strings.Contains(string(body), "Use fixture-helper; keep /helper.") {
 		t.Fatalf("materialized template = %q err=%v", body, err)
 	}
 
@@ -88,7 +88,7 @@ func assertClaudeTemplateTree(t *testing.T, action capabilitypack.ProjectionActi
 	for _, file := range action.TreeFiles {
 		if file.Path == "SKILL.md" {
 			body := string(file.Content)
-			if !strings.Contains(body, "name: fixture-claude-consumer # keep") || !strings.Contains(body, "Use fixture-claude-helper; keep /helper.") {
+			if !strings.Contains(body, "name: fixture-consumer # keep") || !strings.Contains(body, "Use fixture-helper; keep /helper.") {
 				t.Fatalf("rendered SKILL.md = %q", body)
 			}
 			return

@@ -36,7 +36,7 @@ def adapt(source, destination):
         if resource["id"] in ("tdd", "teach"):
             for binding in resource["bindings"]:
                 binding["invocation"] = ("$" if binding["surface"] == "codex" else "/" if binding["surface"] == "claude" else "") + binding["name"]
-                binding["capabilities"].append({"type": "skill-template", "skill_template": {"naming": "pack-surface"}})
+                binding["capabilities"].append({"type": "skill-template", "skill_template": {"naming": "pack"}})
                 binding["capabilities"].sort(key=lambda item: item["type"])
         elif resource["id"] == "poteto-help":
             for binding in resource["bindings"]:
@@ -124,14 +124,14 @@ def main():
                 legacy = {name: module.tree(skills / name) for name in ("tdd", "teach")}
                 probe.apply(workspace, [apply, "pstack", "--surface", surface])
                 for name in ("tdd", "teach"):
-                    target = skills / ("pstack-" + surface + "-" + name)
+                    target = skills / ("pstack-" + name)
                     module.require(target.is_dir() and not target.is_symlink(), "template was not materialized")
                     body = (target / "SKILL.md").read_text()
-                    module.require("name: pstack-" + surface + "-" + name in body, "wrong native template identity")
+                    module.require("name: pstack-" + name in body, "wrong native template identity")
                     module.require(module.tree(skills / name) == legacy[name], "Matty definition changed")
                 if surface == "codex":
                     body = (skills / "poteto-help/SKILL.md").read_text()
-                    for expected in ("$pstack-codex-tdd", "$pstack-codex-teach", "../pstack-codex-tdd/SKILL.md", "../pstack-codex-teach/SKILL.md"):
+                    for expected in ("$pstack-tdd", "$pstack-teach", "../pstack-tdd/SKILL.md", "../pstack-teach/SKILL.md"):
                         module.require(expected in body, "wrong same-Pack help route: " + expected)
                     for path in (skills / "poteto-help").rglob("*.md"):
                         module.require("{{packy.skill:" not in path.read_text(), "unrendered help directive")

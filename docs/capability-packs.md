@@ -140,11 +140,11 @@ An author can opt a skill binding into deterministic rendering:
 ```json
 {
   "type": "skill-template",
-  "skill_template": { "naming": "pack-surface" }
+  "skill_template": { "naming": "pack" }
 }
 ```
 
-The generated default name is `<pack-id>-<surface>-<binding-name>`. An explicit
+The generated default name is `<pack-id>-<binding-name>`. An explicit
 user alias overrides that default. Template bindings declare the canonical
 invocation: `$<name>` for Codex, `/<name>` for Claude, and `<name>` for OpenCode.
 Preview and show output follow the resolved name, including explicit aliases. Choose `"naming": "native"` for a consumer

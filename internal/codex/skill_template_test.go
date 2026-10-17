@@ -22,8 +22,8 @@ func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	consumer := codexProjection(t, inspection, "skill:fixture-codex-consumer")
-	assertCodexRenderedTree(t, consumer.Action, "fixture-codex-consumer", "fixture-codex-helper")
+	consumer := codexProjection(t, inspection, "skill:fixture-consumer")
+	assertCodexRenderedTree(t, consumer.Action, "fixture-consumer", "fixture-helper")
 	if consumer.Action.Kind != capabilitypack.ActionSkillTree || consumer.Action.Source != "" {
 		t.Fatalf("global template action = %+v", consumer.Action)
 	}
@@ -45,7 +45,7 @@ func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 		t.Fatal(err)
 	}
 	projectConsumer := codexProjection(t, project, "skill:consumer")
-	assertCodexRenderedTree(t, projectConsumer.Action, "fixture-codex-consumer", "fixture-codex-helper")
+	assertCodexRenderedTree(t, projectConsumer.Action, "fixture-consumer", "fixture-helper")
 	if projectConsumer.Action.Kind != capabilitypack.ActionCodexProjectSkillTree || projectConsumer.Action.FileMode != 0o755 {
 		t.Fatalf("project template action = %+v", projectConsumer.Action)
 	}
@@ -54,14 +54,14 @@ func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	removed := codexProjection(t, removal, "skill:fixture-codex-consumer")
+	removed := codexProjection(t, removal, "skill:fixture-consumer")
 	if removed.Action.Kind != capabilitypack.ActionSkillTree || removed.Action.Mode != capabilitypack.ProjectionDeleteTarget {
 		t.Fatalf("template removal = %+v", removed.Action)
 	}
 }
 
 func codexTemplatePack(root string) capabilitypack.Pack {
-	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPackSurface}}
+	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPack}}
 	return capabilitypack.Pack{ID: "fixture", Resources: []capabilitypack.Resource{
 		{Kind: "skill", ID: "helper", Source: "helper", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "skill", Name: "helper", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
 		{Kind: "skill", ID: "consumer", Source: "consumer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "skill", Name: "consumer", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},

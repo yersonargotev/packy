@@ -24,7 +24,7 @@ func TestSkillTemplateRendersGlobalAndProjectTrees(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPackSurface}}
+	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPack}}
 	pack := capabilitypack.ResolvePackForSurface(capabilitypack.Pack{ID: "fixture", Resources: []capabilitypack.Resource{
 		{Kind: "skill", ID: "helper", Source: "helper", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "skill", Name: "helper", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
 		{Kind: "skill", ID: "consumer", Source: "consumer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "skill", Name: "consumer", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
@@ -35,7 +35,7 @@ func TestSkillTemplateRendersGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	consumer := openCodeTemplateProjection(t, global, "skill:fixture-opencode-consumer")
+	consumer := openCodeTemplateProjection(t, global, "skill:fixture-consumer")
 	assertOpenCodeTemplateTree(t, consumer.Action, capabilitypack.ActionSkillTree)
 	if applyErr := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{global.Projections[0].Action, global.Projections[1].Action}); applyErr != nil {
 		t.Fatal(applyErr)
@@ -77,7 +77,7 @@ func assertOpenCodeTemplateTree(t *testing.T, action capabilitypack.ProjectionAc
 	for _, file := range action.TreeFiles {
 		if file.Path == "SKILL.md" {
 			body := string(file.Content)
-			if !strings.Contains(body, "name: fixture-opencode-consumer # keep") || !strings.Contains(body, "Use fixture-opencode-helper; keep /helper.") {
+			if !strings.Contains(body, "name: fixture-consumer # keep") || !strings.Contains(body, "Use fixture-helper; keep /helper.") {
 				t.Fatalf("rendered SKILL.md = %q", body)
 			}
 			return

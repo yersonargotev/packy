@@ -70,7 +70,7 @@ func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testin
 					for _, packID := range []string{first, second} {
 						preview := run(apply, packID, "--surface", surface, "--dry-run", "--json")
 						if packID == templated.ID() {
-							for _, want := range []string{templated.ID() + "-" + surface + "-tdd", templated.ID() + "-" + surface + "-teach"} {
+							for _, want := range []string{templated.ID() + "-tdd", templated.ID() + "-teach"} {
 								if !strings.Contains(preview, want) {
 									t.Fatalf("template preview omitted effective name %q: %s", want, preview)
 								}
@@ -130,7 +130,7 @@ func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testin
 						}
 					}
 
-					templateTDD := issue851SkillPath(root, scope, surface, templated.ID()+"-"+surface+"-tdd")
+					templateTDD := issue851SkillPath(root, scope, surface, templated.ID()+"-tdd")
 					skillFile := filepath.Join(templateTDD, "SKILL.md")
 					original, err := os.ReadFile(skillFile)
 					if err != nil {
@@ -187,7 +187,7 @@ func TestIssue851ExplicitAliasesOverrideGeneratedNamesAndReferences(t *testing.T
 				"--alias", "skill:tdd=custom-tdd", "--alias", "skill:teach=custom-teach")
 			run("verify", "--json")
 			issue851AssertInstalled(t, project, "project", surface, legacy.ID(), templated.ID(), "v1", "custom")
-			for _, generated := range []string{templated.ID() + "-" + surface + "-tdd", templated.ID() + "-" + surface + "-teach"} {
+			for _, generated := range []string{templated.ID() + "-tdd", templated.ID() + "-teach"} {
 				if _, err := os.Stat(issue851SkillPath(project, "project", surface, generated)); !os.IsNotExist(err) {
 					t.Fatalf("generated default %q remained beside its explicit alias: %v", generated, err)
 				}
@@ -311,7 +311,7 @@ func TestIssue851UpdateAdoptsTemplateNamingBeforeInstallingLegacyNeighbor(t *tes
 						t.Fatalf("update retained obsolete canonical %s path: %v\n%s", canonical, err, updateOutput)
 					}
 				}
-				generatedTDD := migrating.ID() + "-" + surface + "-tdd"
+				generatedTDD := migrating.ID() + "-tdd"
 				body := readFileString(t, filepath.Join(issue851SkillPath(root, scope, surface, generatedTDD), "SKILL.md"))
 				if !strings.Contains(body, "name: "+generatedTDD) || !strings.Contains(body, migrating.ID()+" tdd v2") {
 					t.Fatalf("update did not install revised generated definition:\n%s", body)
@@ -361,8 +361,8 @@ func issue851RewriteCatalogPack(t *testing.T, catalogRoot, packID, version strin
 	manifest["resources"] = []any{
 		notice,
 		issue851SkillResource(packID, flowName, flowName, "reviewer.md", []string{"skill:tdd", "skill:teach"}, templated, "native"),
-		issue851SkillResource(packID, "tdd", "tdd", "helper", nil, templated, "pack-surface"),
-		issue851SkillResource(packID, "teach", "teach", "workflow", []string{"skill:tdd"}, templated, "pack-surface"),
+		issue851SkillResource(packID, "tdd", "tdd", "helper", nil, templated, "pack"),
+		issue851SkillResource(packID, "teach", "teach", "workflow", []string{"skill:tdd"}, templated, "pack"),
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -551,7 +551,7 @@ func issue851SkillResource(packID, id, name, originPath string, requires []strin
 
 func issue851AssertInstalled(t *testing.T, root, scope, surface, legacyID, templateID, revision, aliasMode string) {
 	t.Helper()
-	tddName, teachName := templateID+"-"+surface+"-tdd", templateID+"-"+surface+"-teach"
+	tddName, teachName := templateID+"-tdd", templateID+"-teach"
 	if aliasMode == "custom" {
 		tddName, teachName = "custom-tdd", "custom-teach"
 	}

@@ -439,7 +439,7 @@
                 "naming": {
                   "enum": [
                     "native",
-                    "pack-surface"
+                    "pack"
                   ]
                 }
               }

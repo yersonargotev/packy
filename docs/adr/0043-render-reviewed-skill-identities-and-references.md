@@ -11,12 +11,20 @@ relative links into the wrong Pack. Preserve both implementations through an
 explicit, reviewed `skill-template` surface capability instead of inferring
 references in arbitrary Markdown, code, or shell text.
 
-A template binding declares `naming: native` or `naming: pack-surface`. The latter
-resolves its default native name to `<pack-id>-<surface>-<binding-name>` before
+A template binding declares `naming: native` or `naming: pack`. The latter
+resolves its default native name to `<pack-id>-<binding-name>` before
 explicit user aliases. This stable catalog policy avoids installation-order
-renames and separates adaptations that compatibility discovery could otherwise
-confuse. It never changes another installation, grants ownership of foreign
-paths, or retries with an arbitrary suffix. Remaining collisions still block.
+renames and separates different Packs' implementations without requiring user
+aliases. The surface remains the projection and variant-selection context, not
+part of the default name. This never changes another installation, grants
+ownership of foreign paths, or retries with an arbitrary suffix.
+
+Pack naming does not isolate divergent host variants. In particular, OpenCode
+also discovers Codex and Claude compatibility roots. Same-name definitions in
+overlapping discovery roots must have identical verified tree fingerprints;
+otherwise the existing pre-mutation discovery block remains in force. Codex and
+Claude retain their separate-root coexistence policy. Packy does not infer host
+precedence or persistent launch isolation from a shorter name.
 
 A source declares an intra-Pack native-name reference with
 `{{packy.skill:<logical-id>}}`. Resolve it against the effective selected Pack's

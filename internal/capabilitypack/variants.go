@@ -236,7 +236,7 @@ func ResolvePackForSurface(pack Pack, surface Surface) Pack {
 }
 
 func resolveSkillTemplateNames(pack *Pack, surface Surface) {
-	prefix := pack.ID + "-" + string(surface) + "-"
+	prefix := pack.ID + "-"
 	for i := range pack.Resources {
 		resource := &pack.Resources[i]
 		for j := range resource.Bindings {
@@ -245,7 +245,7 @@ func resolveSkillTemplateNames(pack *Pack, surface Surface) {
 				continue
 			}
 			capability, ok := resource.SurfaceCapability(surface, SurfaceCapabilitySkillTemplate)
-			if ok && capability.SkillTemplate != nil && capability.SkillTemplate.Naming == SkillTemplateNamingPackSurface {
+			if ok && capability.SkillTemplate != nil && capability.SkillTemplate.Naming == SkillTemplateNamingPack {
 				binding.Invocation = renamedSkillInvocation(*binding, prefix+binding.Name)
 				binding.Name = prefix + binding.Name
 			}

@@ -22,7 +22,8 @@ The output directory must be new. Add `--focus-pair` to build only the complete
 Matty and pstack closures for a focused acceptance run; the default includes all
 Packs from the supplied checkout. The probe preserves the checkout, copies its
 complete Pack set, and authors one isolated pstack 5.0.0 candidate adaptation:
-namespace `tdd` and `teach` on each surface, render the Codex help's three files,
+name them `pstack-tdd` and `pstack-teach` on every surface without user aliases,
+render the Codex help's three files,
 and declare its direct TDD/teaching dependencies. This version is a local
 candidate label, not a published Pack release or release request.
 
@@ -34,6 +35,8 @@ Successful workspaces remain under the owned output directory for inspection;
 project installations additionally pass portable `verify`. Ordinary CLI tests
 cover both installation orders, lifecycle update/removal, drift, stale plans,
 explicit aliases, and adoption of generated naming by an already installed Pack.
+The short-name matrix also covers all surface pairs, both orders, all global/project
+combinations, identical/divergent trees, and refusal of divergent three-root discovery.
 
 To check the installed real hosts against those workspaces:
 

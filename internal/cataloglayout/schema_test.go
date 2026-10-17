@@ -30,7 +30,7 @@ func TestPackSchemaAcceptsClosedSkillTemplateCapability(t *testing.T) {
 		binding := value.(map[string]any)
 		binding["capabilities"] = []any{map[string]any{
 			"type":           "skill-template",
-			"skill_template": map[string]any{"naming": "pack-surface"},
+			"skill_template": map[string]any{"naming": "pack"},
 		}}
 	}
 	data, err := json.Marshal(manifest)
