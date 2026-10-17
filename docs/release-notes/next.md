@@ -1,52 +1,50 @@
-# {{TAG}} — Isolated Catalog transitions and Git-safe project skills
+# {{TAG}} — Automatic Pack skill names and verified origin reuse
 
 ## Changes since the previous release
 
-The previous stable release is `v0.2.27`.
+The previous stable release is `v0.2.28`.
 
+- Pack authors can opt reviewed skills into the new `skill-template` capability.
+  The `pack` naming policy automatically generates `<pack-id>-<binding-name>`,
+  such as `pstack-tdd` and `pstack-teach`, on Codex, Claude Code, and OpenCode.
+  Users do not need aliases to obtain these names. The `native` policy lets a
+  consumer retain its own name while referencing renamed skills.
+- Explicit `{{packy.skill:<logical-id>}}` source tokens resolve to the selected
+  same-Pack skill's effective native name, including any optional user alias.
+  Frontmatter and canonical invocations follow that binding; reviewed invocation
+  syntax, tool-call names, and sibling paths keep their surrounding bytes.
+  References to another skill require a direct dependency. Invalid or unresolved
+  references fail before mutation; arbitrary prose and shell variables are not
+  rewritten.
+- Template skills use deterministic generated trees in global and project scope.
+  Generated trees record renderer/source metadata; installed receipts seal their
+  exact final digests, retaining ordinary freshness, drift, ownership, update, and removal
+  protections. Catalog source bytes and unrelated installations remain unchanged.
+  Lifecycle transitions correctly retire old targets when replacing source links
+  with generated trees and stage distinct old/new paths independently.
+- Native discovery still blocks divergent same-name trees in overlapping roots,
+  including OpenCode's Codex and Claude compatibility roots. Short names do not
+  make different host variants interchangeable. Existing non-template conflicts
+  remain blocked; no host precedence or persistent launch isolation is assumed.
 - Catalog authoring reuses verified exact-origin downloads across validation and
-  builds. Every invocation retains complete candidate and baseline validation;
+  builds. Reuse never bypasses source, candidate, or baseline validation;
   private temporary copies isolate consumers, while age and entry-count eviction
   bound retained downloads. Corrupt entries are rejected with cleanup guidance.
-
-- `packy catalog candidate` now supports explicit baseline-to-candidate
-  transitions within one owned disposable workspace. `transition
-  --expect-archive-sha256 <current-digest>` validates and retains the proposed
-  snapshot without changing installed projections, receipts, or project intent.
-  Retained baseline snapshots continue resolving surfaces awaiting an update.
-- Candidate workspaces support targeted project updates and isolated global
-  `activate`, `update`, and `deactivate` operations. Global writes stay under
-  the workspace's disposable home and configuration roots. Normal selection,
-  effective dependencies, coexistence, ownership, drift checks, and interactive
-  lifecycle consent remain enforced; JSON output does not grant consent.
-- Candidate lifecycle operations revalidate workspace ownership, the Git
-  boundary, and every retained source, including after interactive approval.
-  Changed ownership markers, redirected roots, stale transition identities,
-  incompatible inputs, and retained-source drift fail without lifecycle mutation.
-  Resources remain inert; candidates do not select official catalogs, fabricate
-  attestations, authenticate hosts, execute models, or offer personal project
-  activation.
-- Disposable candidate workspaces now use ownership marker schema version 2.
-  Create a new workspace for older candidates; their previous workspace format
-  is rejected. `transition --json` has a documented versioned report for
-  success and rejection.
-- Project skill directories use `0755`, including Claude composite skills, so
-  sealed project receipts remain valid after a Git commit and fresh checkout.
-  Personal Claude composite skill directories retain `0700`.
-- The Packy contributor project now tracks the complete Matty 4.0.0 Pack for
-  Codex and Claude Code, with shared intent, lock receipts, skill projections,
-  and its upstream MIT notice.
-- Native release contracts now cover retained candidate transitions and both
-  project and disposable global lifecycles on Darwin/Linux amd64/arm64.
+- Maintainer focused validation checks documentation-only changes explicitly.
+  The release handoff now verifies the prior stable baseline, complete release
+  notes, and an exact-version/commit publication brief before the immutable tag.
 
 ## Catalog adoption
 
-See the [Catalog command documentation](https://github.com/yersonargotev/packy/blob/main/docs/catalog-project.md)
-for supported syntax, JSON reports, process/PTY requirements, and isolation and
-trust boundaries. Catalog content releases remain independent of Packy releases;
-this engine release does not publish or select new Catalog content automatically.
-Downstream adoption of this supporting release requires its own reviewed Catalog
-release declaration before retiring legacy probes.
+The new template capability requires a reviewed Catalog adaptation. Existing
+published Packs are not automatically rewritten. Publish this engine before
+adopting and publishing Catalog content that requests the capability; older
+engines reject it. This release does not publish or select new Catalog content.
+
+See [skill names and references](https://github.com/yersonargotev/packy/blob/main/docs/capability-packs.md#reviewed-native-skill-names-and-references)
+and [native discovery limits](https://github.com/yersonargotev/packy/blob/main/docs/skill-discovery.md)
+for the contract, and the [Catalog command documentation](https://github.com/yersonargotev/packy/blob/main/docs/catalog-project.md)
+for authoring, verification, candidate isolation, and trust boundaries.
 
 For a new installation, acquire the official catalog and preview activation
 before changing a CLI surface:
