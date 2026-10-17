@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 const (
@@ -75,6 +77,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		}
 	}
 	pack := transition.Desired
+	templateNames := capabilitypack.SkillTemplateNames(pack, capabilitypack.SurfaceClaude)
 	var result capabilitypack.SurfaceInspection
 	revision := []string{}
 	var instructionDocument, instructionOriginal []byte
@@ -95,6 +98,23 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		id := r.Kind + ":" + b.Name
 		switch b.Projection {
 		case "skill":
+			if r.RequestsSurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilitySkillTemplate) {
+				source := filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source))
+				files, desired, err := localprojection.RenderSkillTemplate(source, r.ID, templateNames, 0o700)
+				if err != nil {
+					return result, fmt.Errorf("render Claude skill template %q: %w", r.ID, err)
+				}
+				target := filepath.Join(a.layout.SkillsDir, b.Name)
+				observed, exists, err := localprojection.ObserveSkillTarget(target)
+				if err != nil {
+					return result, err
+				}
+				provenance := skilltemplate.RendererVersion + "/claude/global"
+				action := capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillTree, Target: target, TreeFiles: files, FileMode: 0o700, Version: desired, Precondition: observed, AdapterProvenance: provenance, Description: "render Claude Code skill template " + b.Name}
+				result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance, Action: action})
+				revision = append(revision, id+observed)
+				continue
+			}
 			if isClaudeCompositeProjection(pack, r, b) {
 				composite, err := claudeCompositeSkill(pack, r, b, a.catalogRoot)
 				if err != nil {
@@ -282,7 +302,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	if transition.Prior.ID != "" {
 		for _, r := range transition.Prior.Resources {
 			b, ok := claudeBinding(r)
-			if !ok || resourcePresent(transition.Desired, r.Kind, r.ID) {
+			if !ok || resourceProjectionRetained(transition.Desired, r, b) {
 				continue
 			}
 			projection, part, err := a.inspectRemoval(transition.Prior, r, b, ownership)
@@ -321,6 +341,38 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 					revision = append(revision, asset.ID+asset.ObservedFingerprint)
 				}
 			}
+		}
+	}
+	if len(transition.ResidualOwnership) > 0 {
+		retained := make(map[string]bool, len(result.Projections))
+		for _, projection := range result.Projections {
+			if projection.Goal != capabilitypack.ProjectionAbsent {
+				retained[projection.ID] = true
+			}
+		}
+		records := make(map[string]OwnershipRecord, len(ownership.Records))
+		for _, record := range ownership.Records {
+			records[record.ID] = record
+		}
+		for _, owner := range transition.ResidualOwnership {
+			id := owner.ProjectionID
+			if id == "" {
+				id = owner.ID
+			}
+			if owner.Surface != capabilitypack.SurfaceClaude || retained[id] {
+				continue
+			}
+			record, ok := records[id]
+			if !ok {
+				return result, fmt.Errorf("Claude residual ownership %s has no fresh ownership record", id)
+			}
+			projection, err := inspectClaudeResidualProjection(record)
+			if err != nil {
+				return result, err
+			}
+			result.Projections = append(result.Projections, projection)
+			revision = append(revision, projection.ID+projection.ObservedFingerprint)
+			retained[id] = true
 		}
 	}
 	if instructionLoaded {
@@ -390,6 +442,29 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	return result, err
 }
 
+func inspectClaudeResidualProjection(record OwnershipRecord) (capabilitypack.ObservedProjection, error) {
+	action := capabilitypack.ProjectionAction{ID: record.ID, Kind: capabilitypack.ProjectionActionKind(record.Kind), Target: record.Target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove residual Claude projection " + record.ID}
+	var (
+		observed string
+		exists   bool
+		err      error
+	)
+	switch action.Kind {
+	case ActionSkillLink:
+		observed, exists, err = localprojection.FingerprintPath(record.Target)
+	case capabilitypack.ActionSkillTree, ActionSkillTree:
+		observed, exists, err = localprojection.ObserveExactTree(record.Target)
+	case ActionAgentFile, ActionSkillFile:
+		observed, exists, err = localprojection.FingerprintPath(record.Target)
+	default:
+		return capabilitypack.ObservedProjection{}, fmt.Errorf("Claude residual projection %s of kind %s requires its historical contract", record.ID, record.Kind)
+	}
+	if err != nil {
+		return capabilitypack.ObservedProjection{}, err
+	}
+	return capabilitypack.ObservedProjection{ID: record.ID, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: observed, Action: action}, nil
+}
+
 func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 	for i := range observation.Projections {
 		projection := &observation.Projections[i]
@@ -429,11 +504,11 @@ func ownedHookEventsCreated(snapshot OwnershipSnapshot, target string) map[strin
 	return result
 }
 
-func resourcePresent(pack capabilitypack.Pack, kind, id string) bool {
-	for _, r := range pack.Resources {
-		if r.Kind == kind && r.ID == id {
-			_, ok := claudeBinding(r)
-			return ok
+func resourceProjectionRetained(pack capabilitypack.Pack, prior capabilitypack.Resource, priorBinding capabilitypack.Binding) bool {
+	for _, resource := range pack.Resources {
+		if resource.Kind == prior.Kind && resource.ID == prior.ID {
+			binding, ok := claudeBinding(resource)
+			return ok && binding.Projection == priorBinding.Projection && binding.Name == priorBinding.Name
 		}
 	}
 	return false
@@ -442,6 +517,11 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 	id := r.Kind + ":" + b.Name
 	switch b.Projection {
 	case "skill":
+		if r.RequestsSurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilitySkillTemplate) {
+			target := filepath.Join(a.layout.SkillsDir, b.Name)
+			fp, exists, err := localprojection.ObserveExactTree(target)
+			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude skill template " + b.Name}}, id + fp, err
+		}
 		if isClaudeCompositeProjection(pack, r, b) {
 			composite, err := claudeCompositeSkill(pack, r, b, a.catalogRoot)
 			if err != nil {
@@ -570,6 +650,19 @@ func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabil
 			})
 			continue
 		}
+		if action.Kind == capabilitypack.ActionSkillTree {
+			change := localprojection.FilesystemChange{ID: action.ID, Target: action.Target, Delete: action.Mode == capabilitypack.ProjectionDeleteTarget, ExpectedTargetFingerprint: action.Precondition, ExactTreeTarget: true}
+			if !change.Delete {
+				change.FileMode = fs.FileMode(action.FileMode)
+				change.ExpectedTreeFingerprint = action.Version
+				change.TreeFiles = make([]localprojection.TreeFile, len(action.TreeFiles))
+				for i, file := range action.TreeFiles {
+					change.TreeFiles[i] = localprojection.TreeFile{Path: file.Path, Content: append([]byte(nil), file.Content...), Mode: fs.FileMode(file.Mode)}
+				}
+			}
+			filesystemChanges = append(filesystemChanges, change)
+			continue
+		}
 		if action.Kind != ActionSkillTree {
 			continue
 		}
@@ -597,7 +690,7 @@ func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabil
 	}
 	appliedShared := map[string]string{}
 	for _, action := range actions {
-		if action.Kind == ActionSkillTree || action.Kind == ActionSkillLink {
+		if action.Kind == ActionSkillTree || action.Kind == capabilitypack.ActionSkillTree || action.Kind == ActionSkillLink {
 			continue
 		}
 		if action.Kind == ActionInstructionContribution || action.Kind == ActionCommandHook {
@@ -673,6 +766,21 @@ func (a *SurfaceAdapter) validateActions(actions []capabilitypack.ProjectionActi
 				if composite.Ownership != provenance || provenance.EffectiveName != filepath.Base(x.Target) || provenance.TreeFingerprint != composite.TreeFingerprint {
 					return errors.New("Claude composite skill action identity does not match its target and payload")
 				}
+			}
+			if exclusiveSkillTargetConflict(targets, x) {
+				return errors.New("overlapping exclusive Claude skill target")
+			}
+			targets[x.Target] = x
+		case capabilitypack.ActionSkillTree:
+			if !directChild(x.Target, a.layout.SkillsDir) {
+				return errors.New("Claude rendered skill target must be a direct child of the canonical skills directory")
+			}
+			if x.Mode == capabilitypack.ProjectionDeleteTarget {
+				if len(x.TreeFiles) != 0 || x.Content != "" || x.Source != "" || x.Version != "" || x.AdapterProvenance != "" {
+					return errors.New("Claude rendered skill removal must not carry replacement content")
+				}
+			} else if len(x.TreeFiles) == 0 || x.Version == "" || x.FileMode != 0o700 || x.Content != "" || x.Source != "" || !strings.HasPrefix(x.AdapterProvenance, skilltemplate.RendererVersion+"/") {
+				return errors.New("Claude rendered skill action is not fully sealed")
 			}
 			if exclusiveSkillTargetConflict(targets, x) {
 				return errors.New("overlapping exclusive Claude skill target")
@@ -849,7 +957,7 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		return errors.New("ambiguous Claude ownership")
 	}
 	if record != nil {
-		if record.StateOwner == "" || record.ContributorID == "" || record.Kind != string(x.Kind) || filepath.Clean(record.Target) != filepath.Clean(x.Target) || !slices.Contains(record.Contributors, record.ContributorID) {
+		if record.StateOwner == "" || record.ContributorID == "" || !compatibleClaudeOwnershipKind(record.Kind, x.Kind) || filepath.Clean(record.Target) != filepath.Clean(x.Target) || !slices.Contains(record.Contributors, record.ContributorID) {
 			return errors.New("Claude ownership identity does not exactly match the sealed action")
 		}
 		if x.Kind == ActionCommandHook && x.Mode == capabilitypack.ProjectionRemoveContent && record.HookProvenance != x.Source {
@@ -911,6 +1019,25 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		}
 		return nil
 	}
+	if x.Kind == capabilitypack.ActionSkillTree {
+		observed, exists, err := localprojection.ObserveSkillTarget(x.Target)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+		if record == nil {
+			return errors.New("foreign Claude rendered skill collision")
+		}
+		if !fingerprintsEqual(observed, record.Fingerprint) {
+			return errors.New("owned Claude rendered skill changed; preserving it")
+		}
+		if x.Mode == capabilitypack.ProjectionDeleteTarget && (!record.DeletionAuthorized || len(record.Contributors) > 1) {
+			return errors.New("Claude rendered skill deletion is not authorized")
+		}
+		return nil
+	}
 	if x.Kind == ActionUserMCP {
 		if x.Mode == capabilitypack.ProjectionDeleteTarget && (record == nil || !record.DeletionAuthorized || len(record.Contributors) > 1) {
 			return errors.New("Claude user MCP deletion is not authorized by the fresh composite ownership snapshot")
@@ -918,6 +1045,22 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		return nil
 	}
 	if x.Kind == ActionSkillLink {
+		if record != nil && record.Kind == string(capabilitypack.ActionSkillTree) {
+			observed, exists, err := localprojection.ObserveExactTree(x.Target)
+			if err != nil {
+				return err
+			}
+			if exists && !fingerprintsEqual(observed, record.Fingerprint) {
+				return errors.New("owned Claude rendered skill changed; preserving it")
+			}
+			if x.Mode == capabilitypack.ProjectionDeleteTarget && (!record.DeletionAuthorized || len(record.Contributors) > 1) {
+				return errors.New("Claude rendered skill deletion is not authorized")
+			}
+			if x.Mode != capabilitypack.ProjectionDeleteTarget {
+				_, err = canonicalPath(x.Source)
+			}
+			return err
+		}
 		o := ObserveSkill(x.Target, "")
 		if o.Err != nil {
 			return o.Err
@@ -1401,7 +1544,7 @@ func exclusiveSkillTargetConflict(targets map[string]capabilitypack.ProjectionAc
 		if existingTarget == target {
 			return true
 		}
-		if action.Kind != ActionSkillTree && existing.Kind != ActionSkillTree {
+		if !isClaudeTreeAction(action.Kind) && !isClaudeTreeAction(existing.Kind) {
 			continue
 		}
 		if pathContains(target, existingTarget) || pathContains(existingTarget, target) {
@@ -1409,6 +1552,17 @@ func exclusiveSkillTargetConflict(targets map[string]capabilitypack.ProjectionAc
 		}
 	}
 	return false
+}
+
+func isClaudeTreeAction(kind capabilitypack.ProjectionActionKind) bool {
+	return kind == ActionSkillTree || kind == capabilitypack.ActionSkillTree
+}
+
+func compatibleClaudeOwnershipKind(recorded string, desired capabilitypack.ProjectionActionKind) bool {
+	if recorded == string(desired) {
+		return true
+	}
+	return recorded == string(ActionSkillLink) && desired == capabilitypack.ActionSkillTree || recorded == string(capabilitypack.ActionSkillTree) && desired == ActionSkillLink
 }
 
 func pathContains(parent, child string) bool {

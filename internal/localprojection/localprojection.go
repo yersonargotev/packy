@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 type Executor struct {
@@ -42,13 +43,33 @@ type ExactTreeSnapshot struct {
 	SHA256  string
 }
 
+// RenderSkillTemplate seals a rendered skill tree into the exact inert shape
+// consumed by ProjectionAction and the local tree executor.
+func RenderSkillTemplate(source, self string, names map[string]string, directoryMode fs.FileMode) ([]capabilitypack.ProjectionTreeFile, string, error) {
+	rendered, err := skilltemplate.RenderTree(source, self, names)
+	if err != nil {
+		return nil, "", err
+	}
+	actionFiles := make([]capabilitypack.ProjectionTreeFile, len(rendered))
+	treeFiles := make([]TreeFile, len(rendered))
+	for i, file := range rendered {
+		actionFiles[i] = capabilitypack.ProjectionTreeFile{Path: file.Path, Content: append([]byte(nil), file.Content...), Mode: file.Mode}
+		treeFiles[i] = TreeFile{Path: file.Path, Content: append([]byte(nil), file.Content...), Mode: fs.FileMode(file.Mode)}
+	}
+	fingerprint, err := FingerprintTreeFiles(treeFiles, directoryMode)
+	if err != nil {
+		return nil, "", err
+	}
+	return actionFiles, fingerprint, nil
+}
+
 // Apply stages all supported local projections before committing them and
 // restores already-committed targets if a later commit fails.
 func (e Executor) Apply(actions []capabilitypack.ProjectionAction) error {
 	changes := make([]FilesystemChange, 0, len(actions))
 	targets := map[string]int{}
 	for _, action := range actions {
-		change := FilesystemChange{ID: action.ID, Target: action.Target, Delete: action.Mode == capabilitypack.ProjectionDeleteTarget, stagePrefix: ".packy-stage-", stageKey: string(action.Kind) + ":" + action.ID, errorVerb: "commit"}
+		change := FilesystemChange{ID: action.ID, Target: action.Target, Delete: action.Mode == capabilitypack.ProjectionDeleteTarget, stagePrefix: ".packy-stage-", stageKey: string(action.Kind) + ":" + action.ID + ":" + filepath.Clean(action.Target), errorVerb: "commit"}
 		change.ExpectedTargetFingerprint = action.Precondition
 		change.ExactTreeTarget = e.TreeKinds[action.Kind]
 		if !change.Delete {
@@ -287,6 +308,47 @@ func SnapshotExactTree(root string) (ExactTreeSnapshot, error) {
 func FingerprintExactTree(root string) (string, error) {
 	snapshot, err := SnapshotExactTree(root)
 	return snapshot.SHA256, err
+}
+
+// ObserveExactTree reports a target without following a terminal symlink. A
+// changed path type is drift evidence, while malformed tree contents surface as
+// an invalid fingerprint instead of escaping the adapter-owned root.
+func ObserveExactTree(root string) (string, bool, error) {
+	info, err := os.Lstat(root)
+	if os.IsNotExist(err) {
+		return "missing", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "type:symlink", true, nil
+	}
+	if !info.IsDir() {
+		return "type:" + info.Mode().Type().String(), true, nil
+	}
+	fingerprint, err := FingerprintExactTree(root)
+	if err != nil {
+		return "invalid:" + FingerprintBytes([]byte(err.Error())), true, nil
+	}
+	return fingerprint, true, nil
+}
+
+// ObserveSkillTarget uses the fingerprint contract of the target's current
+// representation. This lets a lifecycle update prove ownership while moving a
+// skill from a source link to a generated exact tree (or back).
+func ObserveSkillTarget(root string) (string, bool, error) {
+	info, err := os.Lstat(root)
+	if os.IsNotExist(err) {
+		return "missing", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return ObserveExactTree(root)
+	}
+	return FingerprintPath(root)
 }
 
 // ChangedExactTreePaths derives the sorted concrete relative paths whose exact

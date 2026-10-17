@@ -85,7 +85,9 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 			}
 			contributors := []string{owner.PackID}
 			record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: owner.PackID, ID: id, Fingerprint: owner.Fingerprint, Contributors: contributors, DeletionAuthorized: true}
-			if isClaudeCompositeProjection(pack, resource, *binding) {
+			if resource.RequestsSurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilitySkillTemplate) {
+				record.Kind, record.Target = string(capabilitypack.ActionSkillTree), filepath.Join(o.layout.SkillsDir, name)
+			} else if isClaudeCompositeProjection(pack, resource, *binding) {
 				composite, err := claudeCompositeSkill(pack, resource, *binding, o.catalogRoot)
 				if err != nil {
 					return OwnershipSnapshot{}, err

@@ -106,6 +106,9 @@ func resourceWithSurfaceAlias(resource Resource, aliases []SurfaceAlias, surface
 		}
 		for _, alias := range aliases {
 			if alias.Kind == resource.Kind && alias.ID == resource.ID {
+				if resource.RequestsSurfaceCapability(surface, SurfaceCapabilitySkillTemplate) {
+					binding.Invocation = renamedSkillInvocation(*binding, alias.Name)
+				}
 				binding.Name = alias.Name
 			}
 		}

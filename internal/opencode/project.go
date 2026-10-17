@@ -13,6 +13,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/skilltemplate"
 )
 
 func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.Pack, projectRoot string) (capabilitypack.SurfaceInspection, error) {
@@ -85,6 +86,19 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		}
 		target := filepath.Join(projectRoot, ".opencode", "skills", name)
 		source := filepath.Join(resource.CatalogRootOr(a.catalogRoot), resource.Source)
+		if resource.RequestsSurfaceCapability(capabilitypack.SurfaceOpenCode, capabilitypack.SurfaceCapabilitySkillTemplate) {
+			files, desired, err := localprojection.RenderSkillTemplate(source, resource.ID, capabilitypack.SkillTemplateNames(pack, capabilitypack.SurfaceOpenCode), 0o755)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, false, fmt.Errorf("render %s source: %w", identity, err)
+			}
+			observed, exists, err := projectTreeFingerprint(target)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, false, fmt.Errorf("inspect %s target: %w", identity, err)
+			}
+			provenance := skilltemplate.RendererVersion + "/opencode/project"
+			action := capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionOpenCodeProjectSkillTree, FileMode: 0o755, Target: target, Version: desired, Precondition: observed, AdapterProvenance: provenance, TreeFiles: files, Description: fmt.Sprintf("render %s in the native OpenCode project skill tree", identity), PreviewOnly: true}
+			return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance, ProjectionKey: "path:" + filepath.Clean(target), Action: action}, true, nil
+		}
 		desired, err := localprojection.FingerprintCopiedTree(source, 0o755)
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("fingerprint %s source: %w", identity, err)

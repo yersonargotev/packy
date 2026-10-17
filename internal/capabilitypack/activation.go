@@ -53,6 +53,7 @@ const (
 	OperationUpdate                Operation            = "update"
 	OperationDeactivate            Operation            = "deactivate"
 	ActionSkillLink                ProjectionActionKind = "skill-link"
+	ActionSkillTree                ProjectionActionKind = "skill-tree"
 	ActionInstructionFile          ProjectionActionKind = "instruction-file"
 	ActionOpenCodeSkillLink        ProjectionActionKind = "opencode-skill-link"
 	ActionOpenCodeInstructionFile  ProjectionActionKind = "opencode-instruction-file"

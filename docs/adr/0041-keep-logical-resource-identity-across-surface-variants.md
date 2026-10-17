@@ -46,3 +46,11 @@ installations follow the explicit deactivation/reinstallation process. Shared
 logical identity does not imply identical authority, dependencies, or runtime
 usability. The first engine milestone demonstrates complete skill lifecycle;
 all-kind acceptance and verified coexistence remain separately proven slices.
+
+## Reviewed skill-template exception
+
+[ADR 0043](0043-render-reviewed-skill-identities-and-references.md) supersedes the
+installation-time rewriting prohibition only for an explicitly reviewed
+`skill-template` capability and its authored same-Pack reference tokens.
+Unreviewed prompt rewriting remains prohibited. The surface-variant, immutable
+source, provenance, and verified-coexistence decisions above remain in force.

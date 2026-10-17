@@ -232,6 +232,9 @@ func validateCurrentPack(pack Pack) error {
 	if err := validateOptionalModes(pack.Contract.OptionalModes); err != nil {
 		return fmt.Errorf("Pack %q: %w", pack.ID, err)
 	}
+	if err := validateSkillTemplateNames(pack); err != nil {
+		return fmt.Errorf("Pack %q: %w", pack.ID, err)
+	}
 	acquisitions := map[string]string{}
 	for _, resource := range pack.Resources {
 		for _, binding := range resource.Bindings {
@@ -252,6 +255,22 @@ func validateCurrentPack(pack Pack) error {
 		}
 	}
 	return validateVariants(pack)
+}
+
+func validateSkillTemplateNames(pack Pack) error {
+	for _, resource := range pack.Resources {
+		for _, binding := range resource.Bindings {
+			capability, ok := resource.SurfaceCapability(binding.Surface, SurfaceCapabilitySkillTemplate)
+			if !ok || capability.SkillTemplate == nil || capability.SkillTemplate.Naming != SkillTemplateNamingPack {
+				continue
+			}
+			generated := pack.ID + "-" + binding.Name
+			if len(generated) > 64 {
+				return fmt.Errorf("resource %q surface %q skill-template generated name %q exceeds 64 characters", resource.Kind+":"+resource.ID, binding.Surface, generated)
+			}
+		}
+	}
+	return nil
 }
 
 func validateClaudeCompositionCapabilities(pack Pack, identities map[string]bool) error {

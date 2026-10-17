@@ -108,6 +108,8 @@ retain its supported Homebrew flow without running tool-owned host setup.
 skill together with explicitly declared dependency and reference roles.
 `claude-agent-document` projects a reviewed agent source, declared skill
 dependencies, and portable authority as one native Claude agent document.
+`skill-template` projects a reviewed skill tree with an effective native identity
+and explicitly authored references to other skills in the same Pack.
 
 ### Pack activation
 
@@ -240,6 +242,12 @@ declare a specific variant.
 ### Effective resource
 
 The definition of a logical Pack resource applicable to one CLI surface.
+
+### Skill template
+
+A reviewed skill source whose explicit native-name references are rendered
+against the effective bindings of its own selected Pack. Its installed result is
+a generated, receipt-owned tree; its reviewed Catalog source remains immutable.
 
 ### Host coexistence
 

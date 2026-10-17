@@ -417,6 +417,34 @@
               }
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "skill_template"
+          ],
+          "properties": {
+            "type": {
+              "const": "skill-template"
+            },
+            "skill_template": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "naming"
+              ],
+              "properties": {
+                "naming": {
+                  "enum": [
+                    "native",
+                    "pack"
+                  ]
+                }
+              }
+            }
+          }
         }
       ]
     },
