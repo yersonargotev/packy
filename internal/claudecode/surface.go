@@ -187,9 +187,11 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 					observed = string(skill.Kind)
 				}
 			}
+			needsReconciliation := skill.Kind == PathSymlink && skill.ResolvedTarget != expectedSource
 			action := capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillLink, Source: source, Target: target, Description: "link Claude Code skill " + b.Name}
-			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: action})
-			revision = append(revision, id+observed)
+			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, NeedsReconciliation: needsReconciliation, Action: action})
+			linkRevision := canonicalFingerprint([]string{string(skill.Kind), skill.ResolvedTarget, expectedSource, observed})
+			revision = append(revision, id+linkRevision)
 		case "instruction":
 			content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source)))
 			if err != nil {
@@ -403,7 +405,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	versionObserved := versionClass != CompatibilityUnreadable && versionClass != CompatibilityFailed && versionClass != CompatibilityTimedOut
 	configured := true
 	for _, p := range result.Projections {
-		if p.Goal == capabilitypack.ProjectionPresent && (!p.Exists || p.ObservedFingerprint != p.DesiredFingerprint || p.ExternallyManaged) {
+		if p.Goal == capabilitypack.ProjectionPresent && (!p.Exists || p.NeedsReconciliation || p.ObservedFingerprint != p.DesiredFingerprint || p.ExternallyManaged) {
 			configured = false
 		}
 	}

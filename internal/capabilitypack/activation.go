@@ -199,6 +199,7 @@ type ProjectionTreeFile struct {
 func RemovalCandidate(projection ObservedProjection, mode ProjectionActionMode, content, description string) ObservedProjection {
 	projection.Goal = ProjectionAbsent
 	projection.DesiredFingerprint = ""
+	projection.NeedsReconciliation = false
 	projection.Action.Source = ""
 	projection.Action.Content = content
 	projection.Action.Mode = mode
@@ -216,12 +217,15 @@ type ObservedProjection struct {
 	// projections leave it empty because their observed fingerprint is exact.
 	ExactFingerprint   string
 	DesiredFingerprint string
-	AdapterProvenance  string
-	ProjectionKey      string
-	Shared             bool
-	DiscoverableBy     []Surface
-	ExternallyManaged  bool
-	Action             ProjectionAction
+	// NeedsReconciliation reports adapter-owned state outside the content
+	// fingerprint that must converge through Action before verification passes.
+	NeedsReconciliation bool
+	AdapterProvenance   string
+	ProjectionKey       string
+	Shared              bool
+	DiscoverableBy      []Surface
+	ExternallyManaged   bool
+	Action              ProjectionAction
 }
 
 type ProjectionGoal string
@@ -735,7 +739,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	for _, projection := range observation.Projections {
 		if projection.DesiredFingerprint != "" {
 			plan.desired = append(plan.desired, projectionExpectation{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, ExternallyManaged: projection.ExternallyManaged})
-			if projection.Exists && projection.ObservedFingerprint == projection.DesiredFingerprint {
+			if projection.Exists && !projectionNeedsReconciliation(projection) {
 			} else {
 				detail := fmt.Sprintf("preserved projection %s because it is missing, drifted, ambiguous, unmanaged, or ownership no longer matches", projection.ID)
 				plan.pendingHumanActions = append(plan.pendingHumanActions, detail)
@@ -846,7 +850,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	for _, projection := range observation.Projections {
 		if projection.DesiredFingerprint != "" {
 			plan.desired = append(plan.desired, projectionExpectation{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, ExternallyManaged: projection.ExternallyManaged})
-			if projection.Exists && projection.ObservedFingerprint == projection.DesiredFingerprint {
+			if projection.Exists && !projectionNeedsReconciliation(projection) {
 			} else {
 				detail := fmt.Sprintf("preserved projection %s because it is missing, drifted, ambiguous, unmanaged, or ownership no longer matches", projection.ID)
 				plan.pendingHumanActions = append(plan.pendingHumanActions, detail)
@@ -881,7 +885,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	}
 	sort.Strings(plan.observedEvidence)
 	for _, projection := range observation.Projections {
-		if projection.ObservedFingerprint != projection.DesiredFingerprint && !projection.ExternallyManaged {
+		if projectionNeedsReconciliation(projection) && !projection.ExternallyManaged {
 			plan.pendingEvidence = append(plan.pendingEvidence, projection.ID+": verification pending Apply")
 		}
 	}
@@ -978,7 +982,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	executableAdapterActions := make([]ProjectionAction, 0)
 	destructiveActions := make([]ProjectionAction, 0)
 	for _, projection := range observation.Projections {
-		if projection.ObservedFingerprint != projection.DesiredFingerprint {
+		if projectionNeedsReconciliation(projection) {
 			if projection.ExternallyManaged {
 				continue
 			}
@@ -1043,7 +1047,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sort.Strings(observedEvidence)
 	pendingEvidence := []string{}
 	for _, projection := range observation.Projections {
-		if projection.ObservedFingerprint != projection.DesiredFingerprint && !projection.ExternallyManaged {
+		if projectionNeedsReconciliation(projection) && !projection.ExternallyManaged {
 			pendingEvidence = append(pendingEvidence, projection.ID+": verification pending Apply")
 		}
 	}
@@ -1437,13 +1441,17 @@ func observedReadinessProjections(values []ObservedProjection) []ProjectionStatu
 		health := ProjectionMissing
 		if value.Exists {
 			health = ProjectionDrifted
-			if value.ObservedFingerprint == value.DesiredFingerprint {
+			if !projectionNeedsReconciliation(value) {
 				health = ProjectionVerified
 			}
 		}
 		result = append(result, ProjectionStatus{ID: value.ID, Target: value.Action.Target, Health: health, ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint})
 	}
 	return result
+}
+
+func projectionNeedsReconciliation(projection ObservedProjection) bool {
+	return projection.NeedsReconciliation || projection.ObservedFingerprint != projection.DesiredFingerprint
 }
 
 func verificationMatchesSubset(desired []projectionExpectation, observed []ObservedProjection) bool {
@@ -1453,7 +1461,7 @@ func verificationMatchesSubset(desired []projectionExpectation, observed []Obser
 	}
 	for _, expectation := range desired {
 		projection, ok := byID[expectation.ID]
-		if !ok || projection.ObservedFingerprint != expectation.Fingerprint {
+		if !ok || projection.NeedsReconciliation || projection.ObservedFingerprint != expectation.Fingerprint {
 			return false
 		}
 	}
@@ -1838,6 +1846,9 @@ func compositionActive(state ActivationState, packs []Pack, surface Surface) boo
 
 func ownershipMatchesPack(owners []ProjectionOwnership, projections []ObservedProjection, c composition) bool {
 	for _, projection := range projections {
+		if projection.NeedsReconciliation {
+			return false
+		}
 		if projection.ExternallyManaged {
 			if projection.ObservedFingerprint != projection.DesiredFingerprint {
 				return false
@@ -1876,6 +1887,7 @@ func observationDigest(o SurfaceInspection) string {
 		ObservedFingerprint string
 		ExactFingerprint    string `json:",omitempty"`
 		DesiredFingerprint  string
+		NeedsReconciliation bool
 		AdapterProvenance   string `json:",omitempty"`
 		ExternallyManaged   bool
 		Action              ProjectionAction
@@ -1887,6 +1899,7 @@ func observationDigest(o SurfaceInspection) string {
 			ObservedFingerprint: projection.ObservedFingerprint,
 			ExactFingerprint:    projection.ExactFingerprint,
 			DesiredFingerprint:  projection.DesiredFingerprint,
+			NeedsReconciliation: projection.NeedsReconciliation,
 			AdapterProvenance:   projection.AdapterProvenance,
 			ExternallyManaged:   projection.ExternallyManaged,
 			Action:              projection.Action,
@@ -1947,7 +1960,7 @@ func verificationMatches(expected []projectionExpectation, values []ObservedProj
 	}
 	for _, want := range expected {
 		value, ok := byID[want.ID]
-		if !ok || value.DesiredFingerprint != want.Fingerprint || value.ObservedFingerprint != want.Fingerprint {
+		if !ok || value.NeedsReconciliation || value.DesiredFingerprint != want.Fingerprint || value.ObservedFingerprint != want.Fingerprint {
 			return false
 		}
 	}
@@ -1961,7 +1974,7 @@ func verificationMatchesDeactivation(expected []projectionExpectation, values []
 	}
 	for _, want := range expected {
 		value, ok := byID[want.ID]
-		if !ok || value.ObservedFingerprint != want.Fingerprint || value.DesiredFingerprint != want.Fingerprint {
+		if !ok || value.NeedsReconciliation || value.ObservedFingerprint != want.Fingerprint || value.DesiredFingerprint != want.Fingerprint {
 			return false
 		}
 		delete(byID, want.ID)
@@ -1979,9 +1992,9 @@ func verificationMismatch(expected []projectionExpectation, values []ObservedPro
 	for _, projection := range expected {
 		want[projection.ID] = projection.Fingerprint
 	}
-	got := map[string]string{}
+	got := map[string]ObservedProjection{}
 	for _, projection := range values {
-		got[projection.ID] = projection.ObservedFingerprint
+		got[projection.ID] = projection
 	}
 	var details []string
 	ids := make([]string, 0, len(want)+len(got))
@@ -1997,8 +2010,11 @@ func verificationMismatch(expected []projectionExpectation, values []ObservedPro
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		if want[id] != got[id] {
-			details = append(details, fmt.Sprintf("%s expected %s observed %s", id, want[id], got[id]))
+		observed := got[id]
+		if want[id] != observed.ObservedFingerprint {
+			details = append(details, fmt.Sprintf("%s expected %s observed %s", id, want[id], observed.ObservedFingerprint))
+		} else if observed.NeedsReconciliation {
+			details = append(details, fmt.Sprintf("%s adapter reconciliation still pending", id))
 		}
 	}
 	return fmt.Sprintf("expected %d projections, observed %d; %s", len(expected), len(values), strings.Join(details, "; "))
@@ -2299,8 +2315,11 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			if projection.DesiredFingerprint == "" || projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent {
 				return SurfaceInspection{}, fmt.Errorf("surface adapter returned incompatible present goal for projection %q", projection.ID)
 			}
+			if projection.NeedsReconciliation && projection.ExternallyManaged {
+				return SurfaceInspection{}, fmt.Errorf("surface adapter returned externally managed reconciliation for projection %q", projection.ID)
+			}
 		case ProjectionAbsent:
-			if projection.DesiredFingerprint != "" || (projection.Action.Mode != ProjectionDeleteTarget && projection.Action.Mode != ProjectionRemoveContent) {
+			if projection.NeedsReconciliation || projection.DesiredFingerprint != "" || (projection.Action.Mode != ProjectionDeleteTarget && projection.Action.Mode != ProjectionRemoveContent) {
 				return SurfaceInspection{}, fmt.Errorf("surface adapter returned incompatible absent goal for projection %q", projection.ID)
 			}
 		default:
