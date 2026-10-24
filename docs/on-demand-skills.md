@@ -48,7 +48,9 @@ A schema v3 skill resource may declare:
 ```json
 "on_demand": {
   "protocol": "skill-tree-v1",
-  "prerequisites": ["git repository", "python3"]
+  "prerequisites": ["git repository", "python3"],
+  "entry_document": "ACCESS.md",
+  "reference_files": ["ACCESS.md", "references/procedure.md"]
 }
 ```
 
@@ -64,10 +66,32 @@ paths remain Pack-relative, including references outside the skill directory.
 The prepared copy includes the reviewed manifest for provenance and declarations;
 it is not an independently installable Pack or a new catalog.
 
-Skill dependencies and native rendering/composition are rejected in this first
-slice. Catalog authors must supply a reviewed standalone tree rather than a
-native template or a Claude composite skill. Existing installation behavior is
-unchanged. Engine release must precede Catalog Publication using this field.
+Same-Pack skill dependencies use direct `requires: ["skill:<logical-id>"]`
+edges. Preparation includes the complete transitive skill, asset, and notice
+closure after host selection. Every skill needs a supported host binding and
+reviewed compatibility. Missing, cyclic, excluded, and incompatible dependencies
+fail without a successful partial result. Repeated and diamond dependencies share
+one complete prepared tree with deterministic references and ownership.
+
+`entry_document` is optional and defaults to `SKILL.md`. A native template or
+Claude composite skill must supply a distinct reviewed standalone entry document
+inside its source tree, preserving its native instructions. `reference_files` is
+an optional sorted, unique list of skill-relative Markdown files. Only these files
+render the explicit token `{{packy.access:grilling}}` into a relative path to the
+effective prepared entry for `skill:grilling`. The target must be self or a direct
+skill dependency. For example, author `[Read grilling]({{packy.access:grilling}})`
+and tell the consuming agent to read and follow that document, rather than assume
+a native Skill tool registration. Tokens in nested reviewed documents resolve
+relative to those documents, including when the target has a host variant.
+
+Malformed or undeclared references, missing listed files, and missing entry
+documents fail explicitly. Omitted optional fields keep dependency-free trees
+usable. An explicit null is invalid. Other bytes and modes remain unchanged,
+including scripts, host invocations, native `{{packy.skill:...}}` tokens, and
+unlisted documents. Prepared reuse verifies rendered bytes as well as untouched
+files; it fails on drift without overwriting modifications. Catalog Snapshot
+sources and native installation/alias semantics remain unchanged. Engine release
+must precede Catalog Publication using this vocabulary.
 
 ## Output and errors
 
@@ -78,7 +102,11 @@ explanation. `--json` emits one document to stdout with `schema_version: 1`,
 See [the JSON schema](../schemas/cli/v1/skill-access.schema.json).
 
 Success requires `qualified_skill`, `pack_version`, `surface`, `snapshot_id`,
-`entry_document`, `resource_root`, and `prerequisites`. Paths are absolute and
+`entry_document`, `resource_root`, `prerequisites`, and `dependencies`.
+The sorted `dependencies` array lists the complete transitive prepared skill set
+(excluding the root); each item carries the same seven identity/location/requirement
+fields as the root. All entries retain the initiating snapshot and surface.
+Dependency-free retrieval returns `[]`. Paths are absolute and
 intentionally expose the usable local locations. No native-registration,
 runtime-readiness, or workflow-success claim is included.
 
@@ -95,7 +123,6 @@ stderr may also contain a readable diagnostic. Argument errors honor `--json`.
 | `snapshot_unavailable` | Restore the exact retained revision; do not substitute a newer one. |
 | `unknown_skill` | Inspect `packy list` and `packy show <pack>`. |
 | `incompatible_resource` | Ask the Catalog maintainer for a reviewed standalone on-demand tree. |
-| `skill_dependencies_unsupported` | This slice cannot prepare skills requiring other skills. |
 | `preparation_failed` | Inspect filesystem access or prepared-tree drift; preserve sources and use writable scratch/output elsewhere. |
 
 Local authoring uses the existing candidate interface, retaining its explicit

@@ -1553,6 +1553,26 @@
             "minLength": 1,
             "pattern": "^\\S(?:.*\\S)?$"
           }
+        },
+        "entry_document": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\:\\s]+(?:/[^/\\\\:\\s]+)*$",
+          "not": {
+            "pattern": "(^|/)\\.{1,2}(/|$)"
+          }
+        },
+        "reference_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^/\\\\:\\s]+(?:/[^/\\\\:\\s]+)*\\.md$",
+            "not": {
+              "pattern": "(^|/)\\.{1,2}(/|$)"
+            }
+          }
         }
       }
     }

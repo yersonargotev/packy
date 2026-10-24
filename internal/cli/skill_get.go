@@ -83,7 +83,15 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(skillAccessReport{SchemaVersion: 1, Report: "skill-access", Outcome: "prepared", Result: &result})
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Prepared skill %s (Pack %s, surface %s)\nCatalog Snapshot: %s\nEntry document: %s\nResource root: %s\nKnown prerequisites (not verified): %v\nResources only: no native registration or workflow execution. Check prerequisites and follow the skill's procedure and approvals; use separate target and writable scratch/output locations.\n", result.QualifiedSkill, result.PackVersion, result.Surface, result.SnapshotID, result.EntryDocument, result.ResourceRoot, result.Prerequisites)
-			return err
+			if err != nil {
+				return err
+			}
+			for _, dependency := range result.Dependencies {
+				if _, err = fmt.Fprintf(cmd.OutOrStdout(), "Dependency: %s (Pack %s, surface %s, snapshot %s)\n  Entry document: %s\n  Resource root: %s\n  Known prerequisites (not verified): %v\n", dependency.QualifiedSkill, dependency.PackVersion, dependency.Surface, dependency.SnapshotID, dependency.EntryDocument, dependency.ResourceRoot, dependency.Prerequisites); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 	skill.Flags().StringVar(&surface, "surface", "", "explicit host: codex or claude")
