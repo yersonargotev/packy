@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v1/skill-discovery.schema.json",
+  "title": "Current catalog skill discovery v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "skill-discovery"
+    },
+    "pack_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pack_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface": {
+      "enum": [
+        "claude",
+        "codex"
+      ]
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resource": {
+            "$ref": "#/$defs/resourceIdentity"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "const": "operational"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/resourceIdentity"
+            },
+            "uniqueItems": true
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/resourceIdentity"
+            },
+            "uniqueItems": true
+          },
+          "qualified_skill": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "pack_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pack_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "resource": {
+                "$ref": "#/$defs/resourceIdentity"
+              },
+              "surface": {
+                "enum": [
+                  "claude",
+                  "codex",
+                  "opencode"
+                ]
+              },
+              "definition": {
+                "enum": [
+                  "common",
+                  "surface_variant"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "origin": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "relationship": {
+                    "enum": [
+                      "exact-copy",
+                      "adapted"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "path",
+                  "relationship"
+                ]
+              },
+              "notices": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/resourceIdentity"
+                }
+              }
+            },
+            "required": [
+              "resource",
+              "surface",
+              "definition",
+              "notices"
+            ]
+          },
+          "supported_surfaces": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "claude",
+                "codex",
+                "opencode"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "native_name": {
+            "type": "string"
+          },
+          "exclusion": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "surface": {
+                    "enum": [
+                      "claude",
+                      "codex",
+                      "opencode"
+                    ]
+                  },
+                  "mode": {
+                    "enum": [
+                      "optional",
+                      "mandatory"
+                    ]
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "surface",
+                  "mode",
+                  "code",
+                  "reason"
+                ]
+              }
+            ]
+          },
+          "on_demand": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/onDemand"
+              }
+            ]
+          },
+          "compatible": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "prerequisites": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "resource",
+          "description",
+          "role",
+          "dependencies",
+          "notices",
+          "qualified_skill",
+          "pack_id",
+          "pack_version",
+          "definition",
+          "supported_surfaces",
+          "native_name",
+          "exclusion",
+          "on_demand",
+          "compatible",
+          "reason",
+          "prerequisites"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "compatible": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "on_demand": {
+                  "$ref": "#/$defs/onDemand"
+                },
+                "native_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "exclusion": {
+                  "type": "null"
+                },
+                "reason": {
+                  "const": ""
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "prerequisites_verified": {
+      "const": false
+    },
+    "limitation": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "report",
+    "pack_id",
+    "pack_version",
+    "surface",
+    "skills",
+    "prerequisites_verified",
+    "limitation"
+  ],
+  "$defs": {
+    "resourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "skill",
+            "asset",
+            "notice",
+            "instruction",
+            "mcp_server",
+            "agent",
+            "command",
+            "lifecycle"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ]
+    },
+    "onDemand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "skill-tree-v1"
+        },
+        "prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "entry_document": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "skill"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            "required": [
+              "type",
+              "target"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "protocol",
+        "prerequisites"
+      ]
+    }
+  }
+}

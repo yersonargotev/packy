@@ -157,9 +157,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	describe := func(owned capabilitypack.AccessResource) Skill {
 		resource := owned.Resource
 		root := filepath.Join(destination, "packs", owned.Pack.ID, resource.Source)
-		prerequisites := append(slices.Clone(resource.OnDemand.Prerequisites), owned.Pack.Requires.Tools...)
-		slices.Sort(prerequisites)
-		prerequisites = slices.Compact(prerequisites)
+		prerequisites := capabilitypack.DeclaredSkillPrerequisites(owned.Pack, resource)
 		return Skill{QualifiedSkill: owned.Pack.ID + ":" + resource.ID, PackVersion: owned.Pack.Version, Surface: surface, SnapshotID: snapshotID, EntryDocument: filepath.Join(root, resource.OnDemand.AccessEntry()), ResourceRoot: root, Prerequisites: prerequisites}
 	}
 	result := Result{Skill: describe(skill), Dependencies: []Skill{}}

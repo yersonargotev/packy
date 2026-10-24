@@ -2085,9 +2085,21 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 
 func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var jsonOutput bool
+	var surface string
 	cmd := &cobra.Command{
 		Use: "show <pack>", Short: "Show a capability pack", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("surface") {
+				catalog, err := discoverPackCatalog(cmd.Context(), opts, workstationResolver)
+				if err != nil {
+					return err
+				}
+				report, err := catalog.DiscoverSkills(cmd.Context(), args[0], capabilitypack.Surface(surface))
+				if err != nil {
+					return err
+				}
+				return renderSkillDiscovery(cmd.OutOrStdout(), report, jsonOutput)
+			}
 			facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
@@ -2103,6 +2115,7 @@ func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	cmd.Flags().StringVar(&surface, "surface", "", "Discover current catalog skills for codex or claude without preparing resources")
 	return cmd
 }
 
