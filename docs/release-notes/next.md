@@ -106,6 +106,14 @@ migrate, activate, or refresh live user installations. Traditional installation
 remains available through the existing preview and consent flow. Claude Code
 **2.1.203 or newer** remains the supported floor.
 
+For traditional native installation, acquire the catalog with `packy init`, then
+preview the Pack activation before applying it:
+
+```sh
+packy activate engram --surface codex --dry-run
+packy activate engram --surface codex
+```
+
 ## Release verification
 
 The existing immutable release workflow runs the same executable Catalog
