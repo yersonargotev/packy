@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/skillaccess"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -140,6 +141,35 @@ func TestIssue861SkillDependenciesExecutable(t *testing.T) {
 		assertAccessFile(t, result.Dependencies[0].EntryDocument, []byte("consumer drift\n"), 0644)
 
 	}
+	t.Run("escaped effective source path", func(t *testing.T) {
+		project := dependencyAccessProject(t, "escaped", func(m map[string]any) {
+			for _, v := range accessResource(m, "shared")["variants"].([]any) {
+				variant := v.(map[string]any)
+				if variant["surface"] == "codex" {
+					variant["source"] = "skills/shared codex#(v1)"
+				}
+			}
+		})
+		packRoot := filepath.Join(project, "packs/reviewed")
+		if err := os.Rename(filepath.Join(packRoot, "skills/shared-codex"), filepath.Join(packRoot, "skills/shared codex#(v1)")); err != nil {
+			t.Fatal(err)
+		}
+		assets := dependencyAccessAssets(t, project, strings.Repeat("f", 40))
+		workspace := filepath.Join(t.TempDir(), "candidate")
+		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t, "PATH="+t.TempDir()), "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		if err != nil {
+			t.Fatalf("escaped source: %v %s %s", err, out, stderr)
+		}
+		var result skillaccess.Result
+		if err := json.Unmarshal(out, &result); err != nil {
+			t.Fatal(err)
+		}
+		grilling := followAccessLink(t, result.EntryDocument, "grilling")
+		assertAccessFile(t, grilling, []byte("codex grilling escaped\n"+accessSupportingLinks+"Read [shared](../shared%20codex%23%28v1%29/ACCESS.md).\n"), 0644)
+		shared := followAccessLink(t, grilling, "shared")
+		assertAccessFile(t, shared, []byte("codex shared escaped\n"+accessSupportingLinks), 0644)
+	})
+
 	t.Run("retained nested dependency after refresh", func(t *testing.T) {
 		envList := testprocess.Env(t, "PATH="+t.TempDir())
 		env := adoptionEnvironmentMap(envList)
@@ -434,5 +464,9 @@ func followAccessLink(t *testing.T, entry, label string) string {
 	if len(match) != 2 {
 		t.Fatalf("missing %s link in %s: %s", label, entry, body)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(entry), filepath.FromSlash(string(match[1]))))
+	reference, err := url.PathUnescape(string(match[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(entry), filepath.FromSlash(reference)))
 }

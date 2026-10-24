@@ -82,7 +82,7 @@ an authored access procedure within the same declared and attributed source tree
 
 An optional sorted `on_demand.reference_files` list opts specific skill-relative
 Markdown documents into explicit `{{packy.access:<logical-skill-id>}}` rendering.
-Each token becomes a relative path from that document to the target's prepared
+Each token becomes a URL-escaped relative Markdown path from that document to the target's prepared
 effective entry document. A target must be self or a directly required same-Pack
 skill. Malformed and undeclared references fail explicitly. Supporting relative
 links remain authored content. Only listed documents are rendered: arbitrary

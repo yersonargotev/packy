@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path"
 	"path/filepath"
 	"slices"
@@ -120,7 +121,11 @@ func RenderAccessReferences(resource Resource, relative string, data []byte, tar
 		if err != nil {
 			return nil, err
 		}
-		result = strings.ReplaceAll(result, "{{packy.access:"+id+"}}", filepath.ToSlash(link))
+		segments := strings.Split(filepath.ToSlash(link), "/")
+		for i, segment := range segments {
+			segments[i] = url.PathEscape(segment)
+		}
+		result = strings.ReplaceAll(result, "{{packy.access:"+id+"}}", strings.Join(segments, "/"))
 	}
 	return []byte(result), nil
 }

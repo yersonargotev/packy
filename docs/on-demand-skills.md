@@ -77,7 +77,7 @@ one complete prepared tree with deterministic references and ownership.
 Claude composite skill must supply a distinct reviewed standalone entry document
 inside its source tree, preserving its native instructions. `reference_files` is
 an optional sorted, unique list of skill-relative Markdown files. Only these files
-render the explicit token `{{packy.access:grilling}}` into a relative path to the
+render the explicit token `{{packy.access:grilling}}` into a URL-escaped relative Markdown path to the
 effective prepared entry for `skill:grilling`. The target must be self or a direct
 skill dependency. For example, author `[Read grilling]({{packy.access:grilling}})`
 and tell the consuming agent to read and follow that document, rather than assume
