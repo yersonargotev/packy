@@ -377,6 +377,7 @@ func validateSnapshot(root string, release Release) (cataloglayout.CatalogSnapsh
 			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot file %q does not match its indexed identity", name)
 		}
 	}
+	runtimePacks := []capabilitypack.Pack{}
 	for _, pack := range index.Packs {
 		loaded, loadErr := capabilitypack.ValidatePackContent(root, pack.ID)
 		if loadErr != nil {
@@ -386,9 +387,13 @@ func validateSnapshot(root string, release Release) (cataloglayout.CatalogSnapsh
 			}
 			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("validate Catalog Snapshot Pack %q: %w", pack.ID, loadErr)
 		}
+		runtimePacks = append(runtimePacks, loaded)
 		if loaded.ID != pack.ID || loaded.Version != pack.Version {
 			return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot Pack %q manifest identity does not match index", pack.ID)
 		}
+	}
+	if err := capabilitypack.ValidateOnDemandCatalog(runtimePacks); err != nil {
+		return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("validate Catalog Snapshot on-demand contracts: %w", err)
 	}
 	return index, nil
 }

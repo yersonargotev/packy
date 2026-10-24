@@ -72,7 +72,7 @@ Every skill must have a supported binding and reviewed on-demand contract.
 Missing, excluded, cyclic, or incompatible resources fail without a successful
 partial report. Repeated and diamond edges share one Pack-relative resource tree
 in a single atomic preparation; dependencies retain the initiating snapshot and
-surface. Cross-Pack declarations remain outside this extension.
+surface. Issue #862 extends this graph with the explicit qualified contract below.
 
 An `on_demand.entry_document` optionally selects a standalone instruction file
 relative to the skill source; omission selects `SKILL.md`. Native templates and
@@ -100,3 +100,32 @@ still precedes Catalog Publication using the extended vocabulary.
 OpenCode on-demand access, arbitrary version selection, workflow execution,
 discovery enhancements, bootstrap content, and real-catalog adaptations remain
 outside this slice.
+
+## Cross-Pack procedures
+
+Issue #862 adds optional sorted unique `on_demand.dependencies` entries with
+closed type `skill` and a qualified `target: "<pack>:<skill>"`. Resolve the
+complete graph against the initiating complete retained Catalog Snapshot after
+effective surface selection. Each Pack retains its own manifest provenance,
+version, sources, supporting assets, and legal closure. Native `Resource.Requires`
+remains Pack-local and retains its installation semantics; on-demand edges never
+install another Pack or establish foreign projection ownership.
+
+Reviewed access files may author `{{packy.access:<pack>:<skill>}}`. Unqualified
+access tokens still identify the author's own Pack. Either spelling requires
+self, a direct same-Pack native skill edge, or a direct typed on-demand edge.
+Native-name tokens keep their same-Pack meaning. Complete-catalog validation,
+construction, and retained consumption reject invalid graphs and references,
+including declarations in unrelated Packs, without executing content. A common
+on-demand declaration requires a Codex or Claude binding; explicit OpenCode
+on-demand variant declarations are unsupported. Common declarations can coexist
+with native OpenCode bindings without enabling OpenCode retrieval or requiring
+foreign access targets to support native OpenCode installation.
+
+Preparation protocol `v2` publishes one atomic procedure tree with separate
+`packs/<pack>/` subtrees. Relative links cross these explicit ownership roots;
+repeated and diamond targets have one qualified identity. Reuse verifies the
+complete rendered bytes and modes. Results keep each owner's Pack version and
+prerequisites and the root's surface and immutable snapshot. Existing public
+`--snapshot` carries this same identity into nested requests after refresh; no
+new acquisition or version-selection mechanism is introduced.

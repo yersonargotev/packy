@@ -32,18 +32,19 @@ func ValidatePortableContent(catalogRoot string) error {
 	if err != nil {
 		return fmt.Errorf("read portable Pack manifests: %w", err)
 	}
-	validated := 0
+	packs := []Pack{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			return fmt.Errorf("unexpected portable Pack manifest entry %q", entry.Name())
 		}
-		if _, err := ValidatePackContent(catalogRoot, entry.Name()); err != nil {
+		pack, err := ValidatePackContent(catalogRoot, entry.Name())
+		if err != nil {
 			return err
 		}
-		validated++
+		packs = append(packs, pack)
 	}
-	if validated == 0 {
+	if len(packs) == 0 {
 		return fmt.Errorf("current Pack manifest directory is empty")
 	}
-	return nil
+	return ValidateOnDemandCatalog(packs)
 }

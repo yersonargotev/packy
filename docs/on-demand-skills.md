@@ -50,7 +50,8 @@ A schema v3 skill resource may declare:
   "protocol": "skill-tree-v1",
   "prerequisites": ["git repository", "python3"],
   "entry_document": "ACCESS.md",
-  "reference_files": ["ACCESS.md", "references/procedure.md"]
+  "reference_files": ["ACCESS.md", "references/procedure.md"],
+  "dependencies": [{"type": "skill", "target": "other:grilling"}]
 }
 ```
 
@@ -66,9 +67,18 @@ paths remain Pack-relative, including references outside the skill directory.
 The prepared copy includes the reviewed manifest for provenance and declarations;
 it is not an independently installable Pack or a new catalog.
 
-Same-Pack skill dependencies use direct `requires: ["skill:<logical-id>"]`
+On-demand dependencies use the optional `dependencies` array of typed
+`{"type": "skill", "target": "<pack>:<skill>"}` declarations, sorted uniquely
+by qualified target. Only `skill` is supported; null and unknown vocabulary are
+invalid. Targets can belong to any selectable Pack in the same complete retained
+Catalog Snapshot. A surface variant replaces the complete `on_demand` object,
+so its dependency graph is resolved after host selection.
+
+Same-Pack native skill dependencies continue to use direct `requires: ["skill:<logical-id>"]`
 edges. Preparation includes the complete transitive skill, asset, and notice
-closure after host selection. Every skill needs a supported host binding and
+closure across Packs after host selection. Each Pack retains its own source,
+manifest provenance, version, notices, and supporting files. The complete
+procedure is published atomically under preparation protocol `v2`. Every skill needs a supported host binding and
 reviewed compatibility. Missing, cyclic, excluded, and incompatible dependencies
 fail without a successful partial result. Repeated and diamond dependencies share
 one complete prepared tree with deterministic references and ownership.
@@ -78,14 +88,23 @@ Claude composite skill must supply a distinct reviewed standalone entry document
 inside its source tree, preserving its native instructions. `reference_files` is
 an optional sorted, unique list of skill-relative Markdown files. Only these files
 render the explicit token `{{packy.access:grilling}}` into a URL-escaped relative Markdown path to the
-effective prepared entry for `skill:grilling`. The target must be self or a direct
-skill dependency. For example, author `[Read grilling]({{packy.access:grilling}})`
+effective prepared entry for `skill:grilling` in the author's own Pack.
+`{{packy.access:other:grilling}}` explicitly identifies another Pack's skill.
+Qualified references must name self, a direct same-Pack `requires` edge, or an
+explicit `on_demand.dependencies` target. Duplicate skill names across Packs
+remain distinct. A cross-Pack declaration grants resource access only: it never
+adds a native installation dependency or ownership of foreign files. For example, author `[Read grilling]({{packy.access:grilling}})`
 and tell the consuming agent to read and follow that document, rather than assume
 a native Skill tool registration. Tokens in nested reviewed documents resolve
 relative to those documents, including when the target has a host variant.
 
 Malformed or undeclared references, missing listed files, and missing entry
-documents fail explicitly. Omitted optional fields keep dependency-free trees
+documents fail during complete-catalog validation, construction, and consumption, including
+in unrelated Packs. A common `on_demand` declaration requires a Codex or Claude
+binding. Explicit OpenCode `on_demand` variant declarations are unsupported;
+ordinary native OpenCode bindings can coexist with a common declaration without
+adding OpenCode access or cross-Pack installation requirements.
+Omitted optional fields keep dependency-free trees
 usable. An explicit null is invalid. Other bytes and modes remain unchanged,
 including scripts, host invocations, native `{{packy.skill:...}}` tokens, and
 unlisted documents. Prepared reuse verifies rendered bytes as well as untouched
