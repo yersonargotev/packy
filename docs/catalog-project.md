@@ -312,6 +312,10 @@ already exist and the workspace itself must not exist on first use:
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
   --workspace /absolute/path/to/workspace -- list --json
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
+  --workspace /absolute/path/to/workspace -- show example-pack --surface claude --json
+packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
+  --workspace /absolute/path/to/workspace -- get skill example-pack:guide --surface codex --json
+packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
   --workspace /absolute/path/to/workspace -- install example-pack \
   --surface codex --resource skill:guide --dry-run --json
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
@@ -325,9 +329,13 @@ owned state. The version-2 `local-candidate.json` ownership marker records the
 current selection and retained snapshot identities. Older disposable workspace
 formats are rejected; create a new workspace rather than editing the marker.
 Ordinary candidate calls require the selected snapshot's identical assets.
-Every lifecycle observation revalidates the captured ownership, Git boundary,
-and retained sources, including after interactive approval. Removing or editing
-the ownership marker during consent rejects Apply without lifecycle mutation.
+Every operation revalidates the captured ownership and retained sources.
+`list`, `show`, and `get` remain available when the owned project is outside Git
+or its Git metadata is damaged. Native lifecycle operations and explicit
+transitions additionally require the intact owned Git boundary, including after
+interactive approval; an enclosing repository never supplies that authority.
+Removing or editing the ownership marker during consent rejects Apply without
+lifecycle mutation.
 
 To change snapshot availability while preserving all installed baseline state,
 use the explicit transition operation. Obtain the baseline archive digest from
@@ -357,7 +365,7 @@ retained-source drift is rejected without replacing prior usable state. Failed
 preparation/selection preserves installed state. Transition changes availability
 only; each subsequent lifecycle Apply requires its own normal consent.
 
-Available operations after the required `--` separator are `list`, `show`,
+Available operations after the required `--` separator are `list`, `show`, `get`,
 `install`, `verify`, `uninstall`, `update`, `activate`, `deactivate`, and
 `transition`. Project `install`, `verify`, `uninstall`, and `update --project`
 always target `workspace/project`. Global `activate`, `deactivate`, and `update`
@@ -426,7 +434,15 @@ remove authoring evidence.
 
 Packy's inert synthetic contracts own lifecycle mechanisms and run against the
 same release-stamped executable on Darwin and Linux, amd64 and arm64. The
-Catalog owns actual Pack content assertions. Integration of candidate-interface
+Catalog owns actual Pack content assertions. The shared built/release executable
+contract also covers on-demand discovery and retrieval for Codex and Claude Code,
+complete resource/legal closure, retained nested access after an explicit
+transition, inert offline use, and rejection of invalid complete catalogs.
+After transition, pass the new selected assets to the outer `--snapshot`; pass a
+previously returned identity to the nested `get skill --snapshot <identity>` to
+retain the original procedure. Missing retained content fails even when prepared
+copies remain. These operations use the supplied executable directly; downstream
+Catalog acceptance needs no neighboring engine checkout or development build. Integration of candidate-interface
 changes alone does not unblock Catalog #57: a separately authorized immutable
 supporting Packy release and reviewed adoption of its single release declaration
 must precede downstream migration and deletion of legacy probes.

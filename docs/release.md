@@ -78,7 +78,13 @@ contents, checksums, and the native binary's version and source identity.
 `scripts/test-release-contracts.sh --version <tag> --dist <dir> --platform
 <os_arch> --evidence <dir>` then extracts that target's staged binary and runs
 the same functional cases for identity, validation, construction, publication,
-and candidate acceptance. It requires a matching native runtime. The four jobs
+candidate lifecycle/transition acceptance, and on-demand discovery/retrieval
+for Codex and Claude Code. Access cases verify versioned output, complete
+host-effective resources and dependencies, retained references across refresh,
+offline/non-Git use without content runtimes, and failure/state-preservation
+contracts. Both executable entry points invoke the same cases; the supplied
+release binary is never rebuilt and its bytes/mode remain unchanged.
+It requires a matching native runtime. The four jobs
 use Darwin amd64/arm64 and Linux amd64/arm64 runners; compilation and version
 smoke checks do not replace these cases. Ordinary CI exercises the same gate
 with unpublished `v0.0.0` artifacts.

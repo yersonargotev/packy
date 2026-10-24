@@ -42,7 +42,11 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 			if args[0] == "transition" {
 				return executeCandidateTransition(cmd, assetsRoot, workspaceRoot, args[1:])
 			}
-			workspace, err := catalogcandidate.Open(cmd.Context(), assetsRoot, workspaceRoot)
+			open := catalogcandidate.Open
+			if args[0] == "list" || args[0] == "show" || args[0] == "get" {
+				open = catalogcandidate.OpenAccess
+			}
+			workspace, err := open(cmd.Context(), assetsRoot, workspaceRoot)
 			if err != nil {
 				return err
 			}
