@@ -58,6 +58,7 @@ type ResourceOrigin = capabilitypack.ResourceOrigin
 
 // Resource is one Pack resource plus its declared provenance.
 type Resource struct {
+	OnDemand          *capabilitypack.OnDemandSkill     `json:"on_demand,omitempty"`
 	Variants          capabilitypack.ResourceVariants   `json:"variants,omitempty"`
 	Kind              string                            `json:"kind"`
 	ID                string                            `json:"id"`
@@ -644,7 +645,8 @@ func validateManifest(manifest Manifest, projectRoot string) error {
 	}
 	for _, resource := range manifest.Resources {
 		pack.Resources = append(pack.Resources, capabilitypack.Resource{
-			Kind: resource.Kind, ID: resource.ID, Source: resource.Source,
+			OnDemand: resource.OnDemand,
+			Kind:     resource.Kind, ID: resource.ID, Source: resource.Source,
 			Variants: resource.Variants, Origin: resource.Origin,
 			Command: resource.Command, Args: resource.Args, Description: resource.Description,
 			Mode: resource.Mode, Tools: resource.Tools, Permissions: resource.Permissions,

@@ -12,6 +12,10 @@ import (
 // configureCatalogArguments preserves the requested output format even when
 // strict argument parsing stops before reaching the final --json flag.
 func configureCatalogArguments(command *cobra.Command, jsonOutput *bool, failure func(*cobra.Command, string, error) error) {
+	validate := command.Args
+	if validate == nil {
+		validate = cobra.NoArgs
+	}
 	command.DisableFlagParsing = true
 	command.Args = func(cmd *cobra.Command, args []string) error {
 		// Discover output mode across unknown flags before strict parsing can stop.
@@ -50,7 +54,7 @@ func configureCatalogArguments(command *cobra.Command, jsonOutput *bool, failure
 		if help, _ := flags.GetBool("help"); help {
 			return nil
 		}
-		if err := cobra.NoArgs(cmd, flags.Args()); err != nil {
+		if err := validate(cmd, flags.Args()); err != nil {
 			return failure(cmd, "invalid_arguments", err)
 		}
 		return nil
@@ -60,6 +64,6 @@ func configureCatalogArguments(command *cobra.Command, jsonOutput *bool, failure
 		if help, _ := cmd.Flags().GetBool("help"); help {
 			return cmd.Help()
 		}
-		return run(cmd, args)
+		return run(cmd, cmd.Flags().Args())
 	}
 }

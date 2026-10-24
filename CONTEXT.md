@@ -45,6 +45,20 @@ Packy release.
 The explicit selection of a newly acquired, validated Catalog Snapshot as the
 available reviewed Pack catalog. It does not update installed Packs.
 
+### On-demand Skill Access
+
+Obtaining one qualified, reviewed skill and its supporting/legal resources for
+an explicit CLI surface without installation or workflow execution.
+
+### Qualified skill
+
+The identity of a logical skill within its owning Pack, written `<pack>:<skill>`.
+
+### Prepared skill resources
+
+Packy-owned copies of a reviewed skill's effective resource tree and declared
+supporting/legal resources, retained independently of installed projections.
+
 ### Pack Import
 
 The explicit introduction of selected external resources at a pinned revision

@@ -712,6 +712,9 @@
           "items": {
             "$ref": "#/$defs/resourceVariant"
           }
+        },
+        "on_demand": {
+          "$ref": "#/$defs/onDemandSkill"
         }
       },
       "allOf": [
@@ -1422,6 +1425,32 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "not": {
+                  "const": "skill"
+                }
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "on_demand": false,
+              "variants": {
+                "items": {
+                  "properties": {
+                    "on_demand": false
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -1499,6 +1528,31 @@
         },
         "attribution": {
           "type": "string"
+        },
+        "on_demand": {
+          "$ref": "#/$defs/onDemandSkill"
+        }
+      }
+    },
+    "onDemandSkill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "prerequisites"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "skill-tree-v1"
+        },
+        "prerequisites": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S(?:.*\\S)?$"
+          }
         }
       }
     }

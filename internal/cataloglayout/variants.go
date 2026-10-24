@@ -63,6 +63,7 @@ func declaredBodies(resources []Resource) []Resource {
 	var bodies []Resource
 	for _, resource := range resources {
 		common := capabilitypack.Resource{
+			OnDemand:    resource.OnDemand,
 			Description: resource.Description,
 			Source:      resource.Source,
 			Origin:      resource.Origin,
@@ -81,6 +82,7 @@ func declaredBodies(resources []Resource) []Resource {
 		}
 		for _, effective := range capabilitypack.DeclaredResourceBodies(common) {
 			body := resource
+			body.OnDemand = effective.OnDemand
 			body.Variants = nil
 			body.Description = effective.Description
 			body.Source = effective.Source

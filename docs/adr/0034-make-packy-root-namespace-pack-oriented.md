@@ -44,6 +44,10 @@ Generic names such as `install`, `status`, and `update` are reserved for Pack
 lifecycle behavior. A future unrelated domain that wants one of those names
 requires a new namespace decision.
 
+[ADR 0044](0044-provide-on-demand-skill-access.md) extends this namespace with
+`get skill <pack>:<skill>` for reviewed On-demand Skill Access, independently of
+the installed Pack lifecycle.
+
 The former `packy pack <verb>` spelling fails through
 Cobra's ordinary unknown command behavior. Historical material may retain that
 spelling as evidence, but current guidance teaches only the direct commands.

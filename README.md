@@ -166,6 +166,10 @@ configuration. Tests and manual verification must sandbox `HOME` and
 
 ## Pack authoring
 
+Use [On-demand Skill Access](docs/on-demand-skills.md) to obtain a reviewed skill
+with `packy get skill <pack>:<skill> --surface codex` (or `claude`) without
+installation or workflow execution.
+
 Add and update Packs in the public [Catalog Project](docs/catalog-project.md).
 It canonically owns all seven current manifests and reviewed resources while
 independent upstream products keep their repositories. Whole-catalog

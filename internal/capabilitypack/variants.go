@@ -32,6 +32,7 @@ func (v *ResourceVariants) UnmarshalJSON(data []byte) error {
 // ResourceVariant replaces explicitly present typed fields for one surface.
 // Pointer fields distinguish inheritance from intentional empty values.
 type ResourceVariant struct {
+	OnDemand    *OnDemandSkill    `json:"on_demand,omitempty"`
 	Surface     Surface           `json:"surface"`
 	Description *string           `json:"description,omitempty"`
 	Source      *string           `json:"source,omitempty"`
@@ -98,6 +99,7 @@ func cloneVariants(values []ResourceVariant) []ResourceVariant {
 	result := append([]ResourceVariant{}, values...)
 	for i := range result {
 		v := &result[i]
+		v.OnDemand = cloneOnDemand(v.OnDemand)
 		if v.Description != nil {
 			value := *v.Description
 			v.Description = &value
@@ -171,6 +173,9 @@ func ResolveResourceForSurface(resource Resource, surface Surface) Resource {
 	for _, variant := range result.Variants {
 		if variant.Surface != surface {
 			continue
+		}
+		if variant.OnDemand != nil {
+			result.OnDemand = cloneOnDemand(variant.OnDemand)
 		}
 		if variant.Description != nil {
 			result.Description = *variant.Description

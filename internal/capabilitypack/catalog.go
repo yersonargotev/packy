@@ -48,6 +48,7 @@ const (
 )
 
 type Resource struct {
+	OnDemand          *OnDemandSkill
 	Variants          []ResourceVariant
 	Origin            *ResourceOrigin
 	ResolvedVariant   Surface
@@ -729,6 +730,7 @@ func clonePack(pack Pack) Pack {
 	pack.Requires.Tools = slices.Clone(pack.Requires.Tools)
 	pack.Resources = slices.Clone(pack.Resources)
 	for i := range pack.Resources {
+		pack.Resources[i].OnDemand = cloneOnDemand(pack.Resources[i].OnDemand)
 		pack.Resources[i].Variants = cloneVariants(pack.Resources[i].Variants)
 		if pack.Resources[i].Origin != nil {
 			origin := *pack.Resources[i].Origin
@@ -920,6 +922,9 @@ func DecodeRuntimeEvidence(data []byte) (RuntimeEvidence, error) {
 }
 
 func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []OptionalMode) error {
+	if err := validateOnDemand(resource); err != nil {
+		return err
+	}
 	if resource.Requires == nil || resource.Bindings == nil || resource.SurfaceExclusions == nil {
 		return fmt.Errorf("requires, bindings, and surface_exclusions are required non-null arrays")
 	}
