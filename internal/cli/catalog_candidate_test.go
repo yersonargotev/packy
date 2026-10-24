@@ -73,6 +73,12 @@ func TestCandidateWorkspaceRejectsConflictsAndRetainedDriftWithoutMutation(t *te
 			}
 			test.prepare(workspace)
 			before := snapshotTree(t, workspace)
+			if test.name == "missing Git boundary" {
+				if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
+					t.Fatalf("non-Git access: %v %s", err, out)
+				}
+				args = append(args[:len(args)-2], "install", pack.ID(), "--surface", "codex", "--dry-run", "--json")
+			}
 			if out, err := executeCommand(t, NewRootCommand(opts), args...); err == nil {
 				t.Fatalf("conflicting workspace accepted: %s", out)
 			}

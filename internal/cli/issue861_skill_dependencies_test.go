@@ -29,6 +29,13 @@ func TestIssue861SkillDependenciesExecutable(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, out)
 	}
+	// Both focused slices consume the same executable; the parent owns its
+	// lifetime while each child keeps independent catalog and workstation state.
+	t.Run("procedures", func(t *testing.T) { checkIssue861SkillDependencies(t, binary) })
+	t.Run("invalid dependencies", func(t *testing.T) { checkIssue861InvalidDependencies(t, binary) })
+}
+
+func checkIssue861SkillDependencies(t *testing.T, binary string) {
 	project := dependencyAccessProject(t, "first", nil)
 	assets := dependencyAccessAssets(t, project, strings.Repeat("a", 40))
 	workspace := filepath.Join(t.TempDir(), "candidate")
@@ -374,16 +381,7 @@ func dependencyAccessAssets(t *testing.T, project, id string) string {
 	return assets
 }
 
-func TestIssue861InvalidDependenciesExecutable(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, out)
-	}
+func checkIssue861InvalidDependencies(t *testing.T, binary string) {
 	for _, test := range []struct {
 		name, diagnostic string
 		edit             func(map[string]any)
