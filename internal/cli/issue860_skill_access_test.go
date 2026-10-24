@@ -233,7 +233,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			t.Fatal("returned location no longer usable")
 		}
 	})
-	t.Run("unreviewed and dependency bearing skills never succeed", func(t *testing.T) {
+	t.Run("unreviewed skills never succeed", func(t *testing.T) {
 		for _, test := range []struct {
 			name, code string
 			edit       func(map[string]any)
@@ -252,7 +252,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 					value.(map[string]any)["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
 				}
 			}},
-			{"dependency", "skill_dependencies_unsupported", func(manifest map[string]any) {
+			{"unreviewed dependency", "incompatible_resource", func(manifest map[string]any) {
 				resources := manifest["resources"].([]any)
 				skill := resources[1].(map[string]any)
 				encoded, _ := json.Marshal(skill)
@@ -261,6 +261,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 					t.Fatal(err)
 				}
 				helper["id"] = "helper"
+				delete(helper, "on_demand")
 				helper["source"] = "skills/helper"
 				delete(helper, "variants")
 				for _, value := range helper["bindings"].([]any) {
@@ -384,6 +385,18 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			}},
 			{"null prerequisites", false, func(m map[string]any) {
 				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["prerequisites"] = nil
+			}},
+			{"null entry", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["entry_document"] = nil
+			}},
+			{"null reference files", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["reference_files"] = nil
+			}},
+			{"escaping entry", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["entry_document"] = "../foreign.md"
+			}},
+			{"script reference file", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["reference_files"] = []string{"scripts/run.sh"}
 			}},
 			{"unknown field", false, func(m map[string]any) {
 				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["run"] = true

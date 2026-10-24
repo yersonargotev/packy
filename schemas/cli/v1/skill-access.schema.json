@@ -73,13 +73,64 @@
             "snapshot_unavailable",
             "unknown_skill",
             "incompatible_resource",
-            "skill_dependencies_unsupported",
             "preparation_failed"
           ]
         },
         "message": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "qualified_skill",
+          "pack_version",
+          "surface",
+          "snapshot_id",
+          "entry_document",
+          "resource_root",
+          "prerequisites"
+        ],
+        "properties": {
+          "qualified_skill": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "pack_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "surface": {
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "snapshot_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "entry_document": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resource_root": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prerequisites": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     }
@@ -101,7 +152,8 @@
           "snapshot_id",
           "entry_document",
           "resource_root",
-          "prerequisites"
+          "prerequisites",
+          "dependencies"
         ],
         "properties": {
           "error": false
@@ -118,7 +170,8 @@
           "snapshot_id": false,
           "entry_document": false,
           "resource_root": false,
-          "prerequisites": false
+          "prerequisites": false,
+          "dependencies": false
         }
       }
     }

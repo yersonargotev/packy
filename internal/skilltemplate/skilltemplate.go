@@ -55,9 +55,18 @@ type sourceContractFile struct {
 // ReferencedSkills returns the canonical logical IDs named by explicit Packy
 // directives. All other bytes are ignored.
 func ReferencedSkills(data []byte) ([]string, error) {
+	return referencedSkills(data, "packy.skill")
+}
+
+// ReferencedAccessSkills parses only explicit on-demand resource references.
+func ReferencedAccessSkills(data []byte) ([]string, error) {
+	return referencedSkills(data, "packy.access")
+}
+
+func referencedSkills(data []byte, namespace string) ([]string, error) {
 	seen := map[string]bool{}
 	for offset := 0; ; {
-		relative := bytes.Index(data[offset:], []byte("packy.skill"))
+		relative := bytes.Index(data[offset:], []byte(namespace))
 		if relative < 0 {
 			break
 		}
@@ -72,14 +81,14 @@ func ReferencedSkills(data []byte) ([]string, error) {
 		}
 		openingBraces := openingStart - braceStart
 		if openingBraces < 2 {
-			offset = namespaceStart + len("packy.skill")
+			offset = namespaceStart + len(namespace)
 			continue
 		}
 		if openingBraces != 2 || openingStart != namespaceStart {
 			return nil, fmt.Errorf("malformed skill template directive at byte %d", braceStart)
 		}
 		start := braceStart
-		valueStart := namespaceStart + len("packy.skill")
+		valueStart := namespaceStart + len(namespace)
 		if valueStart >= len(data) || data[valueStart] != ':' {
 			return nil, fmt.Errorf("malformed skill template directive at byte %d", start)
 		}

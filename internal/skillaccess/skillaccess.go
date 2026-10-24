@@ -34,9 +34,9 @@ func failure(code, format string, args ...any) error {
 	return &Error{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
-// Result describes file availability only. It carries no runtime or native
+// Skill describes file availability only. It carries no runtime or native
 // registration assertion. The consuming agent checks the declared prerequisites.
-type Result struct {
+type Skill struct {
 	QualifiedSkill string                 `json:"qualified_skill"`
 	PackVersion    string                 `json:"pack_version"`
 	Surface        capabilitypack.Surface `json:"surface"`
@@ -44,6 +44,12 @@ type Result struct {
 	EntryDocument  string                 `json:"entry_document"`
 	ResourceRoot   string                 `json:"resource_root"`
 	Prerequisites  []string               `json:"prerequisites"`
+}
+
+// Result includes the complete deterministic transitive skill closure.
+type Result struct {
+	Skill
+	Dependencies []Skill `json:"dependencies"`
 }
 
 // ValidateRequest checks identity and explicit host selection before any I/O.
@@ -80,37 +86,14 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 		return Result{}, failure("unknown_skill", "Pack %s is not selectable in this Catalog Snapshot; run `packy list` for available Packs", pack.ID)
 	}
 	pack = capabilitypack.ResolvePackForSurface(pack, surface)
-	var skill capabilitypack.Resource
-	for _, resource := range pack.Resources {
-		if resource.Kind == "skill" && resource.ID == parts[1] {
-			skill = resource
-			break
-		}
-	}
-	if skill.ID == "" {
-		return Result{}, failure("unknown_skill", "unknown skill %s; run `packy show %s` to inspect its resources", qualified, pack.ID)
-	}
-	var binding *capabilitypack.Binding
-	for i := range skill.Bindings {
-		if skill.Bindings[i].Surface == surface {
-			binding = &skill.Bindings[i]
-			break
-		}
-	}
-	if binding == nil {
-		return Result{}, failure("unsupported_surface", "skill %s has no supported %s definition; inspect `packy show %s`", qualified, surface, pack.ID)
-	}
-	if skill.OnDemand == nil || skill.OnDemand.Protocol != "skill-tree-v1" {
-		return Result{}, failure("incompatible_resource", "skill %s has no reviewed on_demand skill-tree-v1 contract for %s; ask the Catalog maintainer to review it", qualified, surface)
-	}
-	for _, capability := range binding.Capabilities {
-		if capability.Type == capabilitypack.SurfaceCapabilitySkillTemplate || capability.Type == capabilitypack.SurfaceCapabilityClaudeCompositeSkill {
-			return Result{}, failure("incompatible_resource", "skill %s requires native rendering or composition; provide a reviewed standalone on-demand resource tree", qualified)
-		}
-	}
-	roots, err := supportingRoots(pack, skill)
+	resources, err := accessClosure(pack, parts[1], surface)
 	if err != nil {
 		return Result{}, err
+	}
+	skill := resources[0]
+	roots := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		roots = append(roots, resource.Source)
 	}
 	files, err := declaredFiles(snapshotRoot, snapshotID, pack.ID, roots)
 	if err != nil {
@@ -120,15 +103,34 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	if err != nil {
 		return Result{}, failure("preparation_failed", "prepare owned resource directory: %v", err)
 	}
-	if err := prepareFiles(ctx, filepath.Join(snapshotRoot, "packs", pack.ID), destination, files); err != nil {
+	targets := map[string]string{}
+	for _, resource := range resources {
+		if resource.Kind == "skill" {
+			targets[resource.ID] = filepath.ToSlash(filepath.Join(resource.Source, resource.OnDemand.AccessEntry()))
+		}
+	}
+	rendered, err := renderedFiles(filepath.Join(snapshotRoot, "packs", pack.ID), files, resources, targets)
+	if err != nil {
+		return Result{}, failure("incompatible_resource", "review on-demand references for %s: %v", qualified, err)
+	}
+	if err := prepareFiles(ctx, filepath.Join(snapshotRoot, "packs", pack.ID), destination, files, rendered); err != nil {
 		return Result{}, failure("preparation_failed", "prepare %s: %v; preserve catalog sources and use separate writable scratch/output paths", qualified, err)
 	}
-	root := filepath.Join(destination, skill.Source)
-	prerequisites := append(slices.Clone(skill.OnDemand.Prerequisites), pack.Requires.Tools...)
-	slices.Sort(prerequisites)
-	prerequisites = slices.Compact(prerequisites)
-	return Result{QualifiedSkill: qualified, PackVersion: pack.Version, Surface: surface, SnapshotID: snapshotID,
-		EntryDocument: filepath.Join(root, "SKILL.md"), ResourceRoot: root, Prerequisites: prerequisites}, nil
+	describe := func(resource capabilitypack.Resource) Skill {
+		root := filepath.Join(destination, resource.Source)
+		prerequisites := append(slices.Clone(resource.OnDemand.Prerequisites), pack.Requires.Tools...)
+		slices.Sort(prerequisites)
+		prerequisites = slices.Compact(prerequisites)
+		return Skill{QualifiedSkill: pack.ID + ":" + resource.ID, PackVersion: pack.Version, Surface: surface, SnapshotID: snapshotID, EntryDocument: filepath.Join(root, resource.OnDemand.AccessEntry()), ResourceRoot: root, Prerequisites: prerequisites}
+	}
+	result := Result{Skill: describe(skill), Dependencies: []Skill{}}
+	for _, resource := range resources[1:] {
+		if resource.Kind == "skill" {
+			result.Dependencies = append(result.Dependencies, describe(resource))
+		}
+	}
+	slices.SortFunc(result.Dependencies, func(a, b Skill) int { return strings.Compare(a.QualifiedSkill, b.QualifiedSkill) })
+	return result, nil
 }
 
 // Refuse linked descendants so preparing data can never write through a link
@@ -164,42 +166,102 @@ func preparationPath(dataRoot, snapshotRoot, snapshotID string, surface capabili
 	return filepath.Join(root, skillID), nil
 }
 
-func supportingRoots(pack capabilitypack.Pack, skill capabilitypack.Resource) ([]string, error) {
+func accessClosure(pack capabilitypack.Pack, skillID string, surface capabilitypack.Surface) ([]capabilitypack.Resource, error) {
 	resources := map[string]capabilitypack.Resource{}
 	for _, resource := range pack.Resources {
 		resources[resource.Kind+":"+resource.ID] = resource
 	}
-	roots := []string{}
-	seen := map[string]bool{}
+	root, ok := resources["skill:"+skillID]
+	if !ok {
+		return nil, failure("unknown_skill", "unknown skill %s:%s; inspect packy show %s", pack.ID, skillID, pack.ID)
+	}
+	state := map[string]int{}
+	result := []capabilitypack.Resource{}
 	var visit func(capabilitypack.Resource) error
 	visit = func(resource capabilitypack.Resource) error {
 		identity := resource.Kind + ":" + resource.ID
-		if seen[identity] {
+		if state[identity] == 1 {
+			return failure("incompatible_resource", "cyclic dependency at %s:%s", pack.ID, identity)
+		}
+		if state[identity] == 2 {
 			return nil
 		}
-		seen[identity] = true
-		if identity != "skill:"+skill.ID && resource.Kind == "skill" {
-			return failure("skill_dependencies_unsupported", "skill %s:%s requires %s; on-demand skill dependencies are not supported in this slice", pack.ID, skill.ID, identity)
+		state[identity] = 1
+		switch resource.Kind {
+		case "skill":
+			var binding *capabilitypack.Binding
+			for i := range resource.Bindings {
+				if resource.Bindings[i].Surface == surface {
+					binding = &resource.Bindings[i]
+					break
+				}
+			}
+			if binding == nil {
+				return failure("unsupported_surface", "skill %s:%s is excluded or unbound for %s", pack.ID, resource.ID, surface)
+			}
+			if resource.OnDemand == nil || resource.OnDemand.Protocol != "skill-tree-v1" {
+				return failure("incompatible_resource", "skill %s:%s needs a reviewed on_demand skill-tree-v1 contract", pack.ID, resource.ID)
+			}
+			for _, capability := range binding.Capabilities {
+				if (capability.Type == capabilitypack.SurfaceCapabilitySkillTemplate || capability.Type == capabilitypack.SurfaceCapabilityClaudeCompositeSkill) && resource.OnDemand.AccessEntry() == "SKILL.md" {
+					return failure("incompatible_resource", "skill %s:%s requires a reviewed standalone entry_document separate from native rendering or composition", pack.ID, resource.ID)
+				}
+			}
+		case "asset", "notice":
+		default:
+			return failure("incompatible_resource", "unsupported on-demand dependency %s", identity)
 		}
-		if resource.Kind != "skill" && resource.Kind != "asset" && resource.Kind != "notice" {
-			return failure("incompatible_resource", "skill %s:%s requires %s, which is not a supporting file or notice", pack.ID, skill.ID, identity)
-		}
-		roots = append(roots, resource.Source)
+		result = append(result, resource)
 		for _, dependency := range append(slices.Clone(resource.Requires), resource.Notices...) {
 			target, ok := resources[dependency]
 			if !ok {
-				return failure("incompatible_resource", "missing declared supporting resource %s", dependency)
+				return failure("incompatible_resource", "missing declared resource %s required by %s", dependency, identity)
 			}
 			if err := visit(target); err != nil {
 				return err
 			}
 		}
+		state[identity] = 2
 		return nil
 	}
-	if err := visit(skill); err != nil {
+	if err := visit(root); err != nil {
 		return nil, err
 	}
-	return roots, nil
+	return result, nil
+}
+
+// Compute expected rendered bytes before publishing any portion of the closure.
+func renderedFiles(source string, files []cataloglayout.FileRecord, resources []capabilitypack.Resource, targets map[string]string) (map[string][]byte, error) {
+	indexed := map[string]bool{}
+	for _, file := range files {
+		indexed[file.Path] = true
+	}
+	rendered := map[string][]byte{}
+	for _, resource := range resources {
+		if resource.Kind != "skill" {
+			continue
+		}
+		entry := filepath.ToSlash(filepath.Join(resource.Source, resource.OnDemand.AccessEntry()))
+		if !indexed[entry] {
+			return nil, fmt.Errorf("skill %s entry_document %s is missing", resource.ID, entry)
+		}
+		for _, relative := range resource.OnDemand.ReferenceFiles {
+			path := filepath.ToSlash(filepath.Join(resource.Source, relative))
+			if !indexed[path] {
+				return nil, fmt.Errorf("skill %s reference file %s is missing", resource.ID, path)
+			}
+			data, err := os.ReadFile(filepath.Join(source, path))
+			if err != nil {
+				return nil, err
+			}
+			body, err := capabilitypack.RenderAccessReferences(resource, relative, data, targets)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			rendered[path] = body
+		}
+	}
+	return rendered, nil
 }
 
 func declaredFiles(snapshotRoot, snapshotID, packID string, roots []string) ([]cataloglayout.FileRecord, error) {
@@ -233,14 +295,21 @@ func declaredFiles(snapshotRoot, snapshotID, packID string, roots []string) ([]c
 	return nil, fmt.Errorf("Pack %s has no retained file index", packID)
 }
 
-func prepareFiles(ctx context.Context, source, destination string, files []cataloglayout.FileRecord) error {
+func prepareFiles(ctx context.Context, source, destination string, files []cataloglayout.FileRecord, rendered map[string][]byte) error {
+	expected := slices.Clone(files)
+	for i, file := range expected {
+		if data, ok := rendered[file.Path]; ok {
+			sum := sha256.Sum256(data)
+			expected[i].SHA256 = hex.EncodeToString(sum[:])
+		}
+	}
 	parent := filepath.Dir(destination)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
 	return catalogtransaction.WithExclusive(ctx, parent, func() error {
 		if _, err := os.Lstat(destination); err == nil {
-			return verifyFiles(destination, files)
+			return verifyFiles(destination, expected)
 		} else if !os.IsNotExist(err) {
 			return err
 		}
@@ -268,6 +337,9 @@ func prepareFiles(ctx context.Context, source, destination string, files []catal
 			if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != file.SHA256 {
 				return fmt.Errorf("source %s differs from retained index", file.Path)
 			}
+			if body, ok := rendered[file.Path]; ok {
+				data = body
+			}
 			path := filepath.Join(stage, file.Path)
 			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 				return err
@@ -283,7 +355,7 @@ func prepareFiles(ctx context.Context, source, destination string, files []catal
 				return err
 			}
 		}
-		if err := verifyFiles(stage, files); err != nil {
+		if err := verifyFiles(stage, expected); err != nil {
 			return err
 		}
 		return os.Rename(stage, destination)
