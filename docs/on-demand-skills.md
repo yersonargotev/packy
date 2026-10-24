@@ -53,8 +53,10 @@ A schema v3 skill resource may declare:
 ```
 
 Prerequisites are a sorted, unique, non-null array of nonempty declarations;
-`[]` means no known prerequisites. A surface variant can replace the complete
-object. The Catalog maintainer reviews compatibility, relative paths, procedure
+`[]` means no additional skill-specific prerequisites. A surface variant can replace the complete
+object. Results combine these declarations with the Pack's known
+`external_requirements`, sorted and deduplicated. Only selectable Packs are
+available. The Catalog maintainer reviews compatibility, relative paths, procedure
 and approvals, required assets, legal closure, and known requirements. Packy
 never infers dependencies or rewrites arbitrary Markdown. Supporting file
 resources use existing `requires` asset edges and `notices` references. Their

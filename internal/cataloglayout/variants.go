@@ -123,3 +123,26 @@ func (resource Resource) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(value)
 }
+
+func (resource *Resource) UnmarshalJSON(data []byte) error {
+	type wire Resource
+	var value struct {
+		wire
+		OnDemand json.RawMessage `json:"on_demand"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return err
+	}
+	contract, err := capabilitypack.DecodeOnDemandSkill(value.OnDemand)
+	if err != nil {
+		return err
+	}
+	*resource = Resource(value.wire)
+	resource.OnDemand = contract
+	return nil
+}

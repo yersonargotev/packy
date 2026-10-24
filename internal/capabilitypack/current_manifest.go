@@ -41,7 +41,7 @@ type managedOriginWire struct {
 }
 
 type currentResourceWire struct {
-	OnDemand          *OnDemandSkill     `json:"on_demand,omitempty"`
+	OnDemand          json.RawMessage    `json:"on_demand,omitempty"`
 	Variants          ResourceVariants   `json:"variants,omitempty"`
 	Origin            *ResourceOrigin    `json:"origin,omitempty"`
 	Kind              string             `json:"kind"`
@@ -132,8 +132,12 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 		if err != nil {
 			return Pack{}, fmt.Errorf("Pack %q resource %d: %w", raw.ID, i, err)
 		}
+		onDemand, err := DecodeOnDemandSkill(wire.OnDemand)
+		if err != nil {
+			return Pack{}, fmt.Errorf("Pack %q resource %d: %w", raw.ID, i, err)
+		}
 		pack.Resources = append(pack.Resources, Resource{
-			OnDemand: wire.OnDemand,
+			OnDemand: onDemand,
 			Kind:     wire.Kind, ID: wire.ID, Source: wire.Source, Command: wire.Command,
 			Variants: wire.Variants, Origin: wire.Origin,
 			Args: wire.Args, Description: wire.Description, Mode: wire.Mode,

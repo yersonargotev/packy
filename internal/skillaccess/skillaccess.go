@@ -76,6 +76,9 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	if err != nil {
 		return Result{}, failure("unknown_skill", "cannot obtain %s from snapshot %s; run `packy show %s`: %v", qualified, snapshotID, parts[0], err)
 	}
+	if !pack.Selectable {
+		return Result{}, failure("unknown_skill", "Pack %s is not selectable in this Catalog Snapshot; run `packy list` for available Packs", pack.ID)
+	}
 	pack = capabilitypack.ResolvePackForSurface(pack, surface)
 	var skill capabilitypack.Resource
 	for _, resource := range pack.Resources {
@@ -109,7 +112,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	if err != nil {
 		return Result{}, err
 	}
-	files, err := declaredFiles(snapshotRoot, pack.ID, roots)
+	files, err := declaredFiles(snapshotRoot, snapshotID, pack.ID, roots)
 	if err != nil {
 		return Result{}, failure("snapshot_unavailable", "read retained snapshot %s: %v", snapshotID, err)
 	}
@@ -121,8 +124,11 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 		return Result{}, failure("preparation_failed", "prepare %s: %v; preserve catalog sources and use separate writable scratch/output paths", qualified, err)
 	}
 	root := filepath.Join(destination, skill.Source)
+	prerequisites := append(slices.Clone(skill.OnDemand.Prerequisites), pack.Requires.Tools...)
+	slices.Sort(prerequisites)
+	prerequisites = slices.Compact(prerequisites)
 	return Result{QualifiedSkill: qualified, PackVersion: pack.Version, Surface: surface, SnapshotID: snapshotID,
-		EntryDocument: filepath.Join(root, "SKILL.md"), ResourceRoot: root, Prerequisites: slices.Clone(skill.OnDemand.Prerequisites)}, nil
+		EntryDocument: filepath.Join(root, "SKILL.md"), ResourceRoot: root, Prerequisites: prerequisites}, nil
 }
 
 // Refuse linked descendants so preparing data can never write through a link
@@ -196,7 +202,7 @@ func supportingRoots(pack capabilitypack.Pack, skill capabilitypack.Resource) ([
 	return roots, nil
 }
 
-func declaredFiles(snapshotRoot, packID string, roots []string) ([]cataloglayout.FileRecord, error) {
+func declaredFiles(snapshotRoot, snapshotID, packID string, roots []string) ([]cataloglayout.FileRecord, error) {
 	data, err := os.ReadFile(filepath.Join(snapshotRoot, "catalog-index.json"))
 	if err != nil {
 		return nil, err
@@ -204,6 +210,9 @@ func declaredFiles(snapshotRoot, packID string, roots []string) ([]cataloglayout
 	var index cataloglayout.CatalogSnapshotIndex
 	if err := json.Unmarshal(data, &index); err != nil {
 		return nil, err
+	}
+	if index.SchemaVersion != 3 || index.Source.Commit != snapshotID {
+		return nil, fmt.Errorf("retained index does not match Catalog Snapshot %s", snapshotID)
 	}
 	for _, pack := range index.Packs {
 		if pack.ID != packID {

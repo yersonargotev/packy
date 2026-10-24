@@ -59,7 +59,8 @@ behavior.
 
 Readable output and the versioned `skill-access` report describe availability,
 qualified identity, Pack version, surface, snapshot, entry document, resource
-root, and declared prerequisites. Returned absolute paths are intentional access
+root, and declared prerequisites, including known Pack external requirements.
+Only selectable Packs are available. Returned absolute paths are intentional access
 references, not redacted diagnostic paths. Failures are identifiable and never
 contain a successful partial result.
 

@@ -1,6 +1,8 @@
 package capabilitypack
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -11,6 +13,22 @@ import (
 type OnDemandSkill struct {
 	Protocol      string   `json:"protocol"`
 	Prerequisites []string `json:"prerequisites"`
+}
+
+// DecodeOnDemandSkill preserves the distinction between an omitted contract
+// and an explicitly invalid null declaration at both manifest boundaries.
+func DecodeOnDemandSkill(data json.RawMessage) (*OnDemandSkill, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, fmt.Errorf("on_demand must be an object, not null")
+	}
+	var value OnDemandSkill
+	if err := strictDecode(data, &value); err != nil {
+		return nil, fmt.Errorf("decode on_demand: %w", err)
+	}
+	return &value, nil
 }
 
 func cloneOnDemand(value *OnDemandSkill) *OnDemandSkill {

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
@@ -105,7 +106,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			if err := json.Unmarshal(out, &result); err != nil {
 				t.Fatal(err)
 			}
-			if result.SchemaVersion != 1 || result.Report != "skill-access" || result.Result != "prepared" || result.QualifiedSkill != "reviewed:guide" || result.PackVersion != "1.0.0" || result.Surface != surface || result.SnapshotID != strings.Repeat("a", 40) || strings.Join(result.Prerequisites, ",") != "missing-fixture-runtime" {
+			if result.SchemaVersion != 1 || result.Report != "skill-access" || result.Result != "prepared" || result.QualifiedSkill != "reviewed:guide" || result.PackVersion != "1.0.0" || result.Surface != surface || result.SnapshotID != strings.Repeat("a", 40) || strings.Join(result.Prerequisites, ",") != "missing-fixture-runtime,missing-pack-runtime" {
 				t.Fatalf("incomplete retrieval identity: %s", out)
 			}
 			body, err := os.ReadFile(result.EntryDocument)
@@ -237,6 +238,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			name, code string
 			edit       func(map[string]any)
 		}{
+			{"non-selectable", "unknown_skill", func(manifest map[string]any) { manifest["selectable"] = false }},
 			{"unreviewed", "incompatible_resource", func(manifest map[string]any) { delete(manifest["resources"].([]any)[1].(map[string]any), "on_demand") }},
 			{"excluded", "unsupported_surface", func(manifest map[string]any) {
 				skill := manifest["resources"].([]any)[1].(map[string]any)
@@ -288,6 +290,124 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				assertReport(t, out)
 				if _, err := os.Stat(filepath.Join(workspace, "home/.local/share/packy/skill-access")); !os.IsNotExist(err) {
 					t.Fatal("failed access left prepared partial resources")
+				}
+			})
+		}
+	})
+	t.Run("receipt backed modified installations remain unchanged", func(t *testing.T) {
+		environment := testprocess.Env(t, "PATH="+t.TempDir())
+		env := adoptionEnvironmentMap(environment)
+		project := t.TempDir()
+		writeTestGitWorktree(t, project)
+		id := strings.Repeat("e", 40)
+		assets := skillAccessAssets(t, id, "first", func(m map[string]any) {
+			m["external_requirements"] = []string{}
+			m["resources"].([]any)[1].(map[string]any)["requires"] = []string{}
+		})
+		acquireSkillAccessCatalog(t, env, project, assets, id, "init")
+		opts := Options{Env: env, Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{}, Terminal: &fakeTerminal{interactive: true, approve: true}}
+		for _, verb := range []string{"activate", "install"} {
+			if out, err := executeCommand(t, NewRootCommand(opts), verb, "reviewed", "--surface", "codex", "--resource", "skill:guide"); err != nil {
+				t.Fatalf("seed receipted installation: %v %s", err, out)
+			}
+		}
+		installed := filepath.Join(env["HOME"], ".agents/skills/guide")
+		info, err := os.Lstat(installed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			t.Fatal("expected native Codex source link")
+		}
+		if err := os.Remove(installed); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(installed, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(installed, "SKILL.md"), []byte("Local customized installed guide\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		protected := map[string]string{}
+		for _, path := range []string{project, filepath.Join(env["HOME"], ".packy"), filepath.Join(env["HOME"], ".agents"), filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog")} {
+			protected[path] = snapshotTree(t, path)
+		}
+		out, stderr, err := runSkillAccessCLI(t, binary, project, environment, "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		if err != nil {
+			t.Fatalf("get with modified installed copy: %v %s %s", err, out, stderr)
+		}
+		assertReport(t, out)
+		var result struct {
+			EntryDocument string `json:"entry_document"`
+		}
+		if err := json.Unmarshal(out, &result); err != nil {
+			t.Fatal(err)
+		}
+		if body, err := os.ReadFile(result.EntryDocument); err != nil || !bytes.Contains(body, []byte("codex first")) {
+			t.Fatalf("retrieval did not use reviewed source: %s %v", body, err)
+		}
+		for path, before := range protected {
+			if snapshotTree(t, path) != before {
+				t.Fatalf("retrieval changed installed/project state at %s", path)
+			}
+		}
+	})
+	t.Run("reviewed compatibility schema matches executable validation", func(t *testing.T) {
+		compiler := jsonschema.NewCompiler()
+		schemaData, err := os.ReadFile(filepath.Join(repository, "schemas/pack/v3/pack.schema.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaData))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := compiler.AddResource("pack.schema.json", document); err != nil {
+			t.Fatal(err)
+		}
+		schema, err := compiler.Compile("pack.schema.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, test := range []struct {
+			name  string
+			valid bool
+			edit  func(map[string]any)
+		}{
+			{"reviewed", true, nil},
+			{"null", false, func(m map[string]any) { m["resources"].([]any)[1].(map[string]any)["on_demand"] = nil }},
+			{"unknown protocol", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["protocol"] = "native"
+			}},
+			{"missing prerequisites", false, func(m map[string]any) {
+				delete(m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any), "prerequisites")
+			}},
+			{"null prerequisites", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["prerequisites"] = nil
+			}},
+			{"unknown field", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["run"] = true
+			}},
+			{"null variant", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["variants"].([]any)[0].(map[string]any)["on_demand"] = nil
+			}},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				project := skillAccessProject(t, "first", test.edit)
+				data, err := os.ReadFile(filepath.Join(project, "packs/reviewed/pack.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if schemaErr := schema.Validate(instance); (schemaErr == nil) != test.valid {
+					t.Fatalf("schema validation = %v, want valid=%v", schemaErr, test.valid)
+				}
+				out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "validate", "--project", project, "--json")
+				if (err == nil) != test.valid {
+					t.Fatalf("executable validation=%v, want valid=%v: %s %s", err, test.valid, out, stderr)
 				}
 			})
 		}
@@ -346,7 +466,7 @@ func runSkillAccessCLI(t *testing.T, binary, directory string, environment []str
 
 // The fixture is authored data, validated and packaged by the existing catalog
 // boundary. Retrieval itself is always exercised through the public executable.
-func skillAccessAssets(t *testing.T, commit, revision string, edit func(map[string]any)) string {
+func skillAccessProject(t *testing.T, revision string, edit func(map[string]any)) string {
 	t.Helper()
 	project := t.TempDir()
 	fixture := testsupport.SkillVariants("reviewed", testsupport.SurfaceClaude, testsupport.SurfaceCodex)
@@ -364,9 +484,12 @@ func skillAccessAssets(t *testing.T, commit, revision string, edit func(map[stri
 		t.Fatal(err)
 	}
 	manifest["origins"] = []any{}
+	manifest["external_requirements"] = []string{"missing-pack-runtime"}
 	for _, value := range manifest["resources"].([]any) {
 		resource := value.(map[string]any)
 		delete(resource, "origin")
+		delete(resource, "tools")
+		delete(resource, "permissions")
 		if resource["kind"] != "skill" {
 			continue
 		}
@@ -375,23 +498,15 @@ func skillAccessAssets(t *testing.T, commit, revision string, edit func(map[stri
 			delete(v.(map[string]any), "origin")
 		}
 	}
+	resources := manifest["resources"].([]any)
+	skill := resources[1].(map[string]any)
+	skill["requires"] = []string{"asset:guide-data"}
+	resources = append(resources, map[string]any{"kind": "asset", "id": "guide-data", "source": "assets/data.bin", "description": "Supporting binary data", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}})
+	manifest["resources"] = resources
 	if edit != nil {
 		edit(manifest)
 	}
-	resources := manifest["resources"].([]any)
-	skill := resources[1].(map[string]any)
-	requires := []string{"asset:guide-data"}
-	switch values := skill["requires"].(type) {
-	case []any:
-		for _, value := range values {
-			requires = append(requires, value.(string))
-		}
-	case []string:
-		requires = append(requires, values...)
-	}
-	sort.Strings(requires)
-	skill["requires"] = requires
-	resources = append(resources, map[string]any{"kind": "asset", "id": "guide-data", "source": "assets/data.bin", "description": "Supporting binary data", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}})
+	resources = manifest["resources"].([]any)
 	sort.Slice(resources, func(i, j int) bool {
 		a, b := resources[i].(map[string]any), resources[j].(map[string]any)
 		return a["kind"].(string)+":"+a["id"].(string) < b["kind"].(string)+":"+b["id"].(string)
@@ -453,6 +568,12 @@ func skillAccessAssets(t *testing.T, commit, revision string, edit func(map[stri
 			t.Fatal(err)
 		}
 	}
+	return project
+}
+
+func skillAccessAssets(t *testing.T, commit, revision string, edit func(map[string]any)) string {
+	t.Helper()
+	project := skillAccessProject(t, revision, edit)
 	validation, err := cataloglayout.ValidateCatalogProject(context.Background(), project, "", nil)
 	if err != nil {
 		t.Fatal(err)
