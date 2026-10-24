@@ -32,30 +32,7 @@
         "additionalProperties": false,
         "properties": {
           "resource": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "enum": [
-                  "skill",
-                  "asset",
-                  "notice",
-                  "instruction",
-                  "mcp_server",
-                  "agent",
-                  "command",
-                  "lifecycle"
-                ]
-              },
-              "id": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "kind",
-              "id"
-            ]
+            "$ref": "#/$defs/resourceIdentity"
           },
           "description": {
             "type": "string",
@@ -67,60 +44,14 @@
           "dependencies": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "enum": [
-                    "skill",
-                    "asset",
-                    "notice",
-                    "instruction",
-                    "mcp_server",
-                    "agent",
-                    "command",
-                    "lifecycle"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "kind",
-                "id"
-              ]
+              "$ref": "#/$defs/resourceIdentity"
             },
             "uniqueItems": true
           },
           "notices": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "enum": [
-                    "skill",
-                    "asset",
-                    "notice",
-                    "instruction",
-                    "mcp_server",
-                    "agent",
-                    "command",
-                    "lifecycle"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "kind",
-                "id"
-              ]
+              "$ref": "#/$defs/resourceIdentity"
             },
             "uniqueItems": true
           },
@@ -141,30 +72,7 @@
             "additionalProperties": false,
             "properties": {
               "resource": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "enum": [
-                      "skill",
-                      "asset",
-                      "notice",
-                      "instruction",
-                      "mcp_server",
-                      "agent",
-                      "command",
-                      "lifecycle"
-                    ]
-                  },
-                  "id": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "kind",
-                  "id"
-                ]
+                "$ref": "#/$defs/resourceIdentity"
               },
               "surface": {
                 "enum": [
@@ -211,30 +119,7 @@
               "notices": {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "kind": {
-                      "enum": [
-                        "skill",
-                        "asset",
-                        "notice",
-                        "instruction",
-                        "mcp_server",
-                        "agent",
-                        "command",
-                        "lifecycle"
-                      ]
-                    },
-                    "id": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "id"
-                  ]
+                  "$ref": "#/$defs/resourceIdentity"
                 }
               }
             },
@@ -278,7 +163,7 @@
                   "mode": {
                     "enum": [
                       "optional",
-                      "required"
+                      "mandatory"
                     ]
                   },
                   "code": {
@@ -305,58 +190,7 @@
                 "type": "null"
               },
               {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "protocol": {
-                    "const": "skill-tree-v1"
-                  },
-                  "prerequisites": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "uniqueItems": true
-                  },
-                  "entry_document": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "reference_files": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "uniqueItems": true
-                  },
-                  "dependencies": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "type": {
-                          "const": "skill"
-                        },
-                        "target": {
-                          "type": "string",
-                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "target"
-                      ]
-                    },
-                    "uniqueItems": true
-                  }
-                },
-                "required": [
-                  "protocol",
-                  "prerequisites"
-                ]
+                "$ref": "#/$defs/onDemand"
               }
             ]
           },
@@ -405,58 +239,7 @@
             "then": {
               "properties": {
                 "on_demand": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "protocol": {
-                      "const": "skill-tree-v1"
-                    },
-                    "prerequisites": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "uniqueItems": true
-                    },
-                    "entry_document": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "reference_files": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "uniqueItems": true
-                    },
-                    "dependencies": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "type": {
-                            "const": "skill"
-                          },
-                          "target": {
-                            "type": "string",
-                            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "target"
-                        ]
-                      },
-                      "uniqueItems": true
-                    }
-                  },
-                  "required": [
-                    "protocol",
-                    "prerequisites"
-                  ]
+                  "$ref": "#/$defs/onDemand"
                 },
                 "native_name": {
                   "type": "string",
@@ -499,5 +282,87 @@
     "skills",
     "prerequisites_verified",
     "limitation"
-  ]
+  ],
+  "$defs": {
+    "resourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "skill",
+            "asset",
+            "notice",
+            "instruction",
+            "mcp_server",
+            "agent",
+            "command",
+            "lifecycle"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ]
+    },
+    "onDemand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "skill-tree-v1"
+        },
+        "prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "entry_document": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "skill"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            "required": [
+              "type",
+              "target"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "protocol",
+        "prerequisites"
+      ]
+    }
+  }
 }
