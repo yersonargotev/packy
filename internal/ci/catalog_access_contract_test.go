@@ -109,7 +109,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 	writeAccessFile(t, filepath.Join(installed, "SKILL.md"), []byte("Modified installed procedure\n"), 0600)
 	writeAccessFile(t, filepath.Join(workspace, "project", native, "skills", alias, "SKILL.md"), []byte("Modified project procedure\n"), 0600)
 	writeAccessFile(t, filepath.Join(workspace, "project", "unrelated.txt"), []byte("Unrelated project bytes\n"), 0640)
-	protectedRoots := []string{project, assets, directory, filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "snapshots"), filepath.Join(workspace, "home")}
+	protectedRoots := []string{project, assets, directory, workspace}
 	protected := accessProtectedState(t, workspace, protectedRoots)
 	list := mustRun("list", "--json")
 	validateCatalogCLISchema(t, "pack-list", list)
@@ -172,10 +172,6 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 				if pack == "alpha" {
 					foreign = append(foreign, capabilitypack.OnDemandDependency{Type: "skill", Target: "beta:leaf"})
 				}
-			}
-			prerequisites := []string{"missing-content-runtime"}
-			if pack != "beta" {
-				prerequisites = append(prerequisites, "missing-pack-runtime")
 			}
 			notice := []capabilitypack.ResourceIdentity{{Kind: "notice", ID: "mit"}}
 			resource := capabilitypack.ResourceIdentity{Kind: "skill", ID: id}
@@ -256,6 +252,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 	if !bytes.Contains(transition, []byte(nextID)) || !reflect.DeepEqual(installedBefore, accessProtectedState(t, workspace, installedRoots)) {
 		t.Fatalf("transition altered native state: %s", transition)
 	}
+	afterTransition := accessProtectedState(t, workspace, []string{workspace})
 	nested := get("alpha:left", firstID)
 	verifyAccessProcedure(t, nested, host, firstID, "first", project, []string{"alpha:leaf", "beta:leaf"})
 	currentResult := get("alpha:root", "")
@@ -268,6 +265,9 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 		if got := catalogTreeState(t, []string{path})[path]; got != want {
 			t.Fatalf("returned resource changed after refresh: %s", path)
 		}
+	}
+	if !reflect.DeepEqual(afterTransition, accessProtectedState(t, workspace, []string{workspace})) {
+		t.Fatal("post-transition access changed ownership, selection, native state or sources")
 	}
 	// Prepared content is not a fallback for missing or invalid retained sources.
 	source := filepath.Join(workspace, "snapshots", firstID, "packs/beta/skills/leaf-"+host, "ACCESS.md")
