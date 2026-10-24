@@ -54,24 +54,26 @@ func testCandidateAccessWithoutGit(t *testing.T, executable, assets string) {
 			}
 			protected := []string{filepath.Join(enclosing, ".git"), filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "snapshots"), directory, foreign}
 			before := catalogTreeState(t, protected)
-			for _, operation := range [][]string{{"list", "--json"}, {"show", "alpha", "--surface", "codex", "--json"}, {"get", "skill", "alpha:root", "--surface", "codex", "--json"}} {
-				out, diagnostic, err := run(operation...)
-				if damage == "foreign projection" {
-					if err == nil {
-						t.Fatalf("unsafe access accepted: %s %s", out, diagnostic)
+			for _, host := range []string{"claude", "codex"} {
+				for _, operation := range [][]string{{"list", "--json"}, {"show", "alpha", "--surface", host, "--json"}, {"get", "skill", "alpha:root", "--surface", host, "--json"}} {
+					out, diagnostic, err := run(operation...)
+					if damage == "foreign projection" {
+						if err == nil {
+							t.Fatalf("unsafe access accepted: %s %s", out, diagnostic)
+						}
+					} else {
+						if err != nil {
+							t.Fatalf("access requires Git: %v %s %s", err, out, diagnostic)
+						}
+						schema := "pack-list"
+						if operation[0] == "show" {
+							schema = "skill-discovery"
+						}
+						if operation[0] == "get" {
+							schema = "skill-access"
+						}
+						validateCatalogCLISchema(t, schema, out)
 					}
-				} else {
-					if err != nil {
-						t.Fatalf("access requires Git: %v %s %s", err, out, diagnostic)
-					}
-					schema := "pack-list"
-					if operation[0] == "show" {
-						schema = "skill-discovery"
-					}
-					if operation[0] == "get" {
-						schema = "skill-access"
-					}
-					validateCatalogCLISchema(t, schema, out)
 				}
 			}
 			// Preparation is allowed only beneath the owned home data root.

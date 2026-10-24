@@ -365,7 +365,7 @@ retained-source drift is rejected without replacing prior usable state. Failed
 preparation/selection preserves installed state. Transition changes availability
 only; each subsequent lifecycle Apply requires its own normal consent.
 
-Available operations after the required `--` separator are `list`, `show`,
+Available operations after the required `--` separator are `list`, `show`, `get`,
 `install`, `verify`, `uninstall`, `update`, `activate`, `deactivate`, and
 `transition`. Project `install`, `verify`, `uninstall`, and `update --project`
 always target `workspace/project`. Global `activate`, `deactivate`, and `update`

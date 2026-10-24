@@ -18,6 +18,9 @@ func writeAccessCatalog(t *testing.T, revision, originCommit string) string {
 	project := t.TempDir()
 	for _, pack := range []string{"alpha", "beta", "zulu"} {
 		version := "2.0.0"
+		if revision == "next" {
+			version = "2.1.0"
+		}
 		if pack == "alpha" {
 			version = "1.0.0"
 			if revision == "next" {

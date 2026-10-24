@@ -3,6 +3,7 @@ package ci_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,7 +51,7 @@ func testCatalogOnDemandExecutable(t *testing.T, executable string) {
 	nextAssets, _ := buildAccessCatalog(t, executable, buildEnvironment, nextProject, nextID)
 	for _, host := range []string{"claude", "codex"} {
 		t.Run(host, func(t *testing.T) {
-			testAccessProcedure(t, executable, host, project, assets, nextAssets, archive, firstID, nextID)
+			testAccessProcedure(t, executable, host, project, nextProject, assets, nextAssets, archive, firstID, nextID)
 		})
 	}
 	t.Run("incompatible discovery candidates", func(t *testing.T) { testAccessIncompatibleDiscovery(t, executable, buildEnvironment, commit) })
@@ -59,7 +60,7 @@ func testCatalogOnDemandExecutable(t *testing.T, executable string) {
 	})
 }
 
-func testAccessProcedure(t *testing.T, executable, host, project, assets, nextAssets, archive, firstID, nextID string) {
+func testAccessProcedure(t *testing.T, executable, host, project, nextProject, assets, nextAssets, archive, firstID, nextID string) {
 	var requests atomic.Int32
 	offline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -108,8 +109,8 @@ func testAccessProcedure(t *testing.T, executable, host, project, assets, nextAs
 	writeAccessFile(t, filepath.Join(installed, "SKILL.md"), []byte("Modified installed procedure\n"), 0600)
 	writeAccessFile(t, filepath.Join(workspace, "project", native, "skills", alias, "SKILL.md"), []byte("Modified project procedure\n"), 0600)
 	writeAccessFile(t, filepath.Join(workspace, "project", "unrelated.txt"), []byte("Unrelated project bytes\n"), 0640)
-	protectedRoots := []string{project, assets, directory, filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "snapshots"), filepath.Join(workspace, "home", native), filepath.Join(workspace, "home", ".packy")}
-	protected := catalogTreeState(t, protectedRoots)
+	protectedRoots := []string{project, assets, directory, filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "snapshots"), filepath.Join(workspace, "home")}
+	protected := accessProtectedState(t, workspace, protectedRoots)
 	list := mustRun("list", "--json")
 	validateCatalogCLISchema(t, "pack-list", list)
 	var listed struct {
@@ -135,10 +136,9 @@ func testAccessProcedure(t *testing.T, executable, host, project, assets, nextAs
 		t.Fatalf("complete list: %s", list)
 	}
 	readableList := mustRun("list")
-	for _, pack := range []string{"alpha", "beta", "zulu"} {
-		if !bytes.Contains(readableList, []byte(pack)) {
-			t.Fatalf("readable list: %s", readableList)
-		}
+	wantReadableList := "PACK VERSION DESCRIPTION AVAILABLE ON alpha 1.0.0 Access contract alpha claude, codex beta 2.0.0 Access contract beta claude, codex zulu 2.0.0 Access contract zulu claude, codex"
+	if strings.Join(strings.Fields(string(readableList)), " ") != wantReadableList {
+		t.Fatalf("complete readable list: %s", readableList)
 	}
 	for _, pack := range []string{"alpha", "beta", "zulu"} {
 		out := mustRun("show", pack, "--surface", host, "--json")
@@ -196,10 +196,8 @@ func testAccessProcedure(t *testing.T, executable, host, project, assets, nextAs
 			t.Fatal("discovery dumped instructions")
 		}
 		readable := mustRun("show", pack, "--surface", host)
-		for _, want := range []string{pack + ":root", host + " root procedure", "missing-content-runtime", "not verified"} {
-			if !bytes.Contains(readable, []byte(want)) {
-				t.Fatalf("readable discovery omitted %s: %s", want, readable)
-			}
+		if string(readable) != expectedAccessDiscovery(pack, host, version) {
+			t.Fatalf("complete readable discovery: %s", readable)
 		}
 	}
 	get := func(qualified, snapshot string) skillaccess.Result {
@@ -231,14 +229,18 @@ func testAccessProcedure(t *testing.T, executable, host, project, assets, nextAs
 		t.Fatal("reuse changed result")
 	}
 	readable := mustRun("get", "skill", "alpha:root", "--surface", host)
-	for _, skill := range append([]skillaccess.Skill{first.Skill}, first.Dependencies...) {
-		for _, want := range []string{skill.QualifiedSkill, "Pack " + skill.PackVersion, host, firstID, skill.EntryDocument, skill.ResourceRoot, "missing-content-runtime"} {
-			if !bytes.Contains(readable, []byte(want)) {
-				t.Fatalf("readable access omitted %s: %s", want, readable)
-			}
+	wantReadable := fmt.Sprintf("Prepared skill alpha:root (Pack 1.0.0, surface %s)\nCatalog Snapshot: %s\nEntry document: %s\nResource root: %s\nKnown prerequisites (not verified): [missing-content-runtime missing-pack-runtime]\nResources only: no native registration or workflow execution. Check prerequisites and follow the skill's procedure and approvals; use separate target and writable scratch/output locations.\n", host, firstID, first.EntryDocument, first.ResourceRoot)
+	for _, dependency := range first.Dependencies {
+		prerequisites := "missing-content-runtime missing-pack-runtime"
+		if dependency.QualifiedSkill == "beta:leaf" {
+			prerequisites = "missing-content-runtime"
 		}
+		wantReadable += fmt.Sprintf("Dependency: %s (Pack %s, surface %s, snapshot %s)\n  Entry document: %s\n  Resource root: %s\n  Known prerequisites (not verified): [%s]\n", dependency.QualifiedSkill, dependency.PackVersion, host, firstID, dependency.EntryDocument, dependency.ResourceRoot, prerequisites)
 	}
-	if !reflect.DeepEqual(protected, catalogTreeState(t, protectedRoots)) {
+	if string(readable) != wantReadable {
+		t.Fatalf("complete readable access: %s", readable)
+	}
+	if !reflect.DeepEqual(protected, accessProtectedState(t, workspace, protectedRoots)) {
 		t.Fatal("discovery/retrieval changed project, installed state, sources, or catalog assets")
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "home", "access-executed")); !os.IsNotExist(err) {
@@ -246,17 +248,18 @@ func testAccessProcedure(t *testing.T, executable, host, project, assets, nextAs
 	}
 	// Refresh is explicit and cannot rewrite native state or returned resources.
 	retained := catalogTreeState(t, []string{filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(first.ResourceRoot))))})
-	installedRoots := []string{filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "home", native), filepath.Join(workspace, "home", ".packy")}
-	installedBefore := catalogTreeState(t, installedRoots)
+	installedRoots := []string{filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "home")}
+	installedBefore := accessProtectedState(t, workspace, installedRoots)
 	current = nextAssets
 	transition := mustRun("transition", "--expect-archive-sha256", archive, "--json")
 	validateCatalogCLISchema(t, "catalog-candidate-transition", transition)
-	if !bytes.Contains(transition, []byte(nextID)) || !reflect.DeepEqual(installedBefore, catalogTreeState(t, installedRoots)) {
+	if !bytes.Contains(transition, []byte(nextID)) || !reflect.DeepEqual(installedBefore, accessProtectedState(t, workspace, installedRoots)) {
 		t.Fatalf("transition altered native state: %s", transition)
 	}
 	nested := get("alpha:left", firstID)
 	verifyAccessProcedure(t, nested, host, firstID, "first", project, []string{"alpha:leaf", "beta:leaf"})
 	currentResult := get("alpha:root", "")
+	verifyAccessProcedure(t, currentResult, host, nextID, "next", nextProject, []string{"alpha:leaf", "alpha:left", "alpha:right", "beta:leaf"})
 	if currentResult.SnapshotID != nextID {
 		t.Fatal("new independent request ignored selection")
 	}
@@ -323,8 +326,14 @@ func verifyAccessProcedure(t *testing.T, result skillaccess.Result, host, snapsh
 			prerequisites = append(prerequisites, "missing-pack-runtime")
 		}
 		version := "2.0.0"
+		if revision == "next" {
+			version = "2.1.0"
+		}
 		if pack == "alpha" {
 			version = "1.0.0"
+			if revision == "next" {
+				version = "1.1.0"
+			}
 		}
 		if skill.PackVersion != version || string(skill.Surface) != host || skill.SnapshotID != snapshot || !slices.Equal(skill.Prerequisites, prerequisites) || !filepath.IsAbs(skill.ResourceRoot) || skill.EntryDocument != filepath.Join(skill.ResourceRoot, "ACCESS.md") {
 			t.Fatalf("identity: %+v", skill)
@@ -419,4 +428,36 @@ func assertAccessFailure(t *testing.T, out, diagnostic []byte, err error, code, 
 	if err == nil || report.Result != "failed" || report.Error.Code != code || !strings.Contains(report.Error.Message, message) {
 		t.Fatalf("wanted %s/%s: %v %s %s", code, message, err, out, diagnostic)
 	}
+}
+
+// Only verified prepared resources and the directories needed to contain them
+// may be added by access. All other HOME paths, including unknown tool or host
+// state, remain part of the before/after observation.
+func accessProtectedState(t *testing.T, workspace string, roots []string) map[string]string {
+	t.Helper()
+	state := catalogTreeState(t, roots)
+	data := filepath.Join(workspace, "home", ".local", "share", "packy")
+	prepared := filepath.Join(data, "skill-access")
+	for path := range state {
+		if path == prepared || strings.HasPrefix(path, prepared+string(filepath.Separator)) || path == data || path == filepath.Dir(data) || path == filepath.Dir(filepath.Dir(data)) {
+			delete(state, path)
+		}
+	}
+	return state
+}
+
+func expectedAccessDiscovery(pack, host, version string) string {
+	prerequisites := "missing-content-runtime"
+	if pack != "beta" {
+		prerequisites += "; missing-pack-runtime"
+	}
+	text := fmt.Sprintf("%s %s — skill discovery on %s\nPrerequisites are known declarations, not verified; unknown requirements may exist. Compatibility describes resource access, not native registration, runtime readiness, or workflow success.\n", pack, version, host)
+	// Literal authored relationships keep this expectation independent of graph resolution.
+	for _, row := range []struct{ id, dependencies string }{{"leaf", "none"}, {"left", "asset:data -> skill:leaf"}, {"right", "asset:data -> skill:leaf"}, {"root", "asset:data -> skill:left -> skill:right"}} {
+		text += fmt.Sprintf("Skill: %s:%s (Pack %s) — %s %s procedure\nskill:%s on %s: surface variant; source=skills/%s-%s; origin=upstream:skill (adapted)\nNative name: %s; supported surfaces: claude, codex\nOn-demand compatible: yes; reason: \nNative dependencies (Pack %s): %s; notices: notice:mit\nKnown prerequisites (not verified): %s\nReviewed on-demand protocol: skill-tree-v1; entry document: ACCESS.md\n", pack, row.id, version, host, row.id, row.id, host, row.id, host, row.id, pack, row.dependencies, prerequisites)
+		if pack == "alpha" && (row.id == "left" || row.id == "right") {
+			text += "On-demand dependency: skill beta:leaf\n"
+		}
+	}
+	return text
 }
