@@ -116,7 +116,11 @@ access tokens still identify the author's own Pack. Either spelling requires
 self, a direct same-Pack native skill edge, or a direct typed on-demand edge.
 Native-name tokens keep their same-Pack meaning. Complete-catalog validation,
 construction, and retained consumption reject invalid graphs and references,
-including declarations in unrelated Packs, without executing content.
+including declarations in unrelated Packs, without executing content. A common
+on-demand declaration requires a Codex or Claude binding; explicit OpenCode
+on-demand variant declarations are unsupported. Common declarations can coexist
+with native OpenCode bindings without enabling OpenCode retrieval or requiring
+foreign access targets to support native OpenCode installation.
 
 Preparation protocol `v2` publishes one atomic procedure tree with separate
 `packs/<pack>/` subtrees. Relative links cross these explicit ownership roots;

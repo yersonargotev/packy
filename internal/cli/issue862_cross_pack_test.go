@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/skillaccess"
@@ -110,6 +111,29 @@ func TestIssue862CrossPackExecutable(t *testing.T) {
 		binary = override
 	}
 	project := crossPackAccessProject(t, "first")
+	compiler := jsonschema.NewCompiler()
+	schemaPath, err := filepath.Abs(filepath.Join("..", "..", "schemas/pack/v3/pack.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := compiler.Compile(schemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range []string{"reviewed", "other", "third"} {
+		data, err := os.ReadFile(filepath.Join(project, "packs", owner, "pack.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := schema.Validate(manifest); err != nil {
+			t.Fatalf("cross-Pack schema: %v", err)
+		}
+	}
+
 	firstID, nextID := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	assets := dependencyAccessAssets(t, project, firstID)
 	repository, _ := filepath.Abs(filepath.Join("..", ".."))
@@ -375,6 +399,26 @@ func TestIssue862InvalidCrossPackCatalogExecutable(t *testing.T) {
 			}
 		})
 	}
+	t.Run("invalid OpenCode-only declaration", func(t *testing.T) {
+		project := crossPackAccessProject(t, "unsupported")
+		editCrossPackManifest(t, project, "third", func(m map[string]any) {
+			guide := accessResource(m, "guide")
+			guide["bindings"] = slices.DeleteFunc(guide["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] != "opencode" })
+			guide["variants"] = []any{}
+			guide["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
+			guide["on_demand"].(map[string]any)["dependencies"] = []any{map[string]any{"type": "skill", "target": "missing:guide"}}
+		})
+		for _, host := range []string{"codex", "claude"} {
+			if err := os.RemoveAll(filepath.Join(project, "packs/third/skills", host)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "validate", "--project", project, "--json")
+		if err == nil || !strings.Contains(string(out)+stderr, "Codex or Claude") {
+			t.Fatalf("invalid unrequested declaration: %v %s %s", err, out, stderr)
+		}
+	})
+
 	for _, token := range []string{"{{packy.access:other::grilling}}", "{{packy.access:Other:grilling}}", "{{packy.access:other:grilling"} {
 		t.Run(token, func(t *testing.T) {
 			project := crossPackAccessProject(t, "malformed")

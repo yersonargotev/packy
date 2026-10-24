@@ -100,7 +100,11 @@ relative to those documents, including when the target has a host variant.
 
 Malformed or undeclared references, missing listed files, and missing entry
 documents fail during complete-catalog validation, construction, and consumption, including
-in unrelated Packs. Omitted optional fields keep dependency-free trees
+in unrelated Packs. A common `on_demand` declaration requires a Codex or Claude
+binding. Explicit OpenCode `on_demand` variant declarations are unsupported;
+ordinary native OpenCode bindings can coexist with a common declaration without
+adding OpenCode access or cross-Pack installation requirements.
+Omitted optional fields keep dependency-free trees
 usable. An explicit null is invalid. Other bytes and modes remain unchanged,
 including scripts, host invocations, native `{{packy.skill:...}}` tokens, and
 unlisted documents. Prepared reuse verifies rendered bytes as well as untouched

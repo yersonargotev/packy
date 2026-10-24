@@ -107,6 +107,16 @@ func resolveOnDemand(packs []Pack, qualified string, surface Surface, selectable
 // references as inert data, including declarations in unselected Packs.
 func ValidateOnDemandCatalog(packs []Pack) error {
 	for _, pack := range packs {
+		for _, resource := range pack.Resources {
+			if resource.OnDemand != nil && bindingForSurface(resource, SurfaceCodex) == nil && bindingForSurface(resource, SurfaceClaude) == nil {
+				return fmt.Errorf("on_demand skill %s:%s requires a Codex or Claude binding; OpenCode access is unsupported", pack.ID, resource.ID)
+			}
+			for _, variant := range resource.Variants {
+				if variant.OnDemand != nil && variant.Surface != SurfaceCodex && variant.Surface != SurfaceClaude {
+					return fmt.Errorf("on_demand skill %s:%s variant %s is unsupported; declare on-demand compatibility for Codex or Claude", pack.ID, resource.ID, variant.Surface)
+				}
+			}
+		}
 		for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
 			effective := ResolvePackForSurface(pack, surface)
 			for _, resource := range effective.Resources {

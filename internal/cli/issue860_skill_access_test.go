@@ -385,6 +385,26 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			edit  func(map[string]any)
 		}{
 			{"reviewed", true, nil},
+			{"empty access dependencies", true, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["dependencies"] = []any{}
+			}},
+			{"unknown access dependency", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["dependencies"] = []any{map[string]any{"type": "workflow", "target": "reviewed:guide"}}
+			}},
+			{"unqualified access dependency", false, func(m map[string]any) {
+				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["dependencies"] = []any{map[string]any{"type": "skill", "target": "guide"}}
+			}},
+			{"OpenCode access variant", false, func(m map[string]any) {
+				r := m["resources"].([]any)[1].(map[string]any)
+				r["variants"] = append(r["variants"].([]any), map[string]any{"surface": "opencode", "on_demand": map[string]any{"protocol": "skill-tree-v1", "prerequisites": []string{}}})
+			}},
+			{"OpenCode-only access declaration", false, func(m map[string]any) {
+				r := m["resources"].([]any)[1].(map[string]any)
+				r["bindings"] = []any{r["bindings"].([]any)[2]}
+				r["variants"] = []any{}
+				r["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
+			}},
+
 			{"null", false, func(m map[string]any) { m["resources"].([]any)[1].(map[string]any)["on_demand"] = nil }},
 			{"unknown protocol", false, func(m map[string]any) {
 				m["resources"].([]any)[1].(map[string]any)["on_demand"].(map[string]any)["protocol"] = "native"
