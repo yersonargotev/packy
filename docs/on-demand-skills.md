@@ -41,6 +41,53 @@ refresh. No automatic expiration or eviction applies. Manual deletion can
 invalidate retained resources. Modified or incomplete prepared trees fail on
 reuse rather than being silently overwritten.
 
+## Discover current candidates
+
+```sh
+packy list --json
+packy show example --surface codex --json
+packy show example --surface claude
+```
+
+Enumerate the current Packs with `list`, then inspect each relevant Pack with
+`show --surface`. This local/offline protocol works outside Git after explicit
+acquisition. It does not refresh, prepare resource trees, inspect installed
+copies, execute content, or change project/installation state. Omitting
+`--surface` keeps the existing Pack lifecycle inspection contract.
+
+Host-specific inspection emits `schema_version: 1`, `report: "skill-discovery"`;
+see [the discovery schema](../schemas/cli/v1/skill-discovery.schema.json).
+Every logical skill remains visible, including incompatible candidates. Each
+entry identifies its owning `pack_id`, `pack_version`, `qualified_skill`, native
+name, supported native surfaces, effective description and `definition`
+(common or surface variant with Pack-relative source/provenance), direct native
+`dependencies` and `notices`, reviewed `on_demand` declaration, compatibility,
+reason, and combined known `prerequisites`. Native relationship identities belong
+to that entry's Pack; `on_demand.dependencies` are typed qualified access edges,
+not native installation requirements. Relationships are direct declarations;
+retrieval resolves their transitive closure. Descriptions and relationships use
+the requested host's Effective Resource. No instruction bodies or assets are
+included in discovery output.
+
+`prerequisites_verified` is always false. Empty declarations mean none are
+reported, not that unknown requirements were checked and found absent.
+Compatibility establishes reviewed resource access only. It does not establish
+runtime readiness or successful workflow execution. OpenCode native support
+never enables on-demand access; choose `codex` or `claude` for discovery.
+
+Keep qualified identities when matching a request. If several Packs share a
+native name, preserve all candidates and ask the user which workflow they want;
+a unique match can be selected directly. Installed state, activation, aliases,
+and local customizations do not rank or replace current catalog candidates.
+The consuming agent owns this choice; deterministic CLI tests validate candidate
+metadata, not natural-language selection.
+
+Discovery follows existing `list`/`show` error conventions: failure exits
+nonzero with a readable diagnostic on stderr and no successful JSON document.
+An unavailable catalog identifies `packy init` or `packy catalog refresh`;
+unknown Packs identify `packy list`, and unsupported hosts identify supported
+`--surface` values. No acquisition occurs implicitly.
+
 ## Reviewed catalog contract
 
 A schema v3 skill resource may declare:

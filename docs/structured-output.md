@@ -13,6 +13,7 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy catalog publish --json` | `schemas/cli/v1/catalog-publication.schema.json` |
 | `packy version --json` | `schemas/cli/v1/packy-version.schema.json` |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
+| `packy show PACK --surface HOST --json` | `schemas/cli/v1/skill-discovery.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `schemas/cli/v1/skill-access.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
@@ -35,6 +36,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 | `packy version --json` | `packy-version` |
 | `packy audit --json` | `packy-audit` |
 | `packy list --json` | `pack-list` |
+| `packy show PACK --surface HOST --json` | `skill-discovery` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `skill-access` |
 | `packy doctor --json` | `doctor` |
 | `packy show PACK --json` | `pack-show` |
