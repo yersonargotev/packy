@@ -31,6 +31,8 @@ const (
 	metadataFileName = ".packy-skill-template.json"
 )
 
+var qualifiedAccessPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
 var logicalIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // File is one inert, regular output file in a rendered skill tree.
@@ -102,7 +104,7 @@ func referencedSkills(data []byte, namespace string) ([]string, error) {
 			return nil, fmt.Errorf("malformed skill template directive at byte %d", start)
 		}
 		logicalID := string(data[valueStart:end])
-		if !logicalIDPattern.MatchString(logicalID) {
+		if !logicalIDPattern.MatchString(logicalID) && !(namespace == "packy.access" && qualifiedAccessPattern.MatchString(logicalID)) {
 			return nil, fmt.Errorf("skill template directive at byte %d has invalid logical ID %q", start, logicalID)
 		}
 		seen[logicalID] = true

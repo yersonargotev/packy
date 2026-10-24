@@ -63,7 +63,8 @@ supporting/legal resources, retained independently of installed projections.
 ### Access reference
 
 An explicitly reviewed reference from a skill instruction document to the
-prepared instruction document of its own or a directly required same-Pack skill.
+prepared instruction document of its own skill or an explicitly declared skill
+dependency, qualified by its owning Pack.
 
 ### Pack Import
 

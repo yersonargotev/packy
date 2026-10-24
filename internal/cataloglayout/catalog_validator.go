@@ -81,6 +81,7 @@ func validateCatalog(ctx context.Context, projectRoot, overrideID, overrideRoot 
 		return CatalogValidation{}, fmt.Errorf("Catalog Project must contain at least one Pack")
 	}
 
+	runtimePacks := []capabilitypack.Pack{}
 	result := CatalogValidation{Packs: make([]Validation, 0, len(names))}
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {
@@ -106,8 +107,12 @@ func validateCatalog(ctx context.Context, projectRoot, overrideID, overrideRoot 
 		if err != nil {
 			return CatalogValidation{}, fmt.Errorf("evaluate Pack %q runtime fitness: %w", name, err)
 		}
+		runtimePacks = append(runtimePacks, runtimePack)
 		result.FitnessRows += len(fitness.Rows)
 		result.Packs = append(result.Packs, validation)
+	}
+	if err := capabilitypack.ValidateOnDemandCatalog(runtimePacks); err != nil {
+		return CatalogValidation{}, fmt.Errorf("validate on-demand catalog: %w", err)
 	}
 	return result, nil
 }

@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
 const (
@@ -73,6 +75,18 @@ func BuildCatalogSnapshot(ctx context.Context, projectRoot string, validation Ca
 	}
 	if err := ctx.Err(); err != nil {
 		return CatalogSnapshotResult{}, err
+	}
+
+	packs := make([]capabilitypack.Pack, 0, len(validation.Packs))
+	for _, validated := range validation.Packs {
+		pack, err := capabilitypack.ValidatePackContent(projectRoot, validated.Manifest.ID)
+		if err != nil {
+			return CatalogSnapshotResult{}, err
+		}
+		packs = append(packs, pack)
+	}
+	if err := capabilitypack.ValidateOnDemandCatalog(packs); err != nil {
+		return CatalogSnapshotResult{}, fmt.Errorf("build Catalog Snapshot on-demand contracts: %w", err)
 	}
 
 	index := CatalogSnapshotIndex{

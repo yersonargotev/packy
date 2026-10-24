@@ -1573,6 +1573,27 @@
               "pattern": "(^|/)\\.{1,2}(/|$)"
             }
           }
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "target"
+            ],
+            "properties": {
+              "type": {
+                "const": "skill"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            }
+          }
         }
       }
     }

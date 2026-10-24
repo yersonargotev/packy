@@ -19,7 +19,6 @@ import (
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
-var qualifiedPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$`)
 var snapshotPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // Error identifies an actionable retrieval failure without a partial success.
@@ -54,7 +53,7 @@ type Result struct {
 
 // ValidateRequest checks identity and explicit host selection before any I/O.
 func ValidateRequest(qualified string, surface capabilitypack.Surface) error {
-	if !qualifiedPattern.MatchString(qualified) {
+	if !capabilitypack.ValidQualifiedSkill(qualified) {
 		return failure("invalid_identity", "skill must be qualified as <pack>:<skill> using lowercase kebab-case; run `packy list` and `packy show <pack>`")
 	}
 	if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceCodex {
@@ -85,48 +84,88 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	if !pack.Selectable {
 		return Result{}, failure("unknown_skill", "Pack %s is not selectable in this Catalog Snapshot; run `packy list` for available Packs", pack.ID)
 	}
-	pack = capabilitypack.ResolvePackForSurface(pack, surface)
-	resources, err := accessClosure(pack, parts[1], surface)
+
+	// Load every Pack from the same retained snapshot. Native file dependencies
+	// remain Pack-local; only the explicit access graph can cross this boundary.
+	entries, err := os.ReadDir(filepath.Join(snapshotRoot, "packs"))
 	if err != nil {
-		return Result{}, err
+		return Result{}, failure("snapshot_unavailable", "read retained catalog: %v", err)
+	}
+	packs := []capabilitypack.Pack{}
+	for _, entry := range entries {
+		loaded, err := capabilitypack.ValidatePackContent(snapshotRoot, entry.Name())
+		if err != nil {
+			return Result{}, failure("snapshot_unavailable", "validate retained Pack %s: %v", entry.Name(), err)
+		}
+		packs = append(packs, loaded)
+	}
+	effectiveRoot := capabilitypack.ResolvePackForSurface(pack, surface)
+	var rootSkill *capabilitypack.Resource
+	for i := range effectiveRoot.Resources {
+		if effectiveRoot.Resources[i].Kind == "skill" && effectiveRoot.Resources[i].ID == parts[1] {
+			rootSkill = &effectiveRoot.Resources[i]
+			break
+		}
+	}
+	if rootSkill == nil {
+		return Result{}, failure("unknown_skill", "unknown skill %s; inspect packy show %s", qualified, pack.ID)
+	}
+	supported := false
+	for _, binding := range rootSkill.Bindings {
+		supported = supported || binding.Surface == surface
+	}
+	if !supported {
+		return Result{}, failure("unsupported_surface", "skill %s is excluded or unbound for %s", qualified, surface)
+	}
+	resources, err := capabilitypack.ResolveOnDemand(packs, qualified, surface)
+	if err != nil {
+		return Result{}, failure("incompatible_resource", "%v", err)
 	}
 	skill := resources[0]
-	roots := make([]string, 0, len(resources))
-	for _, resource := range resources {
-		roots = append(roots, resource.Source)
+	rootsByPack := map[string][]string{}
+	targets := map[string]string{}
+	for _, owned := range resources {
+		resource := owned.Resource
+		rootsByPack[owned.Pack.ID] = append(rootsByPack[owned.Pack.ID], resource.Source)
+		if resource.Kind == "skill" {
+			targets[owned.Pack.ID+":"+resource.ID] = filepath.ToSlash(filepath.Join("packs", owned.Pack.ID, resource.Source, resource.OnDemand.AccessEntry()))
+		}
 	}
-	files, err := declaredFiles(snapshotRoot, snapshotID, pack.ID, roots)
-	if err != nil {
-		return Result{}, failure("snapshot_unavailable", "read retained snapshot %s: %v", snapshotID, err)
+	files := []cataloglayout.FileRecord{}
+	for packID, roots := range rootsByPack {
+		declared, err := declaredFiles(snapshotRoot, snapshotID, packID, roots)
+		if err != nil {
+			return Result{}, failure("snapshot_unavailable", "read retained snapshot %s: %v", snapshotID, err)
+		}
+		for _, file := range declared {
+			file.Path = filepath.ToSlash(filepath.Join("packs", packID, file.Path))
+			files = append(files, file)
+		}
 	}
-	destination, err := preparationPath(dataRoot, snapshotRoot, snapshotID, surface, pack.ID, skill.ID)
+	slices.SortFunc(files, func(a, b cataloglayout.FileRecord) int { return strings.Compare(a.Path, b.Path) })
+	destination, err := preparationPath(dataRoot, snapshotRoot, snapshotID, surface, pack.ID, skill.Resource.ID)
 	if err != nil {
 		return Result{}, failure("preparation_failed", "prepare owned resource directory: %v", err)
 	}
-	targets := map[string]string{}
-	for _, resource := range resources {
-		if resource.Kind == "skill" {
-			targets[resource.ID] = filepath.ToSlash(filepath.Join(resource.Source, resource.OnDemand.AccessEntry()))
-		}
-	}
-	rendered, err := renderedFiles(filepath.Join(snapshotRoot, "packs", pack.ID), files, resources, targets)
+	rendered, err := renderedFiles(snapshotRoot, files, resources, targets)
 	if err != nil {
 		return Result{}, failure("incompatible_resource", "review on-demand references for %s: %v", qualified, err)
 	}
-	if err := prepareFiles(ctx, filepath.Join(snapshotRoot, "packs", pack.ID), destination, files, rendered); err != nil {
+	if err := prepareFiles(ctx, snapshotRoot, destination, files, rendered); err != nil {
 		return Result{}, failure("preparation_failed", "prepare %s: %v; preserve catalog sources and use separate writable scratch/output paths", qualified, err)
 	}
-	describe := func(resource capabilitypack.Resource) Skill {
-		root := filepath.Join(destination, resource.Source)
-		prerequisites := append(slices.Clone(resource.OnDemand.Prerequisites), pack.Requires.Tools...)
+	describe := func(owned capabilitypack.AccessResource) Skill {
+		resource := owned.Resource
+		root := filepath.Join(destination, "packs", owned.Pack.ID, resource.Source)
+		prerequisites := append(slices.Clone(resource.OnDemand.Prerequisites), owned.Pack.Requires.Tools...)
 		slices.Sort(prerequisites)
 		prerequisites = slices.Compact(prerequisites)
-		return Skill{QualifiedSkill: pack.ID + ":" + resource.ID, PackVersion: pack.Version, Surface: surface, SnapshotID: snapshotID, EntryDocument: filepath.Join(root, resource.OnDemand.AccessEntry()), ResourceRoot: root, Prerequisites: prerequisites}
+		return Skill{QualifiedSkill: owned.Pack.ID + ":" + resource.ID, PackVersion: owned.Pack.Version, Surface: surface, SnapshotID: snapshotID, EntryDocument: filepath.Join(root, resource.OnDemand.AccessEntry()), ResourceRoot: root, Prerequisites: prerequisites}
 	}
 	result := Result{Skill: describe(skill), Dependencies: []Skill{}}
-	for _, resource := range resources[1:] {
-		if resource.Kind == "skill" {
-			result.Dependencies = append(result.Dependencies, describe(resource))
+	for _, owned := range resources[1:] {
+		if owned.Resource.Kind == "skill" {
+			result.Dependencies = append(result.Dependencies, describe(owned))
 		}
 	}
 	slices.SortFunc(result.Dependencies, func(a, b Skill) int { return strings.Compare(a.QualifiedSkill, b.QualifiedSkill) })
@@ -150,7 +189,7 @@ func preparationPath(dataRoot, snapshotRoot, snapshotID string, surface capabili
 	if relative, err := filepath.Rel(source, root); err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("prepared resources must be outside the Catalog Snapshot")
 	}
-	for _, component := range []string{"skill-access", "v1", snapshotID, string(surface), packID} {
+	for _, component := range []string{"skill-access", "v2", snapshotID, string(surface), packID} {
 		root = filepath.Join(root, component)
 		if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 			return "", err
@@ -166,87 +205,24 @@ func preparationPath(dataRoot, snapshotRoot, snapshotID string, surface capabili
 	return filepath.Join(root, skillID), nil
 }
 
-func accessClosure(pack capabilitypack.Pack, skillID string, surface capabilitypack.Surface) ([]capabilitypack.Resource, error) {
-	resources := map[string]capabilitypack.Resource{}
-	for _, resource := range pack.Resources {
-		resources[resource.Kind+":"+resource.ID] = resource
-	}
-	root, ok := resources["skill:"+skillID]
-	if !ok {
-		return nil, failure("unknown_skill", "unknown skill %s:%s; inspect packy show %s", pack.ID, skillID, pack.ID)
-	}
-	state := map[string]int{}
-	result := []capabilitypack.Resource{}
-	var visit func(capabilitypack.Resource) error
-	visit = func(resource capabilitypack.Resource) error {
-		identity := resource.Kind + ":" + resource.ID
-		if state[identity] == 1 {
-			return failure("incompatible_resource", "cyclic dependency at %s:%s", pack.ID, identity)
-		}
-		if state[identity] == 2 {
-			return nil
-		}
-		state[identity] = 1
-		switch resource.Kind {
-		case "skill":
-			var binding *capabilitypack.Binding
-			for i := range resource.Bindings {
-				if resource.Bindings[i].Surface == surface {
-					binding = &resource.Bindings[i]
-					break
-				}
-			}
-			if binding == nil {
-				return failure("unsupported_surface", "skill %s:%s is excluded or unbound for %s", pack.ID, resource.ID, surface)
-			}
-			if resource.OnDemand == nil || resource.OnDemand.Protocol != "skill-tree-v1" {
-				return failure("incompatible_resource", "skill %s:%s needs a reviewed on_demand skill-tree-v1 contract", pack.ID, resource.ID)
-			}
-			for _, capability := range binding.Capabilities {
-				if (capability.Type == capabilitypack.SurfaceCapabilitySkillTemplate || capability.Type == capabilitypack.SurfaceCapabilityClaudeCompositeSkill) && resource.OnDemand.AccessEntry() == "SKILL.md" {
-					return failure("incompatible_resource", "skill %s:%s requires a reviewed standalone entry_document separate from native rendering or composition", pack.ID, resource.ID)
-				}
-			}
-		case "asset", "notice":
-		default:
-			return failure("incompatible_resource", "unsupported on-demand dependency %s", identity)
-		}
-		result = append(result, resource)
-		for _, dependency := range append(slices.Clone(resource.Requires), resource.Notices...) {
-			target, ok := resources[dependency]
-			if !ok {
-				return failure("incompatible_resource", "missing declared resource %s required by %s", dependency, identity)
-			}
-			if err := visit(target); err != nil {
-				return err
-			}
-		}
-		state[identity] = 2
-		return nil
-	}
-	if err := visit(root); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // Compute expected rendered bytes before publishing any portion of the closure.
-func renderedFiles(source string, files []cataloglayout.FileRecord, resources []capabilitypack.Resource, targets map[string]string) (map[string][]byte, error) {
+func renderedFiles(source string, files []cataloglayout.FileRecord, resources []capabilitypack.AccessResource, targets map[string]string) (map[string][]byte, error) {
 	indexed := map[string]bool{}
 	for _, file := range files {
 		indexed[file.Path] = true
 	}
 	rendered := map[string][]byte{}
-	for _, resource := range resources {
+	for _, owned := range resources {
+		resource := owned.Resource
 		if resource.Kind != "skill" {
 			continue
 		}
-		entry := filepath.ToSlash(filepath.Join(resource.Source, resource.OnDemand.AccessEntry()))
+		entry := filepath.ToSlash(filepath.Join("packs", owned.Pack.ID, resource.Source, resource.OnDemand.AccessEntry()))
 		if !indexed[entry] {
 			return nil, fmt.Errorf("skill %s entry_document %s is missing", resource.ID, entry)
 		}
 		for _, relative := range resource.OnDemand.ReferenceFiles {
-			path := filepath.ToSlash(filepath.Join(resource.Source, relative))
+			path := filepath.ToSlash(filepath.Join("packs", owned.Pack.ID, resource.Source, relative))
 			if !indexed[path] {
 				return nil, fmt.Errorf("skill %s reference file %s is missing", resource.ID, path)
 			}
@@ -254,7 +230,7 @@ func renderedFiles(source string, files []cataloglayout.FileRecord, resources []
 			if err != nil {
 				return nil, err
 			}
-			body, err := capabilitypack.RenderAccessReferences(resource, relative, data, targets)
+			body, err := capabilitypack.RenderAccessReferences(owned.Pack.ID, resource, relative, data, targets)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", path, err)
 			}

@@ -281,6 +281,15 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			}},
 		} {
 			t.Run(test.name, func(t *testing.T) {
+
+				if test.name == "native template" || test.name == "unreviewed dependency" {
+					project := skillAccessProject(t, "first", test.edit)
+					out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "validate", "--project", project, "--json")
+					if err == nil || !strings.Contains(string(out)+stderr, "reviewed") {
+						t.Fatalf("invalid procedure accepted: %v %s %s", err, out, stderr)
+					}
+					return
+				}
 				assets := skillAccessAssets(t, strings.Repeat("d", 40), "first", test.edit)
 				workspace := filepath.Join(t.TempDir(), "candidate")
 				environment := testprocess.Env(t, "PATH="+t.TempDir())
