@@ -133,6 +133,7 @@ and receive a new Preview. Packy never retries it automatically.
 
 	root.AddCommand(
 		newVersionCommand(),
+		newGetCommand(opts, workstationResolver),
 		newInitCommand(opts, workstationResolver),
 		newCatalogCommand(opts, workstationResolver),
 		newDoctorCommand(opts, workstationResolver),

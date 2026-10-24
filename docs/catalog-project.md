@@ -37,6 +37,10 @@ relative path without sharing physical files. Undeclared files are rejected.
 
 ## Reviewed surface variants
 
+Reviewed standalone skills can also declare the typed
+[on-demand compatibility contract](on-demand-skills.md#reviewed-catalog-contract).
+This declaration is independent of native installation support.
+
 The current contract is [Pack manifest v3](../schemas/pack/v3/pack.schema.json)
 and Catalog Snapshot index v3. Older generations are rejected as a complete
 snapshot; refresh failures preserve the selected snapshot. Adopt this clean cut

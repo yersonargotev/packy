@@ -63,6 +63,7 @@ func declaredBodies(resources []Resource) []Resource {
 	var bodies []Resource
 	for _, resource := range resources {
 		common := capabilitypack.Resource{
+			OnDemand:    resource.OnDemand,
 			Description: resource.Description,
 			Source:      resource.Source,
 			Origin:      resource.Origin,
@@ -81,6 +82,7 @@ func declaredBodies(resources []Resource) []Resource {
 		}
 		for _, effective := range capabilitypack.DeclaredResourceBodies(common) {
 			body := resource
+			body.OnDemand = effective.OnDemand
 			body.Variants = nil
 			body.Description = effective.Description
 			body.Source = effective.Source
@@ -120,4 +122,27 @@ func (resource Resource) MarshalJSON() ([]byte, error) {
 		value.Args = &resource.Args
 	}
 	return json.Marshal(value)
+}
+
+func (resource *Resource) UnmarshalJSON(data []byte) error {
+	type wire Resource
+	var value struct {
+		wire
+		OnDemand json.RawMessage `json:"on_demand"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return err
+	}
+	contract, err := capabilitypack.DecodeOnDemandSkill(value.OnDemand)
+	if err != nil {
+		return err
+	}
+	*resource = Resource(value.wire)
+	resource.OnDemand = contract
+	return nil
 }

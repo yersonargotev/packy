@@ -14,6 +14,7 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy version --json` | `schemas/cli/v1/packy-version.schema.json` |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
+| `packy get skill PACK:SKILL --surface HOST --json` | `schemas/cli/v1/skill-access.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v7/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v13/pack-status.schema.json` |
@@ -34,6 +35,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 | `packy version --json` | `packy-version` |
 | `packy audit --json` | `packy-audit` |
 | `packy list --json` | `pack-list` |
+| `packy get skill PACK:SKILL --surface HOST --json` | `skill-access` |
 | `packy doctor --json` | `doctor` |
 | `packy show PACK --json` | `pack-show` |
 | global Pack preview | `pack-lifecycle-preview` |
@@ -84,6 +86,10 @@ order. Lifecycle and status resource graphs retain their operational selection
 semantics.
 
 ## Redaction
+
+On-demand Skill Access intentionally returns absolute `entry_document` and
+`resource_root` paths so consumers can read the prepared files. Its prerequisites
+are unverified declarations. See [the access contract](on-demand-skills.md).
 
 Reports never include action payload contents, credentials, authentication
 material, or MCP environment values. Environment-bearing command arguments keep
