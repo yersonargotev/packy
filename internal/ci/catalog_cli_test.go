@@ -66,6 +66,7 @@ func testCatalogExecutable(t *testing.T, executable, version, sourceCommit strin
 	t.Run("publication", func(t *testing.T) { testCatalogPublicationExecutable(t, executable) })
 	t.Run("candidate", func(t *testing.T) { testCatalogCandidateExecutable(t, executable) })
 	t.Run("candidate transitions", func(t *testing.T) { testCatalogCandidateTransitionsExecutable(t, executable) })
+	t.Run("on-demand access", func(t *testing.T) { testCatalogOnDemandExecutable(t, executable) })
 }
 
 func testCatalogValidationExecutable(t *testing.T, executable string) {

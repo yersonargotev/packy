@@ -31,6 +31,7 @@ type Workspace struct {
 	ArchiveSHA256                    string
 	root                             string
 	retained                         map[string]snapshotIdentity
+	requireGit                       bool
 }
 
 type snapshotIdentity struct {
@@ -50,6 +51,16 @@ type marker struct {
 // availability requires Transition; ordinary lifecycle calls cannot change it.
 // Callers must not concurrently edit or operate on the workspace.
 func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
+	return open(ctx, assetsRoot, root, true)
+}
+
+// OpenAccess retains workspace ownership and source validation without requiring
+// Git. Resource discovery and retrieval never grant native installation authority.
+func OpenAccess(ctx context.Context, assetsRoot, root string) (Workspace, error) {
+	return open(ctx, assetsRoot, root, false)
+}
+
+func open(ctx context.Context, assetsRoot, root string, requireGit bool) (Workspace, error) {
 	root, err := resolveRoot(assetsRoot, root)
 	if err != nil {
 		return Workspace{}, err
@@ -58,7 +69,7 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 	exists := statErr == nil
 	var recorded marker
 	if exists {
-		recorded, err = inspectWorkspace(root)
+		recorded, err = inspectWorkspace(root, requireGit)
 		if err != nil {
 			return Workspace{}, err
 		}
@@ -89,7 +100,7 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 		if !reflect.DeepEqual(retained.Index, snapshot.Index) {
 			return Workspace{}, errors.New("retained local candidate differs from supplied snapshot")
 		}
-		return workspace(root, retained, recorded), nil
+		return workspace(root, retained, recorded, requireGit), nil
 	}
 	for _, name := range []string{"home", "config", "project", "snapshots"} {
 		if err := os.Mkdir(filepath.Join(stage, name), 0o700); err != nil {
@@ -113,7 +124,7 @@ func Open(ctx context.Context, assetsRoot, root string) (Workspace, error) {
 		return Workspace{}, fmt.Errorf("create owned candidate workspace: %w", err)
 	}
 	snapshot.Root = snapshotPath(root, snapshot.ID)
-	return workspace(root, snapshot, recorded), nil
+	return workspace(root, snapshot, recorded, requireGit), nil
 }
 
 // Transition changes only snapshot availability, retaining every immutable
@@ -125,7 +136,7 @@ func Transition(ctx context.Context, assetsRoot, root, expectedArchive string, a
 	if err != nil {
 		return Workspace{}, err
 	}
-	recorded, err := inspectWorkspace(root)
+	recorded, err := inspectWorkspace(root, true)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -165,7 +176,7 @@ func Transition(ctx context.Context, assetsRoot, root, expectedArchive string, a
 	if err := writeMarker(markerStage, updated); err != nil {
 		return Workspace{}, err
 	}
-	fresh, err := inspectWorkspace(root)
+	fresh, err := inspectWorkspace(root, true)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -191,7 +202,7 @@ func Transition(ctx context.Context, assetsRoot, root, expectedArchive string, a
 		return Workspace{}, fmt.Errorf("select transitioned candidate: %w", err)
 	}
 	snapshot.Root = destination
-	result := workspace(root, snapshot, updated)
+	result := workspace(root, snapshot, updated, true)
 	if acknowledge != nil {
 		if err := acknowledge(result); err != nil {
 			rollbackErr := os.Rename(previousMarker, filepath.Join(root, markerName))
@@ -213,7 +224,7 @@ func (w Workspace) Resolve(ctx context.Context, snapshotID string) (string, erro
 	if _, ok := w.retained[snapshotID]; !ok {
 		return "", fmt.Errorf("snapshot %q is outside this candidate workspace", snapshotID)
 	}
-	recorded, err := inspectWorkspace(w.root)
+	recorded, err := inspectWorkspace(w.root, w.requireGit)
 	if err != nil {
 		return "", err
 	}
@@ -257,8 +268,8 @@ func inspectRetained(root, id string, identity snapshotIdentity) (catalogstore.S
 	return snapshot, nil
 }
 
-func inspectWorkspace(root string) (marker, error) {
-	if err := validateWorkspace(root); err != nil {
+func inspectWorkspace(root string, requireGit bool) (marker, error) {
+	if err := validateWorkspace(root, requireGit); err != nil {
 		return marker{}, err
 	}
 	data, err := os.ReadFile(filepath.Join(root, markerName))
@@ -292,11 +303,11 @@ func writeMarker(path string, recorded marker) error {
 }
 
 func snapshotPath(root, id string) string { return filepath.Join(root, "snapshots", id) }
-func workspace(root string, snapshot catalogstore.Snapshot, recorded marker) Workspace {
-	return Workspace{Home: filepath.Join(root, "home"), ConfigurationHome: filepath.Join(root, "config"), Project: filepath.Join(root, "project"), Snapshot: snapshot, ArchiveSHA256: recorded.Snapshots[snapshot.ID].ArchiveSHA256, root: root, retained: recorded.Snapshots}
+func workspace(root string, snapshot catalogstore.Snapshot, recorded marker, requireGit bool) Workspace {
+	return Workspace{Home: filepath.Join(root, "home"), ConfigurationHome: filepath.Join(root, "config"), Project: filepath.Join(root, "project"), Snapshot: snapshot, ArchiveSHA256: recorded.Snapshots[snapshot.ID].ArchiveSHA256, root: root, retained: recorded.Snapshots, requireGit: requireGit}
 }
 
-func validateWorkspace(root string) error {
+func validateWorkspace(root string, requireGit bool) error {
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -321,11 +332,18 @@ func validateWorkspace(root string) error {
 	if err != nil {
 		return err
 	}
-	for _, name := range []string{"home", "config", "project", "project/.git", "snapshots"} {
+	directories := []string{"home", "config", "project", "snapshots"}
+	if requireGit {
+		directories = append(directories, "project/.git")
+	}
+	for _, name := range directories {
 		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
 		if err != nil || !info.IsDir() {
 			return fmt.Errorf("candidate workspace directory %q is missing", name)
 		}
+	}
+	if !requireGit {
+		return nil
 	}
 	project := filepath.Join(root, "project")
 	discovered, err := capabilitypack.DiscoverProjectRoot(project)
