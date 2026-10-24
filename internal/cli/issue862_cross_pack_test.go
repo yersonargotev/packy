@@ -99,17 +99,27 @@ func editCrossPackManifest(t *testing.T, project, id string, edit func(map[strin
 }
 
 func TestIssue862CrossPackExecutable(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, out)
+	binary := os.Getenv("PACKY_ISSUE862_BINARY")
+	if binary == "" {
+		binary = filepath.Join(t.TempDir(), "packy")
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
+		build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build: %v %s", err, out)
+		}
 	}
-	if override := os.Getenv("PACKY_ISSUE862_BINARY"); override != "" {
-		binary = override
-	}
+	// All executable cases consume identical engine bytes. Keep the build owned by
+	// this parent so child fixtures remain isolated without repeated linking in CI.
+	t.Run("procedures", func(t *testing.T) { checkCrossPackProcedure(t, binary) })
+	t.Run("invalid catalogs", func(t *testing.T) { checkInvalidCrossPackCatalog(t, binary) })
+	t.Run("invalid unselected Pack preserves selection", func(t *testing.T) { checkInvalidUnselectedPack(t, binary) })
+}
+
+func checkCrossPackProcedure(t *testing.T, binary string) {
+	t.Helper()
+
 	project := crossPackAccessProject(t, "first")
 	compiler := jsonschema.NewCompiler()
 	schemaPath, err := filepath.Abs(filepath.Join("..", "..", "schemas/pack/v3/pack.schema.json"))
@@ -342,15 +352,9 @@ func TestIssue862CrossPackExecutable(t *testing.T) {
 	}
 }
 
-func TestIssue862InvalidCrossPackCatalogExecutable(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, out)
-	}
+func checkInvalidCrossPackCatalog(t *testing.T, binary string) {
+	t.Helper()
+
 	for _, test := range []struct {
 		name, diagnostic string
 		edit             func(map[string]any)
@@ -505,7 +509,8 @@ func uncheckedCrossPackAssets(t *testing.T, project, id string) string {
 	return assets
 }
 
-func TestIssue862InvalidUnselectedPackPreservesSelection(t *testing.T) {
+func checkInvalidUnselectedPack(t *testing.T, binary string) {
+	t.Helper()
 	project := crossPackAccessProject(t, "first")
 	firstID, nextID := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	assets := dependencyAccessAssets(t, project, firstID)
@@ -539,14 +544,6 @@ func TestIssue862InvalidUnselectedPackPreservesSelection(t *testing.T) {
 	after, err := store.Selected()
 	if err != nil || after.ID != before.ID {
 		t.Fatalf("failed refresh changed selection: %+v %v", after, err)
-	}
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, out)
 	}
 	stdout, stderr, err := runSkillAccessCLI(t, binary, directory, envList, "catalog", "candidate", "--snapshot", invalid, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
 	if err == nil || !strings.Contains(string(stdout)+stderr, "absent") || bytes.Contains(stdout, []byte(`"prepared"`)) {
