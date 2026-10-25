@@ -2,23 +2,33 @@
   "schema_version": 1,
   "packs": [
     {
-      "id": "matty",
+      "id": "packy",
       "surface_intents": [
         {
           "surface": "claude",
-          "version": "4.0.0",
+          "version": "1.0.0",
           "selection": {
-            "mode": "all",
-            "roots": []
+            "mode": "custom",
+            "roots": [
+              {
+                "kind": "skill",
+                "id": "packy-cli"
+              }
+            ]
           },
           "aliases": []
         },
         {
           "surface": "codex",
-          "version": "4.0.0",
+          "version": "1.0.0",
           "selection": {
-            "mode": "all",
-            "roots": []
+            "mode": "custom",
+            "roots": [
+              {
+                "kind": "skill",
+                "id": "packy-cli"
+              }
+            ]
           },
           "aliases": []
         }
