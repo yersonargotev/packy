@@ -1,7 +1,7 @@
-<!-- packy:project:matty:codex:notices:start -->
+<!-- packy:project:packy:codex:notices:start -->
 ## Packy project notices
 
-Pack: matty 4.0.0
+Pack: packy 1.0.0
 
 Surface: codex
 
@@ -11,11 +11,11 @@ Reviewed Pack content is authoritative.
 
 License: MIT
 
-Copyright (c) 2026 Matt Pocock
+Copyright (c) 2026 Yerson Argote
 
 MIT License
 
-Copyright (c) 2026 Matt Pocock
+Copyright (c) 2026 Yerson Argote
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -36,12 +36,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-<!-- packy:project:matty:codex:notices:end -->
+<!-- packy:project:packy:codex:notices:end -->
 
-<!-- packy:project:matty:claude:notices:start -->
+<!-- packy:project:packy:claude:notices:start -->
 ## Packy project notices
 
-Pack: matty 4.0.0
+Pack: packy 1.0.0
 
 Surface: claude
 
@@ -51,11 +51,11 @@ Reviewed Pack content is authoritative.
 
 License: MIT
 
-Copyright (c) 2026 Matt Pocock
+Copyright (c) 2026 Yerson Argote
 
 MIT License
 
-Copyright (c) 2026 Matt Pocock
+Copyright (c) 2026 Yerson Argote
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -76,4 +76,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-<!-- packy:project:matty:claude:notices:end -->
+<!-- packy:project:packy:claude:notices:end -->

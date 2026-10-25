@@ -46,7 +46,3 @@ Canonical triage roles map to the repository's existing status vocabulary. See `
 ### Domain docs
 
 Packy uses a single-context domain layout. See `docs/agents/domain.md`.
-
-<!-- packy:project:instruction:matty-codex-project:start -->
-Packy manages the Matty Codex skill trees in .agents/skills.
-<!-- packy:project:instruction:matty-codex-project:end -->
