@@ -155,7 +155,7 @@ func verifyStagedPlugin(root *os.Root, files map[string]pluginFile) error {
 		if entry.IsDir() {
 			return nil
 		}
-		info, err := entry.Info()
+		info, err := root.Lstat(relative)
 		if err != nil {
 			return err
 		}

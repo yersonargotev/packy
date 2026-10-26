@@ -166,3 +166,35 @@ func TestIssue879GeneratedMetadataCannotOverwriteDeclaredResources(t *testing.T)
 		})
 	}
 }
+
+func TestIssue879StagingVerificationUsesRootedMetadata(t *testing.T) {
+	parent, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	if err := parent.Mkdir("stage", 0700); err != nil {
+		t.Fatal(err)
+	}
+	stage, err := parent.OpenRoot("stage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stage.Close()
+	if err := stage.Mkdir("assets", 0755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("complete staged asset\n")
+	if err := stage.WriteFile("assets/data.bin", data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Root remains attached to its directory even if its pathname changes.
+	// Directory-entry Info in Go 1.25 resolves its cached path through cwd;
+	// metadata must instead be obtained through the same open root as file bytes.
+	if err := parent.Rename("stage", "moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyStagedPlugin(stage, map[string]pluginFile{"assets/data.bin": {data, 0644}}); err != nil {
+		t.Fatal(err)
+	}
+}
