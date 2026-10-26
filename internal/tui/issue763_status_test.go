@@ -10,7 +10,7 @@ import (
 )
 
 func TestOlderReceiptDetailDisplaysUpdateAndUnavailableEvidence(t *testing.T) {
-	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "older", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true, InstalledVersion: "1.0.0", HistoricalEvidenceMessage: "Historical resource and contract evidence is unavailable"}}}}}}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "older", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, UpdateAvailable: true, InstalledVersion: "1.0.0", HistoricalEvidenceMessage: "Historical resource and contract evidence is unavailable"}}}}}}}
 	model := tui.NewModel(backend)
 	current, _ := model.Update(model.Init()())
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))

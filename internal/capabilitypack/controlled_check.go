@@ -210,11 +210,14 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}
+	if err := validateSelectedClient(selectedPack, selection, request.Surface, "global"); err != nil {
+		return ControlledCheckIdentity{}, nil, err
+	}
 	relevantPack, err := f.statusEvidencePack(selectedPack, request.Surface)
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: relevantPack, CurrentOwnership: state.Ownership})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: selectedPackClient(relevantPack), Desired: relevantPack, CurrentOwnership: state.Ownership})
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}

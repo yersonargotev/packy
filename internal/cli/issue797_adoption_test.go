@@ -19,7 +19,7 @@ type adoptionSentinel struct {
 }
 
 func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonalData(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("adoption")
+	pack := testsupport.SkillVariants("adoption")
 	catalogRoot := t.TempDir()
 	for _, group := range []string{"engineering", "productivity"} {
 		if err := os.MkdirAll(filepath.Join(catalogRoot, "skills", group), 0o755); err != nil {
@@ -47,7 +47,7 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 		filepath.Join(env["HOME"], "personal.txt"):                  "personal\n",
 		filepath.Join(env["HOME"], ".credentials", "token"):         "secret\n",
 		filepath.Join(env["HOME"], ".engram", "memory", "facts.md"): "memory\n",
-		filepath.Join(env["HOME"], ".codex", "foreign.toml"):        "foreign host config\n",
+		filepath.Join(env["HOME"], ".agents", "foreign.toml"):       "foreign host config\n",
 		filepath.Join(project, "foreign-project.txt"):               "foreign project config\n",
 	}
 	protected := make(map[string]adoptionSentinel, len(protectedContent))
@@ -67,9 +67,9 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 
 	packID := pack.ID()
 	for _, args := range [][]string{
-		{"activate", packID, "--surface", "codex"},
-		{"install", packID, "--surface", "codex"},
-		{"activate", packID, "--surface", "codex", "--project"},
+		{"activate", packID, "--surface", "agents"},
+		{"install", packID, "--surface", "agents"},
+		{"activate", packID, "--surface", "agents", "--project"},
 	} {
 		if output, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
 			t.Fatalf("seed previous installation %v: %v\n%s", args, err, output)
@@ -100,9 +100,9 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 	}
 
 	for _, args := range [][]string{
-		{"deactivate", packID, "--surface", "codex", "--project"},
-		{"uninstall", packID, "--surface", "codex"},
-		{"deactivate", packID, "--surface", "codex"},
+		{"deactivate", packID, "--surface", "agents", "--project"},
+		{"uninstall", packID, "--surface", "agents"},
+		{"deactivate", packID, "--surface", "agents"},
 	} {
 		if output, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
 			t.Fatalf("apply previous handoff %v: %v\n%s", args, err, output)
@@ -122,9 +122,9 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 		t.Fatalf("initialize current Catalog Snapshot: %v\n%s", err, output)
 	}
 	for _, args := range [][]string{
-		{"activate", packID, "--surface", "codex"},
-		{"install", packID, "--surface", "codex"},
-		{"activate", packID, "--surface", "codex", "--project"},
+		{"activate", packID, "--surface", "agents"},
+		{"install", packID, "--surface", "agents"},
+		{"activate", packID, "--surface", "agents", "--project"},
 	} {
 		if output, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
 			t.Fatalf("apply current installation %v: %v\n%s", args, err, output)

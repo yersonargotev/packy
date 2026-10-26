@@ -3,7 +3,7 @@
   "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json",
   "title": "Packy project lifecycle shared definitions v1.0.0",
   "$defs": {
-    "surface": { "enum": ["claude", "codex"] },
+    "surface": { "enum": ["claude", "agents"] },
     "resource": {
       "type": "object",
       "required": ["kind", "id"],
@@ -14,6 +14,7 @@
       "type": "object",
       "required": ["mode", "roots"],
       "properties": {
+        "client": { "const": "codex" },
         "mode": { "enum": ["all", "custom"] },
         "roots": { "type": "array", "items": { "$ref": "#/$defs/resource" } }
       },

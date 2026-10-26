@@ -16,7 +16,7 @@ python3 -B scripts/probes/skill-template-catalog.py \
   --out-dir /tmp/new-packy-skill-template-evidence
 ```
 
-The supplied Catalog checkout must contain reviewed, compatible Codex/Claude
+The supplied Catalog checkout must contain reviewed, compatible Agents/Claude
 Matty and pstack definitions and its existing bounded `content-probes.py`
 candidate runner. Retired surface declarations are rejected
 by the executing engine; this probe does not convert an older catalog.
@@ -26,7 +26,7 @@ Packs from the supplied checkout. The probe preserves the checkout, copies its
 complete Pack set, and authors one isolated pstack candidate adaptation at
 the next major version:
 name them `pstack-tdd` and `pstack-teach` on every surface without user aliases,
-render the Codex help's three files,
+render the Agents help's three files,
 and declare its direct TDD/teaching dependencies. This version is a local
 candidate label, not a published Pack release or release request.
 
@@ -45,8 +45,14 @@ To check the installed real hosts against those workspaces:
 
 ```sh
 python3 -B scripts/probes/skill-template-hosts.py \
-  --catalog-evidence /tmp/new-packy-skill-template-evidence/evidence.json
+  --catalog-evidence /tmp/new-packy-skill-template-evidence/evidence.json \
+  --agents-client codex
 ```
+
+The concrete Codex client is selected explicitly with `--agents-client codex`;
+`agents` catalog selection alone never chooses a runtime. The probe rejects old
+`codex` surface evidence and expects reviewed help at
+`packs/pstack/skills/agents/poteto-help`, without probing legacy paths.
 
 Codex uses `initialize`, `initialized`, and `skills/list` through the installed
 app-server to verify all four native identities without a thread or model turn,

@@ -15,17 +15,17 @@ func TestIssue518FailedApplicationDoesNotReplaceInstalledReceipt(t *testing.T) {
 	explicit := true
 	state := ActivationState{
 		Intent: ActivationIntent{
-			PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1,
+			PackID: "app", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Revision: 1,
 			Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}},
-			Resources: []ResourceIdentity{{Kind: "instruction", ID: "guide"}}, Explicit: &explicit,
+			Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}, Explicit: &explicit,
 		},
 		Ownership: []ProjectionOwnership{{
-			ID: "path:" + target, ProjectionID: "instruction:guide", Target: target, Fingerprint: "old",
-			PackID: "app", Surface: SurfaceCodex,
+			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "old",
+			PackID: "app", Surface: SurfaceAgents,
 		}},
 	}
 	state.Intents = []ActivationIntent{state.Intent}
-	if _, err := store.SaveSnapshot(ctx, SurfaceCodex, 0, state); err != nil {
+	if _, err := store.SaveSnapshot(ctx, SurfaceAgents, 0, state); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(store.path)
@@ -34,13 +34,13 @@ func TestIssue518FailedApplicationDoesNotReplaceInstalledReceipt(t *testing.T) {
 	}
 
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
-		ID: "instruction:guide", Exists: true, ObservedFingerprint: "old", DesiredFingerprint: "new", AdapterProvenance: "test-adapter/v1",
-		Action: ProjectionAction{ID: "instruction:guide", Target: target, Content: "new", Description: "write guide", AdapterProvenance: "test-adapter/v1"},
+		ID: "skill:guide", Exists: true, ObservedFingerprint: "old", DesiredFingerprint: "new", AdapterProvenance: "test-adapter/v1",
+		Action: ProjectionAction{ID: "skill:guide", Target: target, Content: "new", Description: "write guide", AdapterProvenance: "test-adapter/v1"},
 	}}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation, observation}, applyErr: errors.New("disk full")}
-	pack := Pack{ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
-	plan, err := facade.PreviewUpdate(ctx, UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	pack := Pack{ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
+	plan, err := facade.PreviewUpdate(ctx, UpdateRequest{PackID: "app", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestIssue518UpdateRetiresOnlyRequestedPackProjectionMissingFromCurrentPack(
 	newTarget := filepath.Join(t.TempDir(), "new-guide")
 	otherTarget := filepath.Join(t.TempDir(), "other-guide")
 	intent := ActivationIntent{
-		PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1,
+		PackID: "app", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Revision: 1,
 		Selection: ResourceSelection{Mode: SelectionAll},
 	}
 	state := ActivationState{
@@ -70,16 +70,16 @@ func TestIssue518UpdateRetiresOnlyRequestedPackProjectionMissingFromCurrentPack(
 		Ownership: []ProjectionOwnership{
 			{
 				ID: "path:" + oldTarget, ProjectionID: "skill:old-guide", Target: oldTarget, Fingerprint: "old-digest",
-				PackID: "app", Surface: SurfaceCodex,
+				PackID: "app", Surface: SurfaceAgents,
 			},
 			{
 				ID: "path:" + otherTarget, ProjectionID: "skill:other-guide", Target: otherTarget, Fingerprint: "other-digest",
-				PackID: "other", Surface: SurfaceCodex,
+				PackID: "other", Surface: SurfaceAgents,
 			},
 		},
 	}
 	pack := Pack{
-		ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{{Kind: "skill", ID: "new-guide", Source: "new-guide", Bindings: testCapabilityBindings("new-guide")}},
 	}
 	adapter := &fakeSurfaceAdapter{inspect: func(transition SurfaceTransition) SurfaceInspection {
@@ -99,9 +99,9 @@ func TestIssue518UpdateRetiresOnlyRequestedPackProjectionMissingFromCurrentPack(
 		return SurfaceInspection{Revision: "host", Projections: projections}
 	}}
 	store := &fakeActivationStore{state: state}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 
-	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,18 +117,18 @@ func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing
 	oldTarget := filepath.Join(t.TempDir(), "old-guide")
 	newTarget := filepath.Join(t.TempDir(), "new-guide")
 	intent := ActivationIntent{
-		PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1,
+		PackID: "app", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Revision: 1,
 		Selection: ResourceSelection{Mode: SelectionAll},
 	}
 	state := ActivationState{
 		Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true,
 		Ownership: []ProjectionOwnership{{
 			ID: "path:" + oldTarget, ProjectionID: "skill:old-guide", Target: oldTarget, Fingerprint: "receipt-digest",
-			PackID: "app", Surface: SurfaceCodex,
+			PackID: "app", Surface: SurfaceAgents,
 		}},
 	}
 	pack := Pack{
-		ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{{Kind: "skill", ID: "new-guide", Source: "new-guide", Bindings: testCapabilityBindings("new-guide")}},
 	}
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{
@@ -143,7 +143,7 @@ func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing
 	}}
 
 	ordinary, _, _ := updateFixture([]Pack{pack}, state, observation)
-	ordinaryPlan, err := ordinary.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	ordinaryPlan, err := ordinary.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing
 	}
 
 	forced, _, _ := updateFixture([]Pack{pack}, state, observation)
-	forcedPlan, err := forced.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	forcedPlan, err := forced.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceAgents, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,19 +163,19 @@ func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing
 
 func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "shared.md")
-	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
-		{Kind: "instruction", ID: "one", Source: "one.md"},
-		{Kind: "instruction", ID: "two", Source: "two.md"},
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{
+		{Kind: "skill", ID: "one", Source: "one.md"},
+		{Kind: "skill", ID: "two", Source: "two.md"},
 	}}
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{
-		{ID: "instruction:one", DesiredFingerprint: "same", Action: ProjectionAction{ID: "instruction:one", Target: target, Content: "same"}},
-		{ID: "instruction:two", DesiredFingerprint: "same", Action: ProjectionAction{ID: "instruction:two", Target: target, Content: "same"}},
+		{ID: "skill:one", DesiredFingerprint: "same", Action: ProjectionAction{ID: "skill:one", Target: target, Content: "same"}},
+		{ID: "skill:two", DesiredFingerprint: "same", Action: ProjectionAction{ID: "skill:two", Target: target, Content: "same"}},
 	}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
 	store := &fakeActivationStore{}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 
-	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "app", Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "app", Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,11 +186,11 @@ func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing
 		t.Fatalf("target collision mutated state: actions=%+v saves=%d", adapter.actions, len(store.saves))
 	}
 
-	intent := ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}}
+	intent := ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}}
 	deactivationStore := &fakeActivationStore{state: ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true}}
 	deactivationAdapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
-	deactivationFacade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(deactivationStore, map[Surface]SurfaceAdapter{SurfaceCodex: deactivationAdapter}))
-	deactivationPlan, err := deactivationFacade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	deactivationFacade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(deactivationStore, map[Surface]SurfaceAdapter{SurfaceAgents: deactivationAdapter}))
+	deactivationPlan, err := deactivationFacade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,12 +201,12 @@ func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing
 
 func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "guide.md")
-	pack := Pack{ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
 	state := ActivationState{
-		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
+		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
 		Ownership: []ProjectionOwnership{{
 			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "receipt-digest",
-			PackID: "app", Surface: SurfaceCodex,
+			PackID: "app", Surface: SurfaceAgents,
 		}},
 		snapshotManaged: true,
 	}
@@ -217,7 +217,7 @@ func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	}}}
 
 	ordinary, _, _ := updateFixture([]Pack{pack}, state, drifted)
-	ordinaryPlan, err := ordinary.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	ordinaryPlan, err := ordinary.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	}
 
 	forced, _, _ := updateFixture([]Pack{pack}, state, drifted)
-	forcedPlan, err := forced.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	forcedPlan, err := forced.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceAgents, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	foreignObservation.Projections = append([]ObservedProjection(nil), drifted.Projections...)
 	foreignObservation.Projections[0].Action.Target = filepath.Join(t.TempDir(), "foreign.md")
 	foreign, _, _ := updateFixture([]Pack{pack}, state, foreignObservation)
-	foreignPlan, err := foreign.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	foreignPlan, err := foreign.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceAgents, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,12 +249,12 @@ func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 
 func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "guide")
-	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
 	state := ActivationState{
-		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
+		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
 		Ownership: []ProjectionOwnership{{
 			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "receipt-digest",
-			PackID: "app", Surface: SurfaceCodex,
+			PackID: "app", Surface: SurfaceAgents,
 		}},
 		snapshotManaged: true,
 	}
@@ -265,7 +265,7 @@ func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	}}}
 
 	ordinary, _, _ := deactivationFixture([]Pack{pack}, state, drifted)
-	ordinaryPlan, err := ordinary.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+	ordinaryPlan, err := ordinary.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	}
 
 	forced, _, _ := deactivationFixture([]Pack{pack}, state, drifted)
-	forcedPlan, err := forced.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	forcedPlan, err := forced.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceAgents, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	foreignObservation.Projections = append([]ObservedProjection(nil), drifted.Projections...)
 	foreignObservation.Projections[0].Action.Target = filepath.Join(t.TempDir(), "foreign")
 	foreign, _, _ := deactivationFixture([]Pack{pack}, state, foreignObservation)
-	foreignPlan, err := foreign.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	foreignPlan, err := foreign.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceAgents, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}

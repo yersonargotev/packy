@@ -257,7 +257,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			if selectionErr != nil {
 				return tui.Preview{}, selectionErr
 			}
-			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 			preview, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{
 				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection,
 			}, adapter)
@@ -274,14 +274,14 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 				}
 				selection = &selected
 			}
-			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
 			}
 			view := projectPreviewForTUI(preview, projectRoot, operation)
 			if operation == "configure" {
-				view.Selection = tui.Selection{Mode: request.Selection.Mode, Roots: slices.Clone(request.Selection.Roots)}
+				view.Selection = tui.Selection{Client: request.Selection.Client, Mode: request.Selection.Mode, Roots: slices.Clone(request.Selection.Roots)}
 			}
 			return view, nil
 		case "activate":
@@ -347,7 +347,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 	preview := globalPreviewForTUI(plan.JSONReport(true))
 	preview.Operation = operation
 	if operation == string(capabilitypack.OperationDeactivate) || operation == "configure" {
-		preview.Selection = tui.Selection{Mode: request.Selection.Mode, Roots: slices.Clone(request.Selection.Roots)}
+		preview.Selection = tui.Selection{Client: request.Selection.Client, Mode: request.Selection.Mode, Roots: slices.Clone(request.Selection.Roots)}
 	}
 	return preview, nil
 }
@@ -444,7 +444,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		if selectionErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, selectionErr
 		}
-		adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+		adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 		fresh, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
@@ -490,7 +490,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			}
 			selection = &selected
 		}
-		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
@@ -670,7 +670,7 @@ func lifecyclePastTense(operation string) string {
 }
 
 func selectionForTUI(selection tui.Selection) (capabilitypack.ResourceSelection, error) {
-	result := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionMode(selection.Mode), Roots: []capabilitypack.ResourceIdentity{}}
+	result := capabilitypack.ResourceSelection{Client: selection.Client, Mode: capabilitypack.SelectionMode(selection.Mode), Roots: []capabilitypack.ResourceIdentity{}}
 	for _, value := range selection.Roots {
 		identity, err := capabilitypack.ParseResourceIdentity(value)
 		if err != nil {
@@ -697,7 +697,7 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 	preview := tui.Preview{
 		ID: report.PlanID, Digest: report.Digest, Operation: string(report.Operation), Disposition: string(report.Disposition),
 		PackID: report.Pack, PackVersion: report.PackVersion, Surface: string(report.Surface), Scope: "global",
-		Selection:      tui.Selection{Mode: string(report.Selection.Mode), Roots: resourceIdentitiesForTUI(report.Selection.Roots)},
+		Selection:      tui.Selection{Client: report.Selection.Client, Mode: string(report.Selection.Mode), Roots: resourceIdentitiesForTUI(report.Selection.Roots)},
 		Diff:           tui.PreviewDiff{BaselineAvailable: report.ContractDiff.BaselineAvailable, UnavailableReason: report.ContractDiff.UnavailableReason, Added: report.ContractDiff.Added, Changed: report.ContractDiff.Changed, Removed: report.ContractDiff.Removed, Retained: report.ContractDiff.Retained},
 		PendingActions: append([]string(nil), report.PendingHumanActions...),
 	}
@@ -741,7 +741,7 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, proje
 		ID:                  report.Observation, Digest: report.Observation, Operation: operation, Disposition: string(report.Disposition),
 		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: surface, Scope: "project",
 		ProjectRoot:    projectRoot,
-		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
+		Selection:      tui.Selection{Client: report.Selection.Client, Mode: string(report.Selection.Mode)},
 		PendingActions: append([]string(nil), report.Requirements...),
 	}
 	coreEffects := []tui.PreviewEffect{
@@ -1068,6 +1068,11 @@ func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
 			}
 		}
 		requirements = append(requirements, manifestResource.RequiresTools...)
+		for _, binding := range manifestResource.Bindings {
+			if projection := binding.ClientProjection; projection != nil {
+				requirements = append(requirements, fmt.Sprintf("%s custom-agent client: %s; scope: %s", binding.Surface, projection.Client, strings.Join(projection.Scopes, ", ")))
+			}
+		}
 		result = append(result, tui.Resource{
 			Identity: identity, Description: resource.Description, Role: string(resource.Role), Definitions: definitions[identity],
 			Requirements: requirements, Conflicts: append([]string(nil), manifestResource.Conflicts...),
@@ -1113,7 +1118,7 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
 			CatalogUpdateAvailable:         entry.UpdateAvailable,
 			InstalledVersion:               entry.Intent.Version,
-			Selection:                      tui.Selection{Mode: string(entry.Intent.Selection.Mode), Roots: resourceIdentitiesForTUI(entry.Intent.Selection.Roots)},
+			Selection:                      tui.Selection{Client: entry.Intent.Selection.Client, Mode: string(entry.Intent.Selection.Mode), Roots: resourceIdentitiesForTUI(entry.Intent.Selection.Roots)},
 			HistoricalEvidenceMessage:      entry.HistoricalEvidence.Message,
 			Configured:                     readinessForTUI(entry.Readiness.Configured),
 			Authorized:                     readinessForTUI(entry.Readiness.Authorized),
@@ -1153,7 +1158,7 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 			Name: string(entry.Surface), Supported: true,
 			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
 			InstalledVersion: entry.Pack.Version,
-			Selection:        tui.Selection{Mode: string(selection.Mode), Roots: resourceIdentitiesForTUI(selection.Roots)},
+			Selection:        tui.Selection{Client: selection.Client, Mode: string(selection.Mode), Roots: resourceIdentitiesForTUI(selection.Roots)},
 			Configured:       string(entry.Readiness.Configured), Authorized: string(entry.Readiness.Authorized), Usable: string(entry.Readiness.Usable),
 			ControlledCheckActionAvailable: entry.ControlledCheckActionAvailable,
 			ControlledCheckState:           string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,

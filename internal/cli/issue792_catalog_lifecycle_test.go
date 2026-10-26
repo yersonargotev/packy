@@ -33,8 +33,8 @@ func (r catalogOriginFixture) Resolve(_ context.Context, origin cataloglayout.Or
 }
 
 func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t *testing.T) {
-	first := testsupport.PortableAllSurfaces("catalog-first")
-	second := testsupport.PortableAllSurfaces("catalog-second")
+	first := testsupport.SkillVariants("catalog-first")
+	second := testsupport.SkillVariants("catalog-second")
 	initialCommit := strings.Repeat("a", 40)
 	updatedCommit := strings.Repeat("b", 40)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, initialCommit, first, second)}
@@ -55,7 +55,7 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 	activations := []struct {
 		pack    testsupport.Fixture
 		surface string
-	}{{first, "codex"}, {second, "claude"}}
+	}{{first, "agents"}, {second, "claude"}}
 	for _, activation := range activations {
 		if out, err := executeCommand(t, NewRootCommand(opts), "activate", activation.pack.ID(), "--surface", activation.surface); err != nil {
 			t.Fatalf("activate %s: %v\n%s", activation.pack.ID(), err, out)
@@ -65,11 +65,11 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeCodex := snapshotTree(t, filepath.Join(env["HOME"], ".codex"))
+	beforeAgents := snapshotTree(t, filepath.Join(env["HOME"], ".agents"))
 	beforeClaude := snapshotTree(t, filepath.Join(env["HOME"], ".claude"))
 
-	updatedFirst := first.Candidate().WithExactCopyBytes("instruction:guidance", ".", []byte("# Updated catalog guidance\n"))
-	newPack := testsupport.PortableAllSurfaces("catalog-new")
+	updatedFirst := first.Candidate().WithExactCopyBytes("skill:guide", "SKILL.md", []byte("---\nname: guide\ndescription: Updated guide.\n---\n\nUpdated catalog guidance\n"))
+	newPack := testsupport.SkillVariants("catalog-new")
 	source.release = catalogReleaseFixture(t, updatedCommit, updatedFirst, second, newPack)
 	if out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh"); err != nil || !strings.Contains(out, updatedCommit) {
 		t.Fatalf("catalog refresh: %v\n%s", err, out)
@@ -78,12 +78,12 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(afterReceipts) != string(beforeReceipts) || snapshotTree(t, filepath.Join(env["HOME"], ".codex")) != beforeCodex || snapshotTree(t, filepath.Join(env["HOME"], ".claude")) != beforeClaude {
+	if string(afterReceipts) != string(beforeReceipts) || snapshotTree(t, filepath.Join(env["HOME"], ".agents")) != beforeAgents || snapshotTree(t, filepath.Join(env["HOME"], ".claude")) != beforeClaude {
 		t.Fatal("Catalog Refresh changed activation state or surface projections")
 	}
 
 	callsAfterRefresh := source.calls
-	for _, args := range [][]string{{"list"}, {"status", first.ID(), "--surface", "codex"}, {"status", second.ID(), "--surface", "claude"}, {"show", newPack.ID()}} {
+	for _, args := range [][]string{{"list"}, {"status", first.ID(), "--surface", "agents"}, {"status", second.ID(), "--surface", "claude"}, {"show", newPack.ID()}} {
 		if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
 			t.Fatalf("offline %v: %v\n%s", args, err, out)
 		}
@@ -92,7 +92,7 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 		t.Fatalf("downloaded-content commands discovered catalog updates online: calls %d -> %d", callsAfterRefresh, source.calls)
 	}
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "update", first.ID(), "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", first.ID(), "--surface", "agents"); err != nil {
 		t.Fatalf("selected update: %v\n%s", err, out)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), "activate", newPack.ID(), "--surface", "claude"); err != nil {
@@ -138,7 +138,7 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 }
 
 func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("catalog-tui")
+	pack := testsupport.SkillVariants("catalog-tui")
 	commit := strings.Repeat("d", 40)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, commit, pack)}
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, pack)

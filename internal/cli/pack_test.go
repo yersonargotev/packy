@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/agents"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
-	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -75,10 +75,10 @@ func TestReadinessValuePreservesUnknown(t *testing.T) {
 
 func TestPackLifecycleJSONPreviewUsesCanonicalStructuredContract(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("json-preview")
+	pack := testsupport.SkillVariants("json-preview")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	before := snapshotTree(t, fixture.home)
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "codex", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "agents", "--dry-run", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +96,10 @@ func TestPackLifecycleJSONPreviewUsesCanonicalStructuredContract(t *testing.T) {
 
 func TestPackLifecycleJSONFailureIsStructuredAndEffectFree(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("json-failure")
+	pack := testsupport.SkillVariants("json-failure")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	before := snapshotTree(t, fixture.home)
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "codex", "--alias", "command:missing=alias", "--json")
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "agents", "--alias", "command:missing=alias", "--json")
 	if err == nil {
 		t.Fatal("invalid alias unexpectedly succeeded")
 	}
@@ -114,10 +114,10 @@ func TestPackLifecycleJSONFailureIsStructuredAndEffectFree(t *testing.T) {
 
 func TestPackLifecycleJSONCancellationReportsRequestedApprovalAndZeroEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: false}
-	pack := testsupport.PortableAllSurfaces("json-cancel")
+	pack := testsupport.SkillVariants("json-cancel")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	before := snapshotTree(t, fixture.home)
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "codex", "--json")
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "agents", "--json")
 	if err == nil {
 		t.Fatal("cancelled activation unexpectedly succeeded")
 	}
@@ -141,7 +141,7 @@ func alwaysUsableAdapters(t *testing.T, opts Options) map[capabilitypack.Surface
 	layout := resolvePackTestLayout(t, opts.Env)
 	catalogRoot := opts.catalogRootOverride
 	return map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-		capabilitypack.SurfaceCodex: alwaysUsableAdapter{delegate: codex.NewSurfaceAdapterWithConfig(catalogRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile())},
+		capabilitypack.SurfaceAgents: alwaysUsableAdapter{delegate: agents.NewSurfaceAdapter(catalogRoot, layout.skills.Root(), layout.agents.RolesDir())},
 	}
 }
 
@@ -149,7 +149,7 @@ type packTestLayout struct {
 	packyHome string
 	state     capabilitypack.StateLayout
 	skills    skilllayout.GlobalLayout
-	codex     codex.CanonicalLayout
+	agents    agents.CanonicalLayout
 }
 
 func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
@@ -165,7 +165,7 @@ func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
 		packyHome: snapshot.PackyHome(),
 		state:     capabilitypack.NewStateLayout(snapshot.PackyHome()),
 		skills:    skilllayout.NewGlobalLayout(snapshot.Home()),
-		codex:     codex.NewCanonicalLayout(snapshot.Home()),
+		agents:    agents.NewCanonicalLayout(snapshot.Home()),
 	}
 }
 
@@ -197,26 +197,26 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	layout := resolvePackTestLayout(t, opts.Env)
 	catalogRoot := opts.catalogRootOverride
 	adapter := &controlledCheckHostAdapter{
-		delegate:    codex.NewSurfaceAdapterWithConfig(catalogRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile()),
-		hostVersion: "codex/v1",
+		delegate:    agents.NewSurfaceAdapter(catalogRoot, layout.skills.Root(), layout.agents.RolesDir()),
+		hostVersion: "agents/v1",
 	}
-	opts.SurfaceAdapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}
-	if _, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--resource", resourceID); err != nil {
+	opts.SurfaceAdapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceAgents: adapter}
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--resource", resourceID); err != nil {
 		t.Fatalf("activate synthetic Pack: %v", err)
 	}
 	before, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	unknown, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex")
+	unknown, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents")
 	if err != nil || !strings.Contains(unknown, "usable=unknown") || !strings.Contains(unknown, "Controlled runtime check: unknown") {
 		t.Fatalf("unknown status: err=%v\n%s", err, unknown)
 	}
-	focusedUnknown, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resourceID, "--require", "usable")
+	focusedUnknown, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resourceID, "--require", "usable")
 	if err == nil || !strings.Contains(focusedUnknown, "Focused resource: "+resourceID+" configured=true authorized=true usable=unknown") {
 		t.Fatalf("focused unknown strict status: err=%v\n%s", err, focusedUnknown)
 	}
-	preview, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "codex", "--dry-run")
+	preview, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "agents", "--dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 			t.Fatalf("controlled check preview omitted %q:\n%s", want, preview)
 		}
 	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "codex", "--result", "positive"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "agents", "--result", "positive"); err != nil {
 		t.Fatalf("record positive controlled check: %v", err)
 	}
 	after, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
@@ -235,23 +235,23 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	if info, err := os.Stat(filepath.Join(home, ".packy", "controlled-checks.json")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("personal evidence file: info=%v err=%v", info, err)
 	}
-	current, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--require", "usable")
+	current, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--require", "usable")
 	if err != nil || !strings.Contains(current, "usable=true") || !strings.Contains(current, "Controlled runtime check: current result=true") {
 		t.Fatalf("current positive strict status: err=%v\n%s", err, current)
 	}
-	focusedCurrent, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resourceID, "--require", "usable", "--json")
+	focusedCurrent, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resourceID, "--require", "usable", "--json")
 	if err != nil || !strings.Contains(focusedCurrent, `"satisfied":true`) || !strings.Contains(focusedCurrent, `"reason":"runtime-confirmed"`) || !strings.Contains(focusedCurrent, `"controlled-check:`) {
 		t.Fatalf("focused current strict JSON status: err=%v\n%s", err, focusedCurrent)
 	}
-	adapter.hostVersion = "codex/v2"
-	focusedStale, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resourceID, "--require", "usable", "--json")
+	adapter.hostVersion = "agents/v2"
+	focusedStale, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resourceID, "--require", "usable", "--json")
 	if err == nil || !strings.Contains(focusedStale, `"usable":"unknown"`) || !strings.Contains(focusedStale, `"satisfied":false`) || !strings.Contains(focusedStale, `"reason":"runtime-check-stale"`) {
 		t.Fatalf("focused stale strict JSON status: err=%v\n%s", err, focusedStale)
 	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "codex", "--result", "negative"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "agents", "--result", "negative"); err != nil {
 		t.Fatalf("record negative controlled check: %v", err)
 	}
-	focusedNegative, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resourceID, "--require", "usable", "--json")
+	focusedNegative, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resourceID, "--require", "usable", "--json")
 	if err == nil || !strings.Contains(focusedNegative, `"usable":"false"`) || !strings.Contains(focusedNegative, `"satisfied":false`) || !strings.Contains(focusedNegative, `"reason":"runtime-rejected"`) || !strings.Contains(focusedNegative, "rerun the check") {
 		t.Fatalf("focused negative strict JSON status: err=%v\n%s", err, focusedNegative)
 	}
@@ -266,7 +266,7 @@ func TestProjectControlledRuntimeCheckDoesNotEnterProjectArtifacts(t *testing.T)
 	opts := fixture.options
 	packID := pack.Manifest().ID
 	opts.Getwd = func() (string, error) { return project, nil }
-	if _, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex", "--resource", "instruction:guidance"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents", "--resource", "instruction:guidance"); err != nil {
 		t.Fatalf("install synthetic project Pack: %v", err)
 	}
 	manifestBefore, err := os.ReadFile(filepath.Join(project, "packy.json"))
@@ -277,7 +277,7 @@ func TestProjectControlledRuntimeCheckDoesNotEnterProjectArtifacts(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkOutput, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "codex", "--project", "--result", "negative")
+	checkOutput, err := executeCommand(t, NewRootCommand(opts), "check", packID, "--surface", "agents", "--project", "--result", "negative")
 	if err != nil {
 		t.Fatalf("record project controlled check: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestProjectControlledRuntimeCheckDoesNotEnterProjectArtifacts(t *testing.T)
 	if !bytes.Equal(manifestBefore, manifestAfter) || !bytes.Equal(lockBefore, lockAfter) {
 		t.Fatal("controlled check entered project manifest or lock")
 	}
-	status, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project")
+	status, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project")
 	if err != nil || !strings.Contains(status, "Controlled runtime check: current result=false") || !strings.Contains(status, "usable=false") {
 		t.Fatalf("project negative status: err=%v\ncheck:\n%s\nstatus:\n%s", err, checkOutput, status)
 	}
@@ -334,7 +334,7 @@ func TestPackLifecycleRejectsInvalidBundleResourceBeforeMutation(t *testing.T) {
 	runner := fixture.options.Runner.(*fakeRunner)
 	before := snapshotTree(t, fixture.home)
 
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "agents")
 	if err == nil {
 		t.Fatalf("expected invalid bundle resource error, got output:\n%s", out)
 	}
@@ -369,13 +369,13 @@ func (r versionOutputRunner) RunOutput(context.Context, string, ...string) (stri
 }
 
 func TestObservableSurfaceVersionUsesSanitizedHostVersion(t *testing.T) {
-	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "codex-cli 2.4.1\n"}, "codex"); got != "codex/2.4.1" {
+	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "agents-cli 2.4.1\n"}, "agents"); got != "agents/2.4.1" {
 		t.Fatalf("host version = %q", got)
 	}
-	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "TOKEN=secret"}, "codex"); got != "unobservable" {
+	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "TOKEN=secret"}, "agents"); got != "unobservable" {
 		t.Fatalf("secret-shaped host output = %q", got)
 	}
-	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "/Users/alice/codex build"}, "codex"); got != "unobservable" {
+	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "/Users/alice/agents build"}, "agents"); got != "unobservable" {
 		t.Fatalf("path-shaped host output = %q", got)
 	}
 }
@@ -394,7 +394,7 @@ func (f *fakeTerminal) Approve(_ io.Reader, _ io.Writer, prompt string) (bool, e
 	return f.approve, nil
 }
 
-func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
+func TestPackActivateAgentsSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	pack := testsupport.CapabilityRich("selective-lifecycle")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
@@ -402,7 +402,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	resourceID := "skill:helper"
 
 	before := snapshotTree(t, home)
-	dryRun, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--resource", resourceID, "--resource", resourceID, "--dry-run")
+	dryRun, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--resource", resourceID, "--resource", resourceID, "--dry-run")
 	if err != nil {
 		t.Fatalf("selected dry-run failed: %v\n%s", err, dryRun)
 	}
@@ -418,14 +418,14 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		t.Fatalf("selected dry-run mutated sandbox HOME:\n%s", got)
 	}
 
-	applied, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--resource", resourceID)
+	applied, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--resource", resourceID)
 	if err != nil {
 		t.Fatalf("selected activation failed: %v\n%s", err, applied)
 	}
-	if target, err := os.Readlink(filepath.Join(home, ".agents", "skills", "helper")); err != nil || !strings.HasSuffix(target, "/skills/"+packID+"-helper") {
-		t.Fatalf("selected helper link = %q err=%v", target, err)
+	if target, err := os.ReadFile(filepath.Join(home, ".agents", "skills", "helper", "SKILL.md")); err != nil || !strings.Contains(string(target), "reviewed helper workflow") {
+		t.Fatalf("selected helper tree = %q err=%v", target, err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "AGENTS.md")); !os.IsNotExist(err) {
 		t.Fatalf("unselected instructions were projected: %v", err)
 	}
 	state := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
@@ -435,7 +435,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		}
 	}
 
-	status, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex")
+	status, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("selected status failed: %v\n%s", err, status)
 	}
@@ -445,7 +445,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		}
 	}
 
-	jsonStatus, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--json")
+	jsonStatus, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--json")
 	if err != nil {
 		t.Fatalf("selected JSON status failed: %v\n%s", err, jsonStatus)
 	}
@@ -467,7 +467,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
 	}
 
-	additive, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--resource", "agent:reviewer")
+	additive, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--resource", "agent:reviewer", "--client", "codex")
 	if err != nil {
 		t.Fatalf("additive selection failed: %v\n%s", err, additive)
 	}
@@ -481,7 +481,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		}
 	}
 
-	deactivated, err := executeCommand(t, NewRootCommand(opts), "deactivate", packID, "--surface", "codex", "--resource", "agent:reviewer")
+	deactivated, err := executeCommand(t, NewRootCommand(opts), "deactivate", packID, "--surface", "agents", "--resource", "agent:reviewer")
 	if err != nil {
 		t.Fatalf("resource-scoped deactivation failed: %v\n%s", err, deactivated)
 	}
@@ -501,11 +501,11 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 	resourceID := "skill:helper"
 	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--resource", resourceID); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--resource", resourceID); err != nil {
 		t.Fatalf("activate selected resource: %v\n%s", err, out)
 	}
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resourceID, "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resourceID, "--require", "usable")
 	if err != nil {
 		t.Fatalf("focused usable status: %v\n%s", err, out)
 	}
@@ -522,7 +522,7 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 		t.Fatalf("focused status mutated sandbox HOME:\nbefore:\n%s\nafter:\n%s", before, got)
 	}
 
-	out, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resourceID, "--require", "usable", "--json")
+	out, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resourceID, "--require", "usable", "--json")
 	if err != nil {
 		t.Fatalf("focused JSON status: %v\n%s", err, out)
 	}
@@ -537,13 +537,13 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 	}
 
 	for _, resource := range []string{"malformed", "instruction:missing"} {
-		if _, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--resource", resource); err == nil {
+		if _, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--resource", resource); err == nil {
 			t.Fatalf("focused status unexpectedly accepted %q", resource)
 		}
 	}
 }
 
-func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *testing.T) {
+func TestPackActivateAgentsSelectedV4ResourceRejectsStalePlanWithoutEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	pack := testsupport.CapabilityRich("selected-stale")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
@@ -558,7 +558,7 @@ func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *te
 		}
 	}
 
-	_, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--resource", "skill:helper")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--resource", "skill:helper")
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "stale") {
 		t.Fatalf("selected stale error = %v", err)
 	}
@@ -570,11 +570,11 @@ func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *te
 	}
 }
 
-func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
+func TestPackActivateAgentsRejectsNonTTYBeforeEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: false, approve: true}
-	pack := testsupport.PortableAllSurfaces("non-tty-codex")
+	pack := testsupport.SkillVariants("non-tty-agents")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "agents")
 	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("error = %v\n%s", err, out)
 	}
@@ -584,24 +584,24 @@ func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(fixture.home, ".packy", "packs.json")); !os.IsNotExist(err) {
 		t.Fatalf("state written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(fixture.home, ".codex")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(fixture.home, ".agents")); !os.IsNotExist(err) {
 		t.Fatalf("skills changed: %v", err)
 	}
 }
 
-func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
+func TestPackActivateAgentsAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("approved-noop")
+	pack := testsupport.SkillVariants("approved-noop")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	opts, home, packID := fixture.options, fixture.home, pack.Manifest().ID
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
-	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") || !strings.Contains(out, "1 Codex projections") {
+	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") || !strings.Contains(out, "1 Agents projections") {
 		t.Fatalf("unexpected interaction/output: calls=%d\n%s", terminal.calls, out)
 	}
-	if guidance, err := os.ReadFile(filepath.Join(home, ".codex", "AGENTS.md")); err != nil || !strings.Contains(string(guidance), "Synthetic guidance for every supported surface") {
+	if guidance, err := os.ReadFile(filepath.Join(home, ".agents", "skills", "guide", "SKILL.md")); err != nil || !strings.Contains(string(guidance), "reviewed common") {
 		t.Fatalf("synthetic guidance projection = %q, err=%v", guidance, err)
 	}
 	state, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
@@ -609,7 +609,7 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 		t.Fatalf("state = %s err=%v", state, err)
 	}
 
-	out, err = executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex")
+	out, err = executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("repeat failed: %v\n%s", err, out)
 	}
@@ -618,25 +618,25 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 	}
 }
 
-func TestPackActivateCodexStalePlanExecutesNoActions(t *testing.T) {
+func TestPackActivateAgentsStalePlanExecutesNoActions(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("stale-codex")
+	pack := testsupport.SkillVariants("stale-agents")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	opts, home := fixture.options, fixture.home
 	terminal.onApprove = func() {
-		target := filepath.Join(home, ".codex", "AGENTS.md")
+		target := filepath.Join(home, ".agents", "skills", "guide")
 		_ = os.MkdirAll(filepath.Dir(target), 0o755)
 		_ = os.WriteFile(target, []byte("concurrent change\n"), 0o600)
 	}
 
-	_, err := executeCommand(t, NewRootCommand(opts), "activate", pack.Manifest().ID, "--surface", "codex")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", pack.Manifest().ID, "--surface", "agents")
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".packy", "packs.json")); !os.IsNotExist(err) {
 		t.Fatalf("stale plan wrote state: %v", err)
 	}
-	if got := readFileString(t, filepath.Join(home, ".codex", "AGENTS.md")); got != "concurrent change\n" {
+	if got := readFileString(t, filepath.Join(home, ".agents", "skills", "guide")); got != "concurrent change\n" {
 		t.Fatalf("stale plan changed concurrent content: %q", got)
 	}
 }
@@ -652,8 +652,8 @@ func TestPackShowRejectsUnknownPack(t *testing.T) {
 }
 
 func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
-	portable := testsupport.PortableAllSurfaces("status-cedar")
-	rich := testsupport.PortableAllSurfaces("status-orbit")
+	portable := testsupport.SkillVariants("status-cedar")
+	rich := testsupport.SkillVariants("status-orbit")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, portable, rich)
 	runner := fixture.options.Runner.(*fakeRunner)
 	beforeHome := snapshotTree(t, fixture.home)
@@ -686,14 +686,14 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("status omitted Pack/surface rows: %#v\n%s", wantRows, overview)
 	}
 
-	detail, err := executeCommand(t, NewRootCommand(fixture.options), "status", portable.Manifest().ID, "--surface", "codex")
+	detail, err := executeCommand(t, NewRootCommand(fixture.options), "status", portable.Manifest().ID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("targeted status failed: %v\n%s", err, detail)
 	}
 	for _, want := range []string{
-		portable.Manifest().ID + " " + portable.CurrentVersion() + " on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
+		portable.Manifest().ID + " " + portable.CurrentVersion() + " on agents", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
 		"Readiness: configured=false, authorized=unknown, usable=unknown",
-		"Projections: 0 verified; 0 drifted; 0 ambiguous; 1 missing", "Blockers: instruction:guidance is missing", "Pending human actions: none",
+		"Projections: 0 verified; 0 drifted; 0 ambiguous; 1 missing", "Blockers: skill:guide is missing", "Pending human actions: none",
 	} {
 		if !strings.Contains(detail, want) {
 			t.Fatalf("detail missing %q:\n%s", want, detail)
@@ -718,8 +718,8 @@ func isReadinessValue(value string) bool {
 }
 
 func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
-	portable := testsupport.PortableAllSurfaces("json-status-cedar")
-	rich := testsupport.PortableAllSurfaces("json-status-orbit")
+	portable := testsupport.SkillVariants("json-status-cedar")
+	rich := testsupport.SkillVariants("json-status-orbit")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, portable, rich)
 	overview, err := executeCommand(t, NewRootCommand(fixture.options), "status", "--json")
 	if err != nil {
@@ -746,7 +746,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if len(wantRows) != 0 {
 		t.Fatalf("JSON status omitted Pack/surface entries: %#v", wantRows)
 	}
-	detail, err := executeCommand(t, NewRootCommand(fixture.options), "status", portable.Manifest().ID, "--surface", "codex", "--json")
+	detail, err := executeCommand(t, NewRootCommand(fixture.options), "status", portable.Manifest().ID, "--surface", "agents", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -783,10 +783,10 @@ func expectedPackSurfaceRows(t *testing.T, catalogRoot string) map[string]bool {
 
 func TestPackStatusJSONRequireEmitsDocumentBeforeGateError(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("json-status-gate")
+	pack := testsupport.SkillVariants("json-status-gate")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	opts, packID := fixture.options, pack.Manifest().ID
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--require", "usable", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--require", "usable", "--json")
 	if err == nil || !strings.Contains(err.Error(), "not freshly observed usable") {
 		t.Fatalf("gate error=%v", err)
 	}
@@ -795,17 +795,17 @@ func TestPackStatusJSONRequireEmitsDocumentBeforeGateError(t *testing.T) {
 		t.Fatalf("missing JSON before gate: %s", out)
 	}
 	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-	if activation, activateErr := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex"); activateErr != nil {
+	if activation, activateErr := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents"); activateErr != nil {
 		t.Fatalf("activate: %v\n%s", activateErr, activation)
 	}
-	out, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--require", "usable", "--json")
+	out, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--require", "usable", "--json")
 	if err != nil || json.Unmarshal([]byte(out), &report) != nil || report.Entries[0].Readiness.Usable != capabilitypack.ReadinessTrue {
 		t.Fatalf("successful JSON gate: err=%v\n%s", err, out)
 	}
 }
 
 func TestPackStatusRequiresCompleteTarget(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("status-target")
+	pack := testsupport.SkillVariants("status-target")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, pack)
 	opts, packID := fixture.options, pack.Manifest().ID
 
@@ -814,9 +814,9 @@ func TestPackStatusRequiresCompleteTarget(t *testing.T) {
 		want string
 	}{
 		{[]string{"status", packID}, "--surface is required"},
-		{[]string{"status", "--surface", "codex"}, "a pack is required"},
+		{[]string{"status", "--surface", "agents"}, "a pack is required"},
 		{[]string{"status", packID, "--surface", "vscode"}, "unsupported CLI surface"},
-		{[]string{"status", "missing", "--surface", "codex"}, "unknown capability pack"},
+		{[]string{"status", "missing", "--surface", "agents"}, "unknown capability pack"},
 	} {
 		_, err := executeCommand(t, NewRootCommand(opts), tc.args...)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -827,29 +827,29 @@ func TestPackStatusRequiresCompleteTarget(t *testing.T) {
 
 func TestPackStatusRequireUsableIsIndependentNonInteractiveGate(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("status-noninteractive")
+	pack := testsupport.SkillVariants("status-noninteractive")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	opts, home, packID := fixture.options, fixture.home, pack.Manifest().ID
 	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-	if _, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--require", "usable"); err == nil || !strings.Contains(err.Error(), "not freshly observed usable") {
+	if _, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--require", "usable"); err == nil || !strings.Contains(err.Error(), "not freshly observed usable") {
 		t.Fatalf("inactive gate error=%v", err)
 	}
 	if terminal.calls != 0 || exists(filepath.Join(home, ".packy", "packs.json")) {
 		t.Fatal("failed status gate prompted or persisted")
 	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents"); err != nil {
 		t.Fatal(err)
 	}
 	prompts := terminal.calls
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--require", "usable")
 	if err != nil || !strings.Contains(out, "configured=true, authorized=true, usable=true") {
 		t.Fatalf("gate err=%v\n%s", err, out)
 	}
 	if terminal.calls != prompts || snapshotTree(t, home) != before {
 		t.Fatal("successful status gate prompted or mutated files")
 	}
-	for _, args := range [][]string{{"status", "--require", "usable"}, {"status", packID, "--surface", "codex", "--require", "authorized"}} {
+	for _, args := range [][]string{{"status", "--require", "usable"}, {"status", packID, "--surface", "agents", "--require", "authorized"}} {
 		if _, err := executeCommand(t, NewRootCommand(opts), args...); err == nil || !strings.Contains(err.Error(), "valid only") {
 			t.Fatalf("%v error=%v", args, err)
 		}
@@ -857,10 +857,10 @@ func TestPackStatusRequireUsableIsIndependentNonInteractiveGate(t *testing.T) {
 }
 
 func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testing.T) {
-	for _, surface := range []string{"codex"} {
+	for _, surface := range []string{"agents"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
-			pack := testsupport.PortableAllSurfaces("pending-" + surface)
+			pack := testsupport.SkillVariants("pending-" + surface)
 			fixture := newSyntheticCLIFixture(t, terminal, pack)
 			out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", surface)
 			if err != nil {
@@ -880,10 +880,10 @@ func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testin
 }
 
 func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
-	for _, surface := range []string{"codex"} {
+	for _, surface := range []string{"agents"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
-			pack := testsupport.PortableAllSurfaces("deactivate-" + surface)
+			pack := testsupport.SkillVariants("deactivate-" + surface)
 			fixture := newSyntheticCLIFixture(t, terminal, pack)
 			opts, home, packID := fixture.options, fixture.home, pack.Manifest().ID
 			if out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", surface); err != nil {
@@ -922,15 +922,15 @@ func TestPackDeactivateCancellationAndNonTTYHaveZeroEffects(t *testing.T) {
 	}{{"cancel", &fakeTerminal{interactive: true, approve: false}}, {"non-tty", &fakeTerminal{interactive: false, approve: true}}} {
 		t.Run(tc.name, func(t *testing.T) {
 			seed := &fakeTerminal{interactive: true, approve: true}
-			pack := testsupport.PortableAllSurfaces("deactivate-" + tc.name)
+			pack := testsupport.SkillVariants("deactivate-" + tc.name)
 			fixture := newSyntheticCLIFixture(t, seed, pack)
 			opts, home, packID := fixture.options, fixture.home, pack.Manifest().ID
-			if out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents"); err != nil {
 				t.Fatalf("seed: %v\n%s", err, out)
 			}
 			opts.Terminal = tc.terminal
 			before := snapshotTree(t, home)
-			_, err := executeCommand(t, NewRootCommand(opts), "deactivate", packID, "--surface", "codex")
+			_, err := executeCommand(t, NewRootCommand(opts), "deactivate", packID, "--surface", "agents")
 			if err == nil {
 				t.Fatal("unsafe deactivation succeeded")
 			}

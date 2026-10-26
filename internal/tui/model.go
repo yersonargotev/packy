@@ -50,8 +50,9 @@ type ApplyResult struct {
 }
 
 type Selection struct {
-	Mode  string
-	Roots []string
+	Client string
+	Mode   string
+	Roots  []string
 }
 
 type PreviewRequest struct {
@@ -288,6 +289,7 @@ type Model struct {
 	initialSelected          map[string]bool
 	selectedRoots            map[string]bool
 	selectionNotice          string
+	selectedClient           string
 	surfaceIndex             int
 	previewing               bool
 	preview                  *Preview
@@ -895,6 +897,15 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 	if surface == "" {
 		m.selectionNotice = "No supported CLI surface is available"
 		return m, nil
+	}
+	if selection.Mode != "" {
+		selection.Client = m.selectedClient
+		if !m.selecting {
+			selection.Client = ""
+			if status := m.selectedSurfaceStatus(); status != nil {
+				selection.Client = status.Selection.Client
+			}
+		}
 	}
 	request := PreviewRequest{
 		Operation: operation,
@@ -1828,6 +1839,9 @@ func (m Model) renderPreview(preview Preview) string {
 	lines := []string{
 		titleStyle.Render(title),
 		preview.Operation + " " + preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope,
+	}
+	if preview.Selection.Client != "" {
+		lines = append(lines, "Custom-agent client: "+preview.Selection.Client+" · scope: "+preview.Scope)
 	}
 	if preview.ProjectRoot != "" {
 		lines = append(lines, "Project root: "+preview.ProjectRoot)

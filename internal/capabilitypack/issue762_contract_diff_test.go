@@ -9,7 +9,7 @@ import (
 
 func TestIssue762ConvergedUpdateRetainsCurrentContract(t *testing.T) {
 	facade := issue762UpdateFixture("2.0.0")
-	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceCodex})
+	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestIssue762ConvergedUpdateRetainsCurrentContract(t *testing.T) {
 
 func TestIssue762VersionChangingUpdateReportsUnavailableHistoricalContract(t *testing.T) {
 	facade := issue762UpdateFixture("1.0.0")
-	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceCodex})
+	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestIssue762SameVersionMissingReceiptResourceHasUnavailableBaseline(t *test
 	facade, store := issue762UpdateFixtureWithStore("2.0.0")
 	store.state.Intent.Resources = append(store.state.Intent.Resources, ResourceIdentity{Kind: "skill", ID: "missing"})
 	store.state.Intents = []ActivationIntent{store.state.Intent}
-	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceCodex})
+	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestIssue762SameVersionMissingReceiptResourceHasUnavailableBaseline(t *test
 
 func TestIssue762UpdateAliasChangeHasSupportedContractDiff(t *testing.T) {
 	facade := issue762UpdateFixture("2.0.0")
-	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceCodex, Aliases: []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}}})
+	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "contract-fixture", Surface: SurfaceAgents, Aliases: []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +89,9 @@ func TestIssue762ActivationAndDeactivationKeepCompleteContractDiffs(t *testing.T
 			var err error
 			if operation == OperationActivate {
 				store.state = ActivationState{}
-				plan, err = facade.Preview(context.Background(), ActivationRequest{PackID: "contract-fixture", Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+				plan, err = facade.Preview(context.Background(), ActivationRequest{PackID: "contract-fixture", Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 			} else {
-				plan, err = facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "contract-fixture", Surface: SurfaceCodex})
+				plan, err = facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "contract-fixture", Surface: SurfaceAgents})
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -111,15 +111,15 @@ func TestIssue762ActivationAndDeactivationKeepCompleteContractDiffs(t *testing.T
 }
 
 func TestIssue762CustomSelectionDoesNotIncludeUnselectedOrUnrelatedResources(t *testing.T) {
-	pack := Pack{ID: "contract-fixture", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+	pack := Pack{ID: "contract-fixture", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{
 		{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")},
 		{Kind: "skill", ID: "unused", Source: "unused", Bindings: testCapabilityBindings("unused")},
 	}}
 	selection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "guide"}}}
-	intent := ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Selection: selection, Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}}
-	unrelated := ActivationIntent{PackID: "unrelated", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Selection: ResourceSelection{Mode: SelectionAll}, Resources: []ResourceIdentity{{Kind: "skill", ID: "other"}}}
+	intent := ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Selection: selection, Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}}
+	unrelated := ActivationIntent{PackID: "unrelated", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Selection: ResourceSelection{Mode: SelectionAll}, Resources: []ResourceIdentity{{Kind: "skill", ID: "other"}}}
 	facade, _, _ := updateFixture([]Pack{pack}, ActivationState{Intent: intent, Intents: []ActivationIntent{intent, unrelated}})
-	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	plan, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: pack.ID, Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,10 +136,10 @@ func issue762UpdateFixture(installedVersion string) Facade {
 }
 
 func issue762UpdateFixtureWithStore(installedVersion string) (Facade, *fakeActivationStore) {
-	pack := Pack{ID: "contract-fixture", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "contract-fixture", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
 	explicit := true
-	intent := ActivationIntent{PackID: pack.ID, Version: installedVersion, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}, Explicit: &explicit}
-	state := ActivationState{SchemaVersion: 3, Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true, Ownership: []ProjectionOwnership{{ID: "path:/tmp/contract-guide", ProjectionID: "skill:guide", Target: "/tmp/contract-guide", Fingerprint: "exact", PackID: pack.ID, Surface: SurfaceCodex}}}
+	intent := ActivationIntent{PackID: pack.ID, Version: installedVersion, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}, Explicit: &explicit}
+	state := ActivationState{SchemaVersion: 3, Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true, Ownership: []ProjectionOwnership{{ID: "path:/tmp/contract-guide", ProjectionID: "skill:guide", Target: "/tmp/contract-guide", Fingerprint: "exact", PackID: pack.ID, Surface: SurfaceAgents}}}
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{ID: "skill:guide", ProjectionKey: "path:/tmp/contract-guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/contract-guide", ProjectionKey: "path:/tmp/contract-guide"}}}}
 	facade, _, store := updateFixture([]Pack{pack}, state, observation)
 	return facade, store

@@ -30,7 +30,7 @@ func TestCatalogCreateCanAtomicallyCreateTheFirstPack(t *testing.T) {
 	}
 	out, err := executeCommand(t, NewRootCommand(Options{}),
 		"catalog", "create", "first-pack", "--project", project, "--template", "empty",
-		"--version", "1.0.0", "--description", "First reviewed Pack", "--surface", "codex",
+		"--version", "1.0.0", "--description", "First reviewed Pack", "--surface", "agents",
 	)
 	if err != nil {
 		t.Fatalf("catalog create: %v\n%s", err, out)
@@ -64,7 +64,7 @@ func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 		"--template", "empty",
 		"--version", "0.1.0",
 		"--description", "Focused maintainer workflows",
-		"--surface", "codex",
+		"--surface", "agents",
 	)
 	if err != nil {
 		t.Fatalf("catalog create: %v\n%s", err, out)
@@ -106,7 +106,7 @@ func TestCatalogCreateAndImportPrepareReviewableValidatedContent(t *testing.T) {
 		"--kind", "skill",
 		"--resource-id", "focus",
 		"--description", "Keeps work focused",
-		"--host", "codex",
+		"--host", "agents",
 		"--notice", "notice:focus-mit",
 	)
 	if err != nil {
@@ -173,7 +173,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 		"--kind", "instruction",
 		"--resource-id", "guide",
 		"--description", "Imported guidance",
-		"--host", "codex",
+		"--host", "agents",
 	)
 	if err == nil {
 		t.Fatalf("missing notice unexpectedly succeeded: %s", out)
@@ -200,7 +200,7 @@ func TestCatalogImportDiagnosesMissingInformationWithoutPartialChanges(t *testin
 		"--kind", "instruction",
 		"--resource-id", "guide",
 		"--description", "Imported guidance",
-		"--host", "codex",
+		"--host", "agents",
 		"--notice", "notice:missing",
 	)
 	if err == nil || !strings.Contains(err.Error(), `notice "notice:missing" does not exist`) {
@@ -266,7 +266,7 @@ func TestCatalogCreateRejectsPackPathTraversalWithoutChanges(t *testing.T) {
 		"--template", "empty",
 		"--version", "0.1.0",
 		"--description", "Must fail",
-		"--surface", "codex",
+		"--surface", "agents",
 	)
 	if err == nil || !strings.Contains(err.Error(), "Pack id must be lowercase kebab-case") {
 		t.Fatalf("path traversal create = error %v, output %s", err, out)
@@ -288,7 +288,7 @@ func writeAuthoringCatalog(t *testing.T) string {
   "version": "1.0.0",
   "description": "Seed Pack",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": [],
   "external_requirements": [],
   "origins": [],

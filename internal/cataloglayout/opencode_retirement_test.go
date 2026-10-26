@@ -18,7 +18,7 @@ func TestCatalogAndSchemaRejectRetiredOpenCodeContracts(t *testing.T) {
 		name string
 		edit func(map[string]any)
 	}{
-		{"surface", func(m map[string]any) { m["surfaces"] = []any{"codex", "opencode"} }},
+		{"surface", func(m map[string]any) { m["surfaces"] = []any{"agents", "opencode"} }},
 		{"binding", func(m map[string]any) {
 			m["resources"].([]any)[0].(map[string]any)["bindings"].([]any)[0].(map[string]any)["surface"] = "opencode"
 		}},

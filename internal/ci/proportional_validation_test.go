@@ -70,7 +70,7 @@ func TestOrdinaryPullRequestCIKeepsValidationAndControlledReleaseContracts(t *te
 	if !strings.Contains(workflow, "timeout-minutes: 8") {
 		t.Fatal("ordinary CI must allow a cold Go cache to complete before cleanup")
 	}
-	for _, retired := range []string{"floor-smoke", "vercel-acceptance-gate", "run-claude-smoke.sh", "run-codex-smoke.sh", "run-opencode-smoke.sh", "gh release create", "HOMEBREW_TAP_TOKEN", "environment: release"} {
+	for _, retired := range []string{"floor-smoke", "vercel-acceptance-gate", "run-claude-smoke.sh", "run-agents-smoke.sh", "run-opencode-smoke.sh", "gh release create", "HOMEBREW_TAP_TOKEN", "environment: release"} {
 		if strings.Contains(workflow, retired) {
 			t.Errorf("ordinary CI retains release or supported-CLI work %q", retired)
 		}

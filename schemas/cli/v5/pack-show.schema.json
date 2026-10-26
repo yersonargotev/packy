@@ -22,7 +22,7 @@
       },
       "additionalProperties": false
     },
-    "surfaces": { "type": "array", "items": { "enum": ["claude", "codex", "opencode"] }, "minItems": 1, "uniqueItems": true },
+    "surfaces": { "type": "array", "items": { "enum": ["claude", "agents", "opencode"] }, "minItems": 1, "uniqueItems": true },
     "requires": {
       "type": "object",
       "required": ["tools"],

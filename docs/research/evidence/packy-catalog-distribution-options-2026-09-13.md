@@ -130,7 +130,7 @@ directory could change active content without an explicit update. Keep active
 links pinned to their snapshot until normal previewed activation/update, and
 retain every snapshot referenced by installed receipts or links. Downloading
 the whole catalog must not apply every Pack.
-[Codex projection](../../../internal/codex/surface.go),
+[Codex projection](https://github.com/yersonargotev/packy/blob/a4161c62c3b79ccc05c26b8f036f92a0aa12d647/internal/codex/surface.go),
 [OpenCode projection](https://github.com/yersonargotev/packy/blob/372cf5ac9b63890319e25decc9f3d0839ac25374/internal/opencode/surface.go),
 [Claude projection](../../../internal/claudecode/surface.go)
 

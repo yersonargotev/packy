@@ -667,7 +667,7 @@ func buildResource(request ImportRequest, manifest cataloglayout.Manifest) (cata
 		if request.Kind == "skill" {
 			sharing = "exclusive"
 			switch surface {
-			case capabilitypack.SurfaceCodex:
+			case capabilitypack.SurfaceAgents:
 				invocation = "$" + request.ResourceID
 			case capabilitypack.SurfaceClaude:
 				invocation = "/" + request.ResourceID
@@ -690,8 +690,8 @@ func parseSurfaces(values []string) ([]capabilitypack.Surface, error) {
 	seen := map[capabilitypack.Surface]bool{}
 	for _, value := range values {
 		surface := capabilitypack.Surface(value)
-		if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceCodex {
-			return nil, fmt.Errorf("unsupported CLI surface %q; choose claude or codex", value)
+		if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceAgents {
+			return nil, fmt.Errorf("unsupported CLI surface %q; choose claude or agents", value)
 		}
 		if seen[surface] {
 			return nil, fmt.Errorf("surface %q is duplicated", value)

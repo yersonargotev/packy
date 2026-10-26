@@ -12,7 +12,7 @@ import (
 func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 	root := repositoryRoot(t)
 	documents := map[string][]string{
-		"CONTEXT.md":                 {"### CLI surface", "The supported surfaces are Codex", "Claude Code", "Antigravity and GitHub Copilot CLI remain outside"},
+		"CONTEXT.md":                 {"### CLI surface", "The engine supports the Agents (`agents`) and Claude (`claude`) projection", "Claude Code", "GitHub Copilot CLI remain outside"},
 		"README.md":                  {"Claude Code", "docs/claude-code.md", claudecode.MinimumSupportedVersion},
 		"docs/claude-code.md":        {"Prerequisite", "Global projections", "Explicit activation", "Preservation and cleanup", "Readiness", "No authentication or model calls", claudecode.MinimumSupportedVersion},
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},
@@ -23,7 +23,7 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion},
 	}
 
-	staleSupportClaim := regexp.MustCompile(`(?is)(?:supports? only.{0,80}(?:codex.{0,30}opencode|opencode.{0,30}codex)|both supported surfaces|two[- ]surface support|cli surfaces\s*\|\s*codex and opencode only|initial supported cli surfaces are codex and opencode|claude code,\s*antigravity,\s*and github copilot cli are future candidates)`)
+	staleSupportClaim := regexp.MustCompile(`(?is)(?:supports? only.{0,80}(?:agents.{0,30}opencode|opencode.{0,30}agents)|both supported surfaces|two[- ]surface support|cli surfaces\s*\|\s*agents and opencode only|initial supported cli surfaces are agents and opencode|claude code,\s*antigravity,\s*and github copilot cli are future candidates)`)
 	versionLiteral := regexp.MustCompile(`\d+\.\d+\.\d+`)
 	for path, required := range documents {
 		text := readFile(t, filepath.Join(root, path))

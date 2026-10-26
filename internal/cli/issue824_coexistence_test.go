@@ -13,10 +13,10 @@ import (
 )
 
 func TestIssue876RetiredDiscoveryRootsDoNotBlockRemainingSurfaces(t *testing.T) {
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		for _, scope := range []string{"global", "project"} {
 			t.Run(surface+"-"+scope, func(t *testing.T) {
-				pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+				pack := testsupport.SkillVariants("coexist", testsupport.SurfaceAgents, testsupport.SurfaceClaude)
 				fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 				project := t.TempDir()
 				writeTestGitWorktree(t, project)
@@ -53,7 +53,7 @@ func TestIssue876RetiredDiscoveryRootsDoNotBlockRemainingSurfaces(t *testing.T) 
 }
 
 func TestIssue824SameSurfaceDiscoveryInvalidatesStaleGlobalPlan(t *testing.T) {
-	pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex)
+	pack := testsupport.SkillVariants("coexist", testsupport.SurfaceAgents)
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
@@ -63,7 +63,7 @@ func TestIssue824SameSurfaceDiscoveryInvalidatesStaleGlobalPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := facade.Preview(context.Background(), capabilitypack.ActivationRequest{PackID: pack.ID(), Surface: capabilitypack.SurfaceCodex})
+	plan, err := facade.Preview(context.Background(), capabilitypack.ActivationRequest{PackID: pack.ID(), Surface: capabilitypack.SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,16 +82,16 @@ func TestIssue824SameSurfaceDiscoveryInvalidatesStaleGlobalPlan(t *testing.T) {
 	if before != snapshotTree(t, fixture.home) {
 		t.Fatal("stale plan mutated user content")
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "agents")
 	if err == nil || !strings.Contains(out, "foreign-directory") {
 		t.Fatalf("frontmatter name collision was missed: %v\n%s", err, out)
 	}
 }
 
-func TestIssue824CodexClaudeVariantsCoexistAcrossUpdateAndRemoval(t *testing.T) {
+func TestIssue824AgentsClaudeVariantsCoexistAcrossUpdateAndRemoval(t *testing.T) {
 	for _, scope := range []string{"global", "project"} {
 		t.Run(scope, func(t *testing.T) {
-			pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+			pack := testsupport.SkillVariants("coexist", testsupport.SurfaceAgents, testsupport.SurfaceClaude)
 			source := &catalogSourceFixture{release: catalogReleaseFixture(t, strings.Repeat("c", 40), pack)}
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 			opts := fixture.options
@@ -111,24 +111,24 @@ func TestIssue824CodexClaudeVariantsCoexistAcrossUpdateAndRemoval(t *testing.T) 
 			if scope == "project" {
 				command, remove, root = "install", "uninstall", project
 			}
-			run(command, pack.ID(), "--surface", "codex")
+			run(command, pack.ID(), "--surface", "agents")
 			run(command, pack.ID(), "--surface", "claude")
 			claude := filepath.Join(root, ".claude/skills/guide")
 			before := snapshotTree(t, claude)
-			updated := pack.WithVersion("2.0.0").WithVariantBytes(testsupport.SurfaceCodex, "references/detail.md", []byte("reviewed codex changed\n"))
+			updated := pack.WithVersion("2.0.0").WithVariantBytes(testsupport.SurfaceAgents, "references/detail.md", []byte("reviewed agents changed\n"))
 			source.release = catalogReleaseFixture(t, strings.Repeat("d", 40), updated)
 			run("catalog", "refresh")
-			args := []string{"update", pack.ID(), "--surface", "codex"}
+			args := []string{"update", pack.ID(), "--surface", "agents"}
 			if scope == "project" {
 				args = append(args, "--project")
 			}
 			run(args...)
 			if snapshotTree(t, claude) != before {
-				t.Fatal("Codex update changed Claude tree")
+				t.Fatal("Agents update changed Claude tree")
 			}
-			run(remove, pack.ID(), "--surface", "codex")
+			run(remove, pack.ID(), "--surface", "agents")
 			if snapshotTree(t, claude) != before {
-				t.Fatal("Codex removal changed Claude tree")
+				t.Fatal("Agents removal changed Claude tree")
 			}
 			run(remove, pack.ID(), "--surface", "claude")
 		})
@@ -142,7 +142,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 	}
 	for _, scope := range []string{"global", "project"} {
 		t.Run(scope, func(t *testing.T) {
-			pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex)
+			pack := testsupport.SkillVariants("coexist", testsupport.SurfaceAgents)
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 			opts := fixture.options
 			project := t.TempDir()
@@ -152,7 +152,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 			if scope == "project" {
 				install, remove, root = "install", "uninstall", project
 			}
-			if out, err := executeCommand(t, NewRootCommand(opts), install, pack.ID(), "--surface", "codex"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), install, pack.ID(), "--surface", "agents"); err != nil {
 				t.Fatalf("install: %v %s", err, out)
 			}
 			foreign := filepath.Join(root, ".agents/skills/foreign-directory")
@@ -163,7 +163,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, foreign)
-			args := []string{"status", pack.ID(), "--surface", "codex", "--json"}
+			args := []string{"status", pack.ID(), "--surface", "agents", "--json"}
 			if scope == "project" {
 				args = append(args, "--project")
 			}
@@ -176,7 +176,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 			} else {
 				assertStructuredOutput(t, schemaRoot, "pack-status.schema.json", out)
 			}
-			if out, err := executeCommand(t, NewRootCommand(opts), remove, pack.ID(), "--surface", "codex"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), remove, pack.ID(), "--surface", "agents"); err != nil {
 				t.Fatalf("remove: %v %s", err, out)
 			}
 			if snapshotTree(t, foreign) != before {

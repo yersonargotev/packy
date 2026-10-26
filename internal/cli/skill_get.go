@@ -94,7 +94,7 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 			return nil
 		},
 	}
-	skill.Flags().StringVar(&surface, "surface", "", "explicit host: codex or claude")
+	skill.Flags().StringVar(&surface, "surface", "", "explicit projection convention: agents or claude")
 	skill.Flags().StringVar(&snapshotID, "snapshot", "", "reuse this exact retained Catalog Snapshot instead of the selected revision")
 	skill.Flags().BoolVar(&jsonOutput, "json", false, "Emit versioned skill-access JSON")
 	configureCatalogArguments(skill, &jsonOutput, failure)

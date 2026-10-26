@@ -11,13 +11,13 @@ import (
 )
 
 func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("receipt-global")
+	pack := testsupport.SkillVariants("receipt-global")
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	layout := newCLITestFixture(t, fixture.options)
 	packID := pack.ID()
 
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", packID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", packID, "--surface", "agents"); err != nil {
 		t.Fatalf("activate synthetic Pack: %v\n%s", err, out)
 	}
 
@@ -47,7 +47,7 @@ func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
 		t.Fatalf("receipt document = %#v\n%s", document, data)
 	}
 	receipt := document.Receipts[0]
-	if receipt.Pack.ID != packID || receipt.Pack.Version != pack.CurrentVersion() || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
+	if receipt.Pack.ID != packID || receipt.Pack.Version != pack.CurrentVersion() || receipt.Surface != "agents" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
 		t.Fatalf("receipt omitted installed Pack facts: %#v\n%s", receipt, data)
 	}
 	for _, projection := range receipt.Projections {
@@ -63,19 +63,19 @@ func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
 }
 
 func TestIssue518StatusReportsCurrentReceiptWithoutHistoricalAttempts(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("receipt-status")
+	pack := testsupport.SkillVariants("receipt-status")
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	packID := pack.ID()
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", packID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", packID, "--surface", "agents"); err != nil {
 		t.Fatalf("activate synthetic Pack: %v\n%s", err, out)
 	}
 
-	human, err := executeCommand(t, NewRootCommand(fixture.options), "status", packID, "--surface", "codex")
+	human, err := executeCommand(t, NewRootCommand(fixture.options), "status", packID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("status synthetic Pack: %v\n%s", err, human)
 	}
-	for _, fact := range []string{packID + " " + pack.CurrentVersion() + " on codex", "Resources:", "Readiness:", "Receipt ownership:", "Drift:"} {
+	for _, fact := range []string{packID + " " + pack.CurrentVersion() + " on agents", "Resources:", "Readiness:", "Receipt ownership:", "Drift:"} {
 		if !strings.Contains(human, fact) {
 			t.Fatalf("status omitted %q:\n%s", fact, human)
 		}
@@ -84,7 +84,7 @@ func TestIssue518StatusReportsCurrentReceiptWithoutHistoricalAttempts(t *testing
 		t.Fatalf("status exposed retired attempt history:\n%s", human)
 	}
 
-	encoded, err := executeCommand(t, NewRootCommand(fixture.options), "status", packID, "--surface", "codex", "--json")
+	encoded, err := executeCommand(t, NewRootCommand(fixture.options), "status", packID, "--surface", "agents", "--json")
 	if err != nil {
 		t.Fatalf("JSON status synthetic Pack: %v\n%s", err, encoded)
 	}

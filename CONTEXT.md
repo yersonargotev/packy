@@ -9,12 +9,10 @@ Independent catalog authoring and publication are recorded in
 The two projection conventions and explicit custom-agent client targets are
 recorded in [ADR 0045](docs/adr/0045-focus-surfaces-on-agents-and-claude.md).
 
-The Agents/Claude surface vocabulary and plugin concepts below describe that
-accepted target design. Engine implementation and catalog adoption are separate
-delivery work; these definitions do not establish released feature availability.
-The supported surfaces are Codex (`codex`) and Claude Code (`claude`) in the
-current engine. Antigravity and GitHub Copilot CLI remain outside its supported
-client integrations.
+The engine supports the Agents (`agents`) and Claude (`claude`) projection
+conventions. Plugin concepts below describe the accepted target design; plugin
+implementation and catalog adoption remain separate delivery work. Antigravity
+and GitHub Copilot CLI remain outside its supported client integrations.
 
 ## Glossary
 
@@ -147,6 +145,10 @@ custom-agent format or execution capabilities.
 A reviewed definition of a workflow role in one explicitly identified runtime
 client's native format and scope. It is distinct from metadata inside a skill
 and remains a declared resource dependency when a workflow requires that role.
+Agents currently supports explicit global Codex roles through a reviewed
+`client_projection` binding and a client-selected lifecycle. Unsupported client
+or scope combinations fail before mutation; shared Agents skills select no
+runtime client.
 
 ### Plugin export
 

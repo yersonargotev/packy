@@ -183,13 +183,13 @@ func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 
 func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	t.Run("converged active pack", func(t *testing.T) {
-		pack := testsupport.PortableAllSurfaces("doctor-portable")
+		pack := testsupport.SkillVariants("doctor-portable")
 		manifest := pack.Manifest()
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		fixture := newSyntheticCLIFixture(t, terminal, pack)
 		opts, home := fixture.options, fixture.home
 		opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "agents"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		before := snapshotTree(t, home)
@@ -199,7 +199,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor: %v\n%s", err, human)
 		}
-		checkName := "pack-" + manifest.ID + "-codex"
+		checkName := "pack-" + manifest.ID + "-agents"
 		for _, want := range []string{"PASS packy-core", "PASS " + checkName, "no confirmed health problems", "SUMMARY status=healthy passes=2"} {
 			if !strings.Contains(human, want) {
 				t.Fatalf("human doctor missing %q:\n%s", want, human)
@@ -223,15 +223,15 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	})
 
 	t.Run("active drift warns with current remediation", func(t *testing.T) {
-		pack := testsupport.PortableAllSurfaces("doctor-drift")
+		pack := testsupport.SkillVariants("doctor-drift")
 		manifest := pack.Manifest()
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		fixture := newSyntheticCLIFixture(t, terminal, pack)
 		opts, home := fixture.options, fixture.home
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "agents"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
-		if err := os.Remove(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
+		if err := os.Remove(filepath.Join(home, ".agents", "skills", "guide", "SKILL.md")); err != nil {
 			t.Fatal(err)
 		}
 		before := snapshotTree(t, home)
@@ -241,7 +241,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor error=%v\n%s", err, out)
 		}
-		for _, want := range []string{"WARN pack-" + manifest.ID + "-codex", "projection findings", "packy activate " + manifest.ID + " --surface codex", "packy status " + manifest.ID + " --surface codex"} {
+		for _, want := range []string{"WARN pack-" + manifest.ID + "-agents", "projection findings", "packy activate " + manifest.ID + " --surface agents", "packy status " + manifest.ID + " --surface agents"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("drift doctor missing %q:\n%s", want, out)
 			}
@@ -252,17 +252,17 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	})
 
 	t.Run("unobservable runtime is informational", func(t *testing.T) {
-		pack := testsupport.PortableAllSurfaces("doctor-unobservable")
+		pack := testsupport.SkillVariants("doctor-unobservable")
 		manifest := pack.Manifest()
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		fixture := newSyntheticCLIFixture(t, terminal, pack)
 		opts, home := fixture.options, fixture.home
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "agents"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		before := snapshotTree(t, home)
 		out, err := executeCommand(t, NewRootCommand(opts), "doctor")
-		if err != nil || !strings.Contains(out, "INFO pack-"+manifest.ID+"-codex-usable-runtime-usability-runtime-unobservable") || !strings.Contains(out, "SUMMARY status=healthy") || !strings.Contains(out, "infos=") || strings.Contains(out, "WARN pack-"+manifest.ID+"-codex") {
+		if err != nil || !strings.Contains(out, "INFO pack-"+manifest.ID+"-agents-usable-runtime-usability-runtime-unobservable") || !strings.Contains(out, "SUMMARY status=healthy") || !strings.Contains(out, "infos=") || strings.Contains(out, "WARN pack-"+manifest.ID+"-agents") {
 			t.Fatalf("informational doctor: %v\n%s", err, out)
 		}
 		if snapshotTree(t, home) != before {
@@ -277,9 +277,9 @@ func TestDoctorPreservesUnknownConditionsForBundledPackHealth(t *testing.T) {
 		{Type: capabilitypack.ConditionSurfaceAuthorization, Dimension: capabilitypack.ReadinessAuthorized, Value: capabilitypack.ReadinessUnknown, Reason: capabilitypack.ReasonAuthorizationUnknown, Message: "surface authorization cannot be observed"},
 	}
 	report := setuphealth.Diagnose("/sandbox/home", "/sandbox/xdg", setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{
-		{ID: "portable-alpha", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
-		{ID: "portable-beta", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
-		{ID: "capability-rich", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "portable-alpha", Surface: "agents", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "portable-beta", Surface: "agents", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "capability-rich", Surface: "agents", Conditions: setupHealthConditions(unknownConditions)},
 	}})
 	if report.Summary.Status != "healthy" || report.Summary.Warnings != 0 || report.Summary.Failures != 0 || report.Summary.Infos != 6 {
 		t.Fatalf("report summary = %+v", report.Summary)
@@ -303,10 +303,10 @@ func TestDoctorHumanAndJSONScenarioContracts(t *testing.T) {
 	}{
 		{name: "no pack", checkName: "packy-core", severity: setuphealth.Pass, status: "healthy"},
 		{name: "inactive pack", checkName: "packy-core", severity: setuphealth.Pass, status: "healthy"},
-		{name: "converged", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex"}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Pass, status: "healthy"},
-		{name: "drifted", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex", ProjectionProblems: 1}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Warn, status: "warnings"},
-		{name: "missing requirement", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex", MissingRequirements: 1}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Warn, status: "warnings"},
-		{name: "pending human action", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex", PendingHumanActions: 1}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Warn, status: "warnings"},
+		{name: "converged", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "agents"}}}, checkName: "pack-portable-alpha-agents", severity: setuphealth.Pass, status: "healthy"},
+		{name: "drifted", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "agents", ProjectionProblems: 1}}}, checkName: "pack-portable-alpha-agents", severity: setuphealth.Warn, status: "warnings"},
+		{name: "missing requirement", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "agents", MissingRequirements: 1}}}, checkName: "pack-portable-alpha-agents", severity: setuphealth.Warn, status: "warnings"},
+		{name: "pending human action", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "agents", PendingHumanActions: 1}}}, checkName: "pack-portable-alpha-agents", severity: setuphealth.Warn, status: "warnings"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -429,7 +429,7 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 			"HOME":            home,
 			"XDG_CONFIG_HOME": filepath.Join(home, "xdg-config"),
 			"XDG_CACHE_HOME":  filepath.Join(home, "xdg-cache"),
-			"CODEX_HOME":      filepath.Join(home, ".codex"),
+			"CODEX_HOME":      filepath.Join(home, ".agents"),
 			"PATH":            homebrewBin,
 			"HOMEBREW_PREFIX": homebrewPrefix,
 		},

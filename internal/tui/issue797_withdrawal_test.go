@@ -13,9 +13,9 @@ func TestIssue797WithdrawnPackOffersOnlyDeactivation(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 			ID: "withdrawn-runtime", Version: "1.0.0", Description: "Retained installed Pack", CatalogState: "retained",
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Active: true, InstalledVersion: "1.0.0"}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: false, Active: true, InstalledVersion: "1.0.0"}},
 		}}}},
-		preview: tui.Preview{ID: "withdrawn-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-runtime", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}},
+		preview: tui.Preview{ID: "withdrawn-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-runtime", PackVersion: "1.0.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -25,7 +25,7 @@ func TestIssue797WithdrawnPackOffersOnlyDeactivation(t *testing.T) {
 		t.Fatalf("withdrawn Pack actions are not deactivation-only:\n%s", view)
 	}
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "codex" {
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "agents" {
 		t.Fatalf("withdrawn Pack preview request = %#v", backend.previewRequests)
 	}
 }
@@ -34,7 +34,7 @@ func TestIssue797WithdrawnProjectPackOffersOnlyPersonalDeactivationAndUninstall(
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "withdrawn-runtime", Version: "1.0.0", Description: "Retained project Pack", CatalogState: "retained",
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Installation: "installed", Runtime: "active", Active: true, InstalledVersion: "1.0.0"}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: false, Installation: "installed", Runtime: "active", Active: true, InstalledVersion: "1.0.0"}},
 		}}}},
 	}
 	model := loadModel(t, backend)
@@ -57,10 +57,10 @@ func TestIssue797WithdrawnProjectPackOffersOnlyPersonalDeactivationAndUninstall(
 func TestIssue797RemovedSurfaceOfCurrentPackOffersOnlyDeactivation(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"codex"},
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"agents"},
 			SurfaceStatuses: []tui.SurfaceStatus{
 				{Name: "claude", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
-				{Name: "codex", Supported: true},
+				{Name: "agents", Supported: true},
 			},
 		}}}},
 	}
@@ -84,7 +84,7 @@ func TestIssue797RemovedSurfaceAfterCurrentSurfaceOffersOnlyDeactivation(t *test
 			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"claude"},
 			SurfaceStatuses: []tui.SurfaceStatus{
 				{Name: "claude", Supported: true},
-				{Name: "codex", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
+				{Name: "agents", Supported: false, Active: true, InstalledVersion: "1.0.0", CatalogUpdateAvailable: true},
 			},
 		}}}},
 	}
@@ -92,7 +92,7 @@ func TestIssue797RemovedSurfaceAfterCurrentSurfaceOffersOnlyDeactivation(t *test
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "CLI surface: codex") || !strings.Contains(view, "Deactivate") {
+	if !strings.Contains(view, "CLI surface: agents") || !strings.Contains(view, "Deactivate") {
 		t.Fatalf("removed active surface was not preferred for deactivation:\n%s", view)
 	}
 	for _, forbidden := range []string{"Configure", "Update", "Activate"} {
@@ -105,10 +105,10 @@ func TestIssue797RemovedSurfaceAfterCurrentSurfaceOffersOnlyDeactivation(t *test
 func TestIssue797InactiveRemovedProjectSurfaceUninstallsDirectly(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"codex"},
+			ID: "mixed-surface", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"agents"},
 			SurfaceStatuses: []tui.SurfaceStatus{
 				{Name: "claude", Supported: false, Installation: "installed", Runtime: "pending", InstalledVersion: "1.0.0"},
-				{Name: "codex", Supported: true, Installation: "absent"},
+				{Name: "agents", Supported: true, Installation: "absent"},
 			},
 		}}}},
 		preview: tui.Preview{ID: "removed-uninstall", Digest: "digest", Operation: "uninstall", Disposition: "previewable", PackID: "mixed-surface", PackVersion: "1.0.0", Surface: "claude", Scope: "project"},
@@ -126,9 +126,9 @@ func TestIssue797OrphanedWithdrawnProjectSurfaceDeactivatesDirectly(t *testing.T
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "withdrawn-orphan", Version: "1.0.0", CatalogState: "retained",
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: false, Installation: "absent", Runtime: "orphaned", InstalledVersion: "1.0.0"}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: false, Installation: "absent", Runtime: "orphaned", InstalledVersion: "1.0.0"}},
 		}}}},
-		preview: tui.Preview{ID: "orphan-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-orphan", PackVersion: "1.0.0", Surface: "codex", Scope: "project"},
+		preview: tui.Preview{ID: "orphan-deactivation", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "withdrawn-orphan", PackVersion: "1.0.0", Surface: "agents", Scope: "project"},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
@@ -139,7 +139,7 @@ func TestIssue797OrphanedWithdrawnProjectSurfaceDeactivatesDirectly(t *testing.T
 		t.Fatalf("orphaned withdrawn project action is not deactivation-only:\n%s", view)
 	}
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "codex" {
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Surface != "agents" {
 		t.Fatalf("orphaned withdrawn project surface preview request = %#v", backend.previewRequests)
 	}
 }
@@ -147,8 +147,8 @@ func TestIssue797OrphanedWithdrawnProjectSurfaceDeactivatesDirectly(t *testing.T
 func TestIssue797OrphanedCurrentProjectSurfaceOffersDeactivationNotInstall(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "current-orphan", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"codex"},
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "absent", Runtime: "orphaned", InstalledVersion: "2.0.0"}},
+			ID: "current-orphan", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"agents"},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "absent", Runtime: "orphaned", InstalledVersion: "2.0.0"}},
 		}}}},
 	}
 	model := loadModel(t, backend)
@@ -164,10 +164,10 @@ func TestIssue797OrphanedCurrentProjectSurfaceOffersDeactivationNotInstall(t *te
 func TestIssue797CurrentPackPrioritizesOrphanAndBlocksOtherSurfaceInstall(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "current-mixed-orphan", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"claude", "codex"},
+			ID: "current-mixed-orphan", Version: "2.0.0", CatalogState: "current", Surfaces: []string{"agents", "claude"},
 			SurfaceStatuses: []tui.SurfaceStatus{
 				{Name: "claude", Supported: true, Installation: "absent"},
-				{Name: "codex", Supported: true, Installation: "absent", Runtime: "orphaned", InstalledVersion: "2.0.0"},
+				{Name: "agents", Supported: true, Installation: "absent", Runtime: "orphaned", InstalledVersion: "2.0.0"},
 			},
 		}}}},
 	}
@@ -176,7 +176,7 @@ func TestIssue797CurrentPackPrioritizesOrphanAndBlocksOtherSurfaceInstall(t *tes
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "CLI surface: codex") || !strings.Contains(view, "Deactivate for me") || strings.Contains(view, "Install") {
+	if !strings.Contains(view, "CLI surface: agents") || !strings.Contains(view, "Deactivate for me") || strings.Contains(view, "Install") {
 		t.Fatalf("current Pack did not prioritize orphaned surface:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
@@ -191,7 +191,7 @@ func TestIssue797MultipleOrphanedWithdrawnSurfacesRemainSelectable(t *testing.T)
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "withdrawn-orphans", Version: "1.0.0", CatalogState: "retained",
 			SurfaceStatuses: []tui.SurfaceStatus{
-				{Name: "codex", Supported: false, Installation: "absent", Runtime: "blocked", InstalledVersion: "1.0.0"},
+				{Name: "agents", Supported: false, Installation: "absent", Runtime: "blocked", InstalledVersion: "1.0.0"},
 				{Name: "claude", Supported: false, Installation: "absent", Runtime: "orphaned", InstalledVersion: "1.0.0"},
 			},
 		}}}},

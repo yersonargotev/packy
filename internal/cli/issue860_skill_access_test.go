@@ -39,7 +39,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 	}
 	t.Run("missing catalog is actionable and versioned", func(t *testing.T) {
 		environment := testprocess.Env(t, "PATH="+t.TempDir())
-		out, _, err := runSkillAccessCLI(t, binary, t.TempDir(), environment, "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		out, _, err := runSkillAccessCLI(t, binary, t.TempDir(), environment, "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 		if err == nil || !bytes.Contains(out, []byte(`"catalog_unavailable"`)) || !bytes.Contains(out, []byte("packy init")) {
 			t.Fatalf("missing catalog: %v\n%s", err, out)
 		}
@@ -48,12 +48,12 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			args []string
 			code string
 		}{
-			{[]string{"--surface", "codex"}, "invalid_arguments"},
-			{[]string{"guide", "--surface", "codex"}, "invalid_identity"},
-			{[]string{"../bad:guide", "--surface", "codex"}, "invalid_identity"},
+			{[]string{"--surface", "agents"}, "invalid_arguments"},
+			{[]string{"guide", "--surface", "agents"}, "invalid_identity"},
+			{[]string{"../bad:guide", "--surface", "agents"}, "invalid_identity"},
 			{[]string{"reviewed:guide"}, "unsupported_surface"},
 			{[]string{"reviewed:guide", "--surface", "opencode"}, "unsupported_surface"},
-			{[]string{"reviewed:guide", "--wat", "--surface", "codex"}, "invalid_arguments"},
+			{[]string{"reviewed:guide", "--wat", "--surface", "agents"}, "invalid_arguments"},
 		} {
 			args := append([]string{"get", "skill"}, test.args...)
 			out, _, err := runSkillAccessCLI(t, binary, t.TempDir(), environment, append(args, "--json")...)
@@ -72,7 +72,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			t.Fatalf("prepare candidate: %v %s %s", err, out, stderr)
 		}
 		protected := map[string]string{}
-		for _, relative := range []string{"project/packy.json", "project/packy.lock.json", "project/AGENTS.md", "project/.agents/skills/guide/SKILL.md", "home/.packy/packs.json", "home/.agents/skills/guide/SKILL.md", "home/.claude/skills/guide/SKILL.md", "home/.codex/AGENTS.md", "config/foreign.txt"} {
+		for _, relative := range []string{"project/packy.json", "project/packy.lock.json", "project/AGENTS.md", "project/.agents/skills/guide/SKILL.md", "home/.packy/packs.json", "home/.agents/skills/guide/SKILL.md", "home/.claude/skills/guide/SKILL.md", "home/.agents/AGENTS.md", "config/foreign.txt"} {
 			path := filepath.Join(workspace, relative)
 			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 				t.Fatal(err)
@@ -81,10 +81,10 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		for _, relative := range []string{"snapshots", "project", "config", "home/.packy", "home/.agents", "home/.claude", "home/.codex"} {
+		for _, relative := range []string{"snapshots", "project", "config", "home/.packy", "home/.agents", "home/.claude", "home/.agents"} {
 			protected[relative] = snapshotTree(t, filepath.Join(workspace, relative))
 		}
-		for _, surface := range []string{"claude", "codex"} {
+		for _, surface := range []string{"agents", "claude"} {
 			args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", surface, "--json"}
 			out, stderr, err := runSkillAccessCLI(t, binary, directory, environment, args...)
 			if err != nil {
@@ -152,7 +152,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		acquireSkillAccessCatalog(t, env, directory, first, firstID, "init")
 		get := func(snapshot string) (string, []byte) {
 			t.Helper()
-			args := []string{"get", "skill", "reviewed:guide", "--surface", "codex", "--json"}
+			args := []string{"get", "skill", "reviewed:guide", "--surface", "agents", "--json"}
 			if snapshot != "" {
 				args = append(args, "--snapshot", snapshot)
 			}
@@ -183,7 +183,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		}
 		path, body := get(firstID)
 		for _, identity := range []string{"reviewed:missing", "missing:guide"} {
-			out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", identity, "--surface", "codex", "--json")
+			out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", identity, "--surface", "agents", "--json")
 			if err == nil || !bytes.Contains(out, []byte(`"unknown_skill"`)) {
 				t.Fatalf("unknown identity %s: %v %s", identity, err, out)
 			}
@@ -194,13 +194,13 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		next := skillAccessAssets(t, nextID, "next", nil)
 		acquireSkillAccessCatalog(t, env, directory, next, nextID, "catalog", "refresh")
 		newPath, newBody := get("")
-		if path == newPath || !bytes.Contains(newBody, []byte("codex next")) {
+		if path == newPath || !bytes.Contains(newBody, []byte("agents next")) {
 			t.Fatal("new request did not follow explicit refresh")
 		}
 		if err := os.WriteFile(newPath, []byte("consumer modification\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		drift, _, driftErr := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		drift, _, driftErr := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 		if driftErr == nil || !bytes.Contains(drift, []byte(`"preparation_failed"`)) {
 			t.Fatalf("prepared drift succeeded: %v %s", driftErr, drift)
 		}
@@ -221,10 +221,10 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				t.Fatalf("readable omitted %s: %s", want, readable)
 			}
 		}
-		if err := os.Remove(filepath.Join(sourceRoot, "packs/reviewed/skills/codex/asset.bin")); err != nil {
+		if err := os.Remove(filepath.Join(sourceRoot, "packs/reviewed/skills/agents/asset.bin")); err != nil {
 			t.Fatal(err)
 		}
-		out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", "reviewed:guide", "--surface", "codex", "--snapshot", firstID, "--json")
+		out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", "reviewed:guide", "--surface", "agents", "--snapshot", firstID, "--json")
 		if err == nil || !bytes.Contains(out, []byte(`"snapshot_unavailable"`)) {
 			t.Fatalf("missing retained source substituted a newer revision: %v %s", err, out)
 		}
@@ -245,7 +245,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				bindings := skill["bindings"].([]any)
 				skill["bindings"] = []any{bindings[0]}
 				skill["variants"] = skill["variants"].([]any)[:1]
-				skill["surface_exclusions"] = []any{map[string]any{"surface": "codex", "mode": "optional", "code": "review-needed", "reason": "Codex is not reviewed"}}
+				skill["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "review-needed", "reason": "Agents is not reviewed"}}
 			}},
 			{"native template", "incompatible_resource", func(manifest map[string]any) {
 				for _, value := range manifest["resources"].([]any)[1].(map[string]any)["bindings"].([]any) {
@@ -268,7 +268,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 					binding := value.(map[string]any)
 					binding["name"] = "helper"
 					prefix := ""
-					if binding["surface"] == "codex" {
+					if binding["surface"] == "agents" {
 						prefix = "$"
 					}
 					if binding["surface"] == "claude" {
@@ -293,7 +293,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				assets := skillAccessAssets(t, strings.Repeat("d", 40), "first", test.edit)
 				workspace := filepath.Join(t.TempDir(), "candidate")
 				environment := testprocess.Env(t, "PATH="+t.TempDir())
-				out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), environment, "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+				out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), environment, "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 				if err == nil || !bytes.Contains(out, []byte(`"`+test.code+`"`)) {
 					t.Fatalf("%s: %v %s %s", test.name, err, out, stderr)
 				}
@@ -317,7 +317,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		acquireSkillAccessCatalog(t, env, project, assets, id, "init")
 		opts := Options{Env: env, Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{}, Terminal: &fakeTerminal{interactive: true, approve: true}}
 		for _, verb := range []string{"activate", "install"} {
-			if out, err := executeCommand(t, NewRootCommand(opts), verb, "reviewed", "--surface", "codex", "--resource", "skill:guide"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), verb, "reviewed", "--surface", "agents", "--resource", "skill:guide"); err != nil {
 				t.Fatalf("seed receipted installation: %v %s", err, out)
 			}
 		}
@@ -327,7 +327,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			t.Fatal(err)
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
-			t.Fatal("expected native Codex source link")
+			t.Fatal("expected native Agents source link")
 		}
 		if err := os.Remove(installed); err != nil {
 			t.Fatal(err)
@@ -342,7 +342,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		for _, path := range []string{project, filepath.Join(env["HOME"], ".packy"), filepath.Join(env["HOME"], ".agents"), filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog")} {
 			protected[path] = snapshotTree(t, path)
 		}
-		out, stderr, err := runSkillAccessCLI(t, binary, project, environment, "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		out, stderr, err := runSkillAccessCLI(t, binary, project, environment, "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 		if err != nil {
 			t.Fatalf("get with modified installed copy: %v %s %s", err, out, stderr)
 		}
@@ -353,7 +353,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		if err := json.Unmarshal(out, &result); err != nil {
 			t.Fatal(err)
 		}
-		if body, err := os.ReadFile(result.EntryDocument); err != nil || !bytes.Contains(body, []byte("codex first")) {
+		if body, err := os.ReadFile(result.EntryDocument); err != nil || !bytes.Contains(body, []byte("agents first")) {
 			t.Fatalf("retrieval did not use reviewed source: %s %v", body, err)
 		}
 		for path, before := range protected {
@@ -404,7 +404,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				binding["surface"] = "opencode"
 				r["bindings"] = []any{binding}
 				r["variants"] = []any{}
-				r["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
+				r["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "agents", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
 			}},
 
 			{"null", false, func(m map[string]any) { m["resources"].([]any)[1].(map[string]any)["on_demand"] = nil }},
@@ -469,7 +469,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		if err := os.Symlink(source, filepath.Join(dataRoot, "skill-access")); err != nil {
 			t.Fatal(err)
 		}
-		out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 		if err == nil || !bytes.Contains(out, []byte(`"preparation_failed"`)) {
 			t.Fatalf("linked preparation: %v %s", err, out)
 		}
@@ -513,7 +513,7 @@ func runSkillAccessCLI(t *testing.T, binary, directory string, environment []str
 func skillAccessProject(t *testing.T, revision string, edit func(map[string]any)) string {
 	t.Helper()
 	project := t.TempDir()
-	fixture := testsupport.SkillVariants("reviewed", testsupport.SurfaceClaude, testsupport.SurfaceCodex)
+	fixture := testsupport.SkillVariants("reviewed", testsupport.SurfaceClaude, testsupport.SurfaceAgents)
 	if err := fixture.WriteCatalog(project); err != nil {
 		t.Fatal(err)
 	}
@@ -580,7 +580,7 @@ func skillAccessProject(t *testing.T, revision string, edit func(map[string]any)
 	if err := os.WriteFile(manifestPath, encoded, 0644); err != nil {
 		t.Fatal(err)
 	}
-	for _, surface := range []string{"common", "claude", "codex"} {
+	for _, surface := range []string{"common", "agents", "claude"} {
 		root := filepath.Join(packRoot, "skills", surface)
 		declared := false
 		for _, value := range resources {

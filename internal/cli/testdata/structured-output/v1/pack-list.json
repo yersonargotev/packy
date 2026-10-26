@@ -6,37 +6,52 @@
       "id": "addy",
       "version": "1.1.0",
       "description": "Addy agent skills",
-      "surfaces": ["claude", "codex"]
+      "surfaces": [
+        "agents",
+        "claude"
+      ]
     },
     {
       "id": "argote",
       "version": "1.0.2",
       "description": "Yerson Argote's engineering and communication guidance",
-      "surfaces": ["claude", "codex"]
+      "surfaces": [
+        "agents",
+        "claude"
+      ]
     },
     {
       "id": "engram",
       "version": "3.0.0",
       "description": "Upstream Engram CLI memory workflows for agent work",
-      "surfaces": ["codex"]
+      "surfaces": [
+        "agents"
+      ]
     },
     {
       "id": "issue-delivery",
       "version": "1.1.1",
       "description": "Deliver issues through policy-driven or Matt-configured workflows",
-      "surfaces": ["codex"]
+      "surfaces": [
+        "agents"
+      ]
     },
     {
       "id": "matty",
       "version": "1.0.4",
       "description": "Matty workflow",
-      "surfaces": ["claude", "codex"]
+      "surfaces": [
+        "agents",
+        "claude"
+      ]
     },
     {
       "id": "orchestrate",
       "version": "1.0.1",
-      "description": "Coordinate focused Codex subagents",
-      "surfaces": ["codex"]
+      "description": "Coordinate focused Agents subagents",
+      "surfaces": [
+        "agents"
+      ]
     }
   ]
 }

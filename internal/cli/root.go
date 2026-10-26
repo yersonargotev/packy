@@ -88,7 +88,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "packy",
 		Short: "Packy is an installer and configurator for reviewed capability Packs",
-		Long: `Packy is an installer and configurator for reviewed capability Packs on Claude Code and Codex.
+		Long: `Packy is an installer and configurator for reviewed capability Packs on Claude Code and Agents.
 
 Lifecycle commands preview an immutable plan before interactive Apply. Approvals
 are requested separately for each consent kind. A verified Apply can succeed while
@@ -106,19 +106,19 @@ and receive a new Preview. Packy never retries it automatically.
   packy status
   packy status engram --surface claude
   packy status engram --surface claude --require usable --json
-  packy status engram --surface codex
-  packy status engram --surface codex --require usable
-  packy check orchestrate --surface codex --dry-run
-  packy check orchestrate --surface codex --result positive
-  packy install matty --surface codex --dry-run
+  packy status engram --surface agents
+  packy status engram --surface agents --require usable
+  packy check orchestrate --surface agents --client codex --dry-run
+  packy check orchestrate --surface agents --client codex --result positive
+  packy install matty --surface agents --dry-run
   packy uninstall matty --dry-run
-  packy activate matty --surface codex --dry-run
-  packy activate example-pack --surface codex --resource skill:ask-matt --dry-run
-  packy deactivate example-pack --surface codex --resource skill:ask-matt --dry-run
+  packy activate matty --surface agents --dry-run
+  packy activate example-pack --surface agents --resource skill:ask-matt --dry-run
+  packy deactivate example-pack --surface agents --resource skill:ask-matt --dry-run
   packy activate engram --surface claude --dry-run --json
-  packy activate matty --surface codex
-  packy update matty --surface codex
-  packy deactivate matty --surface codex`,
+  packy activate matty --surface agents
+  packy update matty --surface agents
+  packy deactivate matty --surface agents`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       packyversion.Value,

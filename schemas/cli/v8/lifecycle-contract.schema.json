@@ -86,6 +86,28 @@
         },
         "sharing": {
           "type": "string"
+        },
+        "client_projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "client",
+            "scopes"
+          ],
+          "properties": {
+            "client": {
+              "const": "codex"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "const": "global"
+              },
+              "minItems": 1,
+              "maxItems": 1,
+              "uniqueItems": true
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -107,7 +129,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex",
+            "agents",
             "opencode"
           ]
         },
@@ -249,7 +271,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex",
+            "agents",
             "opencode"
           ]
         },

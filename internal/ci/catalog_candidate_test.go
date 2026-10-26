@@ -69,7 +69,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 		}
 	}
 	ambientBefore := catalogTreeState(t, ambientRoots)
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			workspace := filepath.Join(t.TempDir(), "workspace")
 			prefix := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}
@@ -205,7 +205,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 			t.Fatal(err)
 		}
 		before := catalogTreeState(t, []string{parent})
-		out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, append(append([]string{}, prefix...), "install", "alpha", "--surface", "codex", "--json")...)
+		out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, append(append([]string{}, prefix...), "install", "alpha", "--surface", "agents", "--json")...)
 		if err == nil || !bytes.Contains(diagnostic, []byte("candidate workspace Git boundary")) || !reflect.DeepEqual(before, catalogTreeState(t, []string{parent})) {
 			t.Fatalf("damaged inner Git boundary escaped isolation: %v %s %s", err, out, diagnostic)
 		}

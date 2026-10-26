@@ -575,7 +575,7 @@ func projectActionDesiredFingerprint(action ProjectionAction) string {
 }
 
 func projectTreeAction(kind ProjectionActionKind) bool {
-	return kind == ActionCodexProjectSkillTree || kind == ActionClaudeProjectSkillTree
+	return kind == ActionAgentsProjectSkillTree || kind == ActionClaudeProjectSkillTree
 }
 
 func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, error) {

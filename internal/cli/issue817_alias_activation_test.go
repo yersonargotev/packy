@@ -37,8 +37,8 @@ func TestIssue817EmilAliasPreservesMattyThroughLifecycle(t *testing.T) {
 		}
 		return output
 	}
-	run("activate", "matty", "--surface", "codex", "--resource", "skill:prototype")
-	before, err := store.LoadSnapshot(context.Background(), capabilitypack.SurfaceCodex)
+	run("activate", "matty", "--surface", "agents", "--resource", "skill:prototype")
+	before, err := store.LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,11 +48,11 @@ func TestIssue817EmilAliasPreservesMattyThroughLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", "emil", "--surface", "codex", "--resource", "skill:prototype", "--dry-run")
+	output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", "emil", "--surface", "agents", "--resource", "skill:prototype", "--dry-run")
 	if err == nil || !strings.Contains(output, "ownership") {
 		t.Fatalf("unaliased collision: err=%v\n%s", err, output)
 	}
-	output = run("activate", "emil", "--surface", "codex", "--resource", "skill:prototype", "--alias", "skill:prototype=emil-prototype")
+	output = run("activate", "emil", "--surface", "agents", "--resource", "skill:prototype", "--alias", "skill:prototype=emil-prototype")
 	if !strings.Contains(output, "verified=yes") {
 		t.Fatalf("aliased activation was not verified:\n%s", output)
 	}
@@ -60,7 +60,7 @@ func TestIssue817EmilAliasPreservesMattyThroughLifecycle(t *testing.T) {
 	if _, err := os.ReadFile(filepath.Join(aliased, "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
-	run("update", "emil", "--surface", "codex", "--alias", "skill:prototype=emil-updated")
+	run("update", "emil", "--surface", "agents", "--alias", "skill:prototype=emil-updated")
 	if _, err := os.Lstat(aliased); !os.IsNotExist(err) {
 		t.Fatalf("retired alias remains: %v", err)
 	}
@@ -68,11 +68,11 @@ func TestIssue817EmilAliasPreservesMattyThroughLifecycle(t *testing.T) {
 	if _, err := os.ReadFile(filepath.Join(updated, "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
-	run("deactivate", "emil", "--surface", "codex")
+	run("deactivate", "emil", "--surface", "agents")
 	if _, err := os.Lstat(updated); !os.IsNotExist(err) {
 		t.Fatalf("deactivated alias remains: %v", err)
 	}
-	after, err := store.LoadSnapshot(context.Background(), capabilitypack.SurfaceCodex)
+	after, err := store.LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents)
 	if err != nil {
 		t.Fatal(err)
 	}

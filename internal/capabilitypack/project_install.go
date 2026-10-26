@@ -118,6 +118,7 @@ type ProjectNoticeContribution struct {
 }
 
 type ProjectSelectionPreview struct {
+	Client    string                `json:"client,omitempty"`
 	Mode      SelectionMode         `json:"mode"`
 	Resources []ResourceClosureFact `json:"resources"`
 }
@@ -257,6 +258,9 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 		}
 		selectedVersion = intent.Version
 		if request.Selection != nil {
+			if request.Selection.Client == "" {
+				request.Selection.Client = intent.Selection.Client
+			}
 			selectionChanged = digestJSON(intent.Selection) != digestJSON(*request.Selection)
 			intent.Selection = cloneSelection(*request.Selection)
 		}
@@ -522,6 +526,9 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
+	if err := validateSelectedClient(selectedPack, selection, request.Surface, "project"); err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
 	intentPack := selectedPack
 	aliases := cloneAliases(request.Aliases)
 	if err := canonicalizeAliases(&aliases); err != nil {
@@ -633,10 +640,10 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
-		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
+		if projection.Action.Kind == ActionAgentsProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o755
 		}
-		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionClaudeProjectInstruction {
+		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
 		} else if projection.Action.Kind == ActionClaudeProjectMCP {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
@@ -734,7 +741,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		ResourceDefinitions: ResourceDefinitionsFor(selectedPack, request.Surface),
 		SchemaVersion:       ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
-		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
+		Selection:   ProjectSelectionPreview{Client: selection.Client, Mode: selection.Mode, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV1, Packs: manifestPacks},
 		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV1, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
@@ -1060,12 +1067,9 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 	case "notice", "instruction":
 		return "merge_marked_file"
 	case "mcp_server":
-		if surface == SurfaceCodex {
-			return "merge_marked_file"
-		}
 		return "merge_structured_file"
 	case "skill":
-		if surface == SurfaceCodex || surface == SurfaceClaude {
+		if surface == SurfaceAgents || surface == SurfaceClaude {
 			return "copy_tree"
 		}
 	}
@@ -1156,6 +1160,9 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 	seen := map[string]bool{}
 	targetOwners := map[string]string{}
 	for i, receipt := range receipts {
+		if err := validateReceiptClient(receipt, "project"); err != nil {
+			return err
+		}
 		if err := ValidateSurface(receipt.Surface); err != nil {
 			return err
 		}
@@ -1229,10 +1236,14 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 }
 
 func mergeProjectReceiptSelections(left, right ResourceSelection) ResourceSelection {
-	if left.Mode == SelectionAll || right.Mode == SelectionAll {
-		return ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	client := left.Client
+	if client == "" {
+		client = right.Client
 	}
-	selection, _ := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: append(append([]ResourceIdentity(nil), left.Roots...), right.Roots...)})
+	if left.Mode == SelectionAll || right.Mode == SelectionAll {
+		return ResourceSelection{Client: client, Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	}
+	selection, _ := canonicalSelection(ResourceSelection{Client: client, Mode: SelectionCustom, Roots: append(append([]ResourceIdentity(nil), left.Roots...), right.Roots...)})
 	return selection
 }
 
@@ -1295,8 +1306,11 @@ func deriveProjectManifestPack(pack ProjectManifestPack) ProjectManifestPack {
 			pack.Version = value.Version
 		}
 		pack.Surfaces = append(pack.Surfaces, value.Surface)
+		if value.Selection.Client != "" {
+			combined.Client = value.Selection.Client
+		}
 		if value.Selection.Mode == SelectionAll {
-			combined = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+			combined = ResourceSelection{Client: combined.Client, Mode: SelectionAll, Roots: []ResourceIdentity{}}
 		} else if combined.Mode != SelectionAll {
 			combined.Roots = append(combined.Roots, value.Selection.Roots...)
 		}

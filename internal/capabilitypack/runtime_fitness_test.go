@@ -9,22 +9,22 @@ import (
 func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *testing.T) {
 	pack := Pack{
 		ID:       "fitness",
-		Surfaces: []Surface{SurfaceClaude, SurfaceCodex},
+		Surfaces: []Surface{SurfaceAgents, SurfaceClaude},
 		Resources: []Resource{
 			{Kind: "asset", ID: "payload"},
 			{Kind: "notice", ID: "license"},
 			{
 				Kind: "skill", ID: "consumer", Requires: []string{"instruction:shared"}, Notices: []string{"notice:license"},
-				Bindings: []Binding{{Surface: SurfaceClaude, Projection: "skill", Name: "consumer"}, {Surface: SurfaceCodex, Projection: "skill", Name: "consumer"}},
+				Bindings: []Binding{{Surface: SurfaceClaude, Projection: "skill", Name: "consumer"}, {Surface: SurfaceAgents, Projection: "skill", Name: "consumer"}},
 			},
 			{
 				Kind: "instruction", ID: "shared",
-				Bindings: []Binding{{Surface: SurfaceClaude, Projection: "instruction", Name: "shared"}, {Surface: SurfaceCodex, Projection: "instruction", Name: "shared"}},
+				Bindings: []Binding{{Surface: SurfaceClaude, Projection: "instruction", Name: "shared"}, {Surface: SurfaceAgents, Projection: "instruction", Name: "shared"}},
 			},
 			{
 				Kind: "agent", ID: "claude-only",
 				Bindings:          []Binding{{Surface: SurfaceClaude, Projection: "agent", Name: "helper"}},
-				SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not supported"}},
+				SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "not supported"}},
 			},
 		},
 	}
@@ -48,14 +48,14 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 		mode    SelectionMode
 		root    string
 	}{
+		{SurfaceAgents, SelectionAll, ""},
+		{SurfaceAgents, SelectionCustom, "agent:claude-only"},
+		{SurfaceAgents, SelectionCustom, "instruction:shared"},
+		{SurfaceAgents, SelectionCustom, "skill:consumer"},
 		{SurfaceClaude, SelectionAll, ""},
 		{SurfaceClaude, SelectionCustom, "agent:claude-only"},
 		{SurfaceClaude, SelectionCustom, "instruction:shared"},
 		{SurfaceClaude, SelectionCustom, "skill:consumer"},
-		{SurfaceCodex, SelectionAll, ""},
-		{SurfaceCodex, SelectionCustom, "agent:claude-only"},
-		{SurfaceCodex, SelectionCustom, "instruction:shared"},
-		{SurfaceCodex, SelectionCustom, "skill:consumer"},
 	}
 	for i, want := range wantSelections {
 		row := first.Rows[i]
@@ -67,11 +67,11 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 			t.Fatalf("row %d identity = %s/%s/%s, want %s/%s/%s", i, row.Surface, row.Selection.Mode, root, want.surface, want.mode, want.root)
 		}
 	}
-	excluded := first.Rows[5]
+	excluded := first.Rows[1]
 	if excluded.Availability.Available || len(excluded.Availability.Reasons) != 1 || excluded.Availability.Reasons[0].Code != SelectionReasonRootExcluded || len(excluded.Resources) != 0 || len(excluded.Projections) != 0 {
 		t.Fatalf("surface-excluded row = %#v", excluded)
 	}
-	consumer := first.Rows[7]
+	consumer := first.Rows[3]
 	if got, want := consumer.Resources, []ResourceIdentity{{Kind: "instruction", ID: "shared"}, {Kind: "notice", ID: "license"}, {Kind: "skill", ID: "consumer"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("consumer closure = %#v, want %#v", got, want)
 	}
@@ -91,17 +91,17 @@ func TestEvaluateRuntimeFitnessRejectsUnavailableSelections(t *testing.T) {
 	}{
 		{
 			name: "dependency unavailable",
-			pack: Pack{ID: "dependency", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
-				{Kind: "skill", ID: "consumer", Requires: []string{"instruction:missing-here"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "consumer"}}},
-				{Kind: "instruction", ID: "missing-here", Bindings: []Binding{{Surface: SurfaceClaude, Projection: "instruction", Name: "missing-here"}}, SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not supported"}}},
+			pack: Pack{ID: "dependency", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{
+				{Kind: "skill", ID: "consumer", Requires: []string{"instruction:missing-here"}, Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "consumer"}}},
+				{Kind: "instruction", ID: "missing-here", Bindings: []Binding{{Surface: SurfaceClaude, Projection: "instruction", Name: "missing-here"}}, SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "not supported"}}},
 			}},
 			want: "dependency-unavailable",
 		},
 		{
 			name: "conflict",
-			pack: Pack{ID: "conflict", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
-				{Kind: "skill", ID: "left", Conflicts: []string{"skill:right"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "left"}}},
-				{Kind: "skill", ID: "right", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "right"}}},
+			pack: Pack{ID: "conflict", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{
+				{Kind: "skill", ID: "left", Conflicts: []string{"skill:right"}, Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "left"}}},
+				{Kind: "skill", ID: "right", Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "right"}}},
 			}},
 			want: "resource-conflict",
 		},
@@ -117,15 +117,15 @@ func TestEvaluateRuntimeFitnessRejectsUnavailableSelections(t *testing.T) {
 }
 
 func TestEvaluateRuntimeFitnessRejectsProjectionNameCollision(t *testing.T) {
-	pack := Pack{ID: "collision", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
-		{Kind: "skill", ID: "left", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "same"}}},
-		{Kind: "skill", ID: "right", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "same"}}},
+	pack := Pack{ID: "collision", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{
+		{Kind: "skill", ID: "left", Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "same"}}},
+		{Kind: "skill", ID: "right", Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "same"}}},
 	}}
 	_, err := EvaluateRuntimeFitness(pack)
 	if err == nil {
 		t.Fatal("expected projection collision")
 	}
-	for _, fragment := range []string{"codex", "all", "skill:left", "skill:right", "skill+same"} {
+	for _, fragment := range []string{"agents", "all", "skill:left", "skill:right", "skill+same"} {
 		if !strings.Contains(err.Error(), fragment) {
 			t.Fatalf("collision error %q does not contain %q", err, fragment)
 		}

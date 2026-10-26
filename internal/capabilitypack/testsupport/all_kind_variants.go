@@ -8,7 +8,7 @@ import (
 // AllKindVariants exercises all eight logical kinds with reviewed host bodies.
 // Bindings remain fixed, including each host's explicit capability sources.
 func AllKindVariants(id string) Fixture {
-	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
+	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceAgents})
 	f.manifest.Origins = []Origin{}
 	kinds := []string{"agent", "asset", "command", "instruction", "lifecycle", "mcp_server", "notice", "skill"}
 	roots := map[string]string{"agent": "agents", "asset": "assets", "command": "commands", "instruction": "instructions", "notice": "notices", "skill": "skills"}
@@ -33,7 +33,11 @@ func AllKindVariants(id string) Fixture {
 			r.Command = "common-server"
 			r.Args = []string{"common-argument"}
 		}
-		for _, body := range []string{"common", "claude", "codex"} {
+		for _, body := range []string{"common", "claude", "agents"} {
+			if body == "agents" && (kind == "command" || kind == "lifecycle" || kind == "mcp_server") {
+				r.SurfaceExclusions = append(r.SurfaceExclusions, SurfaceExclusion{Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "Agents supports skills, project instructions, and reviewed custom roles"})
+				continue
+			}
 			source := ""
 			if root := roots[kind]; root != "" {
 				source = root + "/" + body
@@ -102,10 +106,8 @@ func AllKindVariants(id string) Fixture {
 				projection = "command_hook"
 			}
 			b := binding(surface, projection, r.ID, invocation, "exclusive", nil)
-			if kind == "command" && body == "codex" {
-				b.Mode = "degraded"
-				b.Degradation = "codex-command-as-workflow-skill"
-				b.Invocation = "$" + r.ID
+			if kind == "agent" && body == "agents" {
+				b.ClientProjection = &ClientProjection{Client: "codex", Scopes: []string{"global"}}
 			}
 			if kind == "instruction" {
 				b.Sharing = "shared"

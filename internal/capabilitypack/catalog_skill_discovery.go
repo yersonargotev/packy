@@ -39,8 +39,8 @@ type SkillDiscoveryReport struct {
 // DiscoverSkills inspects only the current local catalog. An installed or
 // retained Pack never substitutes for a current candidate.
 func (c Catalog) DiscoverSkills(ctx context.Context, id string, surface Surface) (SkillDiscoveryReport, error) {
-	if surface != SurfaceCodex && surface != SurfaceClaude {
-		return SkillDiscoveryReport{}, fmt.Errorf("unsupported on-demand discovery surface %q; use --surface codex or --surface claude", surface)
+	if surface != SurfaceAgents && surface != SurfaceClaude {
+		return SkillDiscoveryReport{}, fmt.Errorf("unsupported on-demand discovery surface %q; use --surface agents or --surface claude", surface)
 	}
 	packs, err := c.ListCurrent(ctx)
 	if err != nil {

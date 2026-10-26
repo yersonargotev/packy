@@ -55,7 +55,7 @@ func crossPackAccessProject(t *testing.T, revision string) string {
 			accessResource(m, "grilling")["on_demand"].(map[string]any)["dependencies"] = []any{map[string]any{"type": "skill", "target": "reviewed:shared"}}
 		})
 	}
-	for _, host := range []string{"common", "claude", "codex"} {
+	for _, host := range []string{"common", "agents", "claude"} {
 		path := filepath.Join(original, "skills", host, "ACCESS.md")
 		body := "Read [other]({{packy.access:other:grilling}}), [third]({{packy.access:third:grilling}}), [local]({{packy.access:grilling}}), [again]({{packy.access:other:grilling}}).\n"
 		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
@@ -63,7 +63,7 @@ func crossPackAccessProject(t *testing.T, revision string) string {
 		}
 	}
 	for _, id := range []string{"other", "third"} {
-		for _, host := range []string{"common", "claude", "codex"} {
+		for _, host := range []string{"common", "agents", "claude"} {
 			source := "grilling-" + host
 			if host == "common" {
 				source = "grilling"
@@ -172,7 +172,7 @@ func checkCrossPackProcedure(t *testing.T, binary string) {
 			}
 		})
 		variantAssets := dependencyAccessAssets(t, variantProject, strings.Repeat("e", 40))
-		for _, host := range []string{"codex", "claude"} {
+		for _, host := range []string{"agents", "claude"} {
 			out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t, "PATH="+t.TempDir()), "catalog", "candidate", "--snapshot", variantAssets, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "get", "skill", "reviewed:guide", "--surface", host, "--json")
 			if err != nil {
 				t.Fatalf("effective graph: %v %s %s", err, out, stderr)
@@ -199,7 +199,7 @@ func checkCrossPackProcedure(t *testing.T, binary string) {
 			}
 		}
 	})
-	for _, host := range []string{"codex", "claude"} {
+	for _, host := range []string{"agents", "claude"} {
 		t.Run(host, func(t *testing.T) {
 			envList := testprocess.Env(t, "PATH="+t.TempDir())
 			env := adoptionEnvironmentMap(envList)
@@ -382,9 +382,9 @@ func checkInvalidCrossPackCatalog(t *testing.T, binary string) {
 		{"incompatible", "reviewed", func(m map[string]any) { delete(accessResource(m, "grilling"), "on_demand") }},
 		{"excluded", "excluded", func(m map[string]any) {
 			r := accessResource(m, "grilling")
-			r["bindings"] = slices.DeleteFunc(r["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "codex" })
-			r["variants"] = slices.DeleteFunc(r["variants"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "codex" })
-			r["surface_exclusions"] = append(r["surface_exclusions"].([]any), map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"})
+			r["bindings"] = slices.DeleteFunc(r["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "agents" })
+			r["variants"] = slices.DeleteFunc(r["variants"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "agents" })
+			r["surface_exclusions"] = append(r["surface_exclusions"].([]any), map[string]any{"surface": "agents", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"})
 		}},
 		{"undeclared qualified reference", "absent", func(m map[string]any) {
 			accessResource(m, "grilling")["on_demand"].(map[string]any)["dependencies"] = []any{}
@@ -411,10 +411,10 @@ func checkInvalidCrossPackCatalog(t *testing.T, binary string) {
 			binding["surface"] = "opencode"
 			guide["bindings"] = []any{binding}
 			guide["variants"] = []any{}
-			guide["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
+			guide["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "agents", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
 			guide["on_demand"].(map[string]any)["dependencies"] = []any{map[string]any{"type": "skill", "target": "missing:guide"}}
 		})
-		for _, host := range []string{"codex", "claude"} {
+		for _, host := range []string{"agents", "claude"} {
 			if err := os.RemoveAll(filepath.Join(project, "packs/third/skills", host)); err != nil {
 				t.Fatal(err)
 			}
@@ -428,7 +428,7 @@ func checkInvalidCrossPackCatalog(t *testing.T, binary string) {
 	for _, token := range []string{"{{packy.access:other::grilling}}", "{{packy.access:Other:grilling}}", "{{packy.access:other:grilling"} {
 		t.Run(token, func(t *testing.T) {
 			project := crossPackAccessProject(t, "malformed")
-			if err := os.WriteFile(filepath.Join(project, "packs/other/skills/grilling-codex/ACCESS.md"), []byte(token), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(project, "packs/other/skills/grilling-agents/ACCESS.md"), []byte(token), 0644); err != nil {
 				t.Fatal(err)
 			}
 			out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "validate", "--project", project, "--json")
@@ -547,14 +547,14 @@ func checkInvalidUnselectedPack(t *testing.T, binary string) {
 	if err != nil || after.ID != before.ID {
 		t.Fatalf("failed refresh changed selection: %+v %v", after, err)
 	}
-	stdout, stderr, err := runSkillAccessCLI(t, binary, directory, envList, "catalog", "candidate", "--snapshot", invalid, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+	stdout, stderr, err := runSkillAccessCLI(t, binary, directory, envList, "catalog", "candidate", "--snapshot", invalid, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 	if err == nil || !strings.Contains(string(stdout)+stderr, "absent") || bytes.Contains(stdout, []byte(`"prepared"`)) {
 		t.Fatalf("invalid unselected Pack consumed: %v %s %s", err, stdout, stderr)
 	}
 }
 
 func TestIssue862NativeLifecycleKeepsPackLocalOwnership(t *testing.T) {
-	for _, host := range []string{"codex", "claude"} {
+	for _, host := range []string{"agents", "claude"} {
 		t.Run(host, func(t *testing.T) {
 			project := crossPackAccessProject(t, "native")
 			for _, id := range []string{"reviewed", "other", "third"} {
@@ -563,6 +563,12 @@ func TestIssue862NativeLifecycleKeepsPackLocalOwnership(t *testing.T) {
 					for _, value := range m["resources"].([]any) {
 						r := value.(map[string]any)
 						if r["kind"] == "skill" {
+							for _, rawBinding := range r["bindings"].([]any) {
+								binding := rawBinding.(map[string]any)
+								if binding["surface"] == "agents" {
+									binding["invocation"] = binding["name"]
+								}
+							}
 							r["requires"] = slices.DeleteFunc(r["requires"].([]any), func(v any) bool { return v == "asset:guide-data" })
 						}
 					}

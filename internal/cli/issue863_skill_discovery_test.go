@@ -37,7 +37,7 @@ func TestIssue863SkillDiscoveryExecutable(t *testing.T) {
 	directory := t.TempDir() // Outside Git, with no content runtimes or network tools.
 	env := adoptionEnvironmentMap(environment)
 	acquireSkillAccessCatalog(t, env, directory, assets, strings.Repeat("a", 40), "init")
-	out, stderr, err := runSkillAccessCLI(t, binary, directory, environment, "show", "reviewed", "--surface", "codex", "--json")
+	out, stderr, err := runSkillAccessCLI(t, binary, directory, environment, "show", "reviewed", "--surface", "agents", "--json")
 	if err != nil {
 		t.Fatalf("discover: %v %s %s", err, out, stderr)
 	}
@@ -47,7 +47,7 @@ func TestIssue863SkillDiscoveryExecutable(t *testing.T) {
 	if err := json.Unmarshal(out, &report); err != nil {
 		t.Fatal(err)
 	}
-	if report["schema_version"] != float64(1) || report["report"] != "skill-discovery" || report["pack_id"] != "reviewed" || report["pack_version"] != "1.0.0" || report["surface"] != "codex" {
+	if report["schema_version"] != float64(1) || report["report"] != "skill-discovery" || report["pack_id"] != "reviewed" || report["pack_version"] != "1.0.0" || report["surface"] != "agents" {
 		t.Fatalf("identity: %s", out)
 	}
 	skills := report["skills"].([]any)
@@ -78,7 +78,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 			}
 			shared := accessResource(m, "shared")
 			shared["variants"] = []any{}
-			for _, host := range []string{"claude", "codex"} {
+			for _, host := range []string{"agents", "claude"} {
 				if err := os.RemoveAll(filepath.Join(project, "packs", owner, "skills", "shared-"+host)); err != nil {
 					t.Fatal(err)
 				}
@@ -112,7 +112,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 	acquireSkillAccessCatalog(t, env, target, assets, revision, "init")
 	opts := Options{Env: env, Getwd: func() (string, error) { return target, nil }, Runner: &fakeRunner{}, Terminal: &fakeTerminal{interactive: true, approve: true}}
 	for _, verb := range []string{"activate", "install"} {
-		if out, err := executeCommand(t, NewRootCommand(opts), verb, "other", "--surface", "codex", "--resource", "skill:shared", "--alias", "skill:shared=custom-shared"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), verb, "other", "--surface", "agents", "--resource", "skill:shared", "--alias", "skill:shared=custom-shared"); err != nil {
 			t.Fatalf("seed %s: %v %s", verb, err, out)
 		}
 	}
@@ -143,14 +143,14 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	wantPacks := []packListEntryJSON{
-		{ID: "other", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex"}},
-		{ID: "reviewed", Version: "1.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex"}},
-		{ID: "third", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex"}},
+		{ID: "other", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}},
+		{ID: "reviewed", Version: "1.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}},
+		{ID: "third", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}},
 	}
 	if !reflect.DeepEqual(listed.Packs, wantPacks) {
 		t.Fatalf("current Packs: %s", list)
 	}
-	for _, host := range []string{"codex", "claude"} {
+	for _, host := range []string{"agents", "claude"} {
 		candidates := []string{}
 		for _, owner := range []string{"other", "reviewed", "third"} {
 			out, stderr, err := runSkillAccessCLI(t, binary, outside, environment, "show", owner, "--surface", host, "--json")
@@ -183,7 +183,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 				DescriptiveResource: capabilitypack.DescriptiveResource{Resource: resource, Description: host + " discovery procedure", Role: "operational", Dependencies: []capabilitypack.ResourceIdentity{{Kind: "asset", ID: "guide-data"}, {Kind: "skill", ID: dependency}}, Notices: notice},
 				QualifiedSkill:      owner + ":guide", PackID: owner, PackVersion: version,
 				Definition:        capabilitypack.ResourceDefinition{Resource: resource, Surface: capabilitypack.Surface(host), Definition: "surface_variant", Source: "skills/" + host, Notices: notice},
-				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex"}, NativeName: "guide", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", Prerequisites: []string{host + "-runtime"}, Dependencies: []capabilitypack.OnDemandDependency{{Type: "skill", Target: foreign}}}, Compatible: true, Prerequisites: prereqs,
+				SupportedSurfaces: []capabilitypack.Surface{"agents", "claude"}, NativeName: "guide", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", Prerequisites: []string{host + "-runtime"}, Dependencies: []capabilitypack.OnDemandDependency{{Type: "skill", Target: foreign}}}, Compatible: true, Prerequisites: prereqs,
 			}
 			if !reflect.DeepEqual(report.Skills[2], expected) {
 				t.Fatalf("complete effective guide metadata mismatch\ngot: %+v\nwant: %+v\n%s", report.Skills[2], expected, out)
@@ -199,7 +199,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 				DescriptiveResource: capabilitypack.DescriptiveResource{Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "shared"}, Description: "Reviewed variant guide", Role: "operational", Dependencies: []capabilitypack.ResourceIdentity{}, Notices: notice},
 				QualifiedSkill:      owner + ":shared", PackID: owner, PackVersion: version,
 				Definition:        capabilitypack.ResourceDefinition{Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "shared"}, Surface: capabilitypack.Surface(host), Definition: "common", Source: "skills/shared", Notices: notice},
-				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex"}, NativeName: "shared", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", ReferenceFiles: []string{"ACCESS.md", "references/nested.md"}, Prerequisites: []string{}}, Compatible: true, Prerequisites: commonPrereqs,
+				SupportedSurfaces: []capabilitypack.Surface{"agents", "claude"}, NativeName: "shared", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", ReferenceFiles: []string{"ACCESS.md", "references/nested.md"}, Prerequisites: []string{}}, Compatible: true, Prerequisites: commonPrereqs,
 			}
 			if !reflect.DeepEqual(common, expectedCommon) {
 				t.Fatalf("complete common candidate: %+v, want %+v", common, expectedCommon)
@@ -229,7 +229,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 		}
 	}
 	// Retrieval must report the same effective root requirements for each host.
-	for _, host := range []string{"claude", "codex"} {
+	for _, host := range []string{"agents", "claude"} {
 		out, stderr, err := runSkillAccessCLI(t, binary, outside, environment, "get", "skill", "reviewed:guide", "--surface", host, "--json")
 		if err != nil {
 			t.Fatalf("retrieval consistency: %v %s %s", err, out, stderr)
@@ -254,19 +254,19 @@ func checkIssue863Failures(t *testing.T, binary string) {
 		edit         func(map[string]any)
 	}{
 		{"unreviewed", "reviewed on_demand", func(m map[string]any) { delete(accessResource(m, "guide"), "on_demand") }},
-		{"excluded", "Codex is not reviewed", func(m map[string]any) {
+		{"excluded", "Agents is not reviewed", func(m map[string]any) {
 			r := accessResource(m, "guide")
 			b := r["bindings"].([]any)
 			r["bindings"] = []any{b[0]}
 			r["variants"] = r["variants"].([]any)[:1]
-			r["surface_exclusions"] = []any{map[string]any{"surface": "codex", "mode": "optional", "code": "review-needed", "reason": "Codex is not reviewed"}}
+			r["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "review-needed", "reason": "Agents is not reviewed"}}
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assets := skillAccessAssets(t, strings.Repeat("c", 40), "discovery", test.edit)
 			workspace := filepath.Join(t.TempDir(), "candidate")
 			env := testprocess.Env(t, "PATH="+t.TempDir())
-			out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), env, "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "show", "reviewed", "--surface", "codex", "--json")
+			out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), env, "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "show", "reviewed", "--surface", "agents", "--json")
 			if err != nil {
 				t.Fatalf("inspect incompatible: %v %s %s", err, out, stderr)
 			}
@@ -284,19 +284,19 @@ func checkIssue863Failures(t *testing.T, binary string) {
 			if test.name == "unreviewed" && report.Skills[0].OnDemand != nil {
 				t.Fatalf("unreviewed contract: %s", out)
 			}
-			for _, args := range [][]string{{"show", "reviewed", "--surface", "opencode", "--json"}, {"show", "reviewed", "--surface", "unknown", "--json"}, {"show", "reviewed", "--surface=", "--json"}, {"show", "absent", "--surface", "codex", "--json"}, {"show", "--surface", "codex", "--json"}, {"show", "reviewed", "--surface", "codex", "--unsupported", "--json"}} {
+			for _, args := range [][]string{{"show", "reviewed", "--surface", "opencode", "--json"}, {"show", "reviewed", "--surface", "unknown", "--json"}, {"show", "reviewed", "--surface=", "--json"}, {"show", "absent", "--surface", "agents", "--json"}, {"show", "--surface", "agents", "--json"}, {"show", "reviewed", "--surface", "agents", "--unsupported", "--json"}} {
 				command := append([]string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}, args...)
 				stdout, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), env, command...)
 				if err == nil || len(stdout) != 0 || stderr == "" {
 					t.Fatalf("invalid request %v: %v %s %s", args, err, stdout, stderr)
 				}
-				if len(args) > 3 && (args[3] == "opencode" || args[3] == "unknown") && !strings.Contains(stderr, "--surface codex") {
+				if len(args) > 3 && (args[3] == "opencode" || args[3] == "unknown") && !strings.Contains(stderr, "--surface agents") {
 					t.Fatalf("host remediation: %s", stderr)
 				}
 			}
 		})
 	}
-	for _, args := range [][]string{{"list", "--json"}, {"show", "reviewed", "--surface", "codex", "--json"}} {
+	for _, args := range [][]string{{"list", "--json"}, {"show", "reviewed", "--surface", "agents", "--json"}} {
 		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t, "PATH="+t.TempDir()), args...)
 		if err == nil || len(out) != 0 || !strings.Contains(stderr, "packy init") {
 			t.Fatalf("missing catalog: %v %s %s", err, out, stderr)

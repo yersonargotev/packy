@@ -26,7 +26,7 @@ func installIssue453Project(t *testing.T) installedSyntheticProject {
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "agents"); err != nil {
 		t.Fatalf("seed project install: %v\n%s", err, out)
 	}
 	return installedSyntheticProject{options: opts, project: project, pack: pack}
@@ -57,7 +57,7 @@ func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
 	}
 	opts.catalogRootOverride = filepath.Join(t.TempDir(), "missing-catalog")
 
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "installed", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project", "--require", "installed", "--json")
 	if err != nil {
 		t.Fatalf("offline project status: %v\n%s", err, out)
 	}
@@ -69,7 +69,7 @@ func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
 		t.Fatalf("project status report = %#v", report)
 	}
 	status := report.Packs[0]
-	if status.Pack.ID != packID || status.Surface != capabilitypack.SurfaceCodex || status.Installation != capabilitypack.ProjectInstallationInstalled || status.Runtime != capabilitypack.ProjectRuntimeNotRequired || !status.RequirementSatisfied {
+	if status.Pack.ID != packID || status.Surface != capabilitypack.SurfaceAgents || status.Installation != capabilitypack.ProjectInstallationInstalled || status.Runtime != capabilitypack.ProjectRuntimeNotRequired || !status.RequirementSatisfied {
 		t.Fatalf("project status axes = %#v", status)
 	}
 	contract, err := capabilitypack.LoadProjectInstallation(project)
@@ -92,7 +92,7 @@ func TestIssue453ProjectStatusReportsAbsentInstallationSeparately(t *testing.T) 
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project", "--json")
 	if err != nil {
 		t.Fatalf("absent project status: %v\n%s", err, out)
 	}
@@ -100,7 +100,7 @@ func TestIssue453ProjectStatusReportsAbsentInstallationSeparately(t *testing.T) 
 	if json.Unmarshal([]byte(out), &report) != nil || len(report.Packs) != 1 || report.Packs[0].Installation != capabilitypack.ProjectInstallationAbsent || report.Packs[0].Runtime != capabilitypack.ProjectRuntimePending {
 		t.Fatalf("absent project axes = %#v\n%s", report, out)
 	}
-	_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "installed")
+	_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project", "--require", "installed")
 	if err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("absent installed gate = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestIssue453InstalledEnforcementDetectsDriftWithoutMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "installed", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project", "--require", "installed", "--json")
 	if err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("installed enforcement error = %v\n%s", err, out)
 	}
@@ -142,7 +142,7 @@ func TestIssue453NamedInstallRestoresAuthorizedMissingBytes(t *testing.T) {
 	}
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("reconcile project: %v\n%s", err, out)
 	}
@@ -168,7 +168,7 @@ func TestIssue453NamedInstallNeverInventsMissingBytesFromDigest(t *testing.T) {
 	}
 	opts.catalogRootOverride = filepath.Join(t.TempDir(), "missing-catalog")
 	before := snapshotTree(t, project)
-	_, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex")
+	_, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents")
 	if err == nil {
 		t.Fatal("reconcile invented missing bytes without an exact local source")
 	}
@@ -191,7 +191,7 @@ func TestIssue453StatusFailsClosedOnUnsupportedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project")
+	_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project")
 	if err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unsupported project status error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestIssue453InstalledEnforcementCoversThePortableContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, project)
-			_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "installed", "--json")
+			_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project", "--require", "installed", "--json")
 			if err == nil {
 				t.Fatalf("invalid %s evidence passed installed enforcement", test.name)
 			}

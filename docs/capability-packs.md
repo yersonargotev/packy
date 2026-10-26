@@ -2,7 +2,7 @@
 
 Capability Packs are opt-in, Git-reviewed content installed by Packy. Catalog
 inspection and `--dry-run` are read-only. Mutation requires an explicit Pack,
-CLI surface, and operation. Supported surfaces are Codex and Claude Code.
+CLI surface, and operation. Supported surfaces are Agents and Claude.
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source. Use `packy list` for the
@@ -19,9 +19,9 @@ explicitly to apply newly available content.
 ```sh
 packy list
 packy show matty
-packy activate matty --surface codex --dry-run
-packy activate matty --surface codex
-packy status matty --surface codex
+packy activate matty --surface agents --dry-run
+packy activate matty --surface agents
+packy status matty --surface agents
 ```
 
 Activation without `--resource` selects the complete Pack. Repeat `--resource`
@@ -29,7 +29,7 @@ to select explicit roots; the manifest supplies their intra-Pack dependency
 closure:
 
 ```sh
-packy activate matty --surface codex \
+packy activate matty --surface agents \
   --resource skill:code-review \
   --dry-run
 ```
@@ -43,16 +43,52 @@ Same-surface duplicate native names can block installation even when their
 physical targets differ. Installations using retired contracts require the
 [clean adoption procedure](catalog-adoption.md).
 
+## Explicit custom-agent projections
+
+Agents skills use `~/.agents/skills` globally and `.agents/skills` in a project.
+Agents instruction contributions use project `AGENTS.md` only; global instruction
+selection fails because there is no universal global instruction destination.
+The `codex` surface value is rejected, not aliased to `agents`.
+
+An Agents agent binding must declare its concrete client and supported scope:
+
+```json
+"client_projection": { "client": "codex", "scopes": ["global"] }
+```
+
+Required agents remain in the selected resource dependency closure. Select their
+client explicitly when activating that closure:
+
+```sh
+packy activate <pack> --surface agents --client codex --resource skill:<workflow> --dry-run
+packy activate <pack> --surface agents --client codex --resource skill:<workflow>
+```
+
+The current supported Codex projection is global native TOML under
+`~/.codex/agents`. Project Codex roles and other client/scope combinations fail
+before mutation. Preview identifies the client and scope, and the selection is
+retained for update and removal. Roles participate in normal ownership,
+collision, and drift protection; Packy does not configure unrelated Codex
+settings, MCP servers, global instructions, or command degradations.
+
+Ordinary Agents skills need no client selection and do not create `.codex`
+content. Complete skill trees retain scripts, executable modes, references,
+legal/supporting content, and optional `agents/openai.yaml` metadata. That
+metadata is part of a skill, not a custom-agent registration. A generated role
+file establishes configured content only; it does not prove authorization or
+successful runtime delegation.
+
 ## Controlled runtime checks
 
-When Packy cannot observe host runtime behavior, preview and perform the
+For an explicitly selected Codex role closure whose client behavior Packy cannot
+observe, preview and perform the
 reviewed instructions separately from activation, then explicitly record the
 observed result:
 
 ```sh
-packy check orchestrate --surface codex --dry-run
-packy check orchestrate --surface codex --result positive
-packy status orchestrate --surface codex --require usable
+packy check orchestrate --surface agents --client codex --dry-run
+packy check orchestrate --surface agents --client codex --result positive
+packy status orchestrate --surface agents --require usable
 ```
 
 The preview identifies the exact Pack version, CLI surface, selected resource
@@ -107,14 +143,14 @@ Every binding declares a non-null `capabilities` array. Most bindings use an
 empty array. A binding that needs reusable host-native behavior selects only a
 reviewed typed capability. The `project-instruction` capability carries
 typed `project_instruction` data with a stable lowercase kebab-case `id` and a
-reviewed relative `source`; Codex translates it into an independently owned
+reviewed relative `source`; Agents translates it into an independently owned
 marked contribution in the project's `AGENTS.md`. Unknown capability types,
 missing typed data, and extension fields are rejected during admission.
 
 The typed `external-executable-acquisition` capability explicitly enables one
 supported acquisition flow for a declared external requirement on that
 surface. Its reviewed data names the external tool. Engram declares the
-capability on its Codex skill so Packy can offer the supported Homebrew install
+capability on its Agents skill so Packy can offer the supported Homebrew install
 when the executable is absent. External requirements remain the single source
 of tool readiness: every declared name is observed generically through PATH,
 and no tool receives acquisition merely because of its name. Acquisition never
@@ -141,7 +177,7 @@ An author can opt a skill binding into deterministic rendering:
 
 The generated default name is `<pack-id>-<binding-name>`. An explicit
 user alias overrides that default. Template bindings declare the canonical
-invocation: `$<name>` for Codex and `/<name>` for Claude.
+invocation: `$<name>` for the reviewed Agents binding and `/<name>` for Claude.
 Preview and show output follow the resolved name, including explicit aliases. Choose `"naming": "native"` for a consumer
 that retains its own name while referencing renamed dependencies. Packy renders
 both kinds as regular, receipt-owned trees in global and project installations.

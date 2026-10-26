@@ -19,7 +19,7 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex",
+	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents",
 		"--resource", "skill:helper", "--alias", "skill:helper=project-helper", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("preview selected project resources: %v\n%s", err, out)
@@ -60,7 +60,7 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 		t.Fatalf("aliased project projection missing: %#v", report.Projections)
 	}
 
-	applyOut, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex",
+	applyOut, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents",
 		"--resource", "skill:helper", "--alias", "skill:helper=project-helper")
 	if err != nil {
 		t.Fatalf("install selected project resources: %v\n%s", err, applyOut)
@@ -121,7 +121,7 @@ func TestIssue455ProjectManifestRejectsMovingAndMachineSpecificAuthority(t *test
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, project)
-			_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project")
+			_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project")
 			if err == nil {
 				t.Fatal("invalid project authority was accepted")
 			}

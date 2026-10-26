@@ -71,7 +71,7 @@ func TestIssue454PackWideUninstallRemovesOnlyExactOwnedContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitBefore := snapshotTree(t, filepath.Join(project, ".git"))
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents"); err != nil {
 		t.Fatalf("seed install: %v\n%s", err, out)
 	}
 	terminal.calls = 0
@@ -120,11 +120,11 @@ func TestIssue454SurfaceUninstallRemovesOnlyTheSelectedContributor(t *testing.T)
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID, "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID, "--surface", "agents")
 	if err != nil {
 		t.Fatalf("surface uninstall: %v\n%s", err, out)
 	}
-	for _, want := range []string{"PROJECT SURFACE UNINSTALL PREVIEW", "Scope: surface codex", "Approve project surface uninstall", "Verified project uninstall"} {
+	for _, want := range []string{"PROJECT SURFACE UNINSTALL PREVIEW", "Scope: surface agents", "Approve project surface uninstall", "Verified project uninstall"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("surface uninstall output missing %q:\n%s", want, out)
 		}

@@ -49,7 +49,7 @@ func writeAccessCatalog(t *testing.T, revision, originCommit string) string {
 				}
 			}
 			bindings := []any{}
-			for _, host := range []string{"claude", "codex"} {
+			for _, host := range []string{"agents", "claude"} {
 				invocation := "$" + id
 				if host == "claude" {
 					invocation = "/" + id
@@ -59,11 +59,11 @@ func writeAccessCatalog(t *testing.T, revision, originCommit string) string {
 			contract := map[string]any{"protocol": "skill-tree-v1", "entry_document": "ACCESS.md", "reference_files": []string{"ACCESS.md"}, "prerequisites": []string{"missing-content-runtime"}, "dependencies": dependencies}
 			provenance := map[string]any{"id": "upstream", "path": "skill", "relationship": "adapted"}
 			variants := []any{}
-			for _, host := range []string{"claude", "codex"} {
+			for _, host := range []string{"agents", "claude"} {
 				variants = append(variants, map[string]any{"surface": host, "source": "skills/" + id + "-" + host, "description": host + " " + id + " procedure", "origin": provenance})
 			}
 			resources = append(resources, map[string]any{"kind": "skill", "id": id, "source": "skills/" + id, "description": "Common " + id, "origin": provenance, "notices": []string{"notice:mit"}, "requires": requires, "conflicts": []string{}, "bindings": bindings, "surface_exclusions": []any{}, "variants": variants, "on_demand": contract})
-			for _, host := range []string{"common", "claude", "codex"} {
+			for _, host := range []string{"common", "agents", "claude"} {
 				source := "skills/" + id
 				if host != "common" {
 					source += "-" + host
@@ -90,7 +90,7 @@ func writeAccessCatalog(t *testing.T, revision, originCommit string) string {
 		if pack != "beta" {
 			requirements = []string{"missing-pack-runtime"}
 		}
-		manifest := map[string]any{"schema_version": 3, "id": pack, "version": version, "description": "Access contract " + pack, "selectable": true, "surfaces": []string{"claude", "codex"}, "readiness_obligations": []string{"runtime-usability", "surface-authorization"}, "external_requirements": requirements, "origins": []any{map[string]any{"id": "upstream", "repository": "example/upstream", "commit": originCommit}}, "resources": resources}
+		manifest := map[string]any{"schema_version": 3, "id": pack, "version": version, "description": "Access contract " + pack, "selectable": true, "surfaces": []string{"agents", "claude"}, "readiness_obligations": []string{"runtime-usability", "surface-authorization"}, "external_requirements": requirements, "origins": []any{map[string]any{"id": "upstream", "repository": "example/upstream", "commit": originCommit}}, "resources": resources}
 		writeAccessJSON(t, filepath.Join(project, "packs", pack, "pack.json"), manifest)
 	}
 	return project

@@ -13,7 +13,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
-func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testing.T) {
+func TestIssue451SyntheticAgentsProjectInstallPreviewIsCompleteAndEffectFree(t *testing.T) {
 	pack := testsupport.PortableAllSurfaces("project-preview")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	opts, home := fixture.options, fixture.home
@@ -32,7 +32,7 @@ func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *t
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, fixture.catalogRoot)
 
-	structured, err := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--dry-run", "--json")
+	structured, err := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "agents", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("JSON preview: %v\n%s", err, structured)
 	}
@@ -46,16 +46,16 @@ func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *t
 			notices++
 		}
 	}
-	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != manifest.ID || report.Pack.Version != pack.CurrentVersion() || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != len(manifest.Resources) || len(report.Projections) == 0 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || len(report.Notices.Contributions) != notices || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable || report.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || report.ExpectedReadiness.Usable != capabilitypack.ReadinessUnknown || len(report.Conditions) == 0 {
+	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != manifest.ID || report.Pack.Version != pack.CurrentVersion() || report.Surface != capabilitypack.SurfaceAgents || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != len(manifest.Resources) || len(report.Projections) == 0 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || len(report.Notices.Contributions) != notices || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable || report.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || report.ExpectedReadiness.Usable != capabilitypack.ReadinessUnknown || len(report.Conditions) == 0 {
 		t.Fatalf("incomplete JSON preview: %#v", report)
 	}
 
-	human, err := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--dry-run")
+	human, err := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "agents", "--dry-run")
 	if err != nil {
 		t.Fatalf("human preview: %v\n%s", err, human)
 	}
 	for _, want := range []string{
-		"Project install dry-run", "Project root: <project-root>", "Pack: " + manifest.ID + " " + pack.CurrentVersion(), "Surface: codex",
+		"Project install dry-run", "Project root: <project-root>", "Pack: " + manifest.ID + " " + pack.CurrentVersion(), "Surface: agents",
 		fmt.Sprintf("Selection: all (%d resources)", len(manifest.Resources)), "Manifest: packy.json", "Lock: packy.lock.json",
 		fmt.Sprintf("Notices: PACKY-NOTICES.md (%d contributions)", notices), report.Projections[0].Target,
 		"Reviewed Pack: " + manifest.ID + "@" + pack.CurrentVersion(), fmt.Sprintf("Lock receipt: %d resources, %d projections", len(report.Selection.Resources), len(report.Projections)),
@@ -65,7 +65,7 @@ func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *t
 			t.Fatalf("human preview missing %q:\n%s", want, human)
 		}
 	}
-	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--dry-run"); repeatErr != nil || again != human {
+	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "agents", "--dry-run"); repeatErr != nil || again != human {
 		t.Fatalf("human preview is not deterministic: err=%v\nfirst=%s\nsecond=%s", repeatErr, human, again)
 	}
 	for _, condition := range report.Conditions {
@@ -73,7 +73,7 @@ func TestIssue451SyntheticCodexProjectInstallPreviewIsCompleteAndEffectFree(t *t
 			t.Fatalf("readiness observation time = %q, want %q", condition.Freshness.ObservedAt, observedAt.Format(time.RFC3339))
 		}
 	}
-	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {
+	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "agents", "--dry-run", "--json"); repeatErr != nil || again != structured {
 		t.Fatalf("preview is not deterministic: err=%v\nfirst=%s\nsecond=%s", repeatErr, structured, again)
 	}
 	if strings.Contains(human, project) || strings.Contains(structured, project) || strings.Contains(structured, home) || strings.Contains(structured, fixture.catalogRoot) {
@@ -90,11 +90,11 @@ func TestIssue451ProjectInstallRequiresGitWorktreeAndDryRun(t *testing.T) {
 	packID := pack.Manifest().ID
 	outside := t.TempDir()
 	opts.Getwd = func() (string, error) { return outside, nil }
-	if _, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "Git worktree") {
+	if _, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents", "--dry-run"); err == nil || !strings.Contains(err.Error(), "Git worktree") {
 		t.Fatalf("outside-worktree error = %v", err)
 	}
 	writeTestGitWorktree(t, outside)
-	if _, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
+	if _, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents"); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("non-interactive mutation error = %v", err)
 	}
 }
@@ -108,11 +108,11 @@ func TestIssue451UnrepresentableProjectResourceIsNonActionable(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
-	human, humanErr := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex", "--dry-run")
+	human, humanErr := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents", "--dry-run")
 	if humanErr == nil || !strings.Contains(human, "Legal contribution: notice:mit") || !strings.Contains(human, "license=MIT") || !strings.Contains(human, "attribution=Packy Fixture Authors") {
 		t.Fatalf("human legal disclosure: err=%v\n%s", humanErr, human)
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents", "--dry-run", "--json")
 	if err == nil || !strings.Contains(err.Error(), "not actionable") {
 		t.Fatalf("unrepresentable preview error = %v\n%s", err, out)
 	}

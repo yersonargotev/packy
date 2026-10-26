@@ -17,7 +17,7 @@ import (
 )
 
 func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testing.T) {
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		for _, scope := range []string{"global", "project"} {
 			for _, reverse := range []bool{false, true} {
 				order := "legacy-first"
@@ -165,7 +165,7 @@ func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testin
 }
 
 func TestIssue851ExplicitAliasesOverrideGeneratedNamesAndReferences(t *testing.T) {
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			legacy := testsupport.CapabilityRich("legacy-alias")
 			templated := testsupport.CapabilityRich("pstack-alias")
@@ -199,7 +199,7 @@ func TestIssue851ExplicitAliasesOverrideGeneratedNamesAndReferences(t *testing.T
 }
 
 func TestIssue851LegacyAliasesStillFailClosedOnDivergentNativeDiscovery(t *testing.T) {
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			first := testsupport.CapabilityRich("legacy-one")
 			second := testsupport.CapabilityRich("legacy-two")
@@ -230,15 +230,15 @@ func TestIssue851ChangedTemplateContractInvalidatesApprovedPreview(t *testing.T)
 	fixture := newSyntheticCLIFixture(t, terminal, legacy, templated)
 	issue851RewriteCatalogPack(t, fixture.catalogRoot, legacy.ID(), "1.0.0", false, "v1")
 	issue851RewriteCatalogPack(t, fixture.catalogRoot, templated.ID(), "1.0.0", true, "v1")
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", legacy.ID(), "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", legacy.ID(), "--surface", "agents"); err != nil {
 		t.Fatalf("seed legacy Pack: %v\n%s", err, out)
 	}
 	beforeHome := snapshotTree(t, fixture.home)
 	beforeSource := snapshotTree(t, filepath.Join(fixture.catalogRoot, "packs", templated.ID()))
 	terminal.onApprove = func() {
-		issue851ChangeTemplateContract(t, fixture.catalogRoot, templated.ID(), "codex")
+		issue851ChangeTemplateContract(t, fixture.catalogRoot, templated.ID(), "agents")
 	}
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", templated.ID(), "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", templated.ID(), "--surface", "agents")
 	if err == nil || !strings.Contains(strings.ToLower(out+err.Error()), "stale") {
 		t.Fatalf("changed source/reference/binding did not stale the approved preview: %v\n%s", err, out)
 	}
@@ -248,14 +248,14 @@ func TestIssue851ChangedTemplateContractInvalidatesApprovedPreview(t *testing.T)
 	if got := snapshotTree(t, filepath.Join(fixture.catalogRoot, "packs", templated.ID())); got == beforeSource {
 		t.Fatal("stale-preview fixture did not change the reviewed template contract")
 	}
-	legacyBody := readFileString(t, filepath.Join(issue851SkillPath(fixture.home, "global", "codex", "tdd"), "SKILL.md"))
+	legacyBody := readFileString(t, filepath.Join(issue851SkillPath(fixture.home, "global", "agents", "tdd"), "SKILL.md"))
 	if !strings.Contains(legacyBody, legacy.ID()+" tdd v1") {
 		t.Fatalf("stale preview changed unrelated legacy content:\n%s", legacyBody)
 	}
 }
 
 func TestIssue851UpdateAdoptsTemplateNamingBeforeInstallingLegacyNeighbor(t *testing.T) {
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		for _, scope := range []string{"global", "project"} {
 			t.Run(surface+"/"+scope, func(t *testing.T) {
 				migrating := testsupport.CapabilityRich("migrating-flow")
@@ -489,7 +489,10 @@ func issue851ChangeTemplateContract(t *testing.T, catalogRoot, packID, surface s
 				continue
 			}
 			binding["name"] = "red-green"
-			binding["invocation"] = "$red-green"
+			binding["invocation"] = "red-green"
+			if surface == "claude" {
+				binding["invocation"] = "/red-green"
+			}
 		}
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -517,13 +520,11 @@ func issue851SkillResource(packID, id, name, originPath string, requires []strin
 		requires = []string{}
 	}
 	bindings := make([]any, 0, 3)
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		invocation := name
 		switch surface {
 		case "claude":
 			invocation = "/" + name
-		case "codex":
-			invocation = "$" + name
 		}
 		capabilities := []any{}
 		if templated {

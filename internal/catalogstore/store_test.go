@@ -279,7 +279,7 @@ func writeTar(t *testing.T, tw *tar.Writer, name string, data []byte) {
 }
 
 func validManifest(id, version string) string {
-	return fmt.Sprintf(`{"schema_version":3,"id":%q,"version":%q,"description":"Fixture Pack","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"skill","id":%q,"source":%q,"description":"Fixture skill","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],"surface_exclusions":[]}]}`, id, version, id, "skills/"+id, id, "$"+id)
+	return fmt.Sprintf(`{"schema_version":3,"id":%q,"version":%q,"description":"Fixture Pack","selectable":true,"surfaces":["agents"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"skill","id":%q,"source":%q,"description":"Fixture skill","requires":[],"conflicts":[],"bindings":[{"surface":"agents","projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],"surface_exclusions":[]}]}`, id, version, id, "skills/"+id, id, "$"+id)
 }
 
 func manifestID(t *testing.T, data string) string {

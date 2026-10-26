@@ -17,20 +17,6 @@
             ]
           },
           "aliases": []
-        },
-        {
-          "surface": "codex",
-          "version": "1.0.0",
-          "selection": {
-            "mode": "custom",
-            "roots": [
-              {
-                "kind": "skill",
-                "id": "packy-cli"
-              }
-            ]
-          },
-          "aliases": []
         }
       ]
     }

@@ -83,6 +83,12 @@ func (m *Model) beginSelection() {
 	m.selecting = true
 	m.selectionPreviewFocus = false
 	m.selectionNotice = ""
+	m.selectedClient = ""
+	if m.operation == "configure" {
+		if status := m.selectedSurfaceStatus(); status != nil {
+			m.selectedClient = status.Selection.Client
+		}
+	}
 	m.selectedRoots = make(map[string]bool)
 	pack := m.selectedPack()
 	for _, resource := range operationalRoots(*pack) {
@@ -155,6 +161,14 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if pack == nil {
 		return m, nil
 	}
+	if message.String() == "c" && !m.project && selectedSurface(*pack, m.surfaceIndex) == "agents" {
+		if m.selectedClient == "codex" {
+			m.selectedClient = ""
+		} else {
+			m.selectedClient = "codex"
+		}
+		return m, nil
+	}
 	surfaces := supportedSurfaces(*pack)
 	if (message.Code == tea.KeyRight || message.Code == tea.KeyLeft) && len(surfaces) > 0 {
 		direction := 1
@@ -162,6 +176,7 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			direction = -1
 		}
 		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), direction)
+		m.selectedClient = ""
 		if m.project {
 			m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
 			m.selecting, m.choosingAction, m.actionChoice = false, true, 0
@@ -287,6 +302,13 @@ func (m Model) resourceSelectionFrame(width int) (string, string) {
 		resourceSurfaceStyle.Render(surfaceLine),
 		counts,
 	}, "\n")
+	if surface == "agents" && !m.project {
+		client := "none"
+		if m.selectedClient != "" {
+			client = m.selectedClient
+		}
+		header += "\n" + "Role client: " + client + " · c to change"
+	}
 	button := "  [ Apply changes · preview first ]"
 	buttonStyle := resourceActionStyle
 	if m.selectionPreviewFocus {

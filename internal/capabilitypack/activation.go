@@ -55,12 +55,8 @@ const (
 	ActionSkillLink                ProjectionActionKind = "skill-link"
 	ActionSkillTree                ProjectionActionKind = "skill-tree"
 	ActionInstructionFile          ProjectionActionKind = "instruction-file"
-	ActionCodexMCPConfig           ProjectionActionKind = "codex-mcp-config"
-	ActionCodexProjectTrust        ProjectionActionKind = "codex-project-trust"
 	ActionCodexAgentFile           ProjectionActionKind = "codex-agent-file"
-	ActionCodexWorkflowSkill       ProjectionActionKind = "codex-workflow-skill"
-	ActionCodexAssetFile           ProjectionActionKind = "codex-asset-file"
-	ActionCodexProjectSkillTree    ProjectionActionKind = "codex-project-skill-tree"
+	ActionAgentsProjectSkillTree   ProjectionActionKind = "agents-project-skill-tree"
 	ActionClaudeProjectSkillTree   ProjectionActionKind = "claude-project-skill-tree"
 	ActionClaudeProjectFile        ProjectionActionKind = "claude-project-file"
 	ActionClaudeProjectInstruction ProjectionActionKind = "claude-project-instruction"
@@ -228,6 +224,7 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
+	Client string
 	// ObservationOnly requests status facts without reconstructing mutation
 	// authority for unrelated installed Packs. It grants no apply authority.
 	ObservationOnly   bool
@@ -626,6 +623,9 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 	selection := intent.Selection
 	if request.Selection != nil {
 		selection = *request.Selection
+		if selection.Client == "" {
+			selection.Client = intent.Selection.Client
+		}
 	}
 	activation.Selection, err = canonicalSelection(selection)
 	if err != nil {
@@ -937,6 +937,9 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	}
 	requested, err = selectPackResourcesForSurface(requested, selection, request.Surface)
 	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	if err := validateSelectedClient(requested, selection, request.Surface, "global"); err != nil {
 		return ReconciliationPlan{}, err
 	}
 	aliases, err := requestedAliases(requested, request.Surface, request.Aliases, state, operation)
@@ -2229,7 +2232,7 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	}
 	observation = cloneSurfaceInspection(observation)
 	for _, fact := range observation.SkillDiscovery {
-		if fact.Name == "" || fact.Target == "" || fact.OtherTarget == "" || fact.Fingerprint == "" || fact.OtherFingerprint == "" || (fact.Host != SurfaceCodex && fact.Host != SurfaceClaude) {
+		if fact.Name == "" || fact.Target == "" || fact.OtherTarget == "" || fact.Fingerprint == "" || fact.OtherFingerprint == "" || (fact.Host != SurfaceAgents && fact.Host != SurfaceClaude) {
 			return SurfaceInspection{}, errors.New("surface adapter returned malformed skill discovery facts")
 		}
 	}
@@ -2325,7 +2328,7 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return SurfaceInspection{}, err
 		}
 		if _, duplicate := activationActions[key]; duplicate {
-			return SurfaceInspection{}, errors.New("surface adapter returned a duplicate personal Codex project action")
+			return SurfaceInspection{}, errors.New("surface adapter returned a duplicate personal Agents project action")
 		}
 		activationActions[key] = struct{}{}
 	}
@@ -2469,24 +2472,16 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	return observation, nil
 }
 
-func validatePersonalProjectAction(action ProjectionAction) error {
-	commonMalformed := !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" || action.Consent != "" || action.AdapterProvenance == "" || action.Source != "" || action.Command != "" || len(action.Args) != 0
-	switch action.Kind {
-	case ActionCodexProjectTrust:
-		if commonMalformed || action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" {
-			return errors.New("surface adapter returned a malformed personal Codex project action")
-		}
-	default:
-		return errors.New("surface adapter returned an unsupported personal project action")
-	}
-	return nil
+func validatePersonalProjectAction(_ ProjectionAction) error {
+	return errors.New("surface adapter returned an unsupported personal project action")
 }
 
 func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {
 	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
-	transition := SurfaceTransition{Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
+	transition := SurfaceTransition{Client: selectedPackClient(desired), Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
 	switch operation {
 	case OperationDeactivate:
+		transition.Client = selectedPackClient(prior)
 		transition.Prior = prior
 	case OperationUpdate:
 		transition.Prior = prior

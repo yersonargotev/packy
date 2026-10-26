@@ -10,7 +10,7 @@ import (
 )
 
 func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testing.T) {
-	pack := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceCodex)
+	pack := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceAgents)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, strings.Repeat("a", 40), pack)}
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	opts := fixture.options
@@ -25,7 +25,7 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 		return out
 	}
 	run("init")
-	for _, surface := range []string{"codex", "claude", "codex"} {
+	for _, surface := range []string{"agents", "agents", "claude"} {
 		preview := run("activate", pack.ID(), "--surface", surface, "--dry-run", "--json")
 		if !strings.Contains(preview, `"definition":"surface_variant"`) || !strings.Contains(preview, `"relationship":"adapted"`) {
 			t.Fatalf("preview does not explain selected variant provenance: %s", preview)
@@ -75,7 +75,7 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 }
 
 func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T) {
-	pack := testsupport.SkillVariants("variants", testsupport.SurfaceCodex)
+	pack := testsupport.SkillVariants("variants", testsupport.SurfaceAgents)
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	opts := fixture.options
 	project := t.TempDir()
@@ -89,7 +89,7 @@ func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T)
 		}
 		return out
 	}
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		run("install", pack.ID(), "--surface", surface, "--dry-run", "--json")
 		run("install", pack.ID(), "--surface", surface)
 		relative := ".agents/skills/guide"
@@ -134,15 +134,15 @@ func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T)
 		if err := os.WriteFile(aux, original, 0644); err != nil {
 			t.Fatal(err)
 		}
-		if surface == "codex" {
-			updated := pack.WithVersion("2.0.0").WithVariantBytes(testsupport.SurfaceCodex, "references/detail.md", []byte("reviewed codex updated\n"))
+		if surface == "agents" {
+			updated := pack.WithVersion("2.0.0").WithVariantBytes(testsupport.SurfaceAgents, "references/detail.md", []byte("reviewed agents updated\n"))
 			if err := updated.WriteCatalog(fixture.catalogRoot); err != nil {
 				t.Fatal(err)
 			}
 			run("update", pack.ID(), "--surface", surface, "--project", "--dry-run", "--json")
 			run("update", pack.ID(), "--surface", surface, "--project")
 			data, err := os.ReadFile(filepath.Join(target, "references/detail.md"))
-			if err != nil || string(data) != "reviewed codex updated\n" {
+			if err != nil || string(data) != "reviewed agents updated\n" {
 				t.Fatalf("project update %s %v", data, err)
 			}
 			run("verify")
@@ -167,7 +167,7 @@ func TestIssue822VariantDependencyClosureUsesSelectedSurfaceInGlobalAndProjectCL
 			opts.Getwd = func() (string, error) { return root, nil }
 			apply, remove = "install", "uninstall"
 		}
-		for _, surface := range []string{"codex", "claude"} {
+		for _, surface := range []string{"agents", "claude"} {
 			if out, err := executeCommand(t, NewRootCommand(opts), apply, pack.ID(), "--surface", surface, "--resource", "skill:guide"); err != nil {
 				t.Fatalf("%s %s: %v\n%s", apply, surface, err, out)
 			}
@@ -176,11 +176,11 @@ func TestIssue822VariantDependencyClosureUsesSelectedSurfaceInGlobalAndProjectCL
 				hostRoot = ".claude"
 			}
 			_, err := os.Stat(filepath.Join(root, hostRoot, "skills/helper"))
-			if surface == "codex" && err != nil {
+			if surface == "agents" && err != nil {
 				t.Fatalf("effective dependency missing: %v", err)
 			}
 			if surface == "claude" && !os.IsNotExist(err) {
-				t.Fatalf("Codex dependency leaked to Claude: %v", err)
+				t.Fatalf("Agents dependency leaked to Claude: %v", err)
 			}
 			if out, err := executeCommand(t, NewRootCommand(opts), remove, pack.ID(), "--surface", surface); err != nil {
 				t.Fatalf("%s %s: %v\n%s", remove, surface, err, out)

@@ -1,7 +1,7 @@
 # Packy v0.2 product scope
 
 Packy is an installer/configurator for the reviewed Packs in its
-manifest-backed Pack catalog on Codex and Claude Code **2.1.203 or
+manifest-backed Pack catalog on Agents and Claude Code **2.1.203 or
 newer**. It is not an always-on runtime orchestrator. Use `packy list` for
 current discovery.
 
@@ -11,7 +11,7 @@ current discovery.
 | --- | --- |
 | Packs | Independently selectable Packs discovered from the selected Catalog Snapshot. |
 | Authoring | One reviewed manifest and reviewed content per Pack. |
-| Surfaces | Codex and Claude Code. |
+| Surfaces | Agents and Claude. |
 | Global lifecycle | Inspect, activate, update, status, deactivate, and remove one Pack at a time. |
 | Project lifecycle | Declare and install Packs in a Git worktree; activate personal runtime effects separately. |
 | State | Minimal installed Pack receipts for ownership, drift, collisions, update, and removal. |

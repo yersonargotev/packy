@@ -371,7 +371,7 @@ const validManifest = `{
   "version": "1.0.0",
   "description": "Example Managed Pack",
   "selectable": true,
-  "surfaces": ["claude", "codex"],
+  "surfaces": ["agents", "claude"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [
@@ -419,7 +419,7 @@ const validManifest = `{
           "capabilities": []
         },
         {
-          "surface": "codex",
+          "surface": "agents",
           "projection": "skill",
           "name": "guide",
           "invocation": "guide",
@@ -440,7 +440,7 @@ const lifecycleManifest = `{
   "version": "1.0.0",
   "description": "Example Managed Pack",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [],
@@ -453,7 +453,7 @@ const lifecycleManifest = `{
       "conflicts": [],
       "bindings": [
         {
-          "surface": "codex",
+          "surface": "agents",
           "projection": "lifecycle",
           "name": "guide",
           "invocation": "guide",

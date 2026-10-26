@@ -46,52 +46,6 @@
           "file_mode": 420
         }
       ]
-    },
-    {
-      "pack": {
-        "id": "packy",
-        "version": "1.0.0",
-        "catalog_snapshot": "bbf3eecfd7afb85d36586e6f4e18801d2eef47b6"
-      },
-      "surface": "codex",
-      "readiness_obligations": [
-        "runtime-usability",
-        "surface-authorization"
-      ],
-      "external_requirements": [],
-      "selection": {
-        "mode": "custom",
-        "roots": [
-          {
-            "kind": "skill",
-            "id": "packy-cli"
-          }
-        ]
-      },
-      "resources": [
-        {
-          "kind": "notice",
-          "id": "mit"
-        },
-        {
-          "kind": "skill",
-          "id": "packy-cli"
-        }
-      ],
-      "projections": [
-        {
-          "id": "skill:packy-cli",
-          "target": ".agents/skills/packy-cli",
-          "digest": "7ebe7ece123df5fd18c55c462dfc0d7a87153a9376f0c9357b0adf97ad46bf7f",
-          "file_mode": 493
-        },
-        {
-          "id": "notice:pack-packy-codex",
-          "target": "PACKY-NOTICES.md",
-          "digest": "259534d6069c2d41d00ff2352eccdc8e49e8f876dcb3ab278ceb0980b610a71e",
-          "file_mode": 420
-        }
-      ]
     }
   ]
 }

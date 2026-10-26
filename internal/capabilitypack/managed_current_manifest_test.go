@@ -28,7 +28,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 	if pack.ID != "managed-loader" || pack.Version != "2.3.4" || pack.Description != "Managed loader fixture" || !pack.Selectable {
 		t.Fatalf("Pack identity and selection semantics = %#v", pack)
 	}
-	if got, want := pack.Surfaces, []Surface{SurfaceCodex}; !reflect.DeepEqual(got, want) {
+	if got, want := pack.Surfaces, []Surface{SurfaceAgents}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("surfaces = %#v, want %#v", got, want)
 	}
 	if got, want := pack.ReadinessObligations, []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}; !reflect.DeepEqual(got, want) {
@@ -45,7 +45,7 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 			Description: "Projects the managed guidance", Requires: []string{}, Conflicts: []string{},
 			RequiresTools: []string{}, Notices: []string{"notice:upstream-license"},
 			Bindings: []Binding{{
-				Surface: SurfaceCodex, Projection: "instruction", Name: "guide", Invocation: "guide",
+				Surface: SurfaceAgents, Projection: "instruction", Name: "guide", Invocation: "guide",
 				Mode: "native", Sharing: "shared", Capabilities: []SurfaceCapability{{
 					Type:               SurfaceCapabilityProjectInstruction,
 					ProjectInstruction: &ProjectInstructionCapability{ID: "guide", Source: "instructions/managed-loader.md"},
@@ -168,7 +168,7 @@ func writeManagedCurrentManifestFixture(t *testing.T, catalogRoot string) (strin
   "version": "2.3.4",
   "description": "Managed loader fixture",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": ["example-tool"],
   "origins": [
@@ -195,7 +195,7 @@ func writeManagedCurrentManifestFixture(t *testing.T, catalogRoot string) (strin
       },
       "bindings": [
         {
-          "surface": "codex",
+          "surface": "agents",
           "projection": "instruction",
           "name": "guide",
           "invocation": "guide",

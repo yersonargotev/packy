@@ -21,7 +21,7 @@ func TestCandidatePreviewUsesCompleteSnapshotInOwnedWorkspace(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, pack)
 	before := snapshotTree(t, fixture.home)
-	args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "install", pack.ID(), "--surface", "codex", "--dry-run", "--json"}
+	args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "install", pack.ID(), "--surface", "agents", "--dry-run", "--json"}
 	out, err := executeCommand(t, NewRootCommand(fixture.options), args...)
 	if err != nil || !strings.Contains(out, `"report":"project-install-preview"`) || !strings.Contains(out, `"catalog_snapshot":"`+release.Commit+`"`) {
 		t.Fatalf("candidate preview: %v\n%s", err, out)
@@ -77,7 +77,7 @@ func TestCandidateWorkspaceRejectsConflictsAndRetainedDriftWithoutMutation(t *te
 				if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
 					t.Fatalf("non-Git access: %v %s", err, out)
 				}
-				args = append(args[:len(args)-2], "install", pack.ID(), "--surface", "codex", "--dry-run", "--json")
+				args = append(args[:len(args)-2], "install", pack.ID(), "--surface", "agents", "--dry-run", "--json")
 			}
 			if out, err := executeCommand(t, NewRootCommand(opts), args...); err == nil {
 				t.Fatalf("conflicting workspace accepted: %s", out)
@@ -125,7 +125,7 @@ func TestCandidateCannotDiscoverAnEnclosingPersonalProject(t *testing.T) {
 				}
 			}
 			before := snapshotTree(t, parent)
-			for _, operation := range [][]string{{"install", pack.ID(), "--surface", "codex", "--dry-run", "--json"}, {"verify", "--json"}, {"uninstall", pack.ID(), "--dry-run", "--json"}} {
+			for _, operation := range [][]string{{"install", pack.ID(), "--surface", "agents", "--dry-run", "--json"}, {"verify", "--json"}, {"uninstall", pack.ID(), "--dry-run", "--json"}} {
 				out, err := executeCommand(t, NewRootCommand(opts), append(append([]string{}, prefix...), operation...)...)
 				if err == nil || !strings.Contains(err.Error(), "candidate workspace Git boundary") {
 					t.Fatalf("damaged Git boundary accepted: %v %s", err, out)

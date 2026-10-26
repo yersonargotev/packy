@@ -16,10 +16,10 @@ func TestIssue520RecoveryOrientedReconcileCommandIsRemoved(t *testing.T) {
 }
 
 func TestIssue520CurrentLifecycleAcrossSupportedAdapters(t *testing.T) {
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
-			pack := testsupport.PortableAllSurfaces("lifecycle-" + surface)
+			pack := testsupport.SkillVariants("lifecycle-" + surface)
 			fixture := newSyntheticCLIFixture(t, terminal, pack)
 			packID := pack.Manifest().ID
 			if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", packID, "--surface", surface); err != nil || !strings.Contains(out, "Verified plan") {

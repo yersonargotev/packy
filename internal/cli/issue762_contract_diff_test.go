@@ -14,9 +14,9 @@ import (
 )
 
 func TestGlobalUpdateContractDiffPresentations(t *testing.T) {
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
-			pack := testsupport.PortableAllSurfaces("truthful-diff")
+			pack := testsupport.SkillVariants("truthful-diff")
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 			opts := fixture.options
 			if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", surface); err != nil {

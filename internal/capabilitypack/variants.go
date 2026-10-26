@@ -267,8 +267,8 @@ func renamedSkillInvocation(binding Binding, name string) string {
 
 func nativeSkillInvocation(surface Surface, name string) string {
 	switch surface {
-	case SurfaceCodex:
-		return "$" + name
+	case SurfaceAgents:
+		return name
 	case SurfaceClaude:
 		return "/" + name
 	default:

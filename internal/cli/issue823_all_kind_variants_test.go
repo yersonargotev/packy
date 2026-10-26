@@ -19,7 +19,7 @@ import (
 )
 
 func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		for _, scope := range []string{"global", "project"} {
 			t.Run(surface+"/"+scope, func(t *testing.T) {
 				pack := testsupport.AllKindVariants("all-kinds")
@@ -38,8 +38,8 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 					writeTestGitWorktree(t, root)
 					opts.Getwd = func() (string, error) { return root, nil }
 					apply, remove = "install", "uninstall"
-					// Codex currently offers project-native skills, instructions and MCP only.
-					if surface == "codex" {
+					// Agents currently offers project-native skills, instructions and MCP only.
+					if surface == "agents" {
 						selection = []string{"--resource", "skill:sample-skill", "--resource", "instruction:sample-instruction", "--resource", "mcp_server:sample-mcp-server"}
 					}
 				}
@@ -105,7 +105,7 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 						t.Fatalf("missing %s in projected files:\n%s\nTargets %v", want, content, targets)
 					}
 				}
-				if scope == "global" || surface != "codex" {
+				if scope == "global" || surface != "agents" {
 					for _, kind := range []string{"agent", "command", "asset"} {
 						if !strings.Contains(content, "Reviewed "+surface+" "+kind) {
 							t.Fatalf("missing %s variant in projections:\n%s", kind, content)
@@ -224,9 +224,9 @@ func TestIssue823VariantRefreshPreservesMaintainedBodies(t *testing.T) {
 		t.Run(map[bool]string{false: "decline", true: "reconcile"}[approve], func(t *testing.T) {
 			fixture := writeUpstreamRefreshFixture(t, "exact-copy")
 			manifest := readUpstreamRefreshManifest(t, fixture.project)
-			source := "skills/codex"
-			manifest.Resources[1].Variants = capabilitypack.ResourceVariants{{Surface: capabilitypack.SurfaceCodex, Source: &source, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skills/seed", Relationship: "adapted"}}}
-			writeAuthoringFile(t, filepath.Join(fixture.project, "packs/seed/skills/codex/SKILL.md"), "Maintained Codex adaptation\n")
+			source := "skills/agents"
+			manifest.Resources[1].Variants = capabilitypack.ResourceVariants{{Surface: capabilitypack.SurfaceAgents, Source: &source, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skills/seed", Relationship: "adapted"}}}
+			writeAuthoringFile(t, filepath.Join(fixture.project, "packs/seed/skills/agents/SKILL.md"), "Maintained Agents adaptation\n")
 			data, err := json.Marshal(manifest)
 			if err != nil {
 				t.Fatal(err)
@@ -243,11 +243,11 @@ func TestIssue823VariantRefreshPreservesMaintainedBodies(t *testing.T) {
 			if err != nil {
 				t.Fatalf("refresh: %v\n%s", err, out)
 			}
-			if !strings.Contains(out, "skill:seed (codex variant)") || !strings.Contains(out, "-# Old upstream") || !strings.Contains(out, "+# New upstream") {
+			if !strings.Contains(out, "skill:seed (agents variant)") || !strings.Contains(out, "-# Old upstream") || !strings.Contains(out, "+# New upstream") {
 				t.Fatalf("variant-specific upstream review missing: %s", out)
 			}
-			body, err := os.ReadFile(filepath.Join(fixture.project, "packs/seed/skills/codex/SKILL.md"))
-			if err != nil || string(body) != "Maintained Codex adaptation\n" {
+			body, err := os.ReadFile(filepath.Join(fixture.project, "packs/seed/skills/agents/SKILL.md"))
+			if err != nil || string(body) != "Maintained Agents adaptation\n" {
 				t.Fatalf("adaptation overwritten: %s %v", body, err)
 			}
 			original, err := os.ReadFile(filepath.Join(fixture.project, "packs/seed/skills/seed/SKILL.md"))
@@ -260,7 +260,7 @@ func TestIssue823VariantRefreshPreservesMaintainedBodies(t *testing.T) {
 
 func TestIssue823VariantImportKeepsOriginalAndLogicalIdentity(t *testing.T) {
 	fixture := writeUpstreamRefreshFixture(t, "exact-copy")
-	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver}), "catalog", "import", "seed", "--project", fixture.project, "--version", "1.1.0", "--repository", "example/upstream", "--commit", fixture.oldCommit, "--origin-id", "upstream", "--origin-path", "skills/seed", "--destination", "skills/codex", "--relationship", "adapted", "--kind", "skill", "--resource-id", "seed", "--description", "Reviewed Codex adaptation", "--notice", "notice:seed", "--variant-surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(Options{CatalogOriginResolver: fixture.resolver}), "catalog", "import", "seed", "--project", fixture.project, "--version", "1.1.0", "--repository", "example/upstream", "--commit", fixture.oldCommit, "--origin-id", "upstream", "--origin-path", "skills/seed", "--destination", "skills/agents", "--relationship", "adapted", "--kind", "skill", "--resource-id", "seed", "--description", "Reviewed Agents adaptation", "--notice", "notice:seed", "--variant-surface", "agents")
 	if err != nil {
 		t.Fatalf("variant import: %v\n%s", err, out)
 	}
@@ -268,7 +268,7 @@ func TestIssue823VariantImportKeepsOriginalAndLogicalIdentity(t *testing.T) {
 	if len(manifest.Resources) != 2 || len(manifest.Resources[1].Variants) != 1 || manifest.Resources[1].ID != "seed" {
 		t.Fatalf("import fragmented identity: %#v", manifest.Resources)
 	}
-	for _, source := range []string{"seed", "codex"} {
+	for _, source := range []string{"seed", "agents"} {
 		body, err := os.ReadFile(filepath.Join(fixture.project, "packs/seed/skills", source, "SKILL.md"))
 		if err != nil || string(body) != "# Old upstream\n" {
 			t.Fatalf("import did not preserve original: %s %v", body, err)
@@ -311,7 +311,7 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			environment := testprocess.Env(t)
 			env := adoptionEnvironmentMap(environment)
@@ -320,7 +320,7 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 			pack := testsupport.AllKindVariants("binary-variants")
 			opts := Options{Env: env, Runner: &fakeRunner{}, Terminal: &fakeTerminal{interactive: true, approve: true}, Getwd: func() (string, error) { return project, nil }, CatalogSource: &catalogSourceFixture{release: catalogReleaseFixture(t, strings.Repeat("c", 40), pack)}}
 			for _, args := range [][]string{{"init"}, {"install", pack.ID(), "--surface", surface, "--json"}} {
-				if args[0] == "install" && surface == "codex" {
+				if args[0] == "install" && surface == "agents" {
 					args = append(args, "--resource", "skill:sample-skill", "--resource", "instruction:sample-instruction", "--resource", "mcp_server:sample-mcp-server")
 				}
 				if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
@@ -357,9 +357,9 @@ func TestIssue823RefreshFindsVariantOnlyProvenance(t *testing.T) {
 	fixture := writeUpstreamRefreshFixture(t, "exact-copy")
 	manifest := readUpstreamRefreshManifest(t, fixture.project)
 	manifest.Resources[1].Origin = nil
-	source := "skills/codex"
-	manifest.Resources[1].Variants = capabilitypack.ResourceVariants{{Surface: capabilitypack.SurfaceCodex, Source: &source, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skills/seed", Relationship: "exact-copy"}}}
-	writeAuthoringFile(t, filepath.Join(fixture.project, "packs/seed/skills/codex/SKILL.md"), "# Old upstream\n")
+	source := "skills/agents"
+	manifest.Resources[1].Variants = capabilitypack.ResourceVariants{{Surface: capabilitypack.SurfaceAgents, Source: &source, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skills/seed", Relationship: "exact-copy"}}}
+	writeAuthoringFile(t, filepath.Join(fixture.project, "packs/seed/skills/agents/SKILL.md"), "# Old upstream\n")
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -369,7 +369,7 @@ func TestIssue823RefreshFindsVariantOnlyProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("variant-only exact refresh: %v\n%s", err, out)
 	}
-	for source, want := range map[string]string{"seed": "# Old upstream\n", "codex": "# New upstream\n"} {
+	for source, want := range map[string]string{"seed": "# Old upstream\n", "agents": "# New upstream\n"} {
 		data, err := os.ReadFile(filepath.Join(fixture.project, "packs/seed/skills", source, "SKILL.md"))
 		if err != nil || string(data) != want {
 			t.Fatalf("%s body = %s %v", source, data, err)
@@ -454,7 +454,7 @@ func TestIssue823RefreshBlocksOverlappingMaintainedVariant(t *testing.T) {
 	fixture := writeUpstreamRefreshFixture(t, "exact-copy")
 	manifest := readUpstreamRefreshManifest(t, fixture.project)
 	source := "skills/seed/maintained"
-	manifest.Resources[1].Variants = capabilitypack.ResourceVariants{{Surface: capabilitypack.SurfaceCodex, Source: &source, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skills/seed", Relationship: "adapted"}}}
+	manifest.Resources[1].Variants = capabilitypack.ResourceVariants{{Surface: capabilitypack.SurfaceAgents, Source: &source, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skills/seed", Relationship: "adapted"}}}
 	writeAuthoringFile(t, filepath.Join(fixture.project, "packs/seed", source, "SKILL.md"), "Maintained variant\n")
 	data, err := json.Marshal(manifest)
 	if err != nil {
@@ -474,7 +474,7 @@ func TestIssue823RefreshBlocksOverlappingMaintainedVariant(t *testing.T) {
 func TestIssue823LifecycleVariantResolvesDependencyWithoutExecutingAuthoringCode(t *testing.T) {
 	pack := testsupport.AllKindVariants("lifecycle-dependency")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.ID(), "--surface", surface, "--resource", "lifecycle:sample-lifecycle", "--dry-run", "--json")
 		if err != nil {
 			t.Fatalf("lifecycle %s: %v\n%s", surface, err, out)

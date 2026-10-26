@@ -52,8 +52,8 @@ entry supplies a `surface` and applicable typed fields, for example:
 ```json
 "variants": [
   {
-    "surface": "codex",
-    "source": "skills/guide/codex",
+    "surface": "agents",
+    "source": "skills/guide/agents",
     "origin": {"id": "upstream", "path": "skills/guide", "relationship": "adapted"}
   }
 ]
@@ -85,7 +85,7 @@ packy catalog create example-pack \
   --template empty \
   --version 0.1.0 \
   --description "Example reviewed workflows" \
-  --surface codex
+  --surface agents
 ```
 
 Import one selected resource from an exact public upstream commit. Destinations,
@@ -105,7 +105,7 @@ packy catalog import example-pack \
   --kind skill \
   --resource-id example \
   --description "Runs the reviewed example workflow" \
-  --host codex \
+  --host agents \
   --notice notice:upstream-mit
 ```
 
@@ -117,7 +117,7 @@ detected only to improve missing-information diagnostics. They are never used
 to infer licensing, resource kinds, destinations, hosts, or relationships.
 
 To import a surface body for an existing file-backed logical resource, use
-`--variant-surface codex` instead of `--host`. Keep its existing `--kind` and
+`--variant-surface agents` instead of `--host`. Keep its existing `--kind` and
 `--resource-id`, and choose a separate Pack-relative `--destination`. This adds
 one reviewed variant without changing its bindings or the original tree; an
 existing variant is never overwritten. The same operation accepts existing
@@ -314,13 +314,13 @@ packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
   --workspace /absolute/path/to/workspace -- show example-pack --surface claude --json
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
-  --workspace /absolute/path/to/workspace -- get skill example-pack:guide --surface codex --json
+  --workspace /absolute/path/to/workspace -- get skill example-pack:guide --surface agents --json
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
   --workspace /absolute/path/to/workspace -- install example-pack \
-  --surface codex --resource skill:guide --dry-run --json
+  --surface agents --resource skill:guide --dry-run --json
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
   --workspace /absolute/path/to/workspace -- install example-pack \
-  --surface codex --resource skill:guide
+  --surface agents --resource skill:guide
 ```
 
 Packy validates the complete candidate before creating the workspace. Its
@@ -348,7 +348,7 @@ packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
   --expect-archive-sha256 <current-baseline-archive-sha256> --json
 packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
   --workspace /absolute/path/to/workspace -- update example-pack \
-  --surface codex --project
+  --surface agents --project
 packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
   --workspace /absolute/path/to/workspace -- update example-pack \
   --surface claude --project
@@ -374,14 +374,14 @@ use only `workspace/home` and `workspace/config`:
 ```sh
 packy catalog candidate --snapshot /absolute/path/to/baseline-dist \
   --workspace /absolute/path/to/global-workspace -- activate example-pack \
-  --surface codex --resource skill:guide
+  --surface agents --resource skill:guide
 # Transition this workspace with the candidate assets and its observed digest.
 packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
   --workspace /absolute/path/to/global-workspace -- update example-pack \
-  --surface codex
+  --surface agents
 packy catalog candidate --snapshot /absolute/path/to/candidate-dist \
   --workspace /absolute/path/to/global-workspace -- deactivate example-pack \
-  --surface codex
+  --surface agents
 ```
 
 The invoking directory, enclosing projects, ambient HOME, and XDG roots are not
@@ -435,7 +435,7 @@ remove authoring evidence.
 Packy's inert synthetic contracts own lifecycle mechanisms and run against the
 same release-stamped executable on Darwin and Linux, amd64 and arm64. The
 Catalog owns actual Pack content assertions. The shared built/release executable
-contract also covers on-demand discovery and retrieval for Codex and Claude Code,
+contract also covers on-demand discovery and retrieval for Agents and Claude,
 complete resource/legal closure, retained nested access after an explicit
 transition, inert offline use, and rejection of invalid complete catalogs.
 After transition, pass the new selected assets to the outer `--snapshot`; pass a
@@ -517,3 +517,21 @@ Packy does not silently retry corruption or switch origins. Never remove an
 active cache directory, since its directory lock coordinates authoring processes.
 Installed Catalog Snapshots and host configuration are separate and unaffected.
 See [ADR 0042](adr/0042-reuse-verified-catalog-origin-downloads.md).
+
+## Agents bindings and explicit clients
+
+The accepted surfaces are `agents` and `claude`. A `codex` surface declaration
+is invalid; renaming a declaration does not establish reviewed runtime
+compatibility. Agents skills support global and project scope, while instruction
+contributions support project scope only. Preserve the complete skill tree,
+including optional `agents/openai.yaml`, scripts, modes, and legal resources.
+
+An Agents `agent` binding requires
+`"client_projection": {"client": "codex", "scopes": ["global"]}`. This is the
+supported native Codex role contract; project role scope and other client values
+are unsupported. The user must explicitly select `--client codex` for a native
+closure requiring these roles. Dependencies are retained rather than silently
+reduced. A valid role definition does not prove delegation or authorization.
+Direct Agents MCP, command-degradation, global instruction, and unrelated client
+configuration paths are not supported. Ordinary Agents skills declare no client
+projection and do not write Codex settings.

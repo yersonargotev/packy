@@ -359,7 +359,7 @@ func TestManifestDeterministicAndContentBound(t *testing.T) {
 
 func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 	items := []FileEvidence{
-		{Path: "home/.codex/AGENTS.md"},
+		{Path: "home/.agents/AGENTS.md"},
 		{Path: "home/.claude/CLAUDE.md"},
 		{Path: "home/.claude.json"},
 		{Path: "home/.agents/skills/example/SKILL.md"},
@@ -368,9 +368,9 @@ func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 	if len(got) != 4 {
 		t.Fatalf("surface manifest = %#v", got)
 	}
-	changed := append(append([]FileEvidence(nil), got...), FileEvidence{Path: "home/.codex/new-surface-file"})
+	changed := append(append([]FileEvidence(nil), got...), FileEvidence{Path: "home/.agents/new-surface-file"})
 	if reflect.DeepEqual(got, surfaceManifest(changed)) {
-		t.Fatal("surface manifest ignored a newly created Codex artifact")
+		t.Fatal("surface manifest ignored a newly created Agents artifact")
 	}
 }
 

@@ -24,8 +24,8 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 
 	installs := [][]string{
-		{"install", first.ID(), "--surface", "codex", "--resource", firstRoot.Kind + ":" + firstRoot.ID},
-		{"install", second.ID(), "--surface", "codex", "--resource", secondRoot.Kind + ":" + secondRoot.ID},
+		{"install", first.ID(), "--surface", "agents", "--resource", firstRoot.Kind + ":" + firstRoot.ID},
+		{"install", second.ID(), "--surface", "agents", "--resource", secondRoot.Kind + ":" + secondRoot.ID},
 	}
 	for _, args := range installs {
 		if out, err := executeCommand(t, NewRootCommand(fixture.options), args...); err != nil {
@@ -80,7 +80,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	}
 	for _, receipt := range lock.Receipts {
 		wantVersion := fixture.pack(t, receipt.Pack.ID).CurrentVersion()
-		if receipt.Pack.ID == "" || receipt.Pack.Version != wantVersion || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
+		if receipt.Pack.ID == "" || receipt.Pack.Version != wantVersion || receipt.Surface != "agents" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
 			t.Fatalf("incomplete project Pack receipt = %#v\n%s", receipt, lockData)
 		}
 		for _, projection := range receipt.Projections {
@@ -100,7 +100,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--project"); err == nil || !strings.Contains(err.Error(), "--surface is required for project update") {
 		t.Fatalf("project update without a surface was not rejected: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--surface", "codex", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--surface", "agents", "--project"); err != nil {
 		t.Fatalf("update first Pack to the current bundled version: %v\n%s", err, out)
 	}
 	updatedData, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
@@ -118,13 +118,13 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if err := os.WriteFile(firstSkill, []byte("user drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--surface", "codex", "--project"); err == nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--surface", "agents", "--project"); err == nil {
 		t.Fatalf("ordinary project update overwrote receipt drift:\n%s", out)
 	}
 	if drifted, _ := os.ReadFile(firstSkill); string(drifted) != "user drift\n" {
 		t.Fatalf("blocked update changed drifted receipt target: %q", drifted)
 	}
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--surface", "codex", "--project", "--force"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", first.ID(), "--surface", "agents", "--project", "--force"); err != nil {
 		t.Fatalf("force receipt-owned first Pack update: %v\n%s", err, out)
 	}
 	if restored, _ := os.ReadFile(firstSkill); string(restored) != string(originalSkill) {
@@ -153,10 +153,10 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", installed.ID(), "--surface", "codex", "--resource", installedRoot.Kind+":"+installedRoot.ID); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", installed.ID(), "--surface", "agents", "--resource", installedRoot.Kind+":"+installedRoot.ID); err != nil {
 		t.Fatalf("install independent Pack: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", external.ID(), "--surface", "codex", "--resource", externalRoot.Kind+":"+externalRoot.ID); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", external.ID(), "--surface", "agents", "--resource", externalRoot.Kind+":"+externalRoot.ID); err != nil {
 		t.Fatalf("install external-tool Pack while declining activation: %v\n%s", err, out)
 	}
 	lockPath := filepath.Join(project, "packy.lock.json")
@@ -169,7 +169,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	if states, _ := filepath.Glob(statePattern); len(states) != 0 {
 		t.Fatalf("project installation persisted personal activation: %v", states)
 	}
-	statusJSON, err := executeCommand(t, NewRootCommand(fixture.options), "status", external.ID(), "--surface", "codex", "--project", "--json")
+	statusJSON, err := executeCommand(t, NewRootCommand(fixture.options), "status", external.ID(), "--surface", "agents", "--project", "--json")
 	if err != nil {
 		t.Fatalf("inspect installed external requirements: %v\n%s", err, statusJSON)
 	}
@@ -195,7 +195,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	terminal.approve = true
 	runner := fixture.options.Runner.(*fakeRunner)
 	runner.path = map[string]string{"engram": filepath.Join(t.TempDir(), "engram")}
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", external.ID(), "--surface", "codex", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", external.ID(), "--surface", "agents", "--project"); err != nil {
 		t.Fatalf("activate only external-tool Pack personally: %v\n%s", err, out)
 	}
 	after, err := os.ReadFile(lockPath)
@@ -206,7 +206,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 		t.Fatalf("personal activation changed independent installation receipt\nbefore: %s\nafter:  %s", installedReceipt, got)
 	}
 	states, _ := filepath.Glob(statePattern)
-	if len(states) != 1 || filepath.Base(states[0]) != "state-"+external.ID()+"-codex.json" {
+	if len(states) != 1 || filepath.Base(states[0]) != "state-"+external.ID()+"-agents.json" {
 		t.Fatalf("personal activation receipts = %v, want only external-tool Pack", states)
 	}
 }
@@ -221,11 +221,11 @@ func TestIssue620CrossPackProjectionCollisionRemainsBlocked(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", first.ID(), "--surface", "codex", "--resource", firstRoot.Kind+":"+firstRoot.ID); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", first.ID(), "--surface", "agents", "--resource", firstRoot.Kind+":"+firstRoot.ID); err != nil {
 		t.Fatalf("install first collision Pack: %v\n%s", err, out)
 	}
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(fixture.options), "install", second.ID(), "--surface", "codex", "--resource", secondRoot.Kind+":"+secondRoot.ID)
+	out, err := executeCommand(t, NewRootCommand(fixture.options), "install", second.ID(), "--surface", "agents", "--resource", secondRoot.Kind+":"+secondRoot.ID)
 	if err == nil || !strings.Contains(out, "projection_collision") {
 		t.Fatalf("install second colliding instruction = %v\n%s", err, out)
 	}
@@ -247,9 +247,9 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 
 	commands := [][]string{
-		{"install", multi.ID(), "--surface", "codex", "--resource", multiRoot.Kind + ":" + multiRoot.ID},
+		{"install", multi.ID(), "--surface", "agents", "--resource", multiRoot.Kind + ":" + multiRoot.ID},
 		{"install", multi.ID(), "--surface", "claude", "--resource", multiRoot.Kind + ":" + multiRoot.ID},
-		{"install", other.ID(), "--surface", "codex", "--resource", otherRoot.Kind + ":" + otherRoot.ID},
+		{"install", other.ID(), "--surface", "agents", "--resource", otherRoot.Kind + ":" + otherRoot.ID},
 	}
 	for _, args := range commands {
 		if out, err := executeCommand(t, NewRootCommand(fixture.options), args...); err != nil {
@@ -263,8 +263,8 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 	}
 	otherReceipt := projectReceiptJSON(t, before, other.ID())
 	retainedClaudeReceipt := projectSurfaceReceiptJSON(t, before, multi.ID(), "claude")
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", multi.ID(), "--surface", "codex", "--project"); err != nil {
-		t.Fatalf("Codex synthetic Pack update: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", multi.ID(), "--surface", "agents", "--project"); err != nil {
+		t.Fatalf("Agents synthetic Pack update: %v\n%s", err, out)
 	}
 	after, err := os.ReadFile(lockPath)
 	if err != nil {
@@ -274,9 +274,9 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 		t.Fatalf("surface update changed other Pack receipt\nbefore: %s\nafter:  %s", otherReceipt, got)
 	}
 	if got := projectSurfaceReceiptJSON(t, after, multi.ID(), "claude"); got != retainedClaudeReceipt {
-		t.Fatalf("Codex update changed the retained Claude receipt\nbefore: %s\nafter:  %s", retainedClaudeReceipt, got)
+		t.Fatalf("Agents update changed the retained Claude receipt\nbefore: %s\nafter:  %s", retainedClaudeReceipt, got)
 	}
-	retainedCodexReceipt := projectSurfaceReceiptJSON(t, after, multi.ID(), "codex")
+	retainedAgentsReceipt := projectSurfaceReceiptJSON(t, after, multi.ID(), "agents")
 	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", multi.ID(), "--surface", "claude", "--project"); err != nil {
 		t.Fatalf("Claude synthetic Pack update: %v\n%s", err, out)
 	}
@@ -284,8 +284,8 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := projectSurfaceReceiptJSON(t, after, multi.ID(), "codex"); got != retainedCodexReceipt {
-		t.Fatalf("Claude update changed the retained Codex receipt\nbefore: %s\nafter:  %s", retainedCodexReceipt, got)
+	if got := projectSurfaceReceiptJSON(t, after, multi.ID(), "agents"); got != retainedAgentsReceipt {
+		t.Fatalf("Claude update changed the retained Agents receipt\nbefore: %s\nafter:  %s", retainedAgentsReceipt, got)
 	}
 	installation, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
@@ -305,7 +305,7 @@ func TestIssue626ProjectUpdateRetainsIndependentSurfaceVersionsAndContent(t *tes
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 	packID := pack.ID()
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", surface, "--resource", root.Kind+":"+root.ID); err != nil {
 			t.Fatalf("install synthetic Pack on %s: %v\n%s", surface, err, out)
 		}
@@ -314,8 +314,8 @@ func TestIssue626ProjectUpdateRetainsIndependentSurfaceVersionsAndContent(t *tes
 	if err := candidate.WriteCatalog(fixture.catalogRoot); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "codex", "--project"); err != nil {
-		t.Fatalf("compatible Codex update: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "agents", "--project"); err != nil {
+		t.Fatalf("compatible Agents update: %v\n%s", err, out)
 	}
 	installation, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
@@ -327,7 +327,7 @@ func TestIssue626ProjectUpdateRetainsIndependentSurfaceVersionsAndContent(t *tes
 			versions[receipt.Surface] = receipt.Pack.Version
 		}
 	}
-	if versions[capabilitypack.SurfaceCodex] != candidate.CurrentVersion() || versions[capabilitypack.SurfaceClaude] != pack.CurrentVersion() {
+	if versions[capabilitypack.SurfaceAgents] != candidate.CurrentVersion() || versions[capabilitypack.SurfaceClaude] != pack.CurrentVersion() {
 		t.Fatalf("independent update did not retain per-surface versions: %#v", versions)
 	}
 	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "claude", "--project"); err != nil {
@@ -341,11 +341,11 @@ func TestIssue626ProjectUpdateRetainsIndependentSurfaceVersionsAndContent(t *tes
 		t.Fatal(err)
 	}
 	claudeBefore := snapshotTree(t, filepath.Join(project, "CLAUDE.md"))
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "codex", "--project"); err != nil {
-		t.Fatalf("independent Codex update: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "agents", "--project"); err != nil {
+		t.Fatalf("independent Agents update: %v\n%s", err, out)
 	}
 	if after := snapshotTree(t, filepath.Join(project, "CLAUDE.md")); after != claudeBefore {
-		t.Fatal("Codex update changed the retained Claude instructions")
+		t.Fatal("Agents update changed the retained Claude instructions")
 	}
 }
 
@@ -359,7 +359,7 @@ func TestIssue626ProjectUpdateRetiresOnlyItsOwnNativeProjection(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 	packID := pack.ID()
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", surface, "--resource", workflow.String()); err != nil {
 			t.Fatalf("install dependency fixture on %s: %v\n%s", surface, err, out)
 		}
@@ -378,18 +378,18 @@ func TestIssue626ProjectUpdateRetiresOnlyItsOwnNativeProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	retainedClaude := projectSurfaceReceiptJSON(t, before, packID, "claude")
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "codex", "--project"); err != nil {
-		t.Fatalf("Codex dependency retirement: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "agents", "--project"); err != nil {
+		t.Fatalf("Agents dependency retirement: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(retiredPath); err != nil {
-		t.Fatalf("Codex update removed a projection retained by Claude: %v", err)
+		t.Fatalf("Agents update removed a projection retained by Claude: %v", err)
 	}
-	afterCodex, err := os.ReadFile(lockPath)
+	afterAgents, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := projectSurfaceReceiptJSON(t, afterCodex, packID, "claude"); got != retainedClaude {
-		t.Fatalf("Codex retirement changed the Claude receipt\nbefore: %s\nafter:  %s", retainedClaude, got)
+	if got := projectSurfaceReceiptJSON(t, afterAgents, packID, "claude"); got != retainedClaude {
+		t.Fatalf("Agents retirement changed the Claude receipt\nbefore: %s\nafter:  %s", retainedClaude, got)
 	}
 	if out, err := executeCommand(t, NewRootCommand(fixture.options), "update", packID, "--surface", "claude", "--project"); err != nil {
 		t.Fatalf("Claude dependency retirement: %v\n%s", err, out)
@@ -409,7 +409,7 @@ func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
 		Requires: []string{}, Conflicts: []string{}, Notices: []string{}, SurfaceExclusions: []testsupport.SurfaceExclusion{},
 		Bindings: []testsupport.Binding{
 			{Surface: testsupport.SurfaceClaude, Projection: "skill", Name: "local", Invocation: "/local", Mode: "native", Sharing: "exclusive", Capabilities: []testsupport.Capability{}},
-			{Surface: testsupport.SurfaceCodex, Projection: "skill", Name: "local", Invocation: "$local", Mode: "native", Sharing: "exclusive", Capabilities: []testsupport.Capability{}},
+			{Surface: testsupport.SurfaceAgents, Projection: "skill", Name: "local", Invocation: "$local", Mode: "native", Sharing: "exclusive", Capabilities: []testsupport.Capability{}},
 		},
 	})
 	slices.SortFunc(manifest.Resources, func(a, b testsupport.Resource) int {
@@ -425,8 +425,8 @@ func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 	packID := pack.ID()
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", "codex", "--resource", "skill:helper"); err != nil {
-		t.Fatalf("install Codex notice selection: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", "agents", "--resource", "skill:helper"); err != nil {
+		t.Fatalf("install Agents notice selection: %v\n%s", err, out)
 	}
 	previewJSON, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", "claude", "--resource", "skill:local", "--dry-run", "--json")
 	if err != nil {
@@ -437,7 +437,7 @@ func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(preview.Notices.Contributions) != 0 {
-		t.Fatalf("Claude preview inherited Codex notices: %#v", preview.Notices.Contributions)
+		t.Fatalf("Claude preview inherited Agents notices: %#v", preview.Notices.Contributions)
 	}
 	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", "claude", "--resource", "skill:local"); err != nil {
 		t.Fatalf("install Claude no-notice selection: %v\n%s", err, out)
@@ -449,7 +449,7 @@ func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
 	start := strings.Index(string(notices), "<!-- packy:project:"+packID+":claude:notices:start -->")
 	end := strings.Index(string(notices), "<!-- packy:project:"+packID+":claude:notices:end -->")
 	if start < 0 || end <= start || strings.Contains(string(notices)[start:end], "Packy Fixture Authors") {
-		t.Fatalf("Claude notice block inherited the Codex attribution:\n%s", notices)
+		t.Fatalf("Claude notice block inherited the Agents attribution:\n%s", notices)
 	}
 }
 

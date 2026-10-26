@@ -27,7 +27,7 @@ func TestPortableAllSurfacesWritesBundleAndDerivesVersions(t *testing.T) {
 	if got, want := manifest.ID, "portable-one"; got != want {
 		t.Fatalf("manifest ID = %q, want %q", got, want)
 	}
-	if got, want := manifest.Surfaces, []Surface{SurfaceClaude, SurfaceCodex}; !reflect.DeepEqual(got, want) {
+	if got, want := manifest.Surfaces, []Surface{SurfaceAgents, SurfaceClaude}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("surfaces = %#v, want %#v", got, want)
 	}
 
@@ -117,14 +117,14 @@ func TestWithRetainedRequirementsKeepsCapabilityReferencesCoherentAndWritesBundl
 	if got, want := narrowedWorkflow.Requires, []string{"skill:helper"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("narrowed requirements = %#v, want %#v", got, want)
 	}
-	composite := narrowedWorkflow.Bindings[0].Capabilities[0].ClaudeCompositeSkill
+	composite := narrowedWorkflow.Bindings[1].Capabilities[0].ClaudeCompositeSkill
 	if composite == nil || !reflect.DeepEqual(composite.Dependencies, []ResourceIdentity{helper}) || len(composite.References) != 0 {
 		t.Fatalf("narrowed Claude capability = %#v", composite)
 	}
 
 	retired := narrowed.Candidate().WithRetainedRequirements(workflow)
 	retiredWorkflow := manifestResource(t, retired.Manifest(), workflow)
-	retiredComposite := retiredWorkflow.Bindings[0].Capabilities[0].ClaudeCompositeSkill
+	retiredComposite := retiredWorkflow.Bindings[1].Capabilities[0].ClaudeCompositeSkill
 	if len(retiredWorkflow.Requires) != 0 || retiredComposite == nil || len(retiredComposite.Dependencies) != 0 || len(retiredComposite.References) != 0 {
 		t.Fatalf("retired requirement contract = resource %#v capability %#v", retiredWorkflow, retiredComposite)
 	}

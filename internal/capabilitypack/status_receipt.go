@@ -96,6 +96,9 @@ func statusReceiptOwnership(intent ActivationIntent, ownership []ProjectionOwner
 	if !idPattern.MatchString(intent.PackID) || !validSemver(intent.Version) || intent.Revision < 0 {
 		return invalid()
 	}
+	if err := validateReceiptClient(installedPackReceipt{Surface: intent.Surface, Selection: intent.Selection, Resources: intent.Resources}, "global"); err != nil {
+		return invalid()
+	}
 	if len(intent.ReadinessObligations) > 0 && !validReadinessObligations(intent.ReadinessObligations) {
 		return invalid()
 	}

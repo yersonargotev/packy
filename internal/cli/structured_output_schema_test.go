@@ -107,12 +107,12 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	projectOpts.Getwd = func() (string, error) { return project, nil }
 	resource := syntheticResource(t, pack, "instruction", "guidance")
 	resourceID := resource.Kind + ":" + resource.ID
-	projectPreview, err := executeCommand(t, NewRootCommand(projectOpts), "install", manifest.ID, "--surface", "codex", "--resource", resourceID, "--dry-run", "--json")
+	projectPreview, err := executeCommand(t, NewRootCommand(projectOpts), "install", manifest.ID, "--surface", "agents", "--resource", resourceID, "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("project preview: %v\n%s", err, projectPreview)
 	}
 	assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectPreview)
-	applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", manifest.ID, "--surface", "codex", "--resource", resourceID, "--json")
+	applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", manifest.ID, "--surface", "agents", "--resource", resourceID, "--json")
 	if err != nil {
 		t.Fatalf("project install: %v\n%s", err, applied)
 	}
@@ -139,7 +139,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	if err := validateProjectStructuredOutput(t, root, "project-lock.schema.json", string(missingMode)); err == nil {
 		t.Fatal("project lock schema accepted a projection without file_mode")
 	}
-	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", manifest.ID, "--surface", "codex", "--project", "--json")
+	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", manifest.ID, "--surface", "agents", "--project", "--json")
 	if err != nil {
 		t.Fatalf("project status: %v\n%s", err, projectStatus)
 	}
@@ -274,8 +274,8 @@ func TestRuntimeModeV2SchemaAcceptsSanitizedFactsAndRejectsUnknownProbeData(t *t
 		"fallback":{"kind":"mode","mode":"local"},"fallback_state":"unverified",
 		"on_unavailable":"fail_before_effects",
 		"evidence":{
-			"requirements":[{"kind":"tool","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"codex-v1","redacted_identity":"vercel"}],
-			"authorities":[{"kind":"network","scope":"vercel_account","state":"unverified","reason":"observer_error","observed_at":"2026-07-25T12:00:00Z","observer_revision":"codex-v1"}]
+			"requirements":[{"kind":"tool","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"agents-v1","redacted_identity":"vercel"}],
+			"authorities":[{"kind":"network","scope":"vercel_account","state":"unverified","reason":"observer_error","observed_at":"2026-07-25T12:00:00Z","observer_revision":"agents-v1"}]
 		},
 		"affected":["requirement:tool:vercel"]
 	}`)

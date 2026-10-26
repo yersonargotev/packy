@@ -224,6 +224,9 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 	bySurface := map[Surface]*ActivationState{}
 	owners := map[string]ProjectionOwnership{}
 	for _, receipt := range receipts.Receipts {
+		if err := validateReceiptClient(receipt, "global"); err != nil {
+			return activationDocument{}, err
+		}
 		if err := ValidateSurface(receipt.Surface); err != nil {
 			return activationDocument{}, err
 		}
@@ -264,7 +267,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 }
 
 func receiptProjectionOwnershipID(surface Surface, projection installedProjection) string {
-	if surface == SurfaceCodex && strings.HasPrefix(projection.ID, "skill:") && projection.Target != "" {
+	if surface == SurfaceAgents && strings.HasPrefix(projection.ID, "skill:") && projection.Target != "" {
 		return "path:" + filepath.Clean(projection.Target)
 	}
 	return "surface:" + string(surface) + ":" + projection.ID
