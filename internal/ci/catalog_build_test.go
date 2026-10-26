@@ -269,6 +269,11 @@ func TestUnstampedCatalogBuilderCannotClaimAnIdentity(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "dist")
 	stdout, stderr, err := runCatalogCLI(t, testprocess.Env(t), t.TempDir(), executable, "catalog", "build", "--json", "--project", project, "--source-repository", "example/catalog", "--source-commit", strings.Repeat("a", 40), "--out-dir", out)
 	assertCatalogBuildFailure(t, stdout, stderr, err, "build_failed")
+	for _, diagnostic := range []string{"builder identity", "embedded full source commit", "release-stamped Packy binary", "packy version --json"} {
+		if !bytes.Contains(stdout, []byte(diagnostic)) || !bytes.Contains(stderr, []byte(diagnostic)) {
+			t.Fatalf("unstamped builder omitted %q: stdout=%s stderr=%s", diagnostic, stdout, stderr)
+		}
+	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Fatalf("unstamped build created output: %v", err)
 	}

@@ -55,10 +55,12 @@ if [[ -n "$unformatted" ]]; then
 fi
 
 echo "==> vet"
-go vet ./...
+TIMEFORMAT="==> vet elapsed %3R s"
+time go vet ./...
 
 echo "==> static analysis"
-./scripts/validate-static-analysis.sh
+TIMEFORMAT="==> static analysis elapsed %3R s"
+time ./scripts/validate-static-analysis.sh
 
 echo "==> tests"
 test_packages=()
@@ -75,10 +77,12 @@ while IFS= read -r package; do
 done < <(go list ./...)
 
 if [[ "$ci" == true ]]; then
-  go test "${test_packages[@]}" &
+  TIMEFORMAT="==> tests elapsed %3R s"
+  time go test "${test_packages[@]}" &
   tests_pid=$!
   echo "==> race"
-  go test -race ./internal/capabilitypack &
+  TIMEFORMAT="==> race elapsed %3R s"
+  time go test -race ./internal/capabilitypack &
   race_pid=$!
   tests_status=0
   race_status=0
@@ -86,5 +90,6 @@ if [[ "$ci" == true ]]; then
   wait "$race_pid" || race_status=$?
   ((tests_status == 0 && race_status == 0))
 else
-  go test "${test_packages[@]}"
+  TIMEFORMAT="==> tests elapsed %3R s"
+  time go test "${test_packages[@]}"
 fi

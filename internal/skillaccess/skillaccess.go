@@ -79,7 +79,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	parts := strings.Split(qualified, ":")
 	pack, err := capabilitypack.ValidatePackContent(snapshotRoot, parts[0])
 	if err != nil {
-		return Result{}, failure("unknown_skill", "cannot obtain %s from snapshot %s; run `packy show %s`: %v", qualified, snapshotID, parts[0], err)
+		return Result{}, failure("unknown_skill", "cannot obtain %s from snapshot %s; run `packy show %s --surface %s`: %v", qualified, snapshotID, parts[0], surface, err)
 	}
 	if !pack.Selectable {
 		return Result{}, failure("unknown_skill", "Pack %s is not selectable in this Catalog Snapshot; run `packy list` for available Packs", pack.ID)
@@ -108,7 +108,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 		}
 	}
 	if rootSkill == nil {
-		return Result{}, failure("unknown_skill", "unknown skill %s; inspect packy show %s", qualified, pack.ID)
+		return Result{}, failure("unknown_skill", "unknown skill %s; run `packy show %s --surface %s`", qualified, pack.ID, surface)
 	}
 	supported := false
 	for _, binding := range rootSkill.Bindings {

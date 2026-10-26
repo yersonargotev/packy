@@ -67,8 +67,8 @@ func TestOrdinaryPullRequestCIKeepsValidationAndControlledReleaseContracts(t *te
 	if strings.Count(workflow, "\n  validate:") != 1 || strings.Count(workflow, "./scripts/validate-packy.sh --ci") != 1 {
 		t.Fatal("ordinary CI must expose one general validation job and invoke it once")
 	}
-	if !strings.Contains(workflow, "timeout-minutes: 8") {
-		t.Fatal("ordinary CI must allow a cold Go cache to complete before cleanup")
+	if !strings.Contains(workflow, "timeout-minutes: 12") {
+		t.Fatal("ordinary CI must allow validation, setup, and cleanup to finish with operational margin")
 	}
 	for _, retired := range []string{"floor-smoke", "vercel-acceptance-gate", "run-claude-smoke.sh", "run-codex-smoke.sh", "run-opencode-smoke.sh", "gh release create", "HOMEBREW_TAP_TOKEN", "environment: release"} {
 		if strings.Contains(workflow, retired) {
