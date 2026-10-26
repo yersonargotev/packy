@@ -100,7 +100,9 @@ against the final package layout; undeclared prose is never automatically adapte
 
 Assets and notices retain their Pack-relative paths inside the package root.
 `packy-provenance.json` records the retained snapshot, Pack/version, selected
-resource provenance, license/attribution, and reviewed role resolutions. It does
+resource provenance, the sorted registry of referenced immutable upstream origins
+(repository, commit, and optional revision), license/attribution, and reviewed role
+resolutions. Unrelated origins remain outside the package. It does
 not include unrelated instruction content or native role definitions. Repeated
 exports with identical retained inputs have identical file bytes, modes, and
 `content_sha256`, independent of output directory.

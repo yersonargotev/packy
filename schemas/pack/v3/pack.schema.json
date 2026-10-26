@@ -1263,7 +1263,7 @@
               },
               {
                 "not": {
-                  "pattern": "[:\\x00-\\x1f\\x7f]"
+                  "pattern": "[:\\p{Cc}]"
                 }
               }
             ]
@@ -1292,9 +1292,7 @@
               ],
               "properties": {
                 "id": {
-                  "type": "string",
-                  "maxLength": 64,
-                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  "$ref": "#/$defs/id"
                 },
                 "file": {
                   "allOf": [
@@ -1303,7 +1301,7 @@
                     },
                     {
                       "not": {
-                        "pattern": "[:\\x00-\\x1f\\x7f]"
+                        "pattern": "[:\\p{Cc}]"
                       }
                     }
                   ]

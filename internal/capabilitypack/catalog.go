@@ -54,6 +54,14 @@ const (
 	ReadinessSurfaceAuthorization ReadinessObligation = "surface-authorization"
 )
 
+// PackOrigin identifies one immutable reviewed upstream source.
+type PackOrigin struct {
+	ID         string `json:"id"`
+	Repository string `json:"repository"`
+	Commit     string `json:"commit"`
+	Revision   string `json:"revision,omitempty"`
+}
+
 type Resource struct {
 	PluginExports     PluginExports
 	OnDemand          *OnDemandSkill
@@ -393,6 +401,7 @@ type OptionalMode struct {
 }
 
 type Pack struct {
+	Origins              []PackOrigin
 	ID                   string
 	Version              string
 	CatalogSnapshot      string
@@ -699,6 +708,7 @@ func (c Catalog) catalogMetadataIfPresent(id string) (Pack, bool) {
 }
 
 func clonePack(pack Pack) Pack {
+	pack.Origins = slices.Clone(pack.Origins)
 	pack.Surfaces = slices.Clone(pack.Surfaces)
 	pack.ReadinessObligations = slices.Clone(pack.ReadinessObligations)
 	pack.Requires.Tools = slices.Clone(pack.Requires.Tools)

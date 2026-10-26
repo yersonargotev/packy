@@ -154,6 +154,89 @@ func TestIssue879PluginExportExecutable(t *testing.T) {
 		}
 	})
 
+	t.Run("standalone provenance resolves only the selected immutable origins", func(t *testing.T) {
+		project := pluginExportProject(t, func(m map[string]any) {
+			m["origins"] = []any{map[string]any{"id": "unused", "repository": "fixture/unused", "commit": strings.Repeat("1", 40)}, map[string]any{"id": "upstream", "repository": "fixture/upstream", "commit": strings.Repeat("2", 40), "revision": "v1.2.3"}}
+			for _, value := range m["resources"].([]any) {
+				r := value.(map[string]any)
+				if r["kind"] == "skill" && r["id"] == "guide" {
+					r["plugin_exports"].([]any)[0].(map[string]any)["origin"] = map[string]any{"id": "upstream", "path": ".", "relationship": "adapted"}
+				}
+			}
+		})
+		upstream := t.TempDir()
+		writePluginFixtureFile(t, filepath.Join(upstream, "upstream.txt"), "Immutable upstream fixture\n", 0644)
+		resolver := pluginExportOriginFixture{root: upstream}
+		validation, err := cataloglayout.ValidateCatalogProject(context.Background(), project, "", resolver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assets := filepath.Join(t.TempDir(), "assets")
+		if _, err := cataloglayout.BuildCatalogSnapshot(context.Background(), project, validation, cataloglayout.CatalogSnapshotSource{Repository: "yersonargotev/packy-catalog", Commit: strings.Repeat("6", 40), Builder: "yersonargotev/packy@" + strings.Repeat("e", 40)}, assets); err != nil {
+			t.Fatal(err)
+		}
+		output := filepath.Join(t.TempDir(), "plugin")
+		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t, "PATH="+t.TempDir()), "catalog", "candidate", "--snapshot", assets, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "export", "reviewed", "--surface", "agents", "--skill", "guide", "--output", output, "--json")
+		if err != nil {
+			t.Fatalf("origin export: %v %s %s", err, out, stderr)
+		}
+		assertReport(t, out)
+		data, err := os.ReadFile(filepath.Join(output, "packy-provenance.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var provenance struct {
+			Origins []capabilitypack.PackOrigin `json:"origins"`
+		}
+		if err := json.Unmarshal(data, &provenance); err != nil {
+			t.Fatal(err)
+		}
+		if len(provenance.Origins) != 1 || provenance.Origins[0].ID != "upstream" || provenance.Origins[0].Repository != "fixture/upstream" || provenance.Origins[0].Commit != strings.Repeat("2", 40) || provenance.Origins[0].Revision != "v1.2.3" {
+			t.Fatalf("standalone origin registry: %s", data)
+		}
+		if bytes.Contains(data, []byte("fixture/unused")) {
+			t.Fatal("export copied unrelated origin")
+		}
+	})
+	t.Run("reviewed source and reference filenames can contain spaces", func(t *testing.T) {
+		project := pluginExportProject(t, func(m map[string]any) {
+			for _, value := range m["resources"].([]any) {
+				r := value.(map[string]any)
+				if r["kind"] == "skill" && r["id"] == "guide" {
+					c := r["plugin_exports"].([]any)[0].(map[string]any)
+					c["source"] = "skills/plugin guide"
+					c["references"].([]any)[0].(map[string]any)["file"] = "references/Deep Guide.md"
+				}
+			}
+		})
+		root := filepath.Join(project, "packs/reviewed")
+		if err := os.Rename(filepath.Join(root, "skills/plugin-guide"), filepath.Join(root, "skills/plugin guide")); err != nil {
+			t.Fatal(err)
+		}
+		entry := filepath.Join(root, "skills/plugin guide/SKILL.md")
+		data, readErr := os.ReadFile(entry)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if err := os.WriteFile(entry, bytes.ReplaceAll(data, []byte("[Asset]({{packy.export:asset}})\n"), nil), 0644); err != nil {
+			t.Fatal(err)
+		}
+		writePluginFixtureFile(t, filepath.Join(root, "skills/plugin guide/references/Deep Guide.md"), "Reviewed data path: {{packy.export:asset}}\n", 0644)
+		assets := pluginExportAssets(t, project, strings.Repeat("7", 40))
+		output := filepath.Join(t.TempDir(), "plugin")
+		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "candidate", "--snapshot", assets, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "export", "reviewed", "--surface", "agents", "--skill", "guide", "--output", output, "--json")
+		if err != nil {
+			t.Fatalf("spaced reviewed path: %v %s %s", err, out, stderr)
+		}
+		assertReport(t, out)
+		if !bytes.Contains(out, []byte("skills/plugin guide")) {
+			t.Fatal("reviewed source identity omitted")
+		}
+		content, err := os.ReadFile(filepath.Join(output, "skills/guide/references/Deep Guide.md"))
+		if err != nil || string(content) != "Reviewed data path: ../../../assets/data.bin\n" {
+			t.Fatalf("spaced reference: %s %v", content, err)
+		}
+	})
 	t.Run("logical identity stays distinct from exported skill name", func(t *testing.T) {
 		logical := strings.Repeat("a", 65)
 		project := pluginExportProject(t, func(m map[string]any) {
@@ -467,6 +550,11 @@ func TestIssue879PluginCompatibilitySchemaMatchesCatalog(t *testing.T) {
 		{"unknown field", false, func(c map[string]any) { c["execute"] = true }},
 		{"missing prerequisites", false, func(c map[string]any) { delete(c, "prerequisites") }},
 		{"null prerequisites", false, func(c map[string]any) { c["prerequisites"] = nil }},
+		{"control source", false, func(c map[string]any) { c["source"] = "skills/\u0085adapted" }},
+		{"control reference file", false, func(c map[string]any) {
+			c["references"].([]any)[0].(map[string]any)["file"] = "references/\u0085file.md"
+		}},
+		{"long reference identity", true, func(c map[string]any) { c["references"].([]any)[4].(map[string]any)["id"] = strings.Repeat("z", 65) }},
 		{"empty source", false, func(c map[string]any) { c["source"] = "" }},
 		{"null source", false, func(c map[string]any) { c["source"] = nil }},
 		{"null references", false, func(c map[string]any) { c["references"] = nil }},
@@ -537,4 +625,10 @@ func pluginPackageBytesAndModes(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	return result.String()
+}
+
+type pluginExportOriginFixture struct{ root string }
+
+func (fixture pluginExportOriginFixture) Resolve(context.Context, cataloglayout.Origin) (string, error) {
+	return fixture.root, nil
 }

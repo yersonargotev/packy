@@ -279,12 +279,17 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 	}
 	data, _ := json.MarshalIndent(manifest, "", "  ")
 	files["plugin.json"] = pluginFile{append(data, '\n'), 0644}
+	origins, err := selectedPluginOrigins(pack, result.Resources)
+	if err != nil {
+		return pluginPlan{}, err
+	}
 	provenance := struct {
 		SnapshotID  string             `json:"snapshot_id"`
+		Origins     []PackOrigin       `json:"origins"`
 		PackID      string             `json:"pack_id"`
 		PackVersion string             `json:"pack_version"`
 		Resources   []ExportedResource `json:"resources"`
-	}{snapshotID, pack.ID, pack.Version, result.Resources}
+	}{snapshotID, origins, pack.ID, pack.Version, result.Resources}
 	data, err = json.MarshalIndent(provenance, "", "  ")
 	if err != nil {
 		return pluginPlan{}, err
@@ -477,4 +482,30 @@ func pluginFilesDigest(files map[string]pluginFile) string {
 		hash.Write(file.data)
 	}
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func selectedPluginOrigins(pack Pack, resources []ExportedResource) ([]PackOrigin, error) {
+	required := map[string]bool{}
+	for _, resource := range resources {
+		if resource.Origin != nil {
+			required[resource.Origin.ID] = true
+		}
+	}
+	result := []PackOrigin{}
+	for _, origin := range pack.Origins {
+		if required[origin.ID] {
+			result = append(result, origin)
+			delete(required, origin.ID)
+		}
+	}
+	if len(required) > 0 {
+		missing := []string{}
+		for id := range required {
+			missing = append(missing, id)
+		}
+		slices.Sort(missing)
+		return nil, fmt.Errorf("plugin provenance is missing reviewed origins %v", missing)
+	}
+	slices.SortFunc(result, func(a, b PackOrigin) int { return strings.Compare(a.ID, b.ID) })
+	return result, nil
 }

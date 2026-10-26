@@ -10,6 +10,7 @@ import (
 )
 
 type currentManifest struct {
+	Origins              []PackOrigin
 	ID                   string                `json:"id"`
 	Version              string                `json:"version"`
 	Description          string                `json:"description"`
@@ -29,15 +30,8 @@ type managedCurrentManifest struct {
 	Surfaces             []Surface             `json:"surfaces"`
 	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
 	ExternalRequirements []string              `json:"external_requirements"`
-	Origins              []managedOriginWire   `json:"origins"`
+	Origins              []PackOrigin          `json:"origins"`
 	Resources            []json.RawMessage     `json:"resources"`
-}
-
-type managedOriginWire struct {
-	ID         string `json:"id"`
-	Repository string `json:"repository"`
-	Commit     string `json:"commit"`
-	Revision   string `json:"revision,omitempty"`
 }
 
 type currentResourceWire struct {
@@ -96,6 +90,7 @@ func loadManagedCurrentManifest(data []byte, path, packRoot string, validateSour
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field origins is required", path)
 	}
 	return loadCurrentManifestRuntime(currentManifest{
+		Origins:              managed.Origins,
 		ID:                   managed.ID,
 		Version:              managed.Version,
 		Description:          managed.Description,
@@ -115,6 +110,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field resources is a required non-null array", path)
 	}
 	pack := Pack{
+		Origins:              raw.Origins,
 		ID:                   raw.ID,
 		Version:              raw.Version,
 		Description:          raw.Description,
