@@ -12,6 +12,9 @@ recorded in [ADR 0045](docs/adr/0045-focus-surfaces-on-agents-and-claude.md).
 The Agents/Claude surface vocabulary and plugin concepts below describe that
 accepted target design. Engine implementation and catalog adoption are separate
 delivery work; these definitions do not establish released feature availability.
+The supported surfaces are Codex (`codex`) and Claude Code (`claude`) in the
+current engine. Antigravity and GitHub Copilot CLI remain outside its supported
+client integrations.
 
 ## Glossary
 
