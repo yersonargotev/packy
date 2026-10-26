@@ -100,6 +100,7 @@ and receive a new Preview. Packy never retries it automatically.
 
 ` + projectLifecycleHelp,
 		Example: `  packy list
+  packy export example-pack --surface agents --output ./example-plugin
   packy audit --json
   packy show matty
   packy show engram --json
@@ -134,6 +135,7 @@ and receive a new Preview. Packy never retries it automatically.
 	root.AddCommand(
 		newVersionCommand(),
 		newGetCommand(opts, workstationResolver),
+		newPluginExportCommand(opts, workstationResolver),
 		newInitCommand(opts, workstationResolver),
 		newCatalogCommand(opts, workstationResolver),
 		newDoctorCommand(opts, workstationResolver),

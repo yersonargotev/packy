@@ -123,6 +123,7 @@ packy doctor
 packy audit
 packy list
 packy show <pack>
+packy export <pack> --surface agents --output <new-or-empty-directory>
 packy verify
 packy activate <pack> --surface <surface>
 packy install <pack> --surface <surface>
@@ -170,6 +171,10 @@ share ownership of one projected path.
 Packy preserves unrelated files, credentials, Engram memory, and host-owned
 configuration. Tests and manual verification must sandbox `HOME` and
 `XDG_CONFIG_HOME`.
+
+Use [local plugin export](docs/plugin-export.md) to generate a standalone Agent
+Plugins package from one reviewed Pack or selected skills. Export stays separate
+from installation and requires explicit per-format reviewed compatibility.
 
 ## Pack authoring
 

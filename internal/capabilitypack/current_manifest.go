@@ -10,6 +10,7 @@ import (
 )
 
 type currentManifest struct {
+	Origins              []PackOrigin
 	ID                   string                `json:"id"`
 	Version              string                `json:"version"`
 	Description          string                `json:"description"`
@@ -29,18 +30,12 @@ type managedCurrentManifest struct {
 	Surfaces             []Surface             `json:"surfaces"`
 	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
 	ExternalRequirements []string              `json:"external_requirements"`
-	Origins              []managedOriginWire   `json:"origins"`
+	Origins              []PackOrigin          `json:"origins"`
 	Resources            []json.RawMessage     `json:"resources"`
 }
 
-type managedOriginWire struct {
-	ID         string `json:"id"`
-	Repository string `json:"repository"`
-	Commit     string `json:"commit"`
-	Revision   string `json:"revision,omitempty"`
-}
-
 type currentResourceWire struct {
+	PluginExports     PluginExports      `json:"plugin_exports,omitempty"`
 	OnDemand          json.RawMessage    `json:"on_demand,omitempty"`
 	Variants          ResourceVariants   `json:"variants,omitempty"`
 	Origin            *ResourceOrigin    `json:"origin,omitempty"`
@@ -95,6 +90,7 @@ func loadManagedCurrentManifest(data []byte, path, packRoot string, validateSour
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field origins is required", path)
 	}
 	return loadCurrentManifestRuntime(currentManifest{
+		Origins:              managed.Origins,
 		ID:                   managed.ID,
 		Version:              managed.Version,
 		Description:          managed.Description,
@@ -114,6 +110,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field resources is a required non-null array", path)
 	}
 	pack := Pack{
+		Origins:              raw.Origins,
 		ID:                   raw.ID,
 		Version:              raw.Version,
 		Description:          raw.Description,
@@ -134,8 +131,9 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 			return Pack{}, fmt.Errorf("Pack %q resource %d: %w", raw.ID, i, err)
 		}
 		pack.Resources = append(pack.Resources, Resource{
-			OnDemand: onDemand,
-			Kind:     wire.Kind, ID: wire.ID, Source: wire.Source,
+			PluginExports: wire.PluginExports,
+			OnDemand:      onDemand,
+			Kind:          wire.Kind, ID: wire.ID, Source: wire.Source,
 			Variants: wire.Variants, Origin: wire.Origin,
 			Description: wire.Description, Mode: wire.Mode,
 			Tools: wire.Tools, Permissions: wire.Permissions,

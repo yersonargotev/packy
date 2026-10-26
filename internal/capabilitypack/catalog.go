@@ -54,7 +54,16 @@ const (
 	ReadinessSurfaceAuthorization ReadinessObligation = "surface-authorization"
 )
 
+// PackOrigin identifies one immutable reviewed upstream source.
+type PackOrigin struct {
+	ID         string `json:"id"`
+	Repository string `json:"repository"`
+	Commit     string `json:"commit"`
+	Revision   string `json:"revision,omitempty"`
+}
+
 type Resource struct {
+	PluginExports     PluginExports
 	OnDemand          *OnDemandSkill
 	Variants          []ResourceVariant
 	Origin            *ResourceOrigin
@@ -392,6 +401,7 @@ type OptionalMode struct {
 }
 
 type Pack struct {
+	Origins              []PackOrigin
 	ID                   string
 	Version              string
 	CatalogSnapshot      string
@@ -698,11 +708,13 @@ func (c Catalog) catalogMetadataIfPresent(id string) (Pack, bool) {
 }
 
 func clonePack(pack Pack) Pack {
+	pack.Origins = slices.Clone(pack.Origins)
 	pack.Surfaces = slices.Clone(pack.Surfaces)
 	pack.ReadinessObligations = slices.Clone(pack.ReadinessObligations)
 	pack.Requires.Tools = slices.Clone(pack.Requires.Tools)
 	pack.Resources = slices.Clone(pack.Resources)
 	for i := range pack.Resources {
+		pack.Resources[i].PluginExports = clonePluginExports(pack.Resources[i].PluginExports)
 		pack.Resources[i].OnDemand = cloneOnDemand(pack.Resources[i].OnDemand)
 		pack.Resources[i].Variants = cloneVariants(pack.Resources[i].Variants)
 		if pack.Resources[i].Origin != nil {
@@ -889,6 +901,9 @@ func DecodeRuntimeEvidence(data []byte) (RuntimeEvidence, error) {
 }
 
 func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []OptionalMode) error {
+	if err := validatePluginExports(resource); err != nil {
+		return err
+	}
 	if err := validateOnDemand(resource); err != nil {
 		return err
 	}
@@ -1437,6 +1452,7 @@ func validatePackResourceSources(pack Pack, fallbackRoot string) error {
 	var bodies []Resource
 	for _, resource := range pack.Resources {
 		bodies = append(bodies, DeclaredResourceBodies(resource)...)
+		bodies = append(bodies, PluginExportBodies(resource)...)
 	}
 	for _, resource := range bodies {
 		root := resource.CatalogRootOr(fallbackRoot)

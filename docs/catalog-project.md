@@ -300,6 +300,10 @@ remains pinned to its previous immutable release until the complete supporting
 Packy release is available; this engine change does not update that pin.
 
 
+Skills may independently declare [reviewed plugin export compatibility](plugin-export.md).
+Format-specific source adaptations are part of the same declared, provenance-checked
+Pack closure; native bindings and on-demand compatibility do not imply eligibility.
+
 ### Exercise local candidates
 
 Use the ordinary Packy executable to exercise complete local snapshot assets in
@@ -329,7 +333,7 @@ current selection and retained snapshot identities. Older disposable workspace
 formats are rejected; create a new workspace rather than editing the marker.
 Ordinary candidate calls require the selected snapshot's identical assets.
 Every operation revalidates the captured ownership and retained sources.
-`list`, `show`, and `get` remain available when the owned project is outside Git
+`list`, `show`, `get`, and `export` remain available when the owned project is outside Git
 or its Git metadata is damaged. Native lifecycle operations and explicit
 transitions additionally require the intact owned Git boundary, including after
 interactive approval; an enclosing repository never supplies that authority.
@@ -365,7 +369,7 @@ preparation/selection preserves installed state. Transition changes availability
 only; each subsequent lifecycle Apply requires its own normal consent.
 
 Available operations after the required `--` separator are `list`, `show`, `get`,
-`install`, `verify`, `uninstall`, `update`, `activate`, `deactivate`, and
+`export`, `install`, `verify`, `uninstall`, `update`, `activate`, `deactivate`, and
 `transition`. Project `install`, `verify`, `uninstall`, and `update --project`
 always target `workspace/project`. Global `activate`, `deactivate`, and `update`
 use only `workspace/home` and `workspace/config`:
