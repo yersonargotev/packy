@@ -155,6 +155,15 @@ project, `HOME`, and `XDG_CONFIG_HOME`, and run the exact binary from the
 disposable project. Keep the binary, project, workstation paths, and all other
 generated state outside the candidate working tree and real user configuration.
 
+If the tracer needs local Catalog candidates, read
+[Build a local candidate](../docs/catalog-project.md#build-a-local-candidate) and
+[Exercise local candidates](../docs/catalog-project.md#exercise-local-candidates)
+before writing the acceptance commands. Check the builder identity, Git boundary,
+and supported candidate operations there. Reuse the
+[synthetic catalog helpers](../internal/cli/issue860_skill_access_test.go) for
+inert fixtures, or the [opt-in probes](../scripts/probes/README.md) for reviewed
+Catalog content and their source-stamped build command.
+
 Derive the tracer scenario from the approved issue criteria. Verify its exit
 status, operator-visible output, and required filesystem or other durable
 effects. Assert the complete final observable state after the command: every
