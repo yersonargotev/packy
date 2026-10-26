@@ -351,7 +351,7 @@ func collisionFixture(id string) Fixture {
 		for j := range resource.Bindings[i].Capabilities {
 			capability := &resource.Bindings[i].Capabilities[j]
 			if capability.ProjectInstruction != nil {
-				capability.ProjectInstruction.ID = id + "-project"
+				capability.ProjectInstruction.ID = "shared-guidance"
 			}
 		}
 	}
