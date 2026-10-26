@@ -3,13 +3,13 @@ package cli
 import (
 	"context"
 	"errors"
-	"github.com/yersonargotev/packy/internal/tui"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
+	"github.com/yersonargotev/packy/internal/tui"
 )
 
 func TestIssue876RetiredSurfaceRejectsEveryLifecycleBeforeMutation(t *testing.T) {
