@@ -26,7 +26,7 @@ func TestDiagnoseWithNoActivePacksIsHealthy(t *testing.T) {
 
 func TestDiagnoseReportsUnknownConditionsAsInformational(t *testing.T) {
 	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{{
-		ID: "matty", Surface: "codex",
+		ID: "matty", Surface: "agents",
 		Conditions: []ReadinessCondition{{
 			Type: "runtime-usability", Dimension: "usable", Value: "unknown", Reason: "runtime-unobservable",
 			Message: "runtime usability cannot be observed",
@@ -42,7 +42,7 @@ func TestDiagnoseReportsUnknownConditionsAsInformational(t *testing.T) {
 
 func TestDiagnoseReportsFalseConditionsAsWarnings(t *testing.T) {
 	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{{
-		ID: "matty", Surface: "codex",
+		ID: "matty", Surface: "agents",
 		Conditions: []ReadinessCondition{{
 			Type: "surface-authorization", Dimension: "authorized", Value: "false", Reason: "authorization-denied",
 			Message: "surface authorization was denied",
@@ -55,7 +55,7 @@ func TestDiagnoseReportsFalseConditionsAsWarnings(t *testing.T) {
 
 func TestDiagnoseExposesControlledRuntimeCheckEvidence(t *testing.T) {
 	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{{
-		ID: "orchestrate", Surface: "codex", ControlledCheckState: "stale", ControlledCheckResult: "true",
+		ID: "orchestrate", Surface: "agents", ControlledCheckState: "stale", ControlledCheckResult: "true",
 		ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity",
 	}}})
 	if report.Summary.Infos != 1 || len(report.Checks) != 3 {
@@ -76,24 +76,24 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 	}{
 		{
 			name:     "inspection failed",
-			pack:     ActivePack{ID: "missing", Surface: "codex", InspectionFailed: true},
+			pack:     ActivePack{ID: "missing", Surface: "agents", InspectionFailed: true},
 			severity: Fail,
 			status:   "failures",
-			want:     []string{"inspection failed", "packy status missing --surface codex"},
+			want:     []string{"inspection failed", "packy status missing --surface agents"},
 		},
 		{
 			name:     "converged",
-			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex"},
+			pack:     ActivePack{ID: "ma" + "tty", Surface: "agents"},
 			severity: Pass,
 			status:   "healthy",
 			want:     []string{"no confirmed health problems"},
 		},
 		{
 			name:     "drifted",
-			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", ProjectionProblems: 2},
+			pack:     ActivePack{ID: "ma" + "tty", Surface: "agents", ProjectionProblems: 2},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"2 projection findings", "packy activate ma" + "tty --surface codex", "packy status ma" + "tty --surface codex"},
+			want:     []string{"2 projection findings", "packy activate ma" + "tty --surface agents", "packy status ma" + "tty --surface agents"},
 		},
 		{
 			name:     "missing requirement",
@@ -111,10 +111,10 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 		},
 		{
 			name:     "update available",
-			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", UpdateAvailable: true},
+			pack:     ActivePack{ID: "ma" + "tty", Surface: "agents", UpdateAvailable: true},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"an update is available", "packy update ma" + "tty --surface codex"},
+			want:     []string{"an update is available", "packy update ma" + "tty --surface agents"},
 		},
 	}
 	for _, tc := range tests {
@@ -141,10 +141,10 @@ func TestDiagnoseWithNoActivePacksReportsOnlyCoreHealth(t *testing.T) {
 
 func TestDiagnoseIncludesStateObservationFailuresAndContinues(t *testing.T) {
 	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{
-		FailedStateSurfaces: []string{"codex"},
+		FailedStateSurfaces: []string{"agents"},
 		ActivePacks:         []ActivePack{{ID: "engram", Surface: "claude"}},
 	})
-	if len(report.Checks) != 3 || report.Checks[0].Name != "packy-core" || report.Checks[1].Name != "pack-state-codex" || report.Checks[1].Severity != Fail || report.Checks[2].Severity != Pass {
+	if len(report.Checks) != 3 || report.Checks[0].Name != "packy-core" || report.Checks[1].Name != "pack-state-agents" || report.Checks[1].Severity != Fail || report.Checks[2].Severity != Pass {
 		t.Fatalf("report = %+v", report)
 	}
 	if report.Summary != (Summary{Status: "failures", Passes: 2, Failures: 1}) {

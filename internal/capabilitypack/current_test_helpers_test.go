@@ -97,19 +97,19 @@ func (f *fakeActivationStore) SaveSnapshot(_ context.Context, _ Surface, expecte
 }
 
 func testCapabilityBindings(name string) []Binding {
-	return []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: name, Mode: "native", Sharing: "exclusive"}}
+	return []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: name, Mode: "native", Sharing: "exclusive"}}
 }
 
 func updateFixture(packs []Pack, state ActivationState, observations ...SurfaceInspection) (Facade, *fakeSurfaceAdapter, *fakeActivationStore) {
 	adapter := &fakeSurfaceAdapter{observations: observations}
 	store := &fakeActivationStore{state: state}
-	facade := NewFacade(Catalog{packs: packs}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(Catalog{packs: packs}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 	return facade, adapter, store
 }
 
 func deactivationFixture(packs []Pack, state ActivationState, observations ...SurfaceInspection) (Facade, *fakeSurfaceAdapter, *fakeActivationStore) {
 	adapter := &fakeSurfaceAdapter{observations: observations}
 	store := &fakeActivationStore{state: state}
-	facade := NewFacade(Catalog{packs: packs}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(Catalog{packs: packs}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 	return facade, adapter, store
 }

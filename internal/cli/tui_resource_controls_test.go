@@ -18,6 +18,10 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 	for _, scope := range []string{"global", "project"} {
 		t.Run(scope, func(t *testing.T) {
 			ctx := context.Background()
+			surface := "agents"
+			if scope == "global" {
+				surface = "claude"
+			}
 			synthetic := testsupport.CapabilityRich("tui-configure-" + scope)
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
 			manifest := synthetic.Manifest()
@@ -36,7 +40,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			opts.Getwd = func() (string, error) { return project, nil }
 			opts = opts.withDefaults()
 			backend := newTUIBackend(opts, newWorkstationResolver(opts))
-			request := tui.PreviewRequest{Operation: "activate", PackID: synthetic.ID(), Surface: "codex", Scope: scope, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:helper"}}}
+			request := tui.PreviewRequest{Operation: "activate", PackID: synthetic.ID(), Surface: surface, Scope: scope, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:helper"}}}
 			if scope == "project" {
 				request.Operation, request.ProjectRoot = "install", project
 			}
@@ -84,7 +88,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 				return tui.SurfaceStatus{}
 			}
 			apply(preview(request))
-			if got := status("codex").Selection; got.Mode != "custom" || !slices.Equal(got.Roots, request.Selection.Roots) {
+			if got := status(surface).Selection; got.Mode != "custom" || !slices.Equal(got.Roots, request.Selection.Roots) {
 				t.Fatalf("initial selection = %#v", got)
 			}
 			if scope == "project" {
@@ -114,14 +118,14 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 				t.Fatal("preview or rejected Apply changed files")
 			}
 			apply(added)
-			if got := status("codex").Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
+			if got := status(surface).Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
 				t.Fatalf("direct roots were not preserved: %#v", got)
 			}
 			projectionRoot := fixture.home
 			if scope == "project" {
 				projectionRoot = project
 			}
-			helper := filepath.Join(projectionRoot, ".agents", "skills", "helper")
+			helper := filepath.Join(projectionRoot, "."+surface, "skills", "helper")
 			if _, err := os.Stat(helper); err != nil {
 				t.Fatalf("helper was not projected: %v", err)
 			}
@@ -135,7 +139,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			if _, err := os.Lstat(helper); scope == "global" && !os.IsNotExist(err) {
 				t.Fatalf("helper projection retained: %v", err)
 			}
-			if got := status("codex").Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
+			if got := status(surface).Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
 				t.Fatalf("selection replacement merged old roots: %#v", got)
 			}
 
@@ -150,7 +154,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			}
 			apply(cleared)
 			if scope == "global" {
-				if status("codex").Active {
+				if status(surface).Active {
 					t.Fatal("empty selection retained global activation")
 				}
 			} else {
@@ -159,7 +163,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 					t.Fatal(err)
 				}
 				if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceClaude}) {
-					t.Fatalf("clearing Codex changed other surface: %#v", installation.Manifest.Packs)
+					t.Fatalf("clearing Agents changed other surface: %#v", installation.Manifest.Packs)
 				}
 				if got := status("claude").Selection; !slices.Equal(got.Roots, []string{"skill:helper"}) {
 					t.Fatalf("other surface selection changed: %#v", got)
@@ -219,7 +223,7 @@ func TestTUIBackendProjectConfigurationRetiresUnsharedResource(t *testing.T) {
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	request := tui.PreviewRequest{
-		Operation: "install", PackID: synthetic.ID(), Surface: "codex", Scope: "project", ProjectRoot: project,
+		Operation: "install", PackID: synthetic.ID(), Surface: "agents", Scope: "project", ProjectRoot: project,
 		Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:helper"}},
 	}
 	initial, err := backend.Preview(ctx, request)
@@ -279,7 +283,7 @@ func TestTUIBackendProjectConfigurationRetiresUnsharedResource(t *testing.T) {
 	if pack == nil {
 		t.Fatal("project Pack missing after configuration")
 	}
-	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "agents" })
 	if index < 0 || !slices.Equal(pack.SurfaceStatuses[index].Selection.Roots, []string{"instruction:guidance"}) {
 		t.Fatalf("project status omitted new selection: %#v", pack.SurfaceStatuses)
 	}

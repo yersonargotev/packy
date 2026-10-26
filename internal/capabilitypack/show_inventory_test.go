@@ -11,7 +11,7 @@ func TestFacadeShowReturnsCanonicalDescriptiveResourceInventory(t *testing.T) {
 		ID:          "example",
 		Version:     "1.0.0",
 		Description: "Example Pack",
-		Surfaces:    []Surface{SurfaceCodex},
+		Surfaces:    []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{Kind: "notice", ID: "terms", Description: "Explains the license terms."},
 			{Kind: "skill", ID: "review", Description: "Reviews a change.", Requires: []string{"asset:rubric"}, Notices: []string{"notice:terms"}},

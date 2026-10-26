@@ -111,15 +111,16 @@ const (
 )
 
 type LifecycleBinding struct {
-	Surface     Surface `json:"surface,omitempty"`
-	Kind        string  `json:"kind"`
-	ID          string  `json:"id"`
-	Projection  string  `json:"projection"`
-	Name        string  `json:"name"`
-	Invocation  string  `json:"invocation"`
-	Mode        string  `json:"mode"`
-	Degradation string  `json:"degradation,omitempty"`
-	Sharing     string  `json:"sharing"`
+	ClientProjection *ClientProjection `json:"client_projection,omitempty"`
+	Surface          Surface           `json:"surface,omitempty"`
+	Kind             string            `json:"kind"`
+	ID               string            `json:"id"`
+	Projection       string            `json:"projection"`
+	Name             string            `json:"name"`
+	Invocation       string            `json:"invocation"`
+	Mode             string            `json:"mode"`
+	Degradation      string            `json:"degradation,omitempty"`
+	Sharing          string            `json:"sharing"`
 }
 
 // LifecycleContractFor derives the complete portable contract for one
@@ -143,7 +144,8 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 				continue
 			}
 			contract.Bindings = append(contract.Bindings, LifecycleBinding{
-				Kind: resource.Kind, ID: resource.ID, Projection: binding.Projection, Name: binding.Name,
+				ClientProjection: cloneClientProjection(binding.ClientProjection),
+				Kind:             resource.Kind, ID: resource.ID, Projection: binding.Projection, Name: binding.Name,
 				Invocation: binding.Invocation, Mode: binding.Mode, Degradation: binding.Degradation, Sharing: binding.Sharing,
 			})
 			authorities = append(authorities, resource.Permissions...)

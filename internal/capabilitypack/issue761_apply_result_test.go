@@ -7,7 +7,7 @@ import (
 
 func TestIssue761NoOpApplyReportsSelectedPackProjectionCount(t *testing.T) {
 	pack := Pack{
-		ID: "issue761-no-op", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "issue761-no-op", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{{
 			Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide",
 			Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{},
@@ -16,7 +16,7 @@ func TestIssue761NoOpApplyReportsSelectedPackProjectionCount(t *testing.T) {
 	}
 	explicit := true
 	intent := ActivationIntent{
-		PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1,
+		PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Revision: 1,
 		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}},
 		Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}, Explicit: &explicit,
 	}
@@ -24,18 +24,18 @@ func TestIssue761NoOpApplyReportsSelectedPackProjectionCount(t *testing.T) {
 		SchemaVersion: 3, Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true,
 		Ownership: []ProjectionOwnership{{
 			ID: "path:/tmp/issue761-guide", ProjectionID: "skill:guide", Target: "/tmp/issue761-guide", Fingerprint: "exact",
-			PackID: pack.ID, Surface: SurfaceCodex,
+			PackID: pack.ID, Surface: SurfaceAgents,
 		}},
 	}
-	observation := SurfaceInspection{Revision: "codex-v1", Projections: []ObservedProjection{{
+	observation := SurfaceInspection{Revision: "agents-v1", Projections: []ObservedProjection{{
 		ID: "skill:guide", ProjectionKey: "path:/tmp/issue761-guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact",
 		Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/issue761-guide", ProjectionKey: "path:/tmp/issue761-guide"},
 	}}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
 	store := &fakeActivationStore{state: state}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 
-	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}

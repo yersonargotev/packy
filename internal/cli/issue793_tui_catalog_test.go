@@ -14,7 +14,7 @@ import (
 )
 
 func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) {
-	pack := testsupport.PortableAllSurfaces("catalog-tui-refresh")
+	pack := testsupport.SkillVariants("catalog-tui-refresh")
 	initialCommit := strings.Repeat("f", 40)
 	updatedCommit := strings.Repeat("1", 40)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, initialCommit, pack)}
@@ -31,7 +31,7 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	if err := backend.Initialize(context.Background(), func(string) {}); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: pack.ID(), Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: pack.ID(), Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,10 +42,10 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeCodex := snapshotTree(t, filepath.Join(env["HOME"], ".codex"))
+	beforeAgents := snapshotTree(t, filepath.Join(env["HOME"], ".agents"))
 
-	updated := pack.Candidate().WithExactCopyBytes("instruction:guidance", ".", []byte("# TUI refreshed catalog guidance\n"))
-	newPack := testsupport.PortableAllSurfaces("catalog-tui-new")
+	updated := pack.Candidate().WithExactCopyBytes("skill:guide", "SKILL.md", []byte("---\nname: guide\ndescription: Updated guide.\n---\n\nTUI refreshed catalog guidance\n"))
+	newPack := testsupport.SkillVariants("catalog-tui-new")
 	source.release = catalogReleaseFixture(t, updatedCommit, updated, newPack)
 	var progress []string
 	if err := backend.RefreshCatalog(context.Background(), func(message string) { progress = append(progress, message) }); err != nil {
@@ -58,7 +58,7 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(afterReceipts) != string(beforeReceipts) || snapshotTree(t, filepath.Join(env["HOME"], ".codex")) != beforeCodex {
+	if string(afterReceipts) != string(beforeReceipts) || snapshotTree(t, filepath.Join(env["HOME"], ".agents")) != beforeAgents {
 		t.Fatal("TUI Catalog Refresh changed active Pack state or projections")
 	}
 	dashboard, err := backend.Load(context.Background())
@@ -70,9 +70,9 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	if dashboard.Catalog.SnapshotID != updatedCommit || dashboard.Catalog.Packs != 2 || current == nil || current.Version != updated.CurrentVersion() || added == nil {
 		t.Fatalf("refreshed TUI availability = catalog %#v, packs %#v", dashboard.Catalog, dashboard.Global.Packs)
 	}
-	statusIndex := slices.IndexFunc(current.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	statusIndex := slices.IndexFunc(current.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "agents" })
 	if statusIndex < 0 {
-		t.Fatalf("refreshed Pack omitted codex status: %#v", current.SurfaceStatuses)
+		t.Fatalf("refreshed Pack omitted agents status: %#v", current.SurfaceStatuses)
 	}
 	status := current.SurfaceStatuses[statusIndex]
 	if !status.Active || !status.UpdateAvailable || status.InstalledVersion != pack.CurrentVersion() {

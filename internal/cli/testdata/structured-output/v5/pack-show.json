@@ -11,26 +11,43 @@
     "schema_version": 1,
     "limitation": "The selected or retained immutable Catalog Snapshot is the Pack content and provenance authority."
   },
-  "surfaces": ["claude", "codex", "opencode"],
-  "requires": { "tools": ["engram"] },
+  "surfaces": [
+    "agents",
+    "claude",
+    "opencode"
+  ],
+  "requires": {
+    "tools": [
+      "engram"
+    ]
+  },
   "resource_counts": {},
   "resource_inventory": [
     {
-      "resource": { "kind": "instruction", "id": "engram-memory" },
+      "resource": {
+        "kind": "instruction",
+        "id": "engram-memory"
+      },
       "description": "Guides agents to recall prior project work and preserve durable decisions and discoveries",
       "role": "operational",
       "dependencies": [],
       "notices": []
     },
     {
-      "resource": { "kind": "lifecycle", "id": "engram-memory" },
-      "description": "Runs Engram's host setup so Codex and OpenCode receive their native memory integration",
+      "resource": {
+        "kind": "lifecycle",
+        "id": "engram-memory"
+      },
+      "description": "Runs Engram's host setup so Agents and OpenCode receive their native memory integration",
       "role": "operational",
       "dependencies": [],
       "notices": []
     },
     {
-      "resource": { "kind": "mcp_server", "id": "engram" },
+      "resource": {
+        "kind": "mcp_server",
+        "id": "engram"
+      },
       "description": "Makes Engram memory tools available to agents through MCP",
       "role": "operational",
       "dependencies": [],

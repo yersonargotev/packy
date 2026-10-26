@@ -34,8 +34,9 @@ func ParseResourceIdentity(value string) (ResourceIdentity, error) {
 }
 
 type ResourceSelection struct {
-	Mode  SelectionMode      `json:"mode"`
-	Roots []ResourceIdentity `json:"roots"`
+	Client string             `json:"client,omitempty"`
+	Mode   SelectionMode      `json:"mode"`
+	Roots  []ResourceIdentity `json:"roots"`
 }
 
 func cloneSelection(selection ResourceSelection) ResourceSelection {
@@ -46,8 +47,11 @@ func cloneSelection(selection ResourceSelection) ResourceSelection {
 }
 
 func canonicalSelection(selection ResourceSelection) (ResourceSelection, error) {
+	if selection.Client != "" && selection.Client != "codex" {
+		return ResourceSelection{}, fmt.Errorf("unsupported selected client %q; use codex for reviewed native roles", selection.Client)
+	}
 	if selection.Mode == "" && len(selection.Roots) == 0 {
-		return ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, nil
+		return ResourceSelection{Client: selection.Client, Mode: SelectionAll, Roots: []ResourceIdentity{}}, nil
 	}
 	if selection.Mode != SelectionAll && selection.Mode != SelectionCustom {
 		return ResourceSelection{}, fmt.Errorf("resource selection mode %q is unsupported", selection.Mode)
@@ -56,7 +60,7 @@ func canonicalSelection(selection ResourceSelection) (ResourceSelection, error) 
 		if len(selection.Roots) != 0 {
 			return ResourceSelection{}, fmt.Errorf("resource selection mode all forbids roots")
 		}
-		return ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, nil
+		return ResourceSelection{Client: selection.Client, Mode: SelectionAll, Roots: []ResourceIdentity{}}, nil
 	}
 	roots := map[string]ResourceIdentity{}
 	for _, candidate := range selection.Roots {
@@ -78,7 +82,7 @@ func canonicalSelection(selection ResourceSelection) (ResourceSelection, error) 
 	for _, identity := range identities {
 		canonicalRoots = append(canonicalRoots, roots[identity])
 	}
-	return ResourceSelection{Mode: SelectionCustom, Roots: canonicalRoots}, nil
+	return ResourceSelection{Client: selection.Client, Mode: SelectionCustom, Roots: canonicalRoots}, nil
 }
 
 func mergeCustomSelections(current, requested ResourceSelection) (ResourceSelection, error) {
@@ -90,12 +94,18 @@ func mergeCustomSelections(current, requested ResourceSelection) (ResourceSelect
 	if err != nil {
 		return ResourceSelection{}, err
 	}
+	if requested.Client == "" {
+		requested.Client = current.Client
+	}
+	if current.Client != "" && requested.Client != current.Client {
+		return ResourceSelection{}, fmt.Errorf("cannot merge selections targeting different clients")
+	}
 	if current.Mode == SelectionAll {
 		return current, nil
 	}
 	roots := append([]ResourceIdentity{}, current.Roots...)
 	roots = append(roots, requested.Roots...)
-	return canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: roots})
+	return canonicalSelection(ResourceSelection{Client: requested.Client, Mode: SelectionCustom, Roots: roots})
 }
 
 func removeResourceSelectionRoots(pack Pack, selection ResourceSelection, removals []ResourceIdentity) (ResourceSelection, error) {
@@ -177,7 +187,7 @@ func removeResourceSelectionRoots(pack Pack, selection ResourceSelection, remova
 		}
 	}
 	sort.Slice(remaining, func(i, j int) bool { return remaining[i].String() < remaining[j].String() })
-	return ResourceSelection{Mode: SelectionCustom, Roots: remaining}, nil
+	return ResourceSelection{Client: selection.Client, Mode: SelectionCustom, Roots: remaining}, nil
 }
 
 func selectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/claudecode"
-	"github.com/yersonargotev/packy/internal/codex"
+	"github.com/yersonargotev/packy/internal/agents"
 )
 
 type claudeRunner struct{}
@@ -92,8 +92,8 @@ func stringsHasPrefix(value, prefix string) bool {
 
 func adapter(surface, bundle, root string, transition capabilitypack.SurfaceTransition) capabilitypack.SurfaceAdapter {
 	switch surface {
-	case "codex":
-		return codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
+	case "agents":
+		return agents.NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
 	case "claude":
 		return claudecode.NewSurfaceAdapter(bundle, claudecode.NewCanonicalLayout(root), filepath.Join(root, ".packy"), "claude", claudeRunner{}, claudeOwnership(transition, bundle, root))
 	default:

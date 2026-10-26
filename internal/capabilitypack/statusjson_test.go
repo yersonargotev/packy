@@ -6,7 +6,7 @@ import (
 )
 
 func TestStatusJSONDistinguishesObservedFalseFromUnknownAndSorts(t *testing.T) {
-	knownFalse := StatusEntry{Pack: Pack{ID: "z", Version: "1"}, Surface: SurfaceCodex, IntentPresent: true, Intent: IntentStatus{Revision: 2}, Readiness: ReadinessStatus{Configured: ReadinessTrue, Authorized: ReadinessFalse, Usable: ReadinessUnknown}, OptionalAuthorities: []OptionalAuthorityObservation{
+	knownFalse := StatusEntry{Pack: Pack{ID: "z", Version: "1"}, Surface: SurfaceAgents, IntentPresent: true, Intent: IntentStatus{Revision: 2}, Readiness: ReadinessStatus{Configured: ReadinessTrue, Authorized: ReadinessFalse, Usable: ReadinessUnknown}, OptionalAuthorities: []OptionalAuthorityObservation{
 		{ModeID: "shipping", Authority: "deploy", State: OptionalAuthorityUnavailable, Fallback: "none"},
 		{ModeID: "browser", Authority: "network", State: OptionalAuthorityAvailable, Fallback: "static evidence"},
 		{ModeID: "browser", Authority: "browser", State: OptionalAuthorityUnknown, Fallback: "static evidence"},
@@ -53,7 +53,7 @@ func TestStatusJSONCarriesFocusedResourceReadinessAndRequirement(t *testing.T) {
 		Projections: ProjectionSummary{Verified: 1}, Blockers: []string{},
 	}
 	report := (StatusReport{
-		Entries: []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceCodex, Resources: []ResourceStatus{resource}}},
+		Entries: []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceAgents, Resources: []ResourceStatus{resource}}},
 		Focused: &resource, Requirement: &StatusRequirement{Resource: resource.Resource, Readiness: "usable", Satisfied: false},
 	}).JSONReport(true)
 	if report.SchemaVersion != StatusSchemaVersion || report.Focused == nil || report.Focused.Resource != resource.Resource || report.Focused.Readiness.Usable != ReadinessUnknown {
@@ -69,7 +69,7 @@ func TestStatusJSONCarriesFocusedResourceReadinessAndRequirement(t *testing.T) {
 		t.Fatalf("resource conditions lost: focused=%#v resources=%#v", report.Focused.Conditions, report.Entries[0].Resources[0].Conditions)
 	}
 	packRequirement := (StatusReport{
-		Entries:     []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceCodex}},
+		Entries:     []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceAgents}},
 		Requirement: &StatusRequirement{Readiness: "usable", Satisfied: false},
 	}).JSONReport(true)
 	if packRequirement.Requirement == nil || packRequirement.Requirement.Resource != nil {
@@ -83,7 +83,7 @@ func TestStatusJSONPreservesUnobservableExternalRequirementReason(t *testing.T) 
 		Reason: ReasonRequirementUnobservable, Message: "external requirement example-tool cannot be observed",
 		Evidence: []string{"executable:example-tool"}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "external-tool/requirement"},
 	}
-	report := (StatusReport{Entries: []StatusEntry{{Pack: Pack{ID: "external-tool", Version: "1"}, Surface: SurfaceCodex, Conditions: []ReadinessCondition{condition}}}}).JSONReport(false)
+	report := (StatusReport{Entries: []StatusEntry{{Pack: Pack{ID: "external-tool", Version: "1"}, Surface: SurfaceAgents, Conditions: []ReadinessCondition{condition}}}}).JSONReport(false)
 	if len(report.Entries) != 1 || len(report.Entries[0].Conditions) != 1 || report.Entries[0].Conditions[0].Reason != ReasonRequirementUnobservable {
 		t.Fatalf("condition reason lost: %#v", report.Entries)
 	}

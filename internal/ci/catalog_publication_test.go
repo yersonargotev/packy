@@ -83,8 +83,8 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 		{"alpha   1.1.0", []string{"list"}},
 		{"beta    1.0.0", []string{"list"}},
 		{"stable  2.0.0", []string{"list"}},
-		{"alpha", []string{"activate", "alpha", "--surface", "codex", "--dry-run"}},
-		{"beta", []string{"activate", "beta", "--surface", "codex", "--dry-run"}},
+		{"alpha", []string{"activate", "alpha", "--surface", "agents", "--dry-run"}},
+		{"beta", []string{"activate", "beta", "--surface", "agents", "--dry-run"}},
 	} {
 		if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, check.args...); !strings.Contains(output, check.want) {
 			t.Fatalf("offline Packy %v omitted %q:\n%s", check.args, check.want, output)
@@ -278,7 +278,7 @@ func writePublicationCatalogPack(t *testing.T, root, id, version, content string
   "version": %q,
   "description": "Publication fixture",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [],
@@ -290,7 +290,7 @@ func writePublicationCatalogPack(t *testing.T, root, id, version, content string
     "requires": [],
     "conflicts": [],
     "bindings": [{
-      "surface": "codex",
+      "surface": "agents",
       "projection": "skill",
       "name": %q,
       "invocation": %q,

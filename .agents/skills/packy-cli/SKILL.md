@@ -7,13 +7,13 @@ description: Discover and obtain a requested Catalog skill through Packy, includ
 
 Use the Packy CLI as a resource provider. You read the returned instructions and
 follow the selected procedure; retrieval itself does not execute that procedure.
-This definition is for Codex. Pass `--surface codex` explicitly on every
+This definition uses the Agents projection convention for Codex. Pass `--surface agents` explicitly on every
 host-specific inspection and retrieval, including nested calls.
 
 ## Discover and select
 
 1. Run `packy list --json` to enumerate the selected local catalog. Inspect
-   relevant Packs with `packy show <pack> --surface codex --json`.
+   relevant Packs with `packy show <pack> --surface agents --json`.
    Match the request against qualified identities, effective descriptions,
    reviewed compatibility, dependencies, and known prerequisites. Preserve each
    `<pack>:<skill>` identity throughout selection.
@@ -21,7 +21,7 @@ host-specific inspection and retrieval, including nested calls.
    choose among the qualified candidates and explain their relevant differences.
    If the user qualified the request, use that identity. Installed state, native
    aliases, and modified installed copies do not rank or replace Catalog Resources.
-3. Require reviewed on-demand compatibility for this host. A native binding alone
+3. Require reviewed on-demand compatibility for this surface and the consuming client. A native binding alone
    does not establish compatibility. If unsupported, explain the reported reason
    and request a reviewed adaptation rather than attempting native-path access.
 
@@ -33,7 +33,7 @@ report the unresolved ambiguity or compatibility limit.
 Run:
 
 ```sh
-packy get skill <pack>:<skill> --surface codex --json
+packy get skill <pack>:<skill> --surface agents --json
 ```
 
 Require a successful versioned `skill-access` report. Retain `qualified_skill`,
@@ -44,10 +44,10 @@ from their document locations within the prepared resource tree. Prepared
 same-Pack and cross-Pack dependencies retain their qualified owners and versions;
 reviewed access references point to their usable entry documents.
 
-For every nested request, keep the initiating host and snapshot:
+For every nested request, keep the initiating surface and snapshot:
 
 ```sh
-packy get skill <dependency-pack>:<dependency-skill> --surface codex --snapshot <snapshot_id> --json
+packy get skill <dependency-pack>:<dependency-skill> --surface agents --snapshot <snapshot_id> --json
 ```
 
 A new independent request uses the selected local snapshot. Explicit refresh does
@@ -85,3 +85,11 @@ identity errors require correcting the selection, not guessing another host or
 revision. Read `get skill` structured errors and discovery's stderr/nonzero exit.
 If Packy itself is unavailable, explain that the CLI must be installed explicitly;
 do not automatically provision it or any content runtime.
+
+## Project ownership
+
+This project-owned adaptation derives from `packy:packy-cli` 1.0.0 in Catalog
+Snapshot `bbf3eecfd7afb85d36586e6f4e18801d2eef47b6`. Its former `codex` project
+receipt was retired with the previous binary before adopting the Agents surface.
+It is maintained in this repository rather than represented as an installation
+from a newer Catalog Snapshot. See [LICENSE](LICENSE) for the retained MIT notice.

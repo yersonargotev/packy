@@ -4,8 +4,16 @@
 
 The previous stable release is `v0.2.30`.
 
+- Replace the `codex` surface with the shared `agents` convention. Skills support
+  global and project scope, instructions are project-only, and complete skill
+  metadata and executable content remain intact. Required Codex roles use an
+  explicit reviewed global `client_projection` and `--client codex`; ordinary
+  Agents skills do not write Codex settings. Unsupported role scopes fail before
+  mutation, and role files do not prove runtime delegation. Retired `codex`
+  contracts require the previous-binary handoff rather than an alias or migration.
+
 - Retire OpenCode from the CLI, TUI, catalog contracts, installation state, and
-  discovery. Supported surfaces in this bounded step are `codex` and `claude`.
+  discovery. Supported surfaces are `agents` and `claude`.
   Retired surface values and OpenCode capabilities fail without mutation; no
   aliases, legacy readers, or automatic migration are provided. Before replacing
   an OpenCode-capable binary, use it to preview and remove its owned global and
@@ -13,13 +21,13 @@ The previous stable release is `v0.2.30`.
   [explicit handoff](https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md)
   is complete.
 
-- Obtain a qualified skill with `packy get skill <pack>:<skill> --surface codex`
+- Obtain a qualified skill with `packy get skill <pack>:<skill> --surface agents`
   or `--surface claude`, with readable output or `--json`. Explicit host selection
   resolves the reviewed Effective Resource; installed copies and aliases do not
-  replace the catalog resource. On-demand Skill Access supports Codex and
-  Claude Code.
+  replace the catalog resource. On-demand Skill Access supports Agents and
+  Claude.
 - Discover current local candidates with `packy list [--json]` and
-  `packy show <pack> --surface codex|claude [--json]`. Inspection exposes qualified
+  `packy show <pack> --surface agents|claude [--json]`. Inspection exposes qualified
   identities, host-effective descriptions and provenance, native names, direct
   relationships, reviewed compatibility, and known prerequisites. Incompatible
   skills remain visible with a reason. Keep qualified identities and ask the user
@@ -52,10 +60,10 @@ Initial catalog acquisition and later network refresh remain explicit:
 ```sh
 packy init
 packy list --json
-packy show <pack> --surface codex --json
-packy get skill <pack>:<skill> --surface codex --json
+packy show <pack> --surface agents --json
+packy get skill <pack>:<skill> --surface agents --json
 packy catalog refresh
-packy get skill <pack>:<dependency> --surface codex --snapshot <returned-snapshot-id> --json
+packy get skill <pack>:<dependency> --surface agents --snapshot <returned-snapshot-id> --json
 ```
 
 The bracketed identities are placeholders: choose a skill whose current catalog
@@ -96,7 +104,7 @@ The released executable recognizes this complete vocabulary through existing
 consumption boundaries. Authors can exercise complete candidate snapshots with:
 
 ```sh
-packy catalog candidate --snapshot /absolute/assets --workspace /absolute/new-workspace -- get skill <pack>:<skill> --surface codex --json
+packy catalog candidate --snapshot /absolute/assets --workspace /absolute/new-workspace -- get skill <pack>:<skill> --surface agents --json
 ```
 
 The disposable candidate interface also supports host-specific inspection while
@@ -118,8 +126,8 @@ For traditional native installation, acquire the catalog with `packy init`, then
 preview the Pack activation before applying it:
 
 ```sh
-packy activate engram --surface codex --dry-run
-packy activate engram --surface codex
+packy activate engram --surface agents --dry-run
+packy activate engram --surface agents
 ```
 
 ## Release verification

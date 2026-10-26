@@ -1,4 +1,4 @@
-package codex
+package agents
 
 import (
 	"context"
@@ -17,9 +17,9 @@ func TestReceiptInspectionPreservesAppliedEvidenceWithoutHistoricalSource(t *tes
 	if err := os.WriteFile(filepath.Join(bundle, "guide.md"), []byte("historical guidance\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	adapter := NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
-	pack := capabilitypack.Pack{ID: "old", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "guide", Source: "guide.md"}}}
-	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
+	adapter := NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), filepath.Join(root, "roles"))
+	pack := capabilitypack.Pack{ID: "old", Resources: []capabilitypack.Resource{{Kind: "agent", ID: "guide", Source: "guide.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceAgents, Projection: "agent", Name: "guide", ClientProjection: &capabilitypack.ClientProjection{Client: "codex", Scopes: []string{"global"}}}}}}}
+	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, Client: "codex"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestReceiptInspectionPreservesAppliedEvidenceWithoutHistoricalSource(t *tes
 	var owners []capabilitypack.ProjectionOwnership
 	for _, p := range observed.Projections {
 		actions = append(actions, p.Action)
-		owners = append(owners, capabilitypack.ProjectionOwnership{ID: p.ID, Target: p.Action.Target, Fingerprint: p.DesiredFingerprint, PackID: "old", Surface: capabilitypack.SurfaceCodex})
+		owners = append(owners, capabilitypack.ProjectionOwnership{ID: p.ID, Target: p.Action.Target, Fingerprint: p.DesiredFingerprint, PackID: "old", Surface: capabilitypack.SurfaceAgents})
 	}
 	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
 		t.Fatal(err)
@@ -76,12 +76,12 @@ func TestReceiptInspectionPreservesAppliedEvidenceWithoutHistoricalSource(t *tes
 func TestReceiptInspectionRejectsInvalidOwnership(t *testing.T) {
 	root := t.TempDir()
 	bundle := filepath.Join(root, "unavailable")
-	adapter := NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
-	_, target, _, err := adapter.receiptTarget("instruction:guide")
+	adapter := NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), filepath.Join(root, "roles"))
+	_, target, _, err := adapter.receiptTarget("agent:guide")
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid := capabilitypack.ProjectionOwnership{ID: "instruction:guide", Target: target, Fingerprint: "recorded", PackID: "old", Surface: capabilitypack.SurfaceCodex}
+	valid := capabilitypack.ProjectionOwnership{ID: "agent:guide", Target: target, Fingerprint: "recorded", PackID: "old", Surface: capabilitypack.SurfaceAgents}
 	for _, test := range []struct {
 		name   string
 		mutate func(*capabilitypack.ProjectionOwnership)
@@ -107,27 +107,13 @@ func TestReceiptInspectionRejectsInvalidOwnership(t *testing.T) {
 	if err := os.WriteFile(outside, []byte("private"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(outside, target); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ReceiptOwnership: []capabilitypack.ProjectionOwnership{valid}}); err == nil {
 		t.Fatal("symlink file accepted")
-	}
-}
-
-func TestReceiptInspectionRejectsAmbiguousCodexBlocks(t *testing.T) {
-	root := t.TempDir()
-	prompt := filepath.Join(root, "AGENTS.md")
-	adapter := NewSurfaceAdapter(root, filepath.Join(root, "skills"), prompt)
-	start, end := instructionMarkers("guide")
-	block := start + "\nguide\n" + end
-	for _, content := range []string{block + "\n" + block, start + "\nguide", end + "\n" + start} {
-		if err := os.WriteFile(prompt, []byte(content), 0600); err != nil {
-			t.Fatal(err)
-		}
-		owner := capabilitypack.ProjectionOwnership{ID: "instruction:guide", Target: prompt, Fingerprint: "recorded", PackID: "old", Surface: capabilitypack.SurfaceCodex}
-		if _, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ReceiptOwnership: []capabilitypack.ProjectionOwnership{owner}}); err == nil {
-			t.Fatal("ambiguous block accepted")
-		}
 	}
 }

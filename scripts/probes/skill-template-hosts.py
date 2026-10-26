@@ -144,22 +144,26 @@ def claude_load(binary, workspace, env, skill_name, expected_body):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog-evidence", type=Path, required=True)
+    parser.add_argument("--agents-client", choices=("codex",), help="explicit concrete client for Agents discovery")
     args = parser.parse_args()
     evidence = json.loads(args.catalog_evidence.read_text())
     if evidence.get("result") != "passed":
         raise RuntimeError("Catalog acceptance must pass before real-host probes")
+    if any(case["surface"] == "agents" for case in evidence["outcomes"]) and not args.agents_client:
+        parser.error("Agents discovery requires --agents-client codex; the surface does not select a runtime")
     results = []
     for case in evidence["outcomes"]:
         surface, scope = case["surface"], case["scope"]
         workspace = Path(case["workspace"])
-        if surface not in ("codex", "claude"):
+        if surface not in ("agents", "claude"):
             raise RuntimeError("unsupported probe surface: " + surface)
-        binary = shutil.which(surface)
+        client = args.agents_client if surface == "agents" else "claude"
+        binary = shutil.which(client)
         if not binary:
-            raise RuntimeError("host executable is unavailable: " + surface)
+            raise RuntimeError("host executable is unavailable: " + client)
         env = environment(workspace)
         version = subprocess.run([binary, "--version"], env=env, capture_output=True, text=True, check=True, timeout=15).stdout.strip()
-        if surface == "codex":
+        if client == "codex":
             result = codex_list(binary, workspace, env)
         else:
             loads = []
@@ -169,7 +173,7 @@ def main():
                 body = content.split("\n---\n", 1)[1].strip()
                 loads.append(claude_load(binary, workspace, env, skill_name, body))
             result = {"loads": loads}
-        results.append({"surface": surface, "scope": scope, "version": version, **result})
+        results.append({"surface": surface, "client": client, "scope": scope, "version": version, **result})
     summary = {"report": "skill-template-host-loading", "result": "passed", "outcomes": results}
     (args.catalog_evidence.parent / "host-evidence.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))

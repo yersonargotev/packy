@@ -69,7 +69,7 @@ func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T
 	pack := Pack{
 		ID:                   "app",
 		Version:              "1.0.0",
-		Surfaces:             []Surface{SurfaceCodex},
+		Surfaces:             []Surface{SurfaceAgents},
 		ReadinessObligations: []ReadinessObligation{ReadinessSurfaceAuthorization, ReadinessRuntimeUsability},
 		Resources: []Resource{{
 			Kind: "skill", ID: "guide", Source: "guide", Description: "Guide",
@@ -78,11 +78,11 @@ func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T
 		Contract: Contract{OptionalModes: []OptionalMode{}},
 	}
 	state := ActivationState{
-		Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
-		Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}},
+		Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceAgents, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
+		Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}},
 	}
 	observation := SurfaceInspection{
-		Revision: "codex-observation-v1",
+		Revision: "agents-observation-v1",
 		Projections: []ObservedProjection{{
 			ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact",
 			Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"},
@@ -90,13 +90,13 @@ func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T
 		Readiness: ReadinessObservation{
 			AuthorizationObserved: true, Authorized: false,
 			UsabilityObserved: false,
-			Evidence:          []string{"Codex trust was denied"},
+			Evidence:          []string{"Agents trust was denied"},
 		},
 	}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 
-	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T
 		if condition.Type != expected.typeName || condition.Dimension != expected.dimension || condition.Value != expected.value || condition.Reason != expected.reason {
 			t.Fatalf("condition[%d] = %#v", i, condition)
 		}
-		if condition.Scope.Pack != pack.ID || condition.Scope.Surface != SurfaceCodex || condition.Scope.Kind != ReadinessScopeGlobal || condition.Message == "" || condition.Freshness.ObservedAt == "" || condition.Freshness.ValidityIdentity == "" {
+		if condition.Scope.Pack != pack.ID || condition.Scope.Surface != SurfaceAgents || condition.Scope.Kind != ReadinessScopeGlobal || condition.Message == "" || condition.Freshness.ObservedAt == "" || condition.Freshness.ValidityIdentity == "" {
 			t.Fatalf("condition[%d] is incomplete: %#v", i, condition)
 		}
 	}
@@ -153,7 +153,7 @@ func TestReadinessAggregationFalseDominatesUnknown(t *testing.T) {
 func TestInstalledReceiptPreservesReviewedReadinessObligations(t *testing.T) {
 	obligations := []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}
 	intent := ActivationIntent{
-		PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true,
+		PackID: "app", Version: "1.0.0", Surface: SurfaceAgents, Active: true,
 		ReadinessObligations: obligations,
 		Selection:            ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}},
 		Resources:            []ResourceIdentity{},
@@ -175,7 +175,7 @@ func TestProjectReceiptRejectsInvalidExternalRequirementIdentity(t *testing.T) {
 	err := validateProjectReceipts([]installedPackReceipt{
 		{
 			Pack:                 installedPackIdentity{ID: "app", Version: "1.0.0"},
-			Surface:              SurfaceCodex,
+			Surface:              SurfaceAgents,
 			ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 			ExternalRequirements: []string{"Example Tool"},
 		},
@@ -192,7 +192,7 @@ func TestReadinessEvaluationDoesNotDependOnPackOrResourceIdentity(t *testing.T) 
 			resource := ResourceIdentity{Kind: "skill", ID: identity.resource}
 			status, conditions := evaluateReadiness(readinessEvaluation{
 				Pack:    Pack{ID: identity.pack, Version: "1.0.0", ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}},
-				Surface: SurfaceCodex, Scope: scope, Resource: &resource, Revision: "synthetic-v1",
+				Surface: SurfaceAgents, Scope: scope, Resource: &resource, Revision: "synthetic-v1",
 				Projections: []ProjectionStatus{{ID: resource.String(), Health: ProjectionVerified}},
 			})
 			if index == 0 {
@@ -212,7 +212,7 @@ func TestFacadeProjectLifecycleUsesIdentityAgnosticReadiness(t *testing.T) {
 	for index, identity := range []struct{ pack, resource string }{{"alpha", "guide"}, {"beta", "coordinate"}} {
 		root := t.TempDir()
 		pack := Pack{
-			ID: identity.pack, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+			ID: identity.pack, Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 			ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 			Requires:             Requirements{Tools: []string{}},
 			Resources: []Resource{{Kind: "skill", ID: identity.resource, Source: identity.resource, Description: "Synthetic skill",
@@ -223,7 +223,7 @@ func TestFacadeProjectLifecycleUsesIdentityAgnosticReadiness(t *testing.T) {
 		adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{
 			Revision: "synthetic-v1", Projections: []ObservedProjection{{ID: projectionID, Goal: ProjectionPresent, DesiredFingerprint: "exact", Action: ProjectionAction{ID: projectionID, Target: filepath.Join(root, ".agents", "skills", identity.resource), PreviewOnly: true}}},
 		}}}
-		preview, err := NewFacade(Catalog{packs: []Pack{pack}}).PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: root, PackyHome: filepath.Join(root, ".packy-test"), Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+		preview, err := NewFacade(Catalog{packs: []Pack{pack}}).PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceAgents, ProjectRoot: root, PackyHome: filepath.Join(root, ".packy-test"), Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -240,25 +240,25 @@ func TestFacadeProjectLifecycleUsesIdentityAgnosticReadiness(t *testing.T) {
 
 func TestFacadeStatusDerivesExternalRequirementConditionFromExistingRequirement(t *testing.T) {
 	pack := Pack{
-		ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 		ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 		Requires:             Requirements{Tools: []string{"helper"}},
 		Resources:            []Resource{{Kind: "skill", ID: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
 		Contract:             Contract{OptionalModes: []OptionalMode{}},
 	}
 	state := ActivationState{
-		Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
-		Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}},
+		Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceAgents, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
+		Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}},
 	}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{
-		Revision: "codex-v1", Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}},
+		Revision: "agents-v1", Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}},
 	}}}
 	facade := NewFacade(Catalog{packs: []Pack{pack}},
-		WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}),
+		WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}),
 		WithExternalEffects(readinessResolver{}, nil, nil),
 	)
 
-	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,21 +293,21 @@ func TestFacadeStatusObservesDifferentlyNamedExternalRequirementsWithoutToolDisp
 	} {
 		t.Run(scenario.tool, func(t *testing.T) {
 			pack := Pack{
-				ID: "synthetic-pack", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+				ID: "synthetic-pack", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 				Requires:  Requirements{Tools: []string{scenario.tool}},
 				Resources: []Resource{{Kind: "skill", ID: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
 				Contract:  Contract{OptionalModes: []OptionalMode{}},
 			}
 			state := ActivationState{
-				Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
-				Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}},
+				Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceAgents, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
+				Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}},
 			}
-			adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Revision: "codex-v1", Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}}}}}
+			adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Revision: "agents-v1", Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}}}}}
 			resolver := &recordingReadinessResolver{paths: map[string]string{scenario.tool: scenario.path}}
 			store := &fakeActivationStore{state: state}
-			facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithExternalEffects(resolver, nil, nil))
+			facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}), WithExternalEffects(resolver, nil, nil))
 
-			report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, RequireUsable: true})
+			report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, RequireUsable: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -337,14 +337,14 @@ func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 	resolver := &recordingReadinessResolver{paths: map[string]string{}}
 	acquirer := &recordingAcquirer{}
 	pack := Pack{
-		ID: "acquisition", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "acquisition", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 		Requires: Requirements{Tools: []string{"engram"}}, Contract: Contract{OptionalModes: []OptionalMode{}},
-		Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}}},
+		Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}}},
 	}
 	adapter := &fakeSurfaceAdapter{}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalExecutableAcquisition: acquirer}, nil))
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}), WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalExecutableAcquisition: acquirer}, nil))
 
-	missing, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	missing, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 	}
 
 	resolver.paths["engram"] = "/opt/reviewed/engram"
-	available, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	available, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,14 +367,14 @@ func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 
 func TestExternalPlanDoesNotInventSetupForOrdinaryToolRequirement(t *testing.T) {
 	resolution := ExecutableResolution{Tool: "synthetic-helper", Available: true, Path: "/tmp/synthetic-helper", Origin: "path"}
-	actions, blockers := (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceCodex, ActivationState{}, []ExecutableResolution{resolution})
+	actions, blockers := (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceAgents, ActivationState{}, []ExecutableResolution{resolution})
 	if len(actions) != 0 || len(blockers) != 0 {
 		t.Fatalf("ordinary PATH requirement produced setup policy: actions=%#v blockers=%#v", actions, blockers)
 	}
 
 	resolution.Available = false
 	resolution.Path = ""
-	actions, blockers = (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceCodex, ActivationState{}, []ExecutableResolution{resolution})
+	actions, blockers = (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceAgents, ActivationState{}, []ExecutableResolution{resolution})
 	if len(actions) != 0 || len(blockers) != 1 || !strings.Contains(blockers[0].Detail, "missing from PATH") || !strings.Contains(blockers[0].Detail, "install it and retry") {
 		t.Fatalf("missing ordinary requirement = actions=%#v blockers=%#v", actions, blockers)
 	}
@@ -383,7 +383,7 @@ func TestExternalPlanDoesNotInventSetupForOrdinaryToolRequirement(t *testing.T) 
 func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *testing.T) {
 	packFor := func(id, tool string) Pack {
 		return Pack{
-			ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+			ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 			Requires:  Requirements{Tools: []string{tool}},
 			Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
 			Contract:  Contract{OptionalModes: []OptionalMode{}},
@@ -394,8 +394,8 @@ func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *t
 	presentAdapter := &syntheticRequirementAdapter{}
 	presentStore := &fakeActivationStore{}
 	presentResolver := &recordingReadinessResolver{paths: map[string]string{"present-helper": "/tmp/present-helper"}}
-	presentFacade := NewFacade(Catalog{packs: []Pack{present}}, WithActivation(presentStore, map[Surface]SurfaceAdapter{SurfaceCodex: presentAdapter}), WithExternalEffects(presentResolver, nil, nil))
-	preview, err := presentFacade.Preview(context.Background(), ActivationRequest{PackID: present.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	presentFacade := NewFacade(Catalog{packs: []Pack{present}}, WithActivation(presentStore, map[Surface]SurfaceAdapter{SurfaceAgents: presentAdapter}), WithExternalEffects(presentResolver, nil, nil))
+	preview, err := presentFacade.Preview(context.Background(), ActivationRequest{PackID: present.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +415,7 @@ func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *t
 	if !result.Verified || result.Readiness.Usable != ReadinessTrue || presentAdapter.applyCalls != 1 || len(presentStore.saves) == 0 {
 		t.Fatalf("present apply = result=%#v apply_calls=%d saves=%d", result, presentAdapter.applyCalls, len(presentStore.saves))
 	}
-	status, err := presentFacade.Status(context.Background(), StatusRequest{PackID: present.ID, Surface: SurfaceCodex, RequireUsable: true})
+	status, err := presentFacade.Status(context.Background(), StatusRequest{PackID: present.ID, Surface: SurfaceAgents, RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,8 +426,8 @@ func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *t
 	missing := packFor("synthetic-missing", "missing-helper")
 	missingAdapter := &syntheticRequirementAdapter{}
 	missingStore := &fakeActivationStore{}
-	missingFacade := NewFacade(Catalog{packs: []Pack{missing}}, WithActivation(missingStore, map[Surface]SurfaceAdapter{SurfaceCodex: missingAdapter}), WithExternalEffects(&recordingReadinessResolver{paths: map[string]string{}}, nil, nil))
-	blocked, err := missingFacade.Preview(context.Background(), ActivationRequest{PackID: missing.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	missingFacade := NewFacade(Catalog{packs: []Pack{missing}}, WithActivation(missingStore, map[Surface]SurfaceAdapter{SurfaceAgents: missingAdapter}), WithExternalEffects(&recordingReadinessResolver{paths: map[string]string{}}, nil, nil))
+	blocked, err := missingFacade.Preview(context.Background(), ActivationRequest{PackID: missing.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *t
 func TestProjectActivationPreviewUsesGenericRequirementResolver(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 	pack := Pack{
-		ID: "synthetic-project", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "synthetic-project", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 		ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 		Requires:             Requirements{Tools: []string{"project-helper"}},
 		Resources:            []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
@@ -448,7 +448,7 @@ func TestProjectActivationPreviewUsesGenericRequirementResolver(t *testing.T) {
 	adapter := &syntheticRequirementAdapter{target: filepath.Join(project, ".agents", "skills", "guide")}
 	resolver := &recordingReadinessResolver{paths: map[string]string{"project-helper": "/tmp/project-helper"}}
 	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithExternalEffects(resolver, nil, nil))
-	install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+	install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceAgents, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +473,7 @@ func TestProjectActivationPreviewUsesGenericRequirementResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter.applied = true
-	preview, err := facade.PreviewProjectActivation(context.Background(), ProjectActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	preview, err := facade.PreviewProjectActivation(context.Background(), ProjectActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
 	if err != nil {
 		t.Fatal(err)
 	}

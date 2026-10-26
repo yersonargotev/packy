@@ -110,9 +110,6 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 	for _, receipt := range document.Effects {
 		observed := observedByReceipt[string(receipt.Action)+"\x00"+receipt.Target]
 		effect := ProjectActivationEffectPreview{Category: ProjectActivationTrust, Action: receipt.Action, Target: "<personal-host-path>", Identity: receipt.ContributionIdentity, AdapterProvenance: observed.AdapterProvenance, Consent: ConsentDestructiveCleanup}
-		if receipt.Action == ActionCodexProjectTrust {
-			effect.Target = "<codex-home>/config.toml"
-		}
 		switch observed.State {
 		case ProjectEffectAbsent:
 			effect.Observation = digestJSON(struct {

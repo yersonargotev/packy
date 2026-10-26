@@ -12,51 +12,11 @@ type gatewayAdapter struct {
 	inspect    func(SurfaceTransition)
 }
 
-func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) {
-	project := t.TempDir()
-	action := ProjectionAction{ID: "project_trust:codex", Surface: SurfaceCodex, Kind: ActionCodexProjectTrust, Description: "trust project", Target: filepath.Join(t.TempDir(), ".codex", "config.toml"), Content: "trusted", Version: "contribution", AdapterProvenance: "codex-project/v1/project-trust", FileMode: 0o600, Precondition: "missing", ContributionStartMarker: "start", ContributionEndMarker: "end", PreviewOnly: true}
-	transition := SurfaceTransition{ProjectRoot: project, ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "pack"}}}}}
-	adapter := &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{action}}}
-	got, err := inspectSurface(context.Background(), adapter, transition)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter.inspection.ProjectActivationActions[0].Content = "mutated"
-	if len(got.ProjectActivationActions) != 1 || got.ProjectActivationActions[0].Content != "trusted" {
-		t.Fatalf("personal action was not cloned: %+v", got.ProjectActivationActions)
-	}
-	for _, malformed := range []ProjectionAction{
-		{},
-		func() ProjectionAction { value := action; value.PreviewOnly = false; return value }(),
-		func() ProjectionAction { value := action; value.Precondition = ""; return value }(),
-		func() ProjectionAction { value := action; value.Surface = SurfaceClaude; return value }(),
-	} {
-		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{malformed}}}, transition)
-		if err == nil || !strings.Contains(err.Error(), "personal") || !strings.Contains(err.Error(), "project action") {
-			t.Fatalf("malformed personal action accepted: %+v, %v", malformed, err)
-		}
-	}
-}
-
-func TestSurfaceGatewayAllowsOnlyExactReceiptedProjectReversals(t *testing.T) {
-	target := filepath.Join(t.TempDir(), "config.toml")
-	receipt := ProjectActivationEffectReceipt{Action: ActionCodexProjectTrust, Surface: SurfaceCodex, Target: target, ContributionIdentity: "contribution", AdapterProvenance: "codex-project/v1/project-trust", StartMarker: "start", EndMarker: "end", PriorState: "absent"}
-	action := ProjectionAction{ID: "deactivate:codex-project-trust", Surface: SurfaceCodex, Kind: ActionCodexProjectTrust, Target: target, Content: "foreign", FileMode: 0o600, Precondition: "before", AdapterProvenance: receipt.AdapterProvenance, Consent: ConsentDestructiveCleanup, PreviewOnly: true}
-	effect := ObservedProjectEffect{Kind: receipt.Action, Target: target, State: ProjectEffectExact, ObservedFingerprint: "before", AdapterProvenance: receipt.AdapterProvenance, Action: action}
-	transition := SurfaceTransition{ProjectRoot: t.TempDir(), ProjectEffectReceipts: []ProjectActivationEffectReceipt{receipt}}
-	got, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectDeactivationEffects: []ObservedProjectEffect{effect}}}, transition)
-	if err != nil || len(got.ProjectDeactivationEffects) != 1 || got.ProjectDeactivationEffects[0].Action.Consent != ConsentDestructiveCleanup {
-		t.Fatalf("exact receipted reversal = %+v, %v", got.ProjectDeactivationEffects, err)
-	}
-	for _, malformed := range []ObservedProjectEffect{
-		func() ObservedProjectEffect { value := effect; value.State = ProjectEffectDrifted; return value }(),
-		func() ObservedProjectEffect { value := effect; value.Action.Consent = ""; return value }(),
-		func() ObservedProjectEffect { value := effect; value.AdapterProvenance = "other-adapter"; return value }(),
-	} {
-		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectDeactivationEffects: []ObservedProjectEffect{malformed}}}, transition)
-		if err == nil {
-			t.Fatalf("malformed personal project reversal accepted: %+v", malformed)
-		}
+func TestSurfaceGatewayRejectsRetiredPersonalProjectActions(t *testing.T) {
+	action := ProjectionAction{ID: "project_trust:codex", Surface: SurfaceAgents, Kind: "codex-project-trust", Target: filepath.Join(t.TempDir(), "config.toml"), PreviewOnly: true}
+	_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{action}}}, SurfaceTransition{ProjectRoot: t.TempDir(), ProjectInstallation: &ProjectInstallation{}})
+	if err == nil {
+		t.Fatal("retired runtime configuration action accepted")
 	}
 }
 
@@ -99,7 +59,7 @@ func TestSurfaceGatewayRejectsMalformedProjectionContracts(t *testing.T) {
 func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.T) {
 	transition := SurfaceTransition{
 		Desired:             Pack{ID: "app", Resources: []Resource{{ID: "guide", Args: []string{"original"}}}},
-		ResidualOwnership:   []ProjectionOwnership{{ID: "instruction:guide", PackID: "app", Surface: SurfaceCodex}},
+		ResidualOwnership:   []ProjectionOwnership{{ID: "instruction:guide", PackID: "app", Surface: SurfaceAgents}},
 		ResolvedExecutables: []ExecutableResolution{{Tool: "tool", AcquisitionArgs: []string{"install"}}},
 		ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "project-app"}}}},
 	}
@@ -162,7 +122,7 @@ func TestObservationDigestIgnoresNewGoalAndReadinessEvidence(t *testing.T) {
 	}
 	changedProvenance := withUnifiedFacts
 	changedProvenance.Projections = append([]ObservedProjection(nil), withUnifiedFacts.Projections...)
-	withUnifiedFacts.Projections[0].AdapterProvenance = "codex-projection/v1/codex-instruction-file"
+	withUnifiedFacts.Projections[0].AdapterProvenance = "agents-projection/v1/agents-instruction-file"
 	changedProvenance.Projections[0].AdapterProvenance = "claude-projection/v1/claude-instruction-file"
 	if observationDigest(withUnifiedFacts) == observationDigest(changedProvenance) {
 		t.Fatal("authoritative adapter provenance was omitted from the stale-plan fingerprint")

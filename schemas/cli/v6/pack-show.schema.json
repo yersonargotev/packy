@@ -22,7 +22,7 @@
       },
       "additionalProperties": false
     },
-    "surfaces": { "type": "array", "items": { "enum": ["claude", "codex", "opencode"] }, "minItems": 1, "uniqueItems": true },
+    "surfaces": { "type": "array", "items": { "enum": ["claude", "agents", "opencode"] }, "minItems": 1, "uniqueItems": true },
     "requires": {
       "type": "object",
       "required": ["tools"],
@@ -42,7 +42,7 @@
         "type": "object",
         "required": ["surface", "catalog_identity", "contract", "intent"],
         "properties": {
-          "surface": { "enum": ["claude", "codex", "opencode"] },
+          "surface": { "enum": ["claude", "agents", "opencode"] },
           "catalog_identity": { "$ref": "#/$defs/catalog_identity" },
           "contract": { "type": "object" },
           "intent": { "type": "object" }

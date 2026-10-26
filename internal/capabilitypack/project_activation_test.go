@@ -10,7 +10,7 @@ import (
 
 func TestProjectActivationRecognizesEverySupportedSurface(t *testing.T) {
 	facade := NewFacade(Catalog{})
-	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceAgents, SurfaceClaude} {
 		_, err := facade.PreviewProjectActivation(context.Background(), ProjectActivationRequest{Surface: surface})
 		if err == nil || strings.Contains(err.Error(), "supports only") {
 			t.Fatalf("%s activation qualification error = %v", surface, err)
@@ -69,30 +69,30 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 	resource := ResourceIdentity{Kind: "mcp_server", ID: "memory"}
 	lock := ProjectLockProposal{
 		Sensitive: []ProjectSensitiveDisclosure{
-			{Category: ProjectActivationMCP, Surface: SurfaceCodex, Resource: resource, Detail: "codex-mcp"},
+			{Category: ProjectActivationMCP, Surface: SurfaceAgents, Resource: resource, Detail: "agents-mcp"},
 			{Category: ProjectActivationMCP, Surface: SurfaceClaude, Resource: resource, Detail: "claude-mcp"},
 		},
 		Bindings: []LifecycleBinding{
-			{Surface: SurfaceCodex, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
+			{Surface: SurfaceAgents, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
 			{Surface: SurfaceClaude, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
 		},
 		Projections: []ProjectProjectionPlan{
-			{Resource: resource, Target: ".codex/config.toml", OwnerPack: "pack", Surface: SurfaceCodex, Command: "codex-command"},
+			{Resource: resource, Target: ".agents/config.toml", OwnerPack: "pack", Surface: SurfaceAgents, Command: "agents-command"},
 			{Resource: resource, Target: "claude.json", OwnerPack: "pack", Surface: SurfaceClaude, Command: "claude-command"},
 		},
 	}
-	categories := projectActivationCategories(lock, SurfaceCodex)
+	categories := projectActivationCategories(lock, SurfaceAgents)
 	if len(categories) != 1 || len(categories[0].Details) != 2 {
-		t.Fatalf("Codex categories included the wrong surface: %+v", categories)
+		t.Fatalf("Agents categories included the wrong surface: %+v", categories)
 	}
 	original := projectSensitiveLockIdentity(lock, categories)
 	lock.Projections[1].Command = "changed-claude-command"
 	if changed := projectSensitiveLockIdentity(lock, categories); changed != original {
-		t.Fatal("Claude-only change invalidated Codex consent")
+		t.Fatal("Claude-only change invalidated Agents consent")
 	}
-	lock.Projections[0].Command = "changed-codex-command"
+	lock.Projections[0].Command = "changed-agents-command"
 	if changed := projectSensitiveLockIdentity(lock, categories); changed == original {
-		t.Fatal("Codex-sensitive change retained Codex consent")
+		t.Fatal("Agents-sensitive change retained Agents consent")
 	}
 }
 
@@ -104,14 +104,14 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	approval := []ProjectActivationApproval{{Category: ProjectActivationMCP, Digest: "approved"}}
-	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceAgents, SurfaceClaude} {
 		receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved", Details: []ProjectSensitiveDisclosure{{Category: ProjectActivationMCP, Surface: surface, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "command:memory"}}}}
 		state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
 		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceAgents, SurfaceClaude} {
 		document, exists, err := loadProjectActivationDocumentForSurface(home, root, "pack", surface)
 		if err != nil || !exists || document.State.Surface != surface || document.SensitiveLockIdentity != "lock-"+string(surface) {
 			t.Fatalf("%s document = %+v exists=%v err=%v", surface, document, exists, err)
@@ -120,14 +120,14 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 }
 
 func TestProjectActivationSealIncludesPersonalTargetObservation(t *testing.T) {
-	action := ProjectionAction{ID: "project_trust:codex", Kind: ActionCodexProjectTrust, Target: "/personal/config.toml", Version: "exact-contribution", FileMode: 0o600, Precondition: "before"}
+	action := ProjectionAction{ID: "project_trust:agents", Kind: ProjectionActionKind("retired-project-trust"), Target: "/personal/config.toml", Version: "exact-contribution", FileMode: 0o600, Precondition: "before"}
 	first := projectActivationActionObservation(action)
 	action.Precondition = "changed"
 	second := projectActivationActionObservation(action)
 	if first == second {
 		t.Fatal("personal target change retained the approved observation identity")
 	}
-	preview := JSONProjectActivationPreview{SchemaVersion: 1, Report: "project-activation-preview", Effects: []ProjectActivationEffectPreview{{Category: ProjectActivationTrust, Action: ActionCodexProjectTrust, Target: "<codex-home>/config.toml", Identity: action.Version, Observation: first}}}
+	preview := JSONProjectActivationPreview{SchemaVersion: 1, Report: "project-activation-preview", Effects: []ProjectActivationEffectPreview{{Category: ProjectActivationTrust, Action: ProjectionActionKind("retired-project-trust"), Target: "<agents-home>/config.toml", Identity: action.Version, Observation: first}}}
 	approved := sealProjectActivationPreview(preview)
 	preview.Effects[0].Observation = second
 	if sealProjectActivationPreview(preview) == approved {
@@ -141,10 +141,10 @@ func TestProjectSensitiveDisclosuresIncludeEveryResourceToolRequirement(t *testi
 		{Kind: "lifecycle", ID: "hook", RequiresTools: []string{"hook-cli"}},
 	}}
 
-	disclosures := projectSensitiveDisclosures(pack, SurfaceCodex)
+	disclosures := projectSensitiveDisclosures(pack, SurfaceAgents)
 	want := []ProjectSensitiveDisclosure{
-		{Category: ProjectActivationExternalRequirements, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "lifecycle", ID: "hook"}, Detail: "tool:hook-cli"},
-		{Category: ProjectActivationExternalRequirements, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "skill", ID: "helper"}, Detail: "tool:helper-cli"},
+		{Category: ProjectActivationExternalRequirements, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "lifecycle", ID: "hook"}, Detail: "tool:hook-cli"},
+		{Category: ProjectActivationExternalRequirements, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "skill", ID: "helper"}, Detail: "tool:helper-cli"},
 	}
 	if len(disclosures) != len(want) {
 		t.Fatalf("resource tool disclosures = %+v, want %+v", disclosures, want)
@@ -165,10 +165,10 @@ func TestProjectSensitiveDisclosuresIncludeUnmatchedPackToolRequirement(t *testi
 		},
 	}
 
-	disclosures := projectSensitiveDisclosures(pack, SurfaceCodex)
+	disclosures := projectSensitiveDisclosures(pack, SurfaceAgents)
 	want := ProjectSensitiveDisclosure{
 		Category: ProjectActivationExternalRequirements,
-		Surface:  SurfaceCodex,
+		Surface:  SurfaceAgents,
 		Resource: ResourceIdentity{Kind: "pack", ID: "helper-pack"},
 		Detail:   "tool:pack-cli",
 	}

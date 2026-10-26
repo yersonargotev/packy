@@ -145,7 +145,7 @@ func TestInitializationAndPreviewObserveModelCancellation(t *testing.T) {
 
 	previewCtx, previewCancel := context.WithCancel(context.Background())
 	previewModel := newModel(previewCtx, backend)
-	previewModel.dashboard.Global = Scope{Available: true, Packs: []Pack{{ID: "argote", Surfaces: []string{"codex"}}}}
+	previewModel.dashboard.Global = Scope{Available: true, Packs: []Pack{{ID: "argote", Surfaces: []string{"agents"}}}}
 	previewModel.operation = "activate"
 	_, previewCommand := previewModel.startPreview()
 	previewDone := make(chan tea.Msg, 1)

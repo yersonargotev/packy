@@ -6,13 +6,20 @@ and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
 Readiness architecture is recorded in [ADR 0035](docs/adr/0035-make-pack-readiness-capability-driven.md).
 Independent catalog authoring and publication are recorded in
 [ADR 0039](docs/adr/0039-publish-an-independent-canonical-pack-catalog.md).
+The two projection conventions and explicit custom-agent client targets are
+recorded in [ADR 0045](docs/adr/0045-focus-surfaces-on-agents-and-claude.md).
+
+The engine supports the Agents (`agents`) and Claude (`claude`) projection
+conventions. Plugin concepts below describe the accepted target design; plugin
+implementation and catalog adoption remain separate delivery work. Antigravity
+and GitHub Copilot CLI remain outside its supported client integrations.
 
 ## Glossary
 
 ### Packy
 
-A terminal installer and configurator for reviewed capability Packs on Codex
-and Claude Code. Its interactive and command-line interfaces expose
+A terminal installer and configurator for reviewed capability Packs on the
+Agents and Claude surfaces. Its interactive and command-line interfaces expose
 the same Pack lifecycle.
 
 ### Pack
@@ -79,10 +86,9 @@ to their external sources.
 
 ### Orchestrate Pack
 
-The Codex-only Pack that contributes the reviewed `$orchestrate` coordination
-skill, its MIT notice, and the Pack-authored `coordinate-session` lifecycle.
-It preserves Eric Provencher's attribution and distinguishes configured
-projection from runtime usability.
+The reviewed Pack contributing the `orchestrate` coordination skill and its
+MIT notice, preserving Eric Provencher's attribution. Projected content does
+not establish a consuming client's runtime delegation capability.
 
 ### Pack manifest
 
@@ -108,9 +114,53 @@ it into one or more host-native projections.
 
 ### CLI surface
 
-A supported host Packy can configure. The supported surfaces are Codex
-and Claude Code. Antigravity and GitHub Copilot CLI remain outside
-the current product.
+A supported projection convention for reviewed Pack resources. The supported
+surfaces are `agents` and `claude`; a surface does not by itself identify or
+establish compatibility with a particular runtime client.
+
+### Agents surface
+
+The shared instruction and skill convention using `AGENTS.md` and
+`.agents/skills`, independent of a specific runtime client.
+
+### Claude surface
+
+The Claude-native instruction and skill convention using `CLAUDE.md` and
+`.claude/skills`.
+
+### Native plugin projection
+
+A client-consumable plugin package produced from reviewed Pack resources in
+the Claude plugin format or the Agent Plugins format. Package validity alone
+does not establish installation, authorization, or runtime usability.
+
+### Runtime client
+
+A concrete application, such as Codex or Claude Code, that consumes projected
+Pack content. A shared CLI surface does not imply support for every client's
+custom-agent format or execution capabilities.
+
+### Custom-agent projection
+
+A reviewed definition of a workflow role in one explicitly identified runtime
+client's native format and scope. It is distinct from metadata inside a skill
+and remains a declared resource dependency when a workflow requires that role.
+Agents currently supports explicit global Codex roles through a reviewed
+`client_projection` binding and a client-selected lifecycle. Unsupported client
+or scope combinations fail before mutation; shared Agents skills select no
+runtime client.
+
+### Plugin export
+
+The explicit production of a standalone native plugin projection from one
+reviewed Pack and its selected skill dependency closure. An export does not
+create Pack installation or client activation state.
+
+### Plugin compatibility
+
+The explicitly reviewed suitability of a skill and its authored references for
+one plugin format. Native installation support alone does not establish plugin
+compatibility or compatibility with every consuming client.
 
 ### Surface capability
 
@@ -122,8 +172,8 @@ contribution in a project's native instruction document.
 flow for a declared external requirement. It may install the shared executable
 but never grants a tool authority to configure a CLI surface. Engram uses it to
 retain its supported Homebrew flow without running tool-owned host setup.
-`claude-composite-skill` projects a reviewed skill tree or command as a Claude
-skill together with explicitly declared dependency and reference roles.
+`claude-composite-skill` projects a reviewed skill tree as a Claude skill
+together with explicitly declared dependency and reference roles.
 `claude-agent-document` projects a reviewed agent source, declared skill
 dependencies, and portable authority as one native Claude agent document.
 `skill-template` projects a reviewed skill tree with an effective native identity

@@ -15,25 +15,25 @@ import (
 )
 
 func TestIssue761GlobalApplyReportsSelectedPackProjectionCount(t *testing.T) {
-	first := testsupport.PortableAllSurfaces("issue761-first")
+	first := testsupport.SkillVariants("issue761-first")
 	second := testsupport.ExternalTool("issue761-second")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, first, second)
 	makeSyntheticExternalToolObservable(t, &fixture.options)
 	layout := newCLITestFixture(t, fixture.options)
 
-	if output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", first.ID(), "--surface", "codex"); err != nil {
+	if output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", first.ID(), "--surface", "agents"); err != nil {
 		t.Fatalf("activate first Pack: %v\n%s", err, output)
 	}
-	output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", second.ID(), "--surface", "codex")
+	output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", second.ID(), "--surface", "agents")
 	if err != nil {
 		t.Fatalf("activate second Pack: %v\n%s", err, output)
 	}
-	for _, fact := range []string{"1 Codex projections owned by " + second.ID(), "projections=1"} {
+	for _, fact := range []string{"1 Agents projections owned by " + second.ID(), "projections=1"} {
 		if !strings.Contains(output, fact) {
 			t.Fatalf("second Pack activation omitted Pack-scoped fact %q:\n%s", fact, output)
 		}
 	}
-	state, err := capabilitypack.NewFileActivationStore(layout.packState.File()).LoadSnapshot(context.Background(), capabilitypack.SurfaceCodex)
+	state, err := capabilitypack.NewFileActivationStore(layout.packState.File()).LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,17 +43,17 @@ func TestIssue761GlobalApplyReportsSelectedPackProjectionCount(t *testing.T) {
 	if err := second.Candidate().WriteCatalog(fixture.catalogRoot); err != nil {
 		t.Fatal(err)
 	}
-	output, err = executeCommand(t, NewRootCommand(fixture.options), "update", second.ID(), "--surface", "codex")
+	output, err = executeCommand(t, NewRootCommand(fixture.options), "update", second.ID(), "--surface", "agents")
 	if err != nil {
 		t.Fatalf("update second Pack: %v\n%s", err, output)
 	}
-	for _, fact := range []string{"1 Codex projections owned by " + second.ID(), "projections=1"} {
+	for _, fact := range []string{"1 Agents projections owned by " + second.ID(), "projections=1"} {
 		if !strings.Contains(output, fact) {
 			t.Fatalf("second Pack update omitted Pack-scoped fact %q:\n%s", fact, output)
 		}
 	}
 
-	output, err = executeCommand(t, NewRootCommand(fixture.options), "deactivate", second.ID(), "--surface", "codex", "--json")
+	output, err = executeCommand(t, NewRootCommand(fixture.options), "deactivate", second.ID(), "--surface", "agents", "--json")
 	if err != nil {
 		t.Fatalf("deactivate second Pack: %v\n%s", err, output)
 	}
@@ -70,7 +70,7 @@ func TestIssue761GlobalApplyReportsSelectedPackProjectionCount(t *testing.T) {
 		t.Fatalf("deactivated Pack projections = %d, want 0\n%s", applied.Projections, output)
 	}
 
-	state, err = capabilitypack.NewFileActivationStore(layout.packState.File()).LoadSnapshot(context.Background(), capabilitypack.SurfaceCodex)
+	state, err = capabilitypack.NewFileActivationStore(layout.packState.File()).LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestIssue761GlobalApplyReportsSelectedPackProjectionCount(t *testing.T) {
 	opts := fixture.options.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	tuiPreview, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: second.ID(), Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: second.ID(), Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,13 +102,13 @@ func TestIssue761PartialDeactivationReportsSelectedPackRemainingProjections(t *t
 	makeSyntheticExternalToolObservable(t, &fixture.options)
 	layout := newCLITestFixture(t, fixture.options)
 
-	if output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", unrelated.ID(), "--surface", "codex"); err != nil {
+	if output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", unrelated.ID(), "--surface", "agents"); err != nil {
 		t.Fatalf("activate unrelated Pack: %v\n%s", err, output)
 	}
 	opts := fixture.options.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: selected.ID(), Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: selected.ID(), Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "custom", Client: "codex", Roots: []string{"agent:reviewer", "skill:helper"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -117,9 +117,9 @@ func TestIssue761PartialDeactivationReportsSelectedPackRemainingProjections(t *t
 		t.Fatal(err)
 	}
 
-	resource := syntheticResource(t, selected, "instruction", "guidance")
+	resource := syntheticResource(t, selected, "agent", "reviewer")
 	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "deactivate", PackID: selected.ID(), Surface: "codex", Scope: "global",
+		Operation: "deactivate", PackID: selected.ID(), Surface: "agents", Scope: "global",
 		Selection: tui.Selection{Mode: "custom", Roots: []string{resource.Kind + ":" + resource.ID}},
 	})
 	if err != nil {

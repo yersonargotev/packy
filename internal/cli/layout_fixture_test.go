@@ -3,8 +3,8 @@ package cli
 import (
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/agents"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
-	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -15,7 +15,7 @@ type cliTestFixture struct {
 	workstation workstation.Snapshot
 	packState   capabilitypack.StateLayout
 	skills      skilllayout.GlobalLayout
-	codex       codex.CanonicalLayout
+	agents      agents.CanonicalLayout
 }
 
 func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
@@ -37,6 +37,6 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 		workstation: snapshot,
 		packState:   capabilitypack.NewStateLayout(snapshot.PackyHome()),
 		skills:      skilllayout.NewGlobalLayout(snapshot.Home()),
-		codex:       codex.NewCanonicalLayout(snapshot.Home()),
+		agents:      agents.NewCanonicalLayout(snapshot.Home()),
 	}
 }

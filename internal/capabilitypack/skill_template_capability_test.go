@@ -28,7 +28,7 @@ func TestSkillTemplateCapabilitySupportsSkillBindingsOnEverySurface(t *testing.T
 
 func TestSkillTemplateCapabilityRejectsInvalidOrForeignData(t *testing.T) {
 	valid := Binding{
-		Surface: SurfaceCodex, Projection: "skill", Name: "guide", Invocation: "$guide",
+		Surface: SurfaceAgents, Projection: "skill", Name: "guide", Invocation: "guide",
 		Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{
 			Type:          SurfaceCapabilitySkillTemplate,
 			SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingNative},
@@ -65,26 +65,26 @@ func TestSkillTemplateCapabilityRejectsInvalidOrForeignData(t *testing.T) {
 func TestResolvePackForSurfaceAppliesTemplateNamingOnceBeforeAliases(t *testing.T) {
 	pack := Pack{ID: "pstack", Resources: []Resource{{
 		Kind: "skill", ID: "tdd", Bindings: []Binding{{
-			Surface: SurfaceCodex, Projection: "skill", Name: "tdd", Invocation: "$tdd", Capabilities: []SurfaceCapability{{
+			Surface: SurfaceAgents, Projection: "skill", Name: "tdd", Invocation: "tdd", Capabilities: []SurfaceCapability{{
 				Type:          SurfaceCapabilitySkillTemplate,
 				SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
 			}},
 		}},
 	}}}
 
-	resolved := ResolvePackForSurface(pack, SurfaceCodex)
-	resolvedAgain := ResolvePackForSurface(resolved, SurfaceCodex)
+	resolved := ResolvePackForSurface(pack, SurfaceAgents)
+	resolvedAgain := ResolvePackForSurface(resolved, SurfaceAgents)
 	if got, want := resolvedAgain.Resources[0].Bindings[0].Name, "pstack-tdd"; got != want {
 		t.Fatalf("resolved name = %q, want %q", got, want)
 	}
-	if got, want := resolvedAgain.Resources[0].Bindings[0].Invocation, "$pstack-tdd"; got != want {
+	if got, want := resolvedAgain.Resources[0].Bindings[0].Invocation, "pstack-tdd"; got != want {
 		t.Fatalf("resolved invocation = %q, want %q", got, want)
 	}
-	aliased := resourceWithSurfaceAlias(resolvedAgain.Resources[0], []SurfaceAlias{{Kind: "skill", ID: "tdd", Name: "red-green"}}, SurfaceCodex)
+	aliased := resourceWithSurfaceAlias(resolvedAgain.Resources[0], []SurfaceAlias{{Kind: "skill", ID: "tdd", Name: "red-green"}}, SurfaceAgents)
 	if got := aliased.Bindings[0].Name; got != "red-green" {
 		t.Fatalf("aliased name = %q", got)
 	}
-	if got := aliased.Bindings[0].Invocation; got != "$red-green" {
+	if got := aliased.Bindings[0].Invocation; got != "red-green" {
 		t.Fatalf("aliased invocation = %q", got)
 	}
 	if got := pack.Resources[0].Bindings[0].Name; got != "tdd" {
@@ -221,7 +221,7 @@ func TestValidateSkillTemplateSourcesRejectsUnsafeReferenceContracts(t *testing.
 			name: "target excluded", body: "---\nname: tdd\n---\n{{packy.skill:teach}}\n", requires: []string{"skill:teach"},
 			configure: func(pack *Pack) {
 				pack.Resources[1].Bindings = nil
-				pack.Resources[1].SurfaceExclusions = []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "mandatory", Code: "unsupported", Reason: "Unavailable"}}
+				pack.Resources[1].SurfaceExclusions = []SurfaceExclusion{{Surface: SurfaceAgents, Mode: "mandatory", Code: "unsupported", Reason: "Unavailable"}}
 			},
 			want: "absent, excluded, or unbound skill",
 		},
@@ -246,11 +246,11 @@ func TestValidateSkillTemplateSourcesRejectsUnsafeReferenceContracts(t *testing.
 func TestValidateSkillTemplateSourcesUsesEffectiveVariantOnly(t *testing.T) {
 	root := t.TempDir()
 	writeSkillTemplateFixture(t, root, "skills/tdd", "---\nname: tdd\n---\n{{packy.skill:Not-Valid}}\n")
-	writeSkillTemplateFixture(t, root, "skills/tdd-codex", "---\nname: tdd\n---\nCodex body.\n")
+	writeSkillTemplateFixture(t, root, "skills/tdd-agents", "---\nname: tdd\n---\nAgents body.\n")
 	writeSkillTemplateFixture(t, root, "skills/teach", "---\nname: teach\n---\nTeach.\n")
 	pack := skillTemplateValidationPack(root, []string{"skill:teach"})
-	variantSource := "skills/tdd-codex"
-	pack.Resources[0].Variants = ResourceVariants{{Surface: SurfaceCodex, Source: &variantSource}}
+	variantSource := "skills/tdd-agents"
+	pack.Resources[0].Variants = ResourceVariants{{Surface: SurfaceAgents, Source: &variantSource}}
 
 	if err := validateSkillTemplateSources(pack, root); err != nil {
 		t.Fatalf("effective variant validation: %v", err)
@@ -258,18 +258,18 @@ func TestValidateSkillTemplateSourcesUsesEffectiveVariantOnly(t *testing.T) {
 }
 
 func skillTemplateValidationPack(root string, requires []string) Pack {
-	return Pack{ID: "pstack", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+	return Pack{ID: "pstack", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{
 		{
 			Kind: "skill", ID: "tdd", Source: "skills/tdd", Requires: requires, catalogRoot: root,
 			Bindings: []Binding{{
-				Surface: SurfaceCodex, Projection: "skill", Name: "tdd", Capabilities: []SurfaceCapability{{
+				Surface: SurfaceAgents, Projection: "skill", Name: "tdd", Capabilities: []SurfaceCapability{{
 					Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
 				}},
 			}},
 		},
 		{
 			Kind: "skill", ID: "teach", Source: "skills/teach", catalogRoot: root,
-			Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "teach", Capabilities: []SurfaceCapability{}}},
+			Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "teach", Capabilities: []SurfaceCapability{}}},
 		},
 	}}
 }
@@ -289,7 +289,7 @@ func TestHydrateProjectLockPreservesReceiptedEffectiveSkillName(t *testing.T) {
 	lock, err := hydrateProjectLock(ProjectLockProposal{
 		SchemaVersion: 1,
 		Receipts: []installedPackReceipt{{
-			Pack: installedPackIdentity{ID: "pstack", Version: "1.0.0"}, Surface: SurfaceCodex,
+			Pack: installedPackIdentity{ID: "pstack", Version: "1.0.0"}, Surface: SurfaceAgents,
 			ReadinessObligations: []ReadinessObligation{}, ExternalRequirements: []string{},
 			Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{},
 			Resources:   []ResourceIdentity{{Kind: "skill", ID: "tdd"}},
@@ -300,7 +300,7 @@ func TestHydrateProjectLockPreservesReceiptedEffectiveSkillName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lock.Bindings) != 1 || lock.Bindings[0].Name != "pstack-tdd" || lock.Bindings[0].Invocation != "$pstack-tdd" {
+	if len(lock.Bindings) != 1 || lock.Bindings[0].Name != "pstack-tdd" || lock.Bindings[0].Invocation != "pstack-tdd" {
 		t.Fatalf("hydrated bindings = %#v", lock.Bindings)
 	}
 }

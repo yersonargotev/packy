@@ -20,7 +20,7 @@ func installSyntheticVerificationProject(t *testing.T, pack testsupport.Fixture)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", pack.Manifest().ID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", pack.Manifest().ID, "--surface", "agents"); err != nil {
 		t.Fatalf("seed synthetic project install: %v\n%s", err, out)
 	}
 	return fixture.options, project
@@ -63,7 +63,7 @@ func TestProjectVerifyPassesOfflineWithoutPersonalState(t *testing.T) {
 }
 
 func TestProjectVerifyPassesAfterGitCheckout(t *testing.T) {
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			pack := testsupport.SkillVariants("verify-checkout", testsupport.Surface(surface))
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
@@ -105,7 +105,7 @@ func TestProjectVerifyRunsWithNoHomeOrPath(t *testing.T) {
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "agents"); err != nil {
 		t.Fatalf("seed external-requirement project: %v\n%s", err, out)
 	}
 

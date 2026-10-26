@@ -9,7 +9,7 @@ import (
 func receiptStatusFixture(t *testing.T, mutate func(*ActivationState), inspect func(SurfaceTransition) SurfaceInspection) (Facade, *fakeActivationStore, *fakeSurfaceAdapter) {
 	t.Helper()
 	identity := ResourceIdentity{Kind: "skill", ID: "retired-guide"}
-	intent := ActivationIntent{PackID: "changing", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{identity}}, Resources: []ResourceIdentity{identity}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, ExternalRequirements: []string{}}
+	intent := ActivationIntent{PackID: "changing", Version: "1.0.0", Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{identity}}, Resources: []ResourceIdentity{identity}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, ExternalRequirements: []string{}}
 	owner := ProjectionOwnership{ID: "path:/fixture/retired-guide", ProjectionID: identity.String(), Target: "/fixture/retired-guide", PackID: intent.PackID, Surface: intent.Surface, Fingerprint: strings.Repeat("a", 64)}
 	state := ActivationState{Intent: intent, Ownership: []ProjectionOwnership{owner}}
 	if mutate != nil {
@@ -29,13 +29,13 @@ func receiptStatusFixture(t *testing.T, mutate func(*ActivationState), inspect f
 			return observed
 		}
 	}
-	current := Pack{ID: "changing", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "replacement"}}, ReadinessObligations: []ReadinessObligation{}}
-	return NewFacade(Catalog{packs: []Pack{current}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter})), store, adapter
+	current := Pack{ID: "changing", Version: "2.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "replacement"}}, ReadinessObligations: []ReadinessObligation{}}
+	return NewFacade(Catalog{packs: []Pack{current}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter})), store, adapter
 }
 
 func TestReceiptStatusRetainsHistoricalFactsWithoutCurrentResourceGraph(t *testing.T) {
 	facade, store, adapter := receiptStatusFixture(t, nil, nil)
-	report, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex})
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceAgents})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestReceiptStatusRetainsMissingAndDriftedProjectionEvidence(t *testing.T) {
 				owner := transition.ReceiptOwnership[0]
 				return SurfaceInspection{Revision: "changed", Projections: []ObservedProjection{{ID: owner.ID, Exists: health != ProjectionMissing, DesiredFingerprint: owner.Fingerprint, ObservedFingerprint: "changed", Action: ProjectionAction{ID: owner.ID, Target: owner.Target}}}}
 			})
-			report, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex})
+			report, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceAgents})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -98,7 +98,7 @@ func TestReceiptStatusRejectsCorruptHistoricalReceipt(t *testing.T) {
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			facade, _, adapter := receiptStatusFixture(t, mutate, nil)
-			if _, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex}); err == nil {
+			if _, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceAgents}); err == nil {
 				t.Fatal("accepted corrupt receipt")
 			}
 			if adapter.inspectCalls != 0 {
@@ -124,7 +124,7 @@ func TestReceiptStatusRejectsAdapterThatOmitsOrReinterpretsReceipt(t *testing.T)
 				}
 				return SurfaceInspection{Projections: []ObservedProjection{projection}}
 			})
-			if _, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex}); err == nil {
+			if _, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceAgents}); err == nil {
 				t.Fatal("accepted reinterpreted receipt")
 			}
 		})
@@ -133,14 +133,14 @@ func TestReceiptStatusRejectsAdapterThatOmitsOrReinterpretsReceipt(t *testing.T)
 
 func TestReceiptStatusExplainsUnavailableFocusedResource(t *testing.T) {
 	facade, _, _ := receiptStatusFixture(t, nil, nil)
-	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex, Resource: "skill:retired-guide"})
+	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceAgents, Resource: "skill:retired-guide"})
 	if err == nil || !strings.Contains(err.Error(), "selected in the installed receipt") || !strings.Contains(err.Error(), "historical resource semantics are unavailable") {
 		t.Fatalf("focused resource error = %v", err)
 	}
 }
 
 func TestReceiptStatusRetainsSurfaceRemovedFromCurrentCatalog(t *testing.T) {
-	for _, request := range []StatusRequest{{PackID: "changing", Surface: SurfaceCodex}, {}} {
+	for _, request := range []StatusRequest{{PackID: "changing", Surface: SurfaceAgents}, {}} {
 		name := "overview"
 		if request.PackID != "" {
 			name = "targeted"
@@ -156,7 +156,7 @@ func TestReceiptStatusRetainsSurfaceRemovedFromCurrentCatalog(t *testing.T) {
 			}
 			found := false
 			for _, entry := range report.Entries {
-				if entry.Surface != SurfaceCodex {
+				if entry.Surface != SurfaceAgents {
 					continue
 				}
 				found = true
@@ -175,7 +175,7 @@ func TestReceiptStatusRetainsSurfaceRemovedFromCurrentCatalog(t *testing.T) {
 }
 
 func TestReceiptStatusRejectsUnsupportedSurfaceWithoutActiveReceipt(t *testing.T) {
-	for _, surface := range []Surface{SurfaceCodex, Surface("unrecognized")} {
+	for _, surface := range []Surface{SurfaceAgents, Surface("unrecognized")} {
 		t.Run(string(surface), func(t *testing.T) {
 			facade, store, adapter := receiptStatusFixture(t, nil, nil)
 			facade.catalog.packs[0].Surfaces = []Surface{SurfaceClaude}
@@ -195,7 +195,7 @@ func TestReceiptStatusRejectsSurfaceInconsistentWithMatchingManifest(t *testing.
 	facade, _, adapter := receiptStatusFixture(t, nil, nil)
 	facade.catalog.packs[0].Surfaces = []Surface{SurfaceClaude}
 	facade.catalog.packs[0].Version = "1.0.0"
-	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex})
+	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceAgents})
 	if err == nil || !strings.Contains(err.Error(), "absent from matching catalog Pack") {
 		t.Fatalf("inconsistent surface error = %v", err)
 	}

@@ -18,13 +18,13 @@ import (
 // SupportedSurfaces returns Packy's complete product-owned CLI surface set in
 // stable display order. Pack manifests decide which members each Pack supports.
 func SupportedSurfaces() []Surface {
-	return []Surface{SurfaceClaude, SurfaceCodex}
+	return []Surface{SurfaceAgents, SurfaceClaude}
 }
 
 // ValidateSurface rejects contracts outside the current product surface set.
 func ValidateSurface(surface Surface) error {
 	if !slices.Contains(SupportedSurfaces(), surface) {
-		return fmt.Errorf("unsupported CLI surface %q; use claude or codex. Remove retired installations with the previous Packy binary before upgrading", surface)
+		return fmt.Errorf("unsupported CLI surface %q; use claude or agents. Remove retired installations with the previous Packy binary before upgrading", surface)
 	}
 	return nil
 }
@@ -37,7 +37,7 @@ var (
 type Surface string
 
 const (
-	SurfaceCodex  Surface = "codex"
+	SurfaceAgents Surface = "agents"
 	SurfaceClaude Surface = "claude"
 )
 
@@ -234,16 +234,23 @@ type RuntimeEvidence struct {
 	Authorities  []RuntimeAuthorityObservation   `json:"authorities"`
 }
 
+// ClientProjection declares the concrete client and scopes reviewed for a native role.
+type ClientProjection struct {
+	Client string   `json:"client"`
+	Scopes []string `json:"scopes"`
+}
+
 type Binding struct {
-	Surface      Surface             `json:"surface"`
-	Projection   string              `json:"projection"`
-	Name         string              `json:"name"`
-	Invocation   string              `json:"invocation"`
-	Mode         string              `json:"mode"`
-	Degradation  string              `json:"degradation,omitempty"`
-	Sharing      string              `json:"sharing"`
-	Capabilities []SurfaceCapability `json:"capabilities"`
-	Hook         *CommandHook        `json:"hook,omitempty"`
+	ClientProjection *ClientProjection   `json:"client_projection,omitempty"`
+	Surface          Surface             `json:"surface"`
+	Projection       string              `json:"projection"`
+	Name             string              `json:"name"`
+	Invocation       string              `json:"invocation"`
+	Mode             string              `json:"mode"`
+	Degradation      string              `json:"degradation,omitempty"`
+	Sharing          string              `json:"sharing"`
+	Capabilities     []SurfaceCapability `json:"capabilities"`
+	Hook             *CommandHook        `json:"hook,omitempty"`
 }
 
 // ReferencedSourcePaths returns the typed capability paths owned by this
@@ -743,6 +750,11 @@ func clonePack(pack Pack) Pack {
 		pack.Resources[i].SurfaceExclusions = slices.Clone(pack.Resources[i].SurfaceExclusions)
 		for j := range pack.Resources[i].Bindings {
 			binding := &pack.Resources[i].Bindings[j]
+			if binding.ClientProjection != nil {
+				projection := *binding.ClientProjection
+				projection.Scopes = slices.Clone(projection.Scopes)
+				binding.ClientProjection = &projection
+			}
 			binding.Capabilities = slices.Clone(binding.Capabilities)
 			for k := range binding.Capabilities {
 				if binding.Capabilities[k].ClaudeCompositeSkill != nil {
@@ -1007,7 +1019,10 @@ func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []O
 
 func validateBindingV3(resource Resource, binding Binding, optionalModes []OptionalMode) error {
 	kind := resource.Kind
-	if binding.Surface != SurfaceClaude && binding.Surface != SurfaceCodex {
+	if err := validateClientProjection(kind, binding); err != nil {
+		return err
+	}
+	if binding.Surface != SurfaceClaude && binding.Surface != SurfaceAgents {
 		return fmt.Errorf("binding surface %q is unsupported", binding.Surface)
 	}
 	if !idPattern.MatchString(binding.Name) || strings.TrimSpace(binding.Invocation) == "" || (binding.Mode != "native" && binding.Mode != "degraded") || (binding.Sharing != "exclusive" && binding.Sharing != "shared") {
@@ -1041,8 +1056,8 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 				return fmt.Errorf("surface capability %q external_executable_acquisition tool %q is unsupported", capability.Type, capability.ExternalExecutableAcquisition.Tool)
 			}
 		case SurfaceCapabilityProjectInstruction:
-			if binding.Surface != SurfaceCodex {
-				return fmt.Errorf("surface capability %q requires a codex binding", capability.Type)
+			if binding.Surface != SurfaceAgents {
+				return fmt.Errorf("surface capability %q requires a agents binding", capability.Type)
 			}
 			if capability.ProjectInstruction == nil {
 				return fmt.Errorf("surface capability %q requires project_instruction data", capability.Type)
@@ -1289,41 +1304,38 @@ var portableAuthorities = map[string]bool{
 	"subagent": true, "package-manager": true, "commit": true, "deploy": true,
 }
 
+func validateClientProjection(kind string, binding Binding) error {
+	if binding.Surface == SurfaceAgents && kind == "agent" {
+		projection := binding.ClientProjection
+		if projection == nil || projection.Client != "codex" || len(projection.Scopes) != 1 || projection.Scopes[0] != "global" {
+			return fmt.Errorf("Agents agent binding requires an explicit reviewed client_projection for codex at global scope; other client/scope combinations are unsupported")
+		}
+	} else if binding.ClientProjection != nil {
+		return fmt.Errorf("client_projection is supported only for Agents agent bindings")
+	}
+	return nil
+}
+
 func validateBinding(kind string, binding Binding) error {
-	if binding.Surface != SurfaceCodex {
+	if binding.Surface != SurfaceAgents {
 		return fmt.Errorf("binding surface %q is unsupported", binding.Surface)
+	}
+	if kind != "skill" && kind != "instruction" && kind != "agent" {
+		return fmt.Errorf("Agents %s projection is unsupported; use reviewed skills, project instructions, or explicitly targeted custom agents", kind)
 	}
 	if !idPattern.MatchString(binding.Name) || strings.TrimSpace(binding.Invocation) == "" {
 		return fmt.Errorf("binding name and invocation are required")
 	}
-	if binding.Mode != "native" && binding.Mode != "degraded" {
-		return fmt.Errorf("binding mode must be native or degraded")
-	}
-	if binding.Mode == "degraded" && strings.TrimSpace(binding.Degradation) == "" {
-		return fmt.Errorf("degradation is required when mode is degraded")
-	}
-	if binding.Mode == "native" && binding.Degradation != "" {
-		return fmt.Errorf("degradation is forbidden when mode is native")
+	if binding.Mode != "native" || binding.Degradation != "" {
+		return fmt.Errorf("Agents bindings must be native; command degradation is unsupported")
 	}
 	if binding.Sharing != "exclusive" && binding.Sharing != "shared" {
 		return fmt.Errorf("sharing must be exclusive or shared")
 	}
-	if kind != "command" && binding.Mode != "native" {
-		return fmt.Errorf("%s bindings must be native", kind)
+	if binding.Projection != kind {
+		return fmt.Errorf("%s binding on %s must project as %s", kind, binding.Surface, kind)
 	}
-	wantProjection := kind
-	if kind == "command" && binding.Surface == SurfaceCodex {
-		wantProjection = "skill"
-	}
-	if binding.Projection != wantProjection {
-		return fmt.Errorf("%s binding on %s must project as %s", kind, binding.Surface, wantProjection)
-	}
-	if kind == "command" {
-		if binding.Surface == SurfaceCodex && (binding.Invocation != "$"+binding.Name || binding.Mode != "degraded" || binding.Degradation != "codex-command-as-workflow-skill") {
-			return fmt.Errorf("Codex command binding must use the workflow-skill degradation")
-		}
-	}
-	return nil
+	return validateClientProjection(kind, binding)
 }
 
 func validateDependencies(resources []Resource, identities map[string]bool) error {

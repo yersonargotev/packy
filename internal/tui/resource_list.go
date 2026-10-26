@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -83,6 +84,12 @@ func (m *Model) beginSelection() {
 	m.selecting = true
 	m.selectionPreviewFocus = false
 	m.selectionNotice = ""
+	m.selectedClient = ""
+	if m.operation == "configure" {
+		if status := m.selectedSurfaceStatus(); status != nil {
+			m.selectedClient = status.Selection.Client
+		}
+	}
 	m.selectedRoots = make(map[string]bool)
 	pack := m.selectedPack()
 	for _, resource := range operationalRoots(*pack) {
@@ -155,6 +162,14 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if pack == nil {
 		return m, nil
 	}
+	if client := m.selectedRoleClient(); message.String() == "c" && client != "" {
+		if m.selectedClient == client {
+			m.selectedClient = ""
+		} else {
+			m.selectedClient = client
+		}
+		return m, nil
+	}
 	surfaces := supportedSurfaces(*pack)
 	if (message.Code == tea.KeyRight || message.Code == tea.KeyLeft) && len(surfaces) > 0 {
 		direction := 1
@@ -162,6 +177,7 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			direction = -1
 		}
 		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), direction)
+		m.selectedClient = ""
 		if m.project {
 			m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
 			m.selecting, m.choosingAction, m.actionChoice = false, true, 0
@@ -217,6 +233,9 @@ func (m Model) updateResourceList(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) syncResourceList() {
+	if m.selectedRoleClient() == "" {
+		m.selectedClient = ""
+	}
 	selected := make(map[string]bool)
 	if pack := m.selectedPack(); pack != nil {
 		for _, resource := range pack.Resources {
@@ -287,6 +306,13 @@ func (m Model) resourceSelectionFrame(width int) (string, string) {
 		resourceSurfaceStyle.Render(surfaceLine),
 		counts,
 	}, "\n")
+	if m.selectedRoleClient() != "" {
+		client := "none"
+		if m.selectedClient != "" {
+			client = m.selectedClient
+		}
+		header += "\n" + "Role client: " + client + " · c to change"
+	}
 	button := "  [ Apply changes · preview first ]"
 	buttonStyle := resourceActionStyle
 	if m.selectionPreviewFocus {
@@ -327,4 +353,24 @@ func (m Model) renderSelection() string {
 	header, footer := m.resourceSelectionFrame(width)
 	body := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(mochaBlue).Padding(0, 1).Background(mochaMantle).Render(m.resourceList.View())
 	return m.renderBody(lipgloss.NewStyle().Padding(0, 2).Render(header + "\n" + body + "\n" + footer))
+}
+
+// selectedRoleClient exposes only the reviewed client of a selected role closure.
+func (m Model) selectedRoleClient() string {
+	pack := m.selectedPack()
+	if m.project || pack == nil {
+		return ""
+	}
+	surface := selectedSurface(*pack, m.surfaceIndex)
+	for _, resource := range pack.Resources {
+		if !m.resourceSelected(resource.Identity) {
+			continue
+		}
+		for _, projection := range resource.ClientProjections {
+			if projection.Surface == surface && slices.Contains(projection.Scopes, "global") {
+				return projection.Client
+			}
+		}
+	}
+	return ""
 }

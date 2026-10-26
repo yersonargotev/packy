@@ -197,7 +197,7 @@
             "surface": {
               "enum": [
                 "claude",
-                "codex"
+                "agents"
               ]
             },
             "resource": {
@@ -334,7 +334,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex"
+            "agents"
           ]
         },
         "intent_revision": {
@@ -692,6 +692,7 @@
         "roots"
       ],
       "properties": {
+        "client": { "const": "codex" },
         "mode": {
           "enum": [
             "all",

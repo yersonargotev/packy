@@ -593,7 +593,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 			}
 		}
 	}
-	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{ObservationOnly: true, Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
+	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{Client: selection.Client, ObservationOnly: true, Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
 	if inspectErr != nil {
 		return StatusEntry{}, inspectErr
 	}

@@ -15,7 +15,7 @@ readonly packages=(
   ./internal/ci
   ./internal/cli
   ./internal/claudesmoke
-  ./internal/codex
+  ./internal/agents
   ./internal/engrambin
   ./internal/localprojection
   ./internal/setuphealth

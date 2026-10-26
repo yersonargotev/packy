@@ -14,8 +14,8 @@ func TestResourceParseFailuresUseJSONLifecycleFailure(t *testing.T) {
 	opts := newSyntheticCLIFixture(t, terminal, pack).options
 	packID := pack.Manifest().ID
 	for _, args := range [][]string{
-		{"activate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
-		{"deactivate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
+		{"activate", packID, "--surface", "agents", "--resource", "malformed", "--json"},
+		{"deactivate", packID, "--surface", "agents", "--resource", "malformed", "--json"},
 	} {
 		out, err := executeCommand(t, NewRootCommand(opts), args...)
 		if err == nil {

@@ -54,7 +54,7 @@ func testCandidateAccessWithoutGit(t *testing.T, executable, assets string) {
 			}
 			protected := []string{filepath.Join(enclosing, ".git"), filepath.Join(workspace, "project"), filepath.Join(workspace, "config"), filepath.Join(workspace, "snapshots"), directory, foreign}
 			before := catalogTreeState(t, protected)
-			for _, host := range []string{"claude", "codex"} {
+			for _, host := range []string{"agents", "claude"} {
 				for _, operation := range [][]string{{"list", "--json"}, {"show", "alpha", "--surface", host, "--json"}, {"get", "skill", "alpha:root", "--surface", host, "--json"}} {
 					out, diagnostic, err := run(operation...)
 					if damage == "foreign projection" {
@@ -80,7 +80,7 @@ func testCandidateAccessWithoutGit(t *testing.T, executable, assets string) {
 			if !reflect.DeepEqual(before, catalogTreeState(t, protected)) {
 				t.Fatal("access changed project, enclosing Git, or foreign state")
 			}
-			for _, operation := range [][]string{{"install", "alpha", "--surface", "codex", "--dry-run", "--json"}, {"activate", "alpha", "--surface", "codex", "--dry-run", "--json"}, {"uninstall", "alpha", "--surface", "codex", "--json"}} {
+			for _, operation := range [][]string{{"install", "alpha", "--surface", "agents", "--dry-run", "--json"}, {"activate", "alpha", "--surface", "agents", "--dry-run", "--json"}, {"uninstall", "alpha", "--surface", "agents", "--json"}} {
 				beforeNative := catalogTreeState(t, []string{enclosing, directory, foreign})
 				out, diagnostic, err := run(operation...)
 				if err == nil || !strings.Contains(string(diagnostic), "candidate workspace") {
@@ -99,11 +99,11 @@ func testAccessIncompatibleDiscovery(t *testing.T, executable string, buildEnvir
 	editAccessManifest(t, project, "zulu", func(m map[string]any) {
 		r := accessCatalogSkill(m, "root")
 		delete(r, "on_demand")
-		r["bindings"] = r["bindings"].([]any)[:1] // Claude remains natively supported.
-		r["variants"] = r["variants"].([]any)[:1]
-		r["surface_exclusions"] = []any{map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed for Codex"}}
+		r["bindings"] = r["bindings"].([]any)[1:] // Claude remains natively supported.
+		r["variants"] = r["variants"].([]any)[1:]
+		r["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed for Agents"}}
 	})
-	if err := os.RemoveAll(filepath.Join(project, "packs/zulu/skills/root-codex")); err != nil {
+	if err := os.RemoveAll(filepath.Join(project, "packs/zulu/skills/root-agents")); err != nil {
 		t.Fatal(err)
 	}
 	assets, _ := buildAccessCatalog(t, executable, buildEnvironment, project, strings.Repeat("c", 40))
@@ -113,7 +113,7 @@ func testAccessIncompatibleDiscovery(t *testing.T, executable string, buildEnvir
 	run := func(args ...string) ([]byte, []byte, error) {
 		return runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}, args...)...)
 	}
-	for _, host := range []string{"claude", "codex"} {
+	for _, host := range []string{"agents", "claude"} {
 		out, diagnostic, err := run("show", "zulu", "--surface", host, "--json")
 		if err != nil {
 			t.Fatalf("incompatible discovery: %v %s %s", err, out, diagnostic)
@@ -131,14 +131,14 @@ func testAccessIncompatibleDiscovery(t *testing.T, executable string, buildEnvir
 			t.Fatalf("incompatible metadata: %+v", root)
 		}
 		code, message := "incompatible_resource", "reviewed"
-		if host == "codex" {
+		if host == "agents" {
 			code, message = "unsupported_surface", "excluded"
-			expected := &capabilitypack.SurfaceExclusion{Surface: "codex", Mode: "optional", Code: "unreviewed", Reason: "Not reviewed for Codex"}
+			expected := &capabilitypack.SurfaceExclusion{Surface: "agents", Mode: "optional", Code: "unreviewed", Reason: "Not reviewed for Agents"}
 			if !reflect.DeepEqual(root.Exclusion, expected) || !strings.Contains(root.Reason, expected.Reason) {
 				t.Fatalf("excluded metadata: %+v", root)
 			}
 		} else if root.Exclusion != nil {
-			t.Fatal("Claude inherited Codex exclusion")
+			t.Fatal("Claude inherited Agents exclusion")
 		}
 		out, diagnostic, err = run("get", "skill", "zulu:root", "--surface", host, "--json")
 		assertAccessFailure(t, out, diagnostic, err, code, message)

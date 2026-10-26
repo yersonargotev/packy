@@ -56,8 +56,8 @@ func ValidateRequest(qualified string, surface capabilitypack.Surface) error {
 	if !capabilitypack.ValidQualifiedSkill(qualified) {
 		return failure("invalid_identity", "skill must be qualified as <pack>:<skill> using lowercase kebab-case; run `packy list` and `packy show <pack>`")
 	}
-	if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceCodex {
-		return failure("unsupported_surface", "select an explicit supported surface with --surface codex or --surface claude (received %q)", surface)
+	if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceAgents {
+		return failure("unsupported_surface", "select an explicit supported surface with --surface agents or --surface claude (received %q)", surface)
 	}
 	return nil
 }

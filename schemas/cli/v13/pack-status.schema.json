@@ -120,7 +120,7 @@
             "surface": {
               "enum": [
                 "claude",
-                "codex"
+                "agents"
               ]
             },
             "resource": {
@@ -283,7 +283,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex"
+            "agents"
           ]
         },
         "intent": {
@@ -602,6 +602,7 @@
         "roots"
       ],
       "properties": {
+        "client": { "const": "codex" },
         "mode": {
           "enum": [
             "all",

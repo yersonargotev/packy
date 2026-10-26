@@ -12,7 +12,7 @@ import (
 )
 
 func TestIssue851ShortNamesPreserveMixedSurfaceDiscoveryAndOwnership(t *testing.T) {
-	for _, pair := range [][2]string{{"codex", "claude"}} {
+	for _, pair := range [][2]string{{"agents", "claude"}} {
 		for _, divergent := range []bool{false, true} {
 			for _, reverse := range []bool{false, true} {
 				for _, firstScope := range []string{"global", "project"} {
@@ -25,7 +25,7 @@ func TestIssue851ShortNamesPreserveMixedSurfaceDiscoveryAndOwnership(t *testing.
 						t.Run(name, func(t *testing.T) {
 							pack := testsupport.SkillVariants("short-names")
 							if divergent {
-								pack = testsupport.SkillVariants("short-names", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+								pack = testsupport.SkillVariants("short-names", testsupport.SurfaceAgents, testsupport.SurfaceClaude)
 							}
 							fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 							issue851EnablePackNaming(t, fixture.catalogRoot, pack.ID())
@@ -97,6 +97,9 @@ func issue851EnablePackNaming(t *testing.T, catalogRoot, packID string) {
 		}
 		for _, value := range resource["bindings"].([]any) {
 			binding := value.(map[string]any)
+			if binding["surface"] == "agents" {
+				binding["invocation"] = binding["name"]
+			}
 			binding["capabilities"] = []any{map[string]any{
 				"type": "skill-template", "skill_template": map[string]any{"naming": "pack"},
 			}}

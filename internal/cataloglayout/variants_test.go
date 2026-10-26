@@ -12,7 +12,7 @@ import (
 )
 
 func TestVariantCatalogClosesEveryReviewedBodyAndBuildsDeterministically(t *testing.T) {
-	fixture := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceCodex)
+	fixture := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceAgents)
 	root := t.TempDir()
 	if err := fixture.WriteCatalog(root); err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestVariantCatalogClosesEveryReviewedBodyAndBuildsDeterministically(t *test
 	for _, file := range pack.Files {
 		files[file.Path] = true
 	}
-	for _, body := range []string{"common", "claude", "codex"} {
+	for _, body := range []string{"common", "agents", "claude"} {
 		for _, file := range []string{"SKILL.md", "references/detail.md", "agents/openai.yaml"} {
 			if !files["skills/"+body+"/"+file] {
 				t.Fatalf("missing reviewed body %s/%s", body, file)
@@ -77,7 +77,7 @@ func TestVariantCatalogRejectsInvalidBodiesWithoutFallback(t *testing.T) {
 		{"false exact copy", func(v map[string]any, _ string) { v["origin"].(map[string]any)["relationship"] = "exact-copy" }, "exact-copy mismatch"},
 		{"null collection", func(v map[string]any, _ string) { v["notices"] = nil }, "must not be null"},
 		{"symlink variant", func(_ map[string]any, root string) {
-			target := filepath.Join(root, "skills/codex/references/detail.md")
+			target := filepath.Join(root, "skills/agents/references/detail.md")
 			if err := os.Remove(target); err != nil {
 				t.Fatal(err)
 			}
@@ -88,7 +88,7 @@ func TestVariantCatalogRejectsInvalidBodiesWithoutFallback(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := testsupport.SkillVariants("variants", testsupport.SurfaceCodex)
+			fixture := testsupport.SkillVariants("variants", testsupport.SurfaceAgents)
 			root := t.TempDir()
 			if err := fixture.WriteCatalog(root); err != nil {
 				t.Fatal(err)

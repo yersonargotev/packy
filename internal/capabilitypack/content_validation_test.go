@@ -233,7 +233,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
   "version": "1.0.0",
   "description": "Synthetic resource description fixture",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["claude"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [],
@@ -242,7 +242,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
       "kind": "agent", "id": "reviewer", "source": "agents/reviewer.md",
       "description": "Reviews a synthetic change", "mode": "subagent", "tools": [], "permissions": [],
       "requires": [], "conflicts": [],
-      "bindings": [{"surface": "codex", "projection": "agent", "name": "reviewer", "invocation": "$reviewer", "mode": "native", "sharing": "exclusive", "capabilities": []}],
+      "bindings": [{"surface": "claude", "projection": "agent", "name": "reviewer", "invocation": "$reviewer", "mode": "native", "sharing": "exclusive", "capabilities": []}],
       "surface_exclusions": []
     },
     {
@@ -253,13 +253,13 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
       "kind": "command", "id": "build", "source": "commands/build.md",
       "description": "Builds a synthetic target", "arguments": {"mode": "none"},
       "requires": [], "conflicts": [],
-      "bindings": [{"surface": "codex", "projection": "skill", "name": "build", "invocation": "$build", "mode": "degraded", "degradation": "codex-command-as-workflow-skill", "sharing": "exclusive", "capabilities": []}],
+      "bindings": [{"surface": "claude", "projection": "skill", "name": "build", "invocation": "/build", "mode": "native", "sharing": "exclusive", "capabilities": []}],
       "surface_exclusions": []
     },
     {
       "kind": "instruction", "id": "guidance", "source": "instructions/guidance.md",
       "description": "Projects synthetic guidance", "requires": [], "conflicts": [],
-      "bindings": [{"surface": "codex", "projection": "instruction", "name": "guidance", "invocation": "guidance", "mode": "native", "sharing": "shared", "capabilities": []}],
+      "bindings": [{"surface": "claude", "projection": "instruction", "name": "guidance", "invocation": "guidance", "mode": "native", "sharing": "shared", "capabilities": []}],
       "surface_exclusions": []
     },
     {
@@ -270,7 +270,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
     {
       "kind": "skill", "id": "api-design", "source": "skills/api-design",
       "description": "Designs a synthetic API", "requires": [], "conflicts": [],
-      "bindings": [{"surface": "codex", "projection": "skill", "name": "api-design", "invocation": "$api-design", "mode": "native", "sharing": "exclusive", "capabilities": []}],
+      "bindings": [{"surface": "claude", "projection": "skill", "name": "api-design", "invocation": "$api-design", "mode": "native", "sharing": "exclusive", "capabilities": []}],
       "surface_exclusions": []
     }
   ]
@@ -426,7 +426,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
   "version": "1.0.0",
   "description": "Example Pack",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": ["example-tool"],
   "origins": [],
@@ -440,7 +440,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
       "conflicts": [],
       "bindings": [
         {
-          "surface": "codex",
+          "surface": "agents",
           "projection": "instruction",
           "name": "guide",
           "invocation": "guide",
@@ -487,7 +487,7 @@ func writePortableFixture(t *testing.T, bundle, id, source string) {
 	if err := os.WriteFile(filepath.Join(packRoot, source), []byte("inert\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"schema_version":3,"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}]}`
+	manifest := `{"schema_version":3,"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["agents"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"agents","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}]}`
 	if err := os.WriteFile(filepath.Join(packRoot, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

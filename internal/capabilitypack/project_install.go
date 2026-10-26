@@ -257,6 +257,9 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 		}
 		selectedVersion = intent.Version
 		if request.Selection != nil {
+			if request.Selection.Client == "" {
+				request.Selection.Client = intent.Selection.Client
+			}
 			selectionChanged = digestJSON(intent.Selection) != digestJSON(*request.Selection)
 			intent.Selection = cloneSelection(*request.Selection)
 		}
@@ -522,6 +525,9 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
+	if err := validateSelectedClient(selectedPack, selection, request.Surface, "project"); err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
 	intentPack := selectedPack
 	aliases := cloneAliases(request.Aliases)
 	if err := canonicalizeAliases(&aliases); err != nil {
@@ -600,7 +606,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		targetKey := filepath.Clean(target)
 		for _, locked := range existingLock.Projections {
-			if filepath.Clean(locked.Target) == targetKey && (locked.Resource != resource || !projectProjectionOwnedByPack(locked, pack.ID)) {
+			independentInstruction := locked.Mode == "merge_marked_file" && projection.Action.Kind == ActionInstructionFile && independentAgentsInstructions(locked.Surface, locked.Resource, request.Surface, resource, target)
+			if filepath.Clean(locked.Target) == targetKey && !independentInstruction && (locked.Resource != resource || !projectProjectionOwnedByPack(locked, pack.ID)) {
 				blockers = append(blockers, ProjectInstallBlocker{Code: "projection_collision", Resource: resource, Target: target, Detail: "another installed Pack receipt owns the same project path", Remediation: "select a non-colliding resource root or assign an explicit alias"})
 				break
 			}
@@ -633,10 +640,10 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
-		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
+		if projection.Action.Kind == ActionAgentsProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o755
 		}
-		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionClaudeProjectInstruction {
+		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
 		} else if projection.Action.Kind == ActionClaudeProjectMCP {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
@@ -1060,12 +1067,9 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 	case "notice", "instruction":
 		return "merge_marked_file"
 	case "mcp_server":
-		if surface == SurfaceCodex {
-			return "merge_marked_file"
-		}
 		return "merge_structured_file"
 	case "skill":
-		if surface == SurfaceCodex || surface == SurfaceClaude {
+		if surface == SurfaceAgents || surface == SurfaceClaude {
 			return "copy_tree"
 		}
 	}
@@ -1152,10 +1156,26 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 	return lock, nil
 }
 
+// Agents instruction ownership is scoped to the resource's marked contribution,
+// not the whole shared document. Equal marker identities remain collisions.
+func independentAgentsInstructions(leftSurface Surface, left ResourceIdentity, rightSurface Surface, right ResourceIdentity, target string) bool {
+	return leftSurface == SurfaceAgents && rightSurface == SurfaceAgents &&
+		left.Kind == "instruction" && right.Kind == "instruction" && left.ID != right.ID &&
+		filepath.Clean(target) == "AGENTS.md"
+}
+
 func validateProjectReceipts(receipts []installedPackReceipt) error {
 	seen := map[string]bool{}
-	targetOwners := map[string]string{}
+	type targetOwner struct {
+		pack     string
+		surface  Surface
+		resource ResourceIdentity
+	}
+	targetOwners := map[string][]targetOwner{}
 	for i, receipt := range receipts {
+		if err := validateReceiptClient(receipt, "project"); err != nil {
+			return err
+		}
 		if err := ValidateSurface(receipt.Surface); err != nil {
 			return err
 		}
@@ -1218,10 +1238,12 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 				}
 			}
 			cleanTarget := filepath.Clean(projection.Target)
-			if owner, occupied := targetOwners[cleanTarget]; occupied && owner != receipt.Pack.ID && !noticeProjection {
-				return fmt.Errorf("project receipts for Packs %s and %s collide at %s", owner, receipt.Pack.ID, projection.Target)
+			for _, owner := range targetOwners[cleanTarget] {
+				if owner.pack != receipt.Pack.ID && !noticeProjection && !independentAgentsInstructions(owner.surface, owner.resource, receipt.Surface, identity, cleanTarget) {
+					return fmt.Errorf("project receipts for Packs %s and %s collide at %s", owner.pack, receipt.Pack.ID, projection.Target)
+				}
 			}
-			targetOwners[cleanTarget] = receipt.Pack.ID
+			targetOwners[cleanTarget] = append(targetOwners[cleanTarget], targetOwner{pack: receipt.Pack.ID, surface: receipt.Surface, resource: identity})
 			projectionSeen[projectionKey] = true
 		}
 	}
@@ -1229,10 +1251,14 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 }
 
 func mergeProjectReceiptSelections(left, right ResourceSelection) ResourceSelection {
-	if left.Mode == SelectionAll || right.Mode == SelectionAll {
-		return ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	client := left.Client
+	if client == "" {
+		client = right.Client
 	}
-	selection, _ := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: append(append([]ResourceIdentity(nil), left.Roots...), right.Roots...)})
+	if left.Mode == SelectionAll || right.Mode == SelectionAll {
+		return ResourceSelection{Client: client, Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	}
+	selection, _ := canonicalSelection(ResourceSelection{Client: client, Mode: SelectionCustom, Roots: append(append([]ResourceIdentity(nil), left.Roots...), right.Roots...)})
 	return selection
 }
 
@@ -1295,8 +1321,11 @@ func deriveProjectManifestPack(pack ProjectManifestPack) ProjectManifestPack {
 			pack.Version = value.Version
 		}
 		pack.Surfaces = append(pack.Surfaces, value.Surface)
+		if value.Selection.Client != "" {
+			combined.Client = value.Selection.Client
+		}
 		if value.Selection.Mode == SelectionAll {
-			combined = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+			combined = ResourceSelection{Client: combined.Client, Mode: SelectionAll, Roots: []ResourceIdentity{}}
 		} else if combined.Mode != SelectionAll {
 			combined.Roots = append(combined.Roots, value.Selection.Roots...)
 		}

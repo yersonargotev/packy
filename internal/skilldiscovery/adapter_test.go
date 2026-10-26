@@ -23,7 +23,7 @@ func putSkill(t *testing.T, root, name, body string) {
 }
 
 func TestSameSurfaceDiscoveryComparesCompleteTrees(t *testing.T) {
-	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceClaude} {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceAgents, capabilitypack.SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {
 			root := t.TempDir()
 			nativeRoot := filepath.Join(root, "native/skills")
@@ -63,7 +63,7 @@ func TestSameSurfaceDiscoveryComparesCompleteTrees(t *testing.T) {
 }
 
 func TestDiscoveryIgnoresOtherSurfacesAndRetiredRoots(t *testing.T) {
-	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceClaude} {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceAgents, capabilitypack.SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {
 			root := t.TempDir()
 			project := filepath.Join(root, "project")
@@ -71,11 +71,11 @@ func TestDiscoveryIgnoresOtherSurfacesAndRetiredRoots(t *testing.T) {
 				t.Fatal(err)
 			}
 			roots := map[capabilitypack.Surface]string{
-				capabilitypack.SurfaceCodex:        filepath.Join(root, "home/.agents/skills"),
+				capabilitypack.SurfaceAgents:       filepath.Join(root, "home/.agents/skills"),
 				capabilitypack.SurfaceClaude:       filepath.Join(root, "home/.claude/skills"),
 				capabilitypack.Surface("opencode"): filepath.Join(root, "config/opencode/skills"),
 			}
-			other := capabilitypack.SurfaceCodex
+			other := capabilitypack.SurfaceAgents
 			if surface == other {
 				other = capabilitypack.SurfaceClaude
 			}
@@ -109,7 +109,7 @@ func TestDiscoveryUsesFrontmatterAndStopsAtWorktreeBoundary(t *testing.T) {
 	putSkill(t, source, "guide", "desired")
 	outside := filepath.Join(root, ".agents/skills/guide")
 	putSkill(t, outside, "guide", "outside")
-	observer := Observer{Surface: capabilitypack.SurfaceCodex, WorkingDirectory: nested}
+	observer := Observer{Surface: capabilitypack.SurfaceAgents, WorkingDirectory: nested}
 	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{ID: "skill:guide", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: source, Target: filepath.Join(root, "home/.agents/skills/renamed")}}}}
 	facts, err := observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, inspection)
 	if err != nil || len(facts) != 0 {
@@ -131,7 +131,7 @@ func TestDesiredSameNameTreesCannotHideBehindDifferentTargets(t *testing.T) {
 	a, b := filepath.Join(root, "source-a"), filepath.Join(root, "source-b")
 	putSkill(t, a, "same", "one")
 	putSkill(t, b, "same", "two")
-	observer := Observer{Surface: capabilitypack.SurfaceCodex}
+	observer := Observer{Surface: capabilitypack.SurfaceAgents}
 	facts, err := observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{
 		{ID: "skill:one", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: a, Target: filepath.Join(root, "skills/one")}},
 		{ID: "skill:two", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: b, Target: filepath.Join(root, "skills/two")}},

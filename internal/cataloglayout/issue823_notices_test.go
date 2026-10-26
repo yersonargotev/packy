@@ -21,7 +21,7 @@ func TestIssue823NoticeVariantPreservesOriginalLegalTextAndAttribution(t *testin
 			}
 			packRoot := filepath.Join(root, "packs/legal")
 			if failure == "text" {
-				if err := os.WriteFile(filepath.Join(packRoot, "notices/codex.md"), []byte("Replacement omits original terms\n"), 0644); err != nil {
+				if err := os.WriteFile(filepath.Join(packRoot, "notices/agents.md"), []byte("Replacement omits original terms\n"), 0644); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -105,7 +105,7 @@ func writeCatalogPack(t *testing.T, root, id, version, content, source string) {
   "version": %q,
   "description": "Fixture Pack",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [],
@@ -117,7 +117,7 @@ func writeCatalogPack(t *testing.T, root, id, version, content, source string) {
     "requires": [],
     "conflicts": [],
     "bindings": [{
-      "surface": "codex",
+      "surface": "agents",
       "projection": "skill",
       "name": %q,
       "invocation": %q,

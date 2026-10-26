@@ -1,8 +1,11 @@
 # Packy
 
 Packy is a lightweight installer and configurator for reviewed capability
-Packs. It installs selected Pack resources for Codex and Claude Code
-without becoming an agent runtime.
+Packs. It installs selected Pack resources for Agents and Claude
+without becoming an agent runtime. Agents supplies shared global/project skills
+and project-only `AGENTS.md` contributions. It does not choose a runtime client
+or write Codex settings. Required Codex roles need an explicitly reviewed global
+projection and `--client codex`; see [custom agents](docs/capability-packs.md#explicit-custom-agent-projections).
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source for reviewed Packs. The
@@ -24,9 +27,9 @@ brew install yersonargotev/tap/packy
 packy init
 packy list
 packy show engram
-packy activate engram --surface codex --dry-run
-packy activate engram --surface codex
-packy status engram --surface codex
+packy activate engram --surface agents --dry-run
+packy activate engram --surface agents
+packy status engram --surface agents
 ```
 
 Running `packy` without arguments opens the full-screen interactive interface
@@ -69,7 +72,7 @@ Before replacing a `v0.1.x` installation, follow the warning-first
 [one-time v0.2 reset](docs/reset-v0.2.md). Packy intentionally provides no
 automatic migration or cleanup command.
 
-If your current binary supports OpenCode, or your installations use the
+If your installations use the retired `codex` or `opencode` surfaces, or the
 release-coupled Installed Source model, follow the [clean Catalog adoption procedure](docs/catalog-adoption.md): use
 the previous Packy to inventory, preview, deactivate, and uninstall its
 receipts before replacing the binary, then initialize and explicitly reinstall
@@ -101,9 +104,9 @@ Omitting `--resource` selects the complete Pack. Repeat `--resource` to select
 specific resource roots plus their intra-Pack dependencies:
 
 ```sh
-packy activate <pack> --surface codex \
+packy activate <pack> --surface agents \
   --resource <kind>:<id> --dry-run
-packy activate <pack> --surface codex \
+packy activate <pack> --surface agents \
   --resource <kind>:<id>
 ```
 
@@ -167,7 +170,7 @@ configuration. Tests and manual verification must sandbox `HOME` and
 ## Pack authoring
 
 Use [On-demand Skill Access](docs/on-demand-skills.md) to obtain a reviewed skill
-with `packy get skill <pack>:<skill> --surface codex` (or `claude`) without
+with `packy get skill <pack>:<skill> --surface agents` (or `claude`) without
 installation or workflow execution.
 
 Add and update Packs in the public [Catalog Project](docs/catalog-project.md).

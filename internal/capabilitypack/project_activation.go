@@ -261,25 +261,12 @@ func (f Facade) ApproveProjectActivation(preview JSONProjectActivationPreview, c
 	return ProjectActivationApproval{Category: category, Digest: preview.Digest}
 }
 
-func projectActivationEffectPreview(action ProjectionAction) (ProjectActivationEffectPreview, bool) {
-	effect := ProjectActivationEffectPreview{Action: action.Kind, Identity: action.Version, Observation: projectActivationActionObservation(action), AdapterProvenance: action.AdapterProvenance, Consent: action.Consent}
-	switch action.Kind {
-	case ActionCodexProjectTrust:
-		effect.Category, effect.Target = ProjectActivationTrust, "<codex-home>/config.toml"
-	default:
-		return ProjectActivationEffectPreview{}, false
-	}
-	return effect, true
+func projectActivationEffectPreview(_ ProjectionAction) (ProjectActivationEffectPreview, bool) {
+	return ProjectActivationEffectPreview{}, false
 }
 
-func projectActivationEffectsConverged(surface Surface, observation SurfaceInspection) bool {
-	if len(observation.ProjectActivationActions) != 0 {
-		return false
-	}
-	if surface == SurfaceCodex {
-		return observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
-	}
-	return true
+func projectActivationEffectsConverged(_ Surface, observation SurfaceInspection) bool {
+	return len(observation.ProjectActivationActions) == 0
 }
 
 func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActivationApplyRequest) (ProjectActivationApplyResult, error) {
@@ -674,16 +661,8 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID stri
 	return document, true, nil
 }
 
-func validProjectActivationEffectReceipt(effect ProjectActivationEffectReceipt) bool {
-	if (effect.Surface != SurfaceCodex && effect.Surface != SurfaceClaude) || !filepath.IsAbs(effect.Target) || effect.ContributionIdentity == "" || effect.AdapterProvenance == "" || effect.PriorState != "absent" {
-		return false
-	}
-	switch effect.Action {
-	case ActionCodexProjectTrust:
-		return effect.StartMarker != "" && effect.EndMarker != ""
-	default:
-		return false
-	}
+func validProjectActivationEffectReceipt(_ ProjectActivationEffectReceipt) bool {
+	return false // No current surface owns personal configuration effects.
 }
 
 func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []ProjectActivationEffectReceipt) error {

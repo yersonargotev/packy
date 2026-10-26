@@ -15,9 +15,9 @@ import (
 )
 
 func TestCandidateTransitionPreservesInstalledBaselineForTargetedUpdate(t *testing.T) {
-	pack := testsupport.SkillVariants("transition", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+	pack := testsupport.SkillVariants("transition", testsupport.SurfaceAgents, testsupport.SurfaceClaude)
 	baseline, digest := candidateTestAssets(t, strings.Repeat("a", 40), pack)
-	candidate, _ := candidateTestAssets(t, strings.Repeat("b", 40), pack.WithVersion("2.0.0").WithVariantBytes(testsupport.SurfaceCodex, "references/detail.md", []byte("updated codex\n")))
+	candidate, _ := candidateTestAssets(t, strings.Repeat("b", 40), pack.WithVersion("2.0.0").WithVariantBytes(testsupport.SurfaceAgents, "references/detail.md", []byte("updated agents\n")))
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	opts := Options{Terminal: &fakeTerminal{interactive: true, approve: true}}
 	run := func(assets string, args ...string) string {
@@ -29,7 +29,7 @@ func TestCandidateTransitionPreservesInstalledBaselineForTargetedUpdate(t *testi
 		}
 		return out
 	}
-	run(baseline, "install", pack.ID(), "--surface", "codex")
+	run(baseline, "install", pack.ID(), "--surface", "agents")
 	run(baseline, "install", pack.ID(), "--surface", "claude")
 	project := filepath.Join(workspace, "project")
 	before := snapshotTree(t, project)
@@ -38,12 +38,12 @@ func TestCandidateTransitionPreservesInstalledBaselineForTargetedUpdate(t *testi
 		t.Fatalf("transition changed installed baseline: %s", out)
 	}
 	claude := snapshotTree(t, filepath.Join(project, ".claude"))
-	run(candidate, "update", pack.ID(), "--surface", "codex", "--project")
+	run(candidate, "update", pack.ID(), "--surface", "agents", "--project")
 	if snapshotTree(t, filepath.Join(project, ".claude")) != claude {
 		t.Fatal("targeted update changed Claude")
 	}
 	run(candidate, "uninstall", pack.ID(), "--surface", "claude")
-	run(candidate, "uninstall", pack.ID(), "--surface", "codex")
+	run(candidate, "uninstall", pack.ID(), "--surface", "agents")
 }
 
 func TestCandidateTransitionOutputFailurePreservesPriorUsableWorkspace(t *testing.T) {
@@ -92,13 +92,13 @@ func candidateTestAssets(t *testing.T, commit string, pack testsupport.Fixture) 
 }
 
 func TestCandidateGlobalLifecycleUsesOnlyOwnedDisposableRoots(t *testing.T) {
-	pack := testsupport.SkillVariants("global", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+	pack := testsupport.SkillVariants("global", testsupport.SurfaceAgents, testsupport.SurfaceClaude)
 	assets, _ := candidateTestAssets(t, strings.Repeat("a", 40), pack)
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	before := snapshotTree(t, fixture.home)
 	for _, operation := range []string{"activate", "deactivate"} {
-		args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", operation, pack.ID(), "--surface", "codex"}
+		args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", operation, pack.ID(), "--surface", "agents"}
 		if out, err := executeCommand(t, NewRootCommand(fixture.options), args...); err != nil {
 			t.Fatalf("%s: %v\n%s", operation, err, out)
 		}
