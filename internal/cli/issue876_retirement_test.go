@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -117,6 +118,34 @@ func TestIssue876TUIRejectsRetiredSurfaceBeforeObservation(t *testing.T) {
 			}
 			if snapshotTree(t, fixture.home) != before {
 				t.Fatal("invalid TUI request mutated user state")
+			}
+		}
+	}
+}
+
+func TestIssue876RemainingSurfacesKeepExplicitlyEmptyReadinessThroughProjectLifecycle(t *testing.T) {
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, testsupport.SkillVariants("empty-readiness"))
+	path := filepath.Join(fixture.catalogRoot, "packs", "empty-readiness", "pack.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["readiness_obligations"] = []any{}
+	data, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, surface := range []string{"codex", "claude"} {
+		for _, args := range [][]string{{"install", "empty-readiness", "--surface", surface}, {"verify", "--json"}, {"uninstall", "empty-readiness", "--surface", surface}} {
+			if out, err := executeCommand(t, NewRootCommand(fixture.options), args...); err != nil {
+				t.Fatalf("%v: %v %s", args, err, out)
 			}
 		}
 	}
