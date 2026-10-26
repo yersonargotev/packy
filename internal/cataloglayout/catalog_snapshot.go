@@ -244,8 +244,11 @@ func validateCatalogSnapshotInputs(projectRoot string, validation CatalogValidat
 	if strings.TrimSpace(projectRoot) == "" || strings.TrimSpace(outputDir) == "" {
 		return fmt.Errorf("Catalog Snapshot project and output paths are required")
 	}
-	if !catalogRepositoryPattern.MatchString(source.Repository) || !fullCommitPattern.MatchString(source.Commit) || !builderIdentityPattern.MatchString(source.Builder) {
-		return fmt.Errorf("Catalog Snapshot source and builder must name repositories and full commits")
+	if !catalogRepositoryPattern.MatchString(source.Repository) || !fullCommitPattern.MatchString(source.Commit) {
+		return fmt.Errorf("Catalog Snapshot source must name a repository and full commit")
+	}
+	if !builderIdentityPattern.MatchString(source.Builder) {
+		return fmt.Errorf("Catalog Snapshot builder identity %q is invalid; use a release-stamped Packy binary with an embedded full source commit and run `packy version --json` to inspect source_commit", source.Builder)
 	}
 	if len(validation.Packs) == 0 {
 		return fmt.Errorf("Catalog Snapshot requires a complete non-empty Catalog Project validation")
