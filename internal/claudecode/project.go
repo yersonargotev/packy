@@ -211,7 +211,8 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 			return capabilitypack.SurfaceInspection{}, err
 		}
 		action := capabilitypack.ProjectionAction{ID: locked.Resource.String(), Surface: capabilitypack.SurfaceClaude, Target: target, Command: locked.Command, Args: append([]string(nil), locked.Args...), PreviewOnly: true}
-		observed, exists := "missing", false
+		var observed string
+		var exists bool
 		var err error
 		switch locked.Resource.Kind {
 		case "skill":
