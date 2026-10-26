@@ -55,6 +55,7 @@ const (
 )
 
 type Resource struct {
+	PluginExports     PluginExports
 	OnDemand          *OnDemandSkill
 	Variants          []ResourceVariant
 	Origin            *ResourceOrigin
@@ -703,6 +704,7 @@ func clonePack(pack Pack) Pack {
 	pack.Requires.Tools = slices.Clone(pack.Requires.Tools)
 	pack.Resources = slices.Clone(pack.Resources)
 	for i := range pack.Resources {
+		pack.Resources[i].PluginExports = clonePluginExports(pack.Resources[i].PluginExports)
 		pack.Resources[i].OnDemand = cloneOnDemand(pack.Resources[i].OnDemand)
 		pack.Resources[i].Variants = cloneVariants(pack.Resources[i].Variants)
 		if pack.Resources[i].Origin != nil {
@@ -889,6 +891,9 @@ func DecodeRuntimeEvidence(data []byte) (RuntimeEvidence, error) {
 }
 
 func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []OptionalMode) error {
+	if err := validatePluginExports(resource); err != nil {
+		return err
+	}
 	if err := validateOnDemand(resource); err != nil {
 		return err
 	}
@@ -1437,6 +1442,7 @@ func validatePackResourceSources(pack Pack, fallbackRoot string) error {
 	var bodies []Resource
 	for _, resource := range pack.Resources {
 		bodies = append(bodies, DeclaredResourceBodies(resource)...)
+		bodies = append(bodies, PluginExportBodies(resource)...)
 	}
 	for _, resource := range bodies {
 		root := resource.CatalogRootOr(fallbackRoot)

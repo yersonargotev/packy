@@ -18,16 +18,16 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "candidate --snapshot <assets-directory> --workspace <new-directory> -- <operation> [args...]",
 		Short: "Exercise a local candidate in an isolated authoring workspace",
-		Long:  "Exercise local snapshot assets without official publisher authority. Use list, show, get, install, verify, uninstall, update, activate, deactivate, or explicit snapshot transition. All lifecycle roots are disposable and owned by the workspace. Normal interactive approval is required for Apply; JSON is never consent. Host execution and personal project activation are unavailable.",
+		Long:  "Exercise local snapshot assets without official publisher authority. Use list, show, get, export, install, verify, uninstall, update, activate, deactivate, or explicit snapshot transition. All lifecycle roots are disposable and owned by the workspace. Normal interactive approval is required for Apply; JSON is never consent. Host execution and personal project activation are unavailable.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.ArgsLenAtDash() != 0 || len(args) == 0 {
 				return errors.New("candidate requires -- followed by a supported operation")
 			}
 			switch args[0] {
-			case "list", "show", "get", "install", "verify", "uninstall", "update", "activate", "deactivate", "transition":
+			case "list", "show", "get", "export", "install", "verify", "uninstall", "update", "activate", "deactivate", "transition":
 				return nil
 			default:
-				return fmt.Errorf("unsupported candidate operation %q; use list, show, get, install, verify, uninstall, update, activate, deactivate, or transition", args[0])
+				return fmt.Errorf("unsupported candidate operation %q; use list, show, get, export, install, verify, uninstall, update, activate, deactivate, or transition", args[0])
 			}
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,7 +43,7 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 				return executeCandidateTransition(cmd, assetsRoot, workspaceRoot, args[1:])
 			}
 			open := catalogcandidate.Open
-			if args[0] == "list" || args[0] == "show" || args[0] == "get" {
+			if args[0] == "list" || args[0] == "show" || args[0] == "get" || args[0] == "export" {
 				open = catalogcandidate.OpenAccess
 			}
 			workspace, err := open(cmd.Context(), assetsRoot, workspaceRoot)
@@ -75,7 +75,7 @@ func newCatalogCandidateCommand(opts Options) *cobra.Command {
 				}
 			}
 			root.AddCommand(activate, deactivate)
-			root.AddCommand(newGetCommand(isolated, resolver))
+			root.AddCommand(newGetCommand(isolated, resolver), newPluginExportCommand(isolated, resolver))
 			root.AddCommand(newPackListCommand(isolated, resolver), newPackShowCommand(isolated, resolver), newPackInstallCommand(isolated, resolver), newProjectVerifyCommand(isolated.Getwd), newPackUninstallCommand(isolated, resolver), newPackUpdateCommand(isolated, resolver))
 			root.SetIn(cmd.InOrStdin())
 			root.SetOut(cmd.OutOrStdout())

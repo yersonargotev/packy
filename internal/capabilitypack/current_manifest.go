@@ -41,6 +41,7 @@ type managedOriginWire struct {
 }
 
 type currentResourceWire struct {
+	PluginExports     PluginExports      `json:"plugin_exports,omitempty"`
 	OnDemand          json.RawMessage    `json:"on_demand,omitempty"`
 	Variants          ResourceVariants   `json:"variants,omitempty"`
 	Origin            *ResourceOrigin    `json:"origin,omitempty"`
@@ -134,8 +135,9 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 			return Pack{}, fmt.Errorf("Pack %q resource %d: %w", raw.ID, i, err)
 		}
 		pack.Resources = append(pack.Resources, Resource{
-			OnDemand: onDemand,
-			Kind:     wire.Kind, ID: wire.ID, Source: wire.Source,
+			PluginExports: wire.PluginExports,
+			OnDemand:      onDemand,
+			Kind:          wire.Kind, ID: wire.ID, Source: wire.Source,
 			Variants: wire.Variants, Origin: wire.Origin,
 			Description: wire.Description, Mode: wire.Mode,
 			Tools: wire.Tools, Permissions: wire.Permissions,

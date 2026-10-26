@@ -32,19 +32,20 @@ func (v *ResourceVariants) UnmarshalJSON(data []byte) error {
 // ResourceVariant replaces explicitly present typed fields for one surface.
 // Pointer fields distinguish inheritance from intentional empty values.
 type ResourceVariant struct {
-	OnDemand    *OnDemandSkill  `json:"on_demand,omitempty"`
-	Surface     Surface         `json:"surface"`
-	Description *string         `json:"description,omitempty"`
-	Source      *string         `json:"source,omitempty"`
-	Origin      *ResourceOrigin `json:"origin,omitempty"`
-	Notices     *[]string       `json:"notices,omitempty"`
-	Requires    *[]string       `json:"requires,omitempty"`
-	Conflicts   *[]string       `json:"conflicts,omitempty"`
-	Mode        *string         `json:"mode,omitempty"`
-	Tools       *[]string       `json:"tools,omitempty"`
-	Permissions *[]string       `json:"permissions,omitempty"`
-	License     *string         `json:"license,omitempty"`
-	Attribution *string         `json:"attribution,omitempty"`
+	PluginExports *PluginExports  `json:"plugin_exports,omitempty"`
+	OnDemand      *OnDemandSkill  `json:"on_demand,omitempty"`
+	Surface       Surface         `json:"surface"`
+	Description   *string         `json:"description,omitempty"`
+	Source        *string         `json:"source,omitempty"`
+	Origin        *ResourceOrigin `json:"origin,omitempty"`
+	Notices       *[]string       `json:"notices,omitempty"`
+	Requires      *[]string       `json:"requires,omitempty"`
+	Conflicts     *[]string       `json:"conflicts,omitempty"`
+	Mode          *string         `json:"mode,omitempty"`
+	Tools         *[]string       `json:"tools,omitempty"`
+	Permissions   *[]string       `json:"permissions,omitempty"`
+	License       *string         `json:"license,omitempty"`
+	Attribution   *string         `json:"attribution,omitempty"`
 }
 
 func (v *ResourceVariant) UnmarshalJSON(data []byte) error {
@@ -96,6 +97,10 @@ func cloneVariants(values []ResourceVariant) []ResourceVariant {
 	result := append([]ResourceVariant{}, values...)
 	for i := range result {
 		v := &result[i]
+		if v.PluginExports != nil {
+			value := clonePluginExports(*v.PluginExports)
+			v.PluginExports = &value
+		}
 		v.OnDemand = cloneOnDemand(v.OnDemand)
 		if v.Description != nil {
 			value := *v.Description
@@ -157,6 +162,9 @@ func ResolveResourceForSurface(resource Resource, surface Surface) Resource {
 	for _, variant := range result.Variants {
 		if variant.Surface != surface {
 			continue
+		}
+		if variant.PluginExports != nil {
+			result.PluginExports = clonePluginExports(*variant.PluginExports)
 		}
 		if variant.OnDemand != nil {
 			result.OnDemand = cloneOnDemand(variant.OnDemand)

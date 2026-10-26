@@ -63,22 +63,24 @@ func declaredBodies(resources []Resource) []Resource {
 	var bodies []Resource
 	for _, resource := range resources {
 		common := capabilitypack.Resource{
-			OnDemand:    resource.OnDemand,
-			Description: resource.Description,
-			Source:      resource.Source,
-			Origin:      resource.Origin,
-			Notices:     resource.Notices,
-			Requires:    resource.Requires,
-			Conflicts:   resource.Conflicts,
-			Mode:        resource.Mode,
-			Tools:       resource.Tools,
-			Permissions: resource.Permissions,
-			License:     resource.License,
-			Attribution: resource.Attribution,
-			Kind:        resource.Kind, ID: resource.ID, Variants: resource.Variants,
+			PluginExports: resource.PluginExports,
+			OnDemand:      resource.OnDemand,
+			Description:   resource.Description,
+			Source:        resource.Source,
+			Origin:        resource.Origin,
+			Notices:       resource.Notices,
+			Requires:      resource.Requires,
+			Conflicts:     resource.Conflicts,
+			Mode:          resource.Mode,
+			Tools:         resource.Tools,
+			Permissions:   resource.Permissions,
+			License:       resource.License,
+			Attribution:   resource.Attribution,
+			Kind:          resource.Kind, ID: resource.ID, Variants: resource.Variants,
 		}
 		for _, effective := range capabilitypack.DeclaredResourceBodies(common) {
 			body := resource
+			body.PluginExports = effective.PluginExports
 			body.OnDemand = effective.OnDemand
 			body.Variants = nil
 			body.Description = effective.Description
@@ -135,4 +137,20 @@ func (resource *Resource) UnmarshalJSON(data []byte) error {
 	*resource = Resource(value.wire)
 	resource.OnDemand = contract
 	return nil
+}
+
+// allDeclaredBodies includes format adaptations in provenance and closure checks.
+func allDeclaredBodies(resources []Resource) []Resource {
+	bodies := declaredBodies(resources)
+	for _, resource := range resources {
+		common := capabilitypack.Resource{Kind: resource.Kind, ID: resource.ID, Source: resource.Source, Origin: resource.Origin, Notices: resource.Notices, PluginExports: resource.PluginExports, Variants: resource.Variants}
+		for _, adaptation := range capabilitypack.PluginExportBodies(common) {
+			body := resource
+			body.Source, body.Origin, body.Notices = adaptation.Source, adaptation.Origin, adaptation.Notices
+			body.PluginExports = nil
+			body.Variants = nil
+			bodies = append(bodies, body)
+		}
+	}
+	return bodies
 }

@@ -267,6 +267,14 @@ func renderDirectives(data []byte, names map[string]string) ([]byte, error) {
 	return result, nil
 }
 
+// RenameFrontmatterName changes only the name scalar, retaining all other metadata bytes.
+func RenameFrontmatterName(data []byte, effectiveName string) ([]byte, error) {
+	if !logicalIDPattern.MatchString(effectiveName) || len(effectiveName) > 64 {
+		return nil, fmt.Errorf("invalid skill name %q", effectiveName)
+	}
+	return renderFrontmatterName(data, effectiveName)
+}
+
 func renderFrontmatterName(data []byte, effectiveName string) ([]byte, error) {
 	header, headerOffset, err := frontmatter(data)
 	if err != nil {

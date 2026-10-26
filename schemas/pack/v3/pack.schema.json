@@ -686,6 +686,9 @@
         },
         "on_demand": {
           "$ref": "#/$defs/onDemandSkill"
+        },
+        "plugin_exports": {
+          "$ref": "#/$defs/pluginExports"
         }
       },
       "allOf": [
@@ -1061,10 +1064,12 @@
               "variants": {
                 "items": {
                   "properties": {
-                    "on_demand": false
+                    "on_demand": false,
+                    "plugin_exports": false
                   }
                 }
-              }
+              },
+              "plugin_exports": false
             }
           }
         },
@@ -1161,6 +1166,9 @@
         },
         "on_demand": {
           "$ref": "#/$defs/onDemandSkill"
+        },
+        "plugin_exports": {
+          "$ref": "#/$defs/pluginExports"
         }
       }
     },
@@ -1225,6 +1233,196 @@
             }
           }
         }
+      }
+    },
+    "pluginExports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "format",
+          "name",
+          "prerequisites",
+          "references",
+          "roles"
+        ],
+        "properties": {
+          "format": {
+            "const": "agent-plugins"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^/\\\\:\\s]+(?:/[^/\\\\:\\s]+)*$",
+            "not": {
+              "pattern": "(^|/)\\.{1,2}(/|$)"
+            }
+          },
+          "origin": {
+            "$ref": "#/$defs/resourceOrigin"
+          },
+          "prerequisites": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "file",
+                "target",
+                "kind"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "file": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^/\\\\:\\s]+(?:/[^/\\\\:\\s]+)*$",
+                  "not": {
+                    "pattern": "(^|/)\\.{1,2}(/|$)"
+                  }
+                },
+                "target": {
+                  "type": "string",
+                  "pattern": "^(skill|asset|notice):[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "kind": {
+                  "enum": [
+                    "name",
+                    "path",
+                    "invocation"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "invocation"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "target": {
+                        "pattern": "^skill:"
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "value": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "name"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "target": {
+                        "pattern": "^skill:"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "resource",
+                "resolution",
+                "description"
+              ],
+              "properties": {
+                "resource": {
+                  "type": "string",
+                  "pattern": "^agent:[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "resolution": {
+                  "enum": [
+                    "external",
+                    "adapted"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "origin"
+              ]
+            },
+            "then": {
+              "required": [
+                "source"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "roles": {
+                  "contains": {
+                    "properties": {
+                      "resolution": {
+                        "const": "adapted"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "source"
+              ]
+            }
+          }
+        ]
       }
     }
   }
