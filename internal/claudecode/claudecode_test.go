@@ -37,20 +37,6 @@ func TestVersionCompatibilityMatrix(t *testing.T) {
 	}
 }
 
-func TestUserMCPObservationIsStaticAndRedactedIdentity(t *testing.T) {
-	home := t.TempDir()
-	path := filepath.Join(home, ".claude.json")
-	os.WriteFile(path, []byte(`{"mcpServers":{"memory":{"command":"engram","args":["mcp"],"env":{"TOKEN":"secret"}}}}`), 0600)
-	r := &recordingRunner{}
-	o := ObserveUserMCP(path, "memory")
-	if !o.Present || len(r.calls) != 0 {
-		t.Fatalf("observation=%+v calls=%d", o, len(r.calls))
-	}
-	if strings.Contains(o.DefinitionFingerprint, "secret") {
-		t.Fatal("fingerprint rendered secret")
-	}
-}
-
 func TestInstructionUpsertPreservesForeignAndOtherContributorBytes(t *testing.T) {
 	doc := "foreign before\n" + instructionStart + "\n<!-- contributor:pack:other:r -->\nold\n<!-- /contributor:pack:other:r -->\n" + instructionEnd + "\nforeign after\n"
 	got, err := UpsertInstructionContribution(doc, InstructionContribution{ContributorID: "pack:p:r", Content: "new"})
@@ -91,24 +77,24 @@ func TestApplyRejectsUnsealedAndStaleActions(t *testing.T) {
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)
 	a := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{}, StaticOwnershipSnapshot(OwnershipSnapshot{}))
-	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{{ID: "x", Kind: "foreign", Target: layout.SettingsFile}}); err == nil {
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{{ID: "x", Kind: "foreign", Target: layout.InstructionsFile}}); err == nil {
 		t.Fatal("unsealed action accepted")
 	}
 	os.MkdirAll(layout.ConfigDir, 0700)
-	os.WriteFile(layout.SettingsFile, []byte("old"), 0600)
-	err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{{ID: "hook:x", Kind: ActionCommandHook, Target: layout.SettingsFile, Content: "new", Command: Fingerprint([]byte("prior"))}})
+	os.WriteFile(layout.InstructionsFile, []byte("old"), 0600)
+	err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{{ID: "instruction:x", Kind: ActionInstructionContribution, Target: layout.InstructionsFile, Content: "new", Command: Fingerprint([]byte("prior"))}})
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("stale action error = %v", err)
 	}
-	b, _ := os.ReadFile(layout.SettingsFile)
+	b, _ := os.ReadFile(layout.InstructionsFile)
 	if string(b) != "old" {
 		t.Fatal("stale action mutated document")
 	}
 }
 
 func TestCommandDescriptionDoesNotRenderEnvironment(t *testing.T) {
-	c := Command{Env: []string{"TOKEN=secret"}, Description: "configure redacted MCP"}
-	if strings.Contains(c.String(), "secret") || c.String() != "configure redacted MCP" {
+	c := Command{Env: []string{"TOKEN=secret"}, Description: "inspect Claude version"}
+	if strings.Contains(c.String(), "secret") || c.String() != "inspect Claude version" {
 		t.Fatal(c.String())
 	}
 }

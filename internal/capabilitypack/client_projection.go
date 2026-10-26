@@ -1,6 +1,9 @@
 package capabilitypack
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // validateSelectedClient runs before any surface observation or mutation. A
 // required native role cannot be silently dropped from the selected closure.
@@ -22,13 +25,19 @@ func validateSelectedClient(pack Pack, selection ResourceSelection, surface Surf
 			if surface == SurfaceAgents && resource.Kind == "instruction" && scope != "project" {
 				return fmt.Errorf("Agents instructions are project-only; install %s in a project or select only skills and reviewed roles", resource.ID)
 			}
-			if surface != SurfaceAgents || resource.Kind != "agent" {
+			if resource.Kind != "agent" {
 				continue
 			}
 			if err := validateClientProjection(resource.Kind, binding); err != nil {
 				return err
 			}
 			projection := binding.ClientProjection
+			if surface == SurfaceClaude {
+				if !slices.Contains(projection.Scopes, scope) {
+					return fmt.Errorf("required role %s targets client claude but does not support %s scope", resource.ID, scope)
+				}
+				continue
+			}
 			if scope != "global" {
 				return fmt.Errorf("required role %s targets codex at global scope; project Codex roles are unsupported", resource.ID)
 			}
@@ -68,6 +77,9 @@ func validateReceiptClient(receipt installedPackReceipt, scope string) error {
 	}
 	roleSelected := false
 	for _, resource := range receipt.Resources {
+		if resource.Kind == "mcp_server" || resource.Kind == "command" || resource.Kind == "lifecycle" {
+			return fmt.Errorf("retired %s receipt is unsupported", resource.Kind)
+		}
 		if receipt.Surface != SurfaceAgents {
 			continue
 		}
@@ -81,8 +93,6 @@ func validateReceiptClient(receipt installedPackReceipt, scope string) error {
 			if scope != "project" {
 				return fmt.Errorf("Agents instruction receipt is project-only")
 			}
-		case "mcp_server", "command", "lifecycle":
-			return fmt.Errorf("Agents %s receipt is unsupported", resource.Kind)
 		}
 	}
 	if receipt.Selection.Client != "" && !roleSelected {

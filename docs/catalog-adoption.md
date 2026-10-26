@@ -1,7 +1,8 @@
 # Adopt a new catalog generation
 
 Packy does not convert installations created by an incompatible generation.
-This includes retired `codex` and OpenCode surface contracts, the legacy Installed Source model,
+This includes retired `codex` and OpenCode surface contracts, direct MCP/hook/command
+projections, the legacy Installed Source model,
 and Catalog Snapshot schema v1/v2. Adopt the current catalog with a clean,
 explicit handoff. Keep the previous Packy binary and every source directory or
 retained snapshot it references until the handoff is complete.
@@ -39,6 +40,15 @@ publication against the released immutable engine revision. These instructions
 do not assert that either release or catalog publication has already happened.
 Do not perform the handoff until that compatible engine/catalog pair is
 available.
+
+## Retired Claude runtime projections
+
+Use the same previous-binary handoff for Claude installations containing direct
+MCP, hook, command, or obsolete lifecycle resources. The new contract keeps
+native instructions, skills, and reviewed custom agents; it does not read or
+remove retired resource receipts or convert commands into skills. Preview
+removal with the binary that owns those receipts before replacing it, preserving
+unrelated `.claude` configuration and the mixed user store.
 
 ## 1. Inventory with the previous Packy
 

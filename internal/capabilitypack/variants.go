@@ -32,22 +32,19 @@ func (v *ResourceVariants) UnmarshalJSON(data []byte) error {
 // ResourceVariant replaces explicitly present typed fields for one surface.
 // Pointer fields distinguish inheritance from intentional empty values.
 type ResourceVariant struct {
-	OnDemand    *OnDemandSkill    `json:"on_demand,omitempty"`
-	Surface     Surface           `json:"surface"`
-	Description *string           `json:"description,omitempty"`
-	Source      *string           `json:"source,omitempty"`
-	Origin      *ResourceOrigin   `json:"origin,omitempty"`
-	Notices     *[]string         `json:"notices,omitempty"`
-	Requires    *[]string         `json:"requires,omitempty"`
-	Conflicts   *[]string         `json:"conflicts,omitempty"`
-	Command     *string           `json:"command,omitempty"`
-	Args        *[]string         `json:"args,omitempty"`
-	Mode        *string           `json:"mode,omitempty"`
-	Tools       *[]string         `json:"tools,omitempty"`
-	Permissions *[]string         `json:"permissions,omitempty"`
-	Arguments   *CommandArguments `json:"arguments,omitempty"`
-	License     *string           `json:"license,omitempty"`
-	Attribution *string           `json:"attribution,omitempty"`
+	OnDemand    *OnDemandSkill  `json:"on_demand,omitempty"`
+	Surface     Surface         `json:"surface"`
+	Description *string         `json:"description,omitempty"`
+	Source      *string         `json:"source,omitempty"`
+	Origin      *ResourceOrigin `json:"origin,omitempty"`
+	Notices     *[]string       `json:"notices,omitempty"`
+	Requires    *[]string       `json:"requires,omitempty"`
+	Conflicts   *[]string       `json:"conflicts,omitempty"`
+	Mode        *string         `json:"mode,omitempty"`
+	Tools       *[]string       `json:"tools,omitempty"`
+	Permissions *[]string       `json:"permissions,omitempty"`
+	License     *string         `json:"license,omitempty"`
+	Attribution *string         `json:"attribution,omitempty"`
 }
 
 func (v *ResourceVariant) UnmarshalJSON(data []byte) error {
@@ -127,15 +124,6 @@ func cloneVariants(values []ResourceVariant) []ResourceVariant {
 			value = append([]string{}, value...)
 			v.Conflicts = &value
 		}
-		if v.Command != nil {
-			value := *v.Command
-			v.Command = &value
-		}
-		if v.Args != nil {
-			value := *v.Args
-			value = append([]string{}, value...)
-			v.Args = &value
-		}
 		if v.Mode != nil {
 			value := *v.Mode
 			v.Mode = &value
@@ -149,10 +137,6 @@ func cloneVariants(values []ResourceVariant) []ResourceVariant {
 			value := *v.Permissions
 			value = append([]string{}, value...)
 			v.Permissions = &value
-		}
-		if v.Arguments != nil {
-			value := *v.Arguments
-			v.Arguments = &value
 		}
 		if v.License != nil {
 			value := *v.License
@@ -195,12 +179,6 @@ func ResolveResourceForSurface(resource Resource, surface Surface) Resource {
 		if variant.Conflicts != nil {
 			result.Conflicts = *variant.Conflicts
 		}
-		if variant.Command != nil {
-			result.Command = *variant.Command
-		}
-		if variant.Args != nil {
-			result.Args = *variant.Args
-		}
 		if variant.Mode != nil {
 			result.Mode = *variant.Mode
 		}
@@ -209,9 +187,6 @@ func ResolveResourceForSurface(resource Resource, surface Surface) Resource {
 		}
 		if variant.Permissions != nil {
 			result.Permissions = *variant.Permissions
-		}
-		if variant.Arguments != nil {
-			result.Arguments = *variant.Arguments
 		}
 		if variant.License != nil {
 			result.License = *variant.License
@@ -331,23 +306,11 @@ func validateVariants(pack Pack) error {
 			if variant.Source != nil && *variant.Source != resource.Source && resource.Origin != nil && variant.Origin == nil {
 				return fmt.Errorf("resource %q variant %q changes imported source without explicit origin", identity, variant.Surface)
 			}
-			if variant.Command != nil && resource.Kind != "mcp_server" {
-				return fmt.Errorf("resource %q variant command is only applicable to mcp_server", identity)
-			}
-			if variant.Args != nil && resource.Kind != "mcp_server" {
-				return fmt.Errorf("resource %q variant args are only applicable to mcp_server", identity)
-			}
 			if (variant.Mode != nil || variant.Tools != nil || variant.Permissions != nil) && resource.Kind != "agent" {
 				return fmt.Errorf("resource %q variant authority fields are only applicable to agent", identity)
 			}
-			if variant.Arguments != nil && resource.Kind != "command" {
-				return fmt.Errorf("resource %q variant arguments are only applicable to command", identity)
-			}
 			if (variant.License != nil || variant.Attribution != nil) && resource.Kind != "notice" {
 				return fmt.Errorf("resource %q variant legal fields are only applicable to notice", identity)
-			}
-			if (variant.Source != nil || variant.Origin != nil) && (resource.Kind == "mcp_server" || resource.Kind == "lifecycle") {
-				return fmt.Errorf("resource %q variant cannot have source or origin", identity)
 			}
 			effective := ResolveResourceForSurface(resource, variant.Surface)
 			if strings.TrimSpace(effective.Description) == "" {

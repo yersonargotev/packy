@@ -11,6 +11,9 @@ versions. Claude Code support requires stable version **2.1.203 or newer**.
 - Selectable Packs and their independent versions come from the selected
   Catalog Snapshot.
 - Global and project lifecycles operate on independent installed Pack receipts.
+- Claude retains native instructions, complete skills, and required custom agents
+  with reviewed global/project scope support. Direct MCP, hooks, and commands
+  are outside the supported resource contract.
 - Catalog maintainers use the supported authoring commands and whole-catalog
   validator.
 - General CI uses formatting, vet, Packy-owned tests, and focused race coverage.

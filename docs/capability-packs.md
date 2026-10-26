@@ -80,6 +80,17 @@ metadata is part of a skill, not a custom-agent registration. A generated role
 file establishes configured content only; it does not prove authorization or
 successful runtime delegation.
 
+Claude instructions, skills, and native custom-agent documents support global
+and project scope. Claude agent bindings explicitly declare
+`"client_projection": {"client": "claude", "scopes": ["global", "project"]}`
+(or only their reviewed subset of scopes). The Claude surface already identifies
+its native client, so no `--client` option is needed. A required agent outside its
+reviewed scope stops the operation before mutation. See [Claude Code](claude-code.md).
+
+Direct MCP, hook, command, and obsolete lifecycle resources are rejected on both
+surfaces. Reviewed skill templates and Claude composite skills remain supported
+for skill content; no retired command is silently converted into a skill.
+
 ## Controlled runtime checks
 
 For an explicitly selected Codex role closure whose client behavior Packy cannot

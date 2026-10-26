@@ -2,8 +2,8 @@
 
 Project installation and personal runtime activation are separate. Installation
 writes reviewed project files; activation records only the current user's
-consent and workstation effects. Cloning a project never grants trust,
-authenticates an account, runs a hook, or mutates personal configuration.
+consent and applicable external prerequisites. Cloning a project never grants
+trust, authenticates an account, runs a hook, or mutates personal configuration.
 
 ## Install
 
@@ -29,6 +29,13 @@ a Codex role fails before mutation.
 Ordinary Agents project installation does not write Codex settings or register a
 runtime.
 
+For Claude, complete skills use `.claude/skills`, instructions contribute to
+project `CLAUDE.md`, and native custom-agent documents use `.claude/agents`.
+Each required agent must declare client `claude` and include `project` in its
+reviewed scopes; unsupported required scopes fail before mutation. Agent and
+skill support/legal content remains in the selected closure. Direct MCP,
+hooks, commands, and their runtime setup projections are rejected.
+
 Packy never stages or commits these files. Review and commit them with the
 project change.
 
@@ -36,17 +43,17 @@ Omitting `--resource` installs the complete Pack. Repeat `--resource` to select
 roots plus their intra-Pack dependencies. Install another Pack with another
 command; it receives an independent manifest entry and receipt.
 
-## Activate personal runtime effects
+## Activate personal prerequisites
 
-When an installed Pack has personal runtime effects, preview and activate them
-separately:
+When an installed Pack requires personal trust or external prerequisites,
+preview and activate that personal state separately:
 
 ```sh
 packy activate matty --surface agents --project --dry-run
 packy activate matty --surface agents --project
 ```
 
-Non-interactive installation does not activate personal effects. Global and
+Non-interactive installation does not establish personal trust. Global and
 project activations remain explicit and independently inspectable.
 
 ## Update and status
@@ -86,8 +93,8 @@ paths in the targeted receipt.
 
 ## Deactivate and uninstall
 
-Personal deactivation removes only unchanged runtime projections in the
-selected personal receipt:
+Personal deactivation clears the selected personal activation state without
+removing the shared project installation:
 
 ```sh
 packy deactivate matty --surface agents --project --dry-run
@@ -124,7 +131,7 @@ Verification checks `packy.json`, `packy.lock.json`, required notices, and all
 locked project projections, including their filesystem modes. It emits one
 deterministic `project-verification` report and exits successfully only when
 every installed Pack surface is intact. `packy status --project` remains the
-richer workstation view when personal runtime activation and readiness matter.
+richer workstation view when personal trust, prerequisites, and readiness matter.
 
 Tests and manual checks that resolve project or workstation paths must sandbox
 `HOME` and `XDG_CONFIG_HOME`.

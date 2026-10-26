@@ -159,12 +159,9 @@
                           "enum": [
                             "skill",
                             "agent",
-                            "command",
                             "instruction",
                             "asset",
-                            "notice",
-                            "mcp_server",
-                            "lifecycle"
+                            "notice"
                           ]
                         },
                         "id": {
@@ -228,12 +225,9 @@
                             "enum": [
                               "skill",
                               "agent",
-                              "command",
                               "instruction",
                               "asset",
-                              "notice",
-                              "mcp_server",
-                              "lifecycle"
+                              "notice"
                             ]
                           },
                           "id": {
@@ -301,10 +295,7 @@
           "enum": [
             "skill",
             "instruction",
-            "mcp_server",
-            "lifecycle",
             "agent",
-            "command",
             "asset",
             "notice"
           ]

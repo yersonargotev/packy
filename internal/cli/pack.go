@@ -398,6 +398,11 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s -> %s mode=%s observed=%s\n", projection.Resource, projection.Target, projection.Mode, projection.ObservedState); err != nil {
 			return err
 		}
+		if client := projection.ClientProjection; client != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Custom-agent projection: %s client=%s scope=project supported_scopes=%s\n", projection.Resource, client.Client, strings.Join(client.Scopes, ", ")); err != nil {
+				return err
+			}
+		}
 	}
 	for _, projection := range report.Retirements {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Retirement: %s -> %s observed=%s\n", projection.Resource, projection.Target, projection.ObservedState); err != nil {
@@ -526,7 +531,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove one operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
-	cmd.Flags().BoolVar(&project, "project", false, "Deactivate exact personal runtime effects for the current project")
+	cmd.Flags().BoolVar(&project, "project", false, "Remove personal activation consent for the current project")
 	cmd.Flags().BoolVar(&force, "force", false, "Remove drifted paths proven to belong to this installed Pack receipt")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
@@ -540,11 +545,7 @@ func renderProjectDeactivationPreview(cmd *cobra.Command, preview capabilitypack
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\nProject root: %s\nPack: %s %s\nSurface: %s\nRuntime activation: %s\n", header, preview.ProjectRoot, preview.Pack.ID, preview.Pack.Version, preview.Surface, preview.Runtime); err != nil {
 		return err
 	}
-	for _, effect := range preview.Effects {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove personal effect: %s target=%s identity=%s consent=%s adapter_provenance=%s\n", effect.Action, effect.Target, effect.Identity, effect.Consent, effect.AdapterProvenance); err != nil {
-			return err
-		}
-	}
+
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Blockers: %s\nDisposition: %s\n", renderProjectInstallBlockers(preview.Blockers), preview.Disposition); err != nil {
 		return err
 	}
@@ -985,11 +986,7 @@ func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.J
 	if err := renderReadinessConditions(cmd.OutOrStdout(), preview.Conditions); err != nil {
 		return err
 	}
-	for _, effect := range preview.Effects {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Personal effect: %s -> %s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
-			return err
-		}
-	}
+
 	return nil
 }
 

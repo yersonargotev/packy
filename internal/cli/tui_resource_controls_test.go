@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,15 +23,6 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			}
 			synthetic := testsupport.CapabilityRich("tui-configure-" + scope)
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
-			manifest := synthetic.Manifest()
-			manifest.Resources = slices.DeleteFunc(manifest.Resources, func(resource testsupport.Resource) bool { return resource.Kind == "lifecycle" })
-			data, err := json.Marshal(manifest)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(fixture.catalogRoot, "packs", synthetic.ID(), "pack.json"), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
 
 			project := t.TempDir()
 			writeTestGitWorktree(t, project)

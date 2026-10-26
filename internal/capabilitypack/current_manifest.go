@@ -47,13 +47,10 @@ type currentResourceWire struct {
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
 	Source            string             `json:"source,omitempty"`
-	Command           string             `json:"command,omitempty"`
-	Args              []string           `json:"args,omitempty"`
 	Description       string             `json:"description,omitempty"`
 	Mode              string             `json:"mode,omitempty"`
 	Tools             []string           `json:"tools,omitempty"`
 	Permissions       []string           `json:"permissions,omitempty"`
-	Arguments         CommandArguments   `json:"arguments,omitempty"`
 	License           string             `json:"license,omitempty"`
 	Attribution       string             `json:"attribution,omitempty"`
 	Requires          []string           `json:"requires"`
@@ -138,10 +135,10 @@ func loadCurrentManifestRuntime(raw currentManifest, path, packRoot string, vali
 		}
 		pack.Resources = append(pack.Resources, Resource{
 			OnDemand: onDemand,
-			Kind:     wire.Kind, ID: wire.ID, Source: wire.Source, Command: wire.Command,
+			Kind:     wire.Kind, ID: wire.ID, Source: wire.Source,
 			Variants: wire.Variants, Origin: wire.Origin,
-			Args: wire.Args, Description: wire.Description, Mode: wire.Mode,
-			Tools: wire.Tools, Permissions: wire.Permissions, Arguments: wire.Arguments,
+			Description: wire.Description, Mode: wire.Mode,
+			Tools: wire.Tools, Permissions: wire.Permissions,
 			License: wire.License, Attribution: wire.Attribution,
 			Requires: wire.Requires, Conflicts: wire.Conflicts, Notices: wire.Notices,
 			Bindings: wire.Bindings, SurfaceExclusions: wire.SurfaceExclusions,

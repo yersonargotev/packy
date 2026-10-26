@@ -776,7 +776,11 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, proje
 		if kind == "" {
 			kind = "project-projection"
 		}
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: kind, Target: projection.Target, Description: "project projection for " + projection.Resource.String()})
+		description := "project projection for " + projection.Resource.String()
+		if client := projection.ClientProjection; client != nil {
+			description += fmt.Sprintf("; client=%s scope=project supported_scopes=%s", client.Client, strings.Join(client.Scopes, ", "))
+		}
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: kind, Target: projection.Target, Description: description})
 		switch projection.ObservedState {
 		case "missing":
 			preview.Diff.Added = append(preview.Diff.Added, projection.Target)
@@ -816,13 +820,7 @@ func projectDeactivationPreviewForTUI(report capabilitypack.JSONProjectDeactivat
 		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: string(report.Surface), Scope: "project", ProjectRoot: projectRoot,
 		Selection: tui.Selection{Mode: "all"},
 	}
-	actions := make([]string, 0, len(report.Effects))
-	for _, effect := range report.Effects {
-		description := string(effect.Action) + " " + effect.Identity
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: "personal-runtime", Target: effect.Target, Description: description})
-		preview.Diff.Removed = append(preview.Diff.Removed, effect.Target)
-		actions = append(actions, strings.TrimSpace("personal-runtime "+effect.Target+" "+description))
-	}
+	actions := []string{"remove personal activation consent"}
 	for _, blocker := range report.Blockers {
 		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
 	}
@@ -839,16 +837,11 @@ func projectUninstallPreviewForTUI(plan capabilitypack.ProjectPackUninstallPrevi
 	if preview.Surface == "" && len(plan.Pack.Surfaces) == 1 {
 		preview.Surface = string(plan.Pack.Surfaces[0])
 	}
-	actions := make([]string, 0, len(plan.ProjectEffects)+len(plan.Deactivation.Effects))
+	actions := make([]string, 0, len(plan.ProjectEffects)+1)
 	for _, deactivation := range []capabilitypack.JSONProjectDeactivationPreview{plan.Deactivation} {
 		if deactivation.Disposition != capabilitypack.ProjectDeactivationConverged {
-			preview.PendingActions = append(preview.PendingActions, fmt.Sprintf("Personal runtime on %s must be deactivated as part of this uninstall", deactivation.Surface))
-		}
-		for _, effect := range deactivation.Effects {
-			description := "required personal deactivation: " + string(effect.Action) + " " + effect.Identity
-			preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: "personal-runtime", Target: effect.Target, Description: description})
-			preview.Diff.Removed = append(preview.Diff.Removed, effect.Target)
-			actions = append(actions, strings.TrimSpace("personal-runtime "+effect.Target+" "+description))
+			preview.PendingActions = append(preview.PendingActions, fmt.Sprintf("Personal activation consent on %s must be removed as part of this uninstall", deactivation.Surface))
+			actions = append(actions, "remove personal activation consent")
 		}
 		for _, blocker := range deactivation.Blockers {
 			preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
@@ -885,9 +878,6 @@ func projectActivationPreviewForTUI(report capabilitypack.JSONProjectActivationP
 			preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: detail.Resource.String(), Detail: string(category.Kind) + " — " + detail.Detail})
 		}
 		preview.Phases = append(preview.Phases, phase)
-	}
-	for _, effect := range report.Effects {
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: string(effect.Category), Target: effect.Target, Description: string(effect.Action) + " " + effect.Identity})
 	}
 	for _, effect := range report.RuntimeEffects {
 		if effect.Conflict != "" {

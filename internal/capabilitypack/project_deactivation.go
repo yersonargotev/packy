@@ -31,21 +31,20 @@ type ProjectDeactivationRequest struct {
 }
 
 type JSONProjectDeactivationPreview struct {
-	SchemaVersion int                              `json:"schema_version"`
-	Report        string                           `json:"report"`
-	DryRun        bool                             `json:"dry_run"`
-	ProjectRoot   string                           `json:"project_root"`
-	Pack          ProjectManifestPack              `json:"pack"`
-	Surface       Surface                          `json:"surface"`
-	Runtime       ProjectRuntimeState              `json:"runtime"`
-	Effects       []ProjectActivationEffectPreview `json:"effects"`
-	Blockers      []ProjectInstallBlocker          `json:"blockers"`
-	Disposition   ProjectDeactivationDisposition   `json:"disposition"`
-	Digest        string                           `json:"digest"`
-	projectRoot   string
-	packyHome     string
-	request       ProjectDeactivationRequest
-	actions       []ProjectionAction
+	SensitiveLockIdentity string                         `json:"sensitive_lock_identity,omitempty"`
+	SchemaVersion         int                            `json:"schema_version"`
+	Report                string                         `json:"report"`
+	DryRun                bool                           `json:"dry_run"`
+	ProjectRoot           string                         `json:"project_root"`
+	Pack                  ProjectManifestPack            `json:"pack"`
+	Surface               Surface                        `json:"surface"`
+	Runtime               ProjectRuntimeState            `json:"runtime"`
+	Blockers              []ProjectInstallBlocker        `json:"blockers"`
+	Disposition           ProjectDeactivationDisposition `json:"disposition"`
+	Digest                string                         `json:"digest"`
+	projectRoot           string
+	packyHome             string
+	request               ProjectDeactivationRequest
 }
 
 type ProjectDeactivationApplyRequest struct {
@@ -64,7 +63,7 @@ type ProjectDeactivationApplyResult struct {
 func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivationRequest) (JSONProjectDeactivationPreview, error) {
 	report := JSONProjectDeactivationPreview{
 		SchemaVersion: ProjectDeactivationPreviewSchemaVersion, Report: "project-deactivation-preview", DryRun: true,
-		ProjectRoot: "<project-root>", Surface: request.Surface, Effects: []ProjectActivationEffectPreview{}, Blockers: []ProjectInstallBlocker{},
+		ProjectRoot: "<project-root>", Surface: request.Surface, Blockers: []ProjectInstallBlocker{},
 		projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request,
 	}
 	if err := ValidateSurface(request.Surface); err != nil {
@@ -87,6 +86,7 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 		return report, fmt.Errorf("personal project activation belongs to capability pack %q, not %q", document.State.PackID, request.PackID)
 	}
 	report.Pack = ProjectManifestPack{ID: document.State.PackID, Version: document.State.Version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}}
+	report.SensitiveLockIdentity = document.SensitiveLockIdentity
 	report.Runtime = ProjectRuntimeActive
 	manifestMissing, manifestErr := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.json"))
 	lockMissing, lockErr := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.lock.json"))
@@ -99,31 +99,6 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 		report.Runtime = ProjectRuntimeBlocked
 		report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "project_contract_incomplete", Detail: "packy.json and packy.lock.json are not consistently present", Remediation: "restore or remove the shared project contract before retrying personal deactivation"})
 	}
-	observedEffects, err := inspectProjectEffectReceipts(ctx, request.Adapter, request.ProjectRoot, document.Effects)
-	if err != nil {
-		return report, err
-	}
-	observedByReceipt := make(map[string]ObservedProjectEffect, len(observedEffects))
-	for _, observed := range observedEffects {
-		observedByReceipt[string(observed.Kind)+"\x00"+observed.Target] = observed
-	}
-	for _, receipt := range document.Effects {
-		observed := observedByReceipt[string(receipt.Action)+"\x00"+receipt.Target]
-		effect := ProjectActivationEffectPreview{Category: ProjectActivationTrust, Action: receipt.Action, Target: "<personal-host-path>", Identity: receipt.ContributionIdentity, AdapterProvenance: observed.AdapterProvenance, Consent: ConsentDestructiveCleanup}
-		switch observed.State {
-		case ProjectEffectAbsent:
-			effect.Observation = digestJSON(struct {
-				Receipt ProjectActivationEffectReceipt
-				State   string
-			}{Receipt: receipt, State: "absent"})
-		case ProjectEffectExact:
-			effect.Observation = projectActivationActionObservation(observed.Action)
-			report.actions = append(report.actions, observed.Action)
-		case ProjectEffectDrifted:
-			report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "personal_effect_drift", Target: "<personal-host-path>", Detail: "the receipted personal contribution differs from exact adapter evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"})
-		}
-		report.Effects = append(report.Effects, effect)
-	}
 	if len(report.Blockers) > 0 {
 		report.Disposition = ProjectDeactivationBlocked
 	} else {
@@ -131,17 +106,6 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 	}
 	report.Digest = sealProjectDeactivationPreview(report)
 	return report, nil
-}
-
-func inspectProjectEffectReceipts(ctx context.Context, adapter SurfaceAdapter, projectRoot string, receipts []ProjectActivationEffectReceipt) ([]ObservedProjectEffect, error) {
-	if len(receipts) == 0 {
-		return []ObservedProjectEffect{}, nil
-	}
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ProjectRoot: projectRoot, ProjectEffectReceipts: receipts})
-	if err != nil {
-		return nil, err
-	}
-	return observation.ProjectDeactivationEffects, nil
 }
 
 func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationApplyRequest) (ProjectDeactivationApplyResult, error) {
@@ -165,26 +129,6 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 	if fresh.Digest != preview.Digest {
 		return ProjectDeactivationApplyResult{}, errors.New("project deactivation preview is stale; run the deactivation preview again")
 	}
-	document, _, err := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface)
-	if err != nil {
-		return ProjectDeactivationApplyResult{}, err
-	}
-	actions := append([]ProjectionAction(nil), fresh.actions...)
-	for i := range actions {
-		actions[i].PreviewOnly = false
-	}
-	if actionErr := request.Adapter.ApplyProjections(ctx, actions); actionErr != nil {
-		return ProjectDeactivationApplyResult{}, actionErr
-	}
-	verified, inspectErr := inspectProjectEffectReceipts(ctx, request.Adapter, preview.projectRoot, document.Effects)
-	if inspectErr != nil {
-		return ProjectDeactivationApplyResult{}, inspectErr
-	}
-	for _, effect := range verified {
-		if effect.State != ProjectEffectAbsent {
-			return ProjectDeactivationApplyResult{}, errors.New("personal project contribution was not verified absent after deactivation")
-		}
-	}
 	if err := removeProjectActivationRecord(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface); err != nil {
 		return ProjectDeactivationApplyResult{}, err
 	}
@@ -206,7 +150,7 @@ func removeProjectActivationRecord(packyHome, projectRoot, packID string, surfac
 }
 
 func sealProjectDeactivationPreview(preview JSONProjectDeactivationPreview) string {
-	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request, preview.actions = "", "", "", "", ProjectDeactivationRequest{}, nil
+	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request = "", "", "", "", ProjectDeactivationRequest{}
 	data, _ := json.Marshal(preview)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

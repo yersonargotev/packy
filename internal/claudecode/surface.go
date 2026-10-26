@@ -19,12 +19,9 @@ import (
 
 const (
 	ActionSkillLink               capabilitypack.ProjectionActionKind = "claude-skill-link"
-	ActionSkillFile               capabilitypack.ProjectionActionKind = "claude-skill-file"
 	ActionSkillTree               capabilitypack.ProjectionActionKind = "claude-skill-tree"
 	ActionInstructionContribution capabilitypack.ProjectionActionKind = "claude-instruction-contribution"
 	ActionAgentFile               capabilitypack.ProjectionActionKind = "claude-agent-file"
-	ActionCommandHook             capabilitypack.ProjectionActionKind = "claude-command-hook"
-	ActionUserMCP                 capabilitypack.ProjectionActionKind = "claude-user-mcp"
 )
 
 type RuntimeEvidenceObserver interface {
@@ -82,18 +79,13 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	revision := []string{}
 	var instructionDocument, instructionOriginal []byte
 	var instructionLoaded bool
-	settingsObservation := ObserveSettings(a.layout.SettingsFile, nil)
-	if settingsObservation.Err != nil {
-		return result, settingsObservation.Err
-	}
-	settingsOriginal := append([]byte(nil), settingsObservation.Raw...)
-	settingsDocument := append([]byte(nil), settingsOriginal...)
-	hooksContainerCreated := ownedHooksContainerCreated(ownership, a.layout.SettingsFile)
-	createdHookEvents := ownedHookEventsCreated(ownership, a.layout.SettingsFile)
 	for _, r := range pack.Resources {
 		b, ok := claudeBinding(r)
 		if !ok {
 			continue
+		}
+		if r.Kind != b.Projection || (r.Kind != "skill" && r.Kind != "instruction" && r.Kind != "agent") {
+			return result, fmt.Errorf("unsupported Claude %s projection for %s:%s", b.Projection, r.Kind, r.ID)
 		}
 		id := r.Kind + ":" + b.Name
 		switch b.Projection {
@@ -136,30 +128,6 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				action := capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Content: string(payload), AdapterProvenance: provenance, Description: "write exact Claude composite skill " + b.Name}
 				result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: composite.TreeFingerprint, Action: action})
 				revision = append(revision, id+observed)
-				continue
-			}
-			if r.Kind == "command" {
-				content, err := os.ReadFile(filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source)))
-				if err != nil {
-					return result, err
-				}
-				target := filepath.Join(a.layout.SkillsDir, b.Name, "SKILL.md")
-				rendered := claudeCommandSkill(r, b.Name, content)
-				observed, exists, err := localprojection.FingerprintPath(target)
-				if err != nil {
-					return result, err
-				}
-				desired := localprojection.FingerprintBytes([]byte(rendered))
-				result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillFile, Target: target, Content: rendered, Description: "write Claude Code personal command skill " + b.Name}})
-				revision = append(revision, id+observed)
-				assets, err := a.consumerAssets(pack, r, id, filepath.Dir(target))
-				if err != nil {
-					return result, err
-				}
-				for _, asset := range assets {
-					result.Projections = append(result.Projections, asset)
-					revision = append(revision, asset.ID+asset.ObservedFingerprint)
-				}
 				continue
 			}
 			source := filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source))
@@ -234,11 +202,10 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				if err != nil {
 					return result, err
 				}
-			} else {
-				content, err = a.embedConsumerAssets(pack, r, content)
-				if err != nil {
-					return result, err
-				}
+			}
+			content, err = a.embedConsumerAssets(pack, r, content)
+			if err != nil {
+				return result, err
 			}
 			target := filepath.Join(a.layout.AgentsDir, b.Name+".md")
 			observed, exists, err := localprojection.FingerprintPath(target)
@@ -257,48 +224,6 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			}
 			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionAgentFile, Target: target, Content: string(content), Command: Fingerprint(current), Description: "write Claude Code agent " + b.Name}})
 			revision = append(revision, id+observed)
-		case "command_hook":
-			if b.Hook == nil {
-				return result, errors.New("Claude command hook is missing typed definition")
-			}
-			hook := fromBindingHook(b)
-			settings := settingsDocument
-			provenance := HookMergeProvenance{CreatedHooksContainer: hooksContainerCreated, CreatedEvent: createdHookEvents[hook.Event]}
-			for _, record := range ownership.Records {
-				if record.ID == id && record.Kind == string(ActionCommandHook) {
-					provenance.CreatedEvent = provenance.CreatedEvent || ParseHookMergeProvenance(record.HookProvenance).CreatedEvent
-				}
-			}
-			merged, provenance, err := MergeCommandHookWithProvenance(settings, hook, false, provenance)
-			if err != nil {
-				return result, err
-			}
-			hooksContainerCreated = hooksContainerCreated || provenance.CreatedHooksContainer
-			createdHookEvents[hook.Event] = createdHookEvents[hook.Event] || provenance.CreatedEvent
-			settingsDocument = append([]byte(nil), merged...)
-			ho := EnrichHookObservation(settingsObservation, hook)
-			if ho.Err != nil {
-				return result, ho.Err
-			}
-			observed := "missing"
-			if len(ho.MatchingEntries) > 0 {
-				observed = HookOwnershipFingerprint(hook.Event, ho.EntryFingerprint)
-			}
-			desired := HookOwnershipFingerprint(hook.Event, canonicalFingerprint(hookJSON(hook)))
-			description := fmt.Sprintf("configure Claude Code command hook %s: event=%s matcher=%q command=%s %s timeout=%ds blocking=%t failure=%s authorities=%s", b.Name, b.Hook.Event, b.Hook.Matcher, b.Hook.Command, strings.Join(b.Hook.Args, " "), b.Hook.TimeoutSeconds, b.Hook.Blocking, b.Hook.Failure, strings.Join(b.Hook.Authorities, ","))
-			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: len(ho.MatchingEntries) > 0, ObservedFingerprint: observed, DesiredFingerprint: desired, ExternallyManaged: ho.Disabled || ho.Shadowed, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settingsOriginal), Consent: capabilitypack.ConsentExecutableExternal, Description: description}})
-			revision = append(revision, "settings="+Fingerprint(settingsOriginal))
-		case "mcp_server":
-			o := ObserveUserMCP(a.layout.UserMCPFile, b.Name)
-			if o.Err != nil {
-				return result, fmt.Errorf("observe Claude user MCP %s: %w", b.Name, o.Err)
-			}
-			identity := NewMCPIdentity(b.Name, r.Command, r.Args, map[string]string{})
-			args := []string{"mcp", "add", b.Name, "--scope", "user", "--", r.Command}
-			args = append(args, r.Args...)
-			description := "configure redacted Claude Code user MCP through official command: claude " + strings.Join(args, " ") + " (environment values redacted)"
-			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: o.Present, ObservedFingerprint: o.DefinitionFingerprint, DesiredFingerprint: canonicalFingerprint(identity), Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionUserMCP, Target: b.Name, Command: a.executable, Args: args, Content: canonicalFingerprint(identity), Consent: capabilitypack.ConsentExecutableExternal, Description: description}})
-			revision = append(revision, id+o.DefinitionFingerprint)
 		}
 	}
 	if transition.Prior.ID != "" {
@@ -328,21 +253,6 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			}
 			result.Projections = append(result.Projections, projection)
 			revision = append(revision, part)
-			if r.Kind == "command" && b.Projection == "skill" && !isClaudeCompositeProjection(transition.Prior, r, b) {
-				assets, err := a.consumerAssets(transition.Prior, r, projection.ID, filepath.Join(a.layout.SkillsDir, b.Name))
-				if err != nil {
-					return result, err
-				}
-				for _, asset := range assets {
-					asset.Goal = capabilitypack.ProjectionAbsent
-					asset.DesiredFingerprint = ""
-					asset.Action.Content = ""
-					asset.Action.Mode = capabilitypack.ProjectionDeleteTarget
-					asset.Action.Description = "remove Claude command dependency asset " + asset.ID
-					result.Projections = append(result.Projections, asset)
-					revision = append(revision, asset.ID+asset.ObservedFingerprint)
-				}
-			}
 		}
 	}
 	if len(transition.ResidualOwnership) > 0 {
@@ -383,12 +293,6 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				result.Projections[i].Action.Content = string(instructionDocument)
 				result.Projections[i].Action.Command = Fingerprint(instructionOriginal)
 			}
-		}
-	}
-	for i := range result.Projections {
-		if result.Projections[i].Action.Kind == ActionCommandHook && result.Projections[i].Goal != capabilitypack.ProjectionAbsent {
-			result.Projections[i].Action.Content = string(settingsDocument)
-			result.Projections[i].Action.Command = Fingerprint(settingsOriginal)
 		}
 	}
 	for i := range result.Projections {
@@ -437,7 +341,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	if !usabilityObserved {
 		pending = append(pending, "supply explicit current Claude Code runtime evidence for every included resource")
 	}
-	result.Readiness = capabilitypack.ReadinessObservation{AuthorizationObserved: authorizationObserved, Authorized: authorized, UsabilityObserved: usabilityObserved, Usable: authorized && usable, OptionalAuthorities: optionalAuthorities, PendingHumanActions: pending, Evidence: append([]string{"filesystem and static user MCP definitions inspected; runtime use was not invoked"}, runtimeFacts...)}
+	result.Readiness = capabilitypack.ReadinessObservation{AuthorizationObserved: authorizationObserved, Authorized: authorized, UsabilityObserved: usabilityObserved, Usable: authorized && usable, OptionalAuthorities: optionalAuthorities, PendingHumanActions: pending, Evidence: append([]string{"filesystem projections inspected; runtime use was not invoked"}, runtimeFacts...)}
 	result.RuntimeModeEvidence, err = capabilitypack.UnverifiedRuntimeModeEvidence(
 		readinessPack, time.Now().UTC(), result.Revision,
 	)
@@ -456,7 +360,7 @@ func inspectClaudeResidualProjection(record OwnershipRecord) (capabilitypack.Obs
 		observed, exists, err = localprojection.FingerprintPath(record.Target)
 	case capabilitypack.ActionSkillTree, ActionSkillTree:
 		observed, exists, err = localprojection.ObserveExactTree(record.Target)
-	case ActionAgentFile, ActionSkillFile:
+	case ActionAgentFile:
 		observed, exists, err = localprojection.FingerprintPath(record.Target)
 	default:
 		return capabilitypack.ObservedProjection{}, fmt.Errorf("Claude residual projection %s of kind %s requires its historical contract", record.ID, record.Kind)
@@ -482,28 +386,6 @@ func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 		}
 		projection.AdapterProvenance = provenance
 	}
-}
-
-func ownedHooksContainerCreated(snapshot OwnershipSnapshot, target string) bool {
-	for _, record := range snapshot.Records {
-		if record.Kind != string(ActionCommandHook) || filepath.Clean(record.Target) != filepath.Clean(target) || record.HookProvenance == "" {
-			continue
-		}
-		if ParseHookMergeProvenance(record.HookProvenance).CreatedHooksContainer {
-			return true
-		}
-	}
-	return false
-}
-
-func ownedHookEventsCreated(snapshot OwnershipSnapshot, target string) map[string]bool {
-	result := map[string]bool{}
-	for _, record := range snapshot.Records {
-		if record.Kind == string(ActionCommandHook) && filepath.Clean(record.Target) == filepath.Clean(target) && record.HookEvent != "" && ParseHookMergeProvenance(record.HookProvenance).CreatedEvent {
-			result[record.HookEvent] = true
-		}
-	}
-	return result
 }
 
 func resourceProjectionRetained(pack capabilitypack.Pack, prior capabilitypack.Resource, priorBinding capabilitypack.Binding) bool {
@@ -537,11 +419,6 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 			fp, exists, err := observeCompositeTree(target)
 			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, AdapterProvenance: provenance, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude composite skill " + b.Name}}, id + fp, err
 		}
-		if r.Kind == "command" {
-			target := filepath.Join(a.layout.SkillsDir, b.Name, "SKILL.md")
-			fp, exists, err := localprojection.FingerprintPath(target)
-			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillFile, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove Claude Code personal command skill " + b.Name}}, id + fp, err
-		}
 		target := filepath.Join(a.layout.SkillsDir, b.Name)
 		fp, exists, err := localprojection.FingerprintPath(target)
 		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillLink, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove Claude Code skill " + b.Name}}, id + fp, err
@@ -568,44 +445,6 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 			fp = "missing"
 		}
 		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionInstructionContribution, Target: a.layout.InstructionsFile, Content: merged, Command: Fingerprint(current), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code instruction " + r.ID}}, id + fp, nil
-	case "command_hook":
-		if b.Hook == nil {
-			return capabilitypack.ObservedProjection{}, "", errors.New("missing typed hook")
-		}
-		settingsObservation := ObserveSettings(a.layout.SettingsFile, nil)
-		if settingsObservation.Err != nil {
-			return capabilitypack.ObservedProjection{}, "", settingsObservation.Err
-		}
-		settings := settingsObservation.Raw
-		hook := fromBindingHook(b)
-		provenance := HookMergeProvenance{}
-		sealedProvenance := ""
-		for _, record := range ownership.Records {
-			if record.ID == id && record.Kind == string(ActionCommandHook) {
-				sealedProvenance = record.HookProvenance
-				provenance = ParseHookMergeProvenance(record.HookProvenance)
-			}
-		}
-		merged, _, err := MergeCommandHookWithProvenance(settings, hook, true, provenance)
-		if err != nil {
-			return capabilitypack.ObservedProjection{}, "", err
-		}
-		o := EnrichHookObservation(settingsObservation, hook)
-		if o.Err != nil {
-			return capabilitypack.ObservedProjection{}, "", o.Err
-		}
-		fp := "missing"
-		exists := len(o.MatchingEntries) > 0
-		if exists {
-			fp = HookOwnershipFingerprint(hook.Event, o.EntryFingerprint)
-		}
-		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, AdapterProvenance: sealedProvenance, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settings), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code hook " + b.Name}}, id + fp, nil
-	case "mcp_server":
-		o := ObserveUserMCP(a.layout.UserMCPFile, b.Name)
-		if o.Err != nil {
-			return capabilitypack.ObservedProjection{}, "", o.Err
-		}
-		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: o.Present, ObservedFingerprint: o.DefinitionFingerprint, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionUserMCP, Target: b.Name, Command: a.executable, Args: []string{"mcp", "remove", b.Name, "--scope", "user"}, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove redacted Claude Code user MCP " + b.Name}}, id + o.DefinitionFingerprint, nil
 	}
 	return capabilitypack.ObservedProjection{}, "", fmt.Errorf("unsupported Claude projection %q", b.Projection)
 }
@@ -613,7 +452,7 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
 	if claudeProjectActions(actions) {
 		executor := localprojection.Executor{Host: "Claude project", TreeKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionClaudeProjectSkillTree: true}, FileKinds: map[capabilitypack.ProjectionActionKind]bool{
-			capabilitypack.ActionClaudeProjectFile: true, capabilitypack.ActionClaudeProjectInstruction: true, capabilitypack.ActionClaudeProjectMCP: true,
+			capabilitypack.ActionClaudeProjectFile: true, capabilitypack.ActionClaudeProjectInstruction: true,
 			capabilitypack.ActionProjectManifestFile: true, capabilitypack.ActionProjectLockFile: true, capabilitypack.ActionProjectNoticesFile: true,
 		}}
 		if err := executor.Apply(actions); err != nil {
@@ -695,7 +534,7 @@ func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabil
 		if action.Kind == ActionSkillTree || action.Kind == capabilitypack.ActionSkillTree || action.Kind == ActionSkillLink {
 			continue
 		}
-		if action.Kind == ActionInstructionContribution || action.Kind == ActionCommandHook {
+		if action.Kind == ActionInstructionContribution {
 			if content, ok := appliedShared[action.Target]; ok && content == action.Content {
 				continue
 			}
@@ -714,7 +553,7 @@ func claudeProjectActions(actions []capabilitypack.ProjectionAction) bool {
 	}
 	for _, action := range actions {
 		switch action.Kind {
-		case capabilitypack.ActionClaudeProjectSkillTree, capabilitypack.ActionClaudeProjectFile, capabilitypack.ActionClaudeProjectInstruction, capabilitypack.ActionClaudeProjectMCP,
+		case capabilitypack.ActionClaudeProjectSkillTree, capabilitypack.ActionClaudeProjectFile, capabilitypack.ActionClaudeProjectInstruction,
 			capabilitypack.ActionProjectManifestFile, capabilitypack.ActionProjectLockFile, capabilitypack.ActionProjectNoticesFile:
 		default:
 			return false
@@ -788,14 +627,6 @@ func (a *SurfaceAdapter) validateActions(actions []capabilitypack.ProjectionActi
 				return errors.New("overlapping exclusive Claude skill target")
 			}
 			targets[x.Target] = x
-		case ActionSkillFile:
-			if filepath.Dir(filepath.Dir(filepath.Clean(x.Target))) != filepath.Clean(a.layout.SkillsDir) {
-				return errors.New("Claude command skill file must be beneath one canonical personal skill directory")
-			}
-			if exclusiveSkillTargetConflict(targets, x) {
-				return errors.New("overlapping exclusive Claude skill target")
-			}
-			targets[x.Target] = x
 		case ActionAgentFile:
 			if !directChild(x.Target, a.layout.AgentsDir) || filepath.Ext(x.Target) != ".md" {
 				return errors.New("Claude agent target must be one Markdown file in the canonical agents directory")
@@ -812,25 +643,6 @@ func (a *SurfaceAdapter) validateActions(actions []capabilitypack.ProjectionActi
 				return errors.New("shared Claude instruction actions must be aggregated into one sealed document")
 			}
 			targets[x.Target] = x
-		case ActionCommandHook:
-			if filepath.Clean(x.Target) != filepath.Clean(a.layout.SettingsFile) {
-				return errors.New("Claude hook target must be canonical settings.json")
-			}
-			if prior, ok := targets[x.Target]; ok && prior.Content != x.Content {
-				return errors.New("shared Claude hook actions must be aggregated into one sealed document")
-			}
-			targets[x.Target] = x
-		case ActionUserMCP:
-			if x.Command == "" || a.runner == nil {
-				return errors.New("Claude executable is required for user MCP effect")
-			}
-			name, remove := mcpActionName(x.Args)
-			if name == "" || !hasUserScope(x.Args) {
-				return errors.New("Claude user MCP action must be an official named add/remove with --scope user")
-			}
-			if remove && x.Mode != capabilitypack.ProjectionDeleteTarget {
-				return errors.New("Claude user MCP removal must be sealed as delete-target")
-			}
 		default:
 			return fmt.Errorf("unsealed Claude projection action kind %q", x.Kind)
 		}
@@ -838,12 +650,12 @@ func (a *SurfaceAdapter) validateActions(actions []capabilitypack.ProjectionActi
 	return nil
 }
 func (a *SurfaceAdapter) apply(ctx context.Context, x capabilitypack.ProjectionAction) error {
-	if x.Mode == capabilitypack.ProjectionDeleteTarget && x.Kind != ActionUserMCP {
+	if x.Mode == capabilitypack.ProjectionDeleteTarget {
 		if _, err := os.Lstat(x.Target); os.IsNotExist(err) {
 			return nil
 		}
 	}
-	if x.Kind == ActionInstructionContribution || x.Kind == ActionAgentFile || x.Kind == ActionSkillFile || x.Kind == ActionCommandHook {
+	if x.Kind == ActionInstructionContribution || x.Kind == ActionAgentFile {
 		current, err := os.ReadFile(x.Target)
 		if err != nil && !os.IsNotExist(err) {
 			return err
@@ -888,54 +700,11 @@ func (a *SurfaceAdapter) apply(ctx context.Context, x capabilitypack.ProjectionA
 			return err
 		}
 		return localprojection.ReplaceTree(x.Target, compositeTreeFiles(composite), composite.TreeFingerprint)
-	case ActionAgentFile, ActionSkillFile, ActionInstructionContribution, ActionCommandHook:
+	case ActionAgentFile, ActionInstructionContribution:
 		if x.Mode == capabilitypack.ProjectionDeleteTarget {
 			return removeExact(x.Target)
 		}
 		return atomicWrite(x.Target, []byte(x.Content), 0644)
-	case ActionUserMCP:
-		name, remove := mcpActionName(x.Args)
-		if remove {
-			_, observed, err := observeMCPRemoval(a.layout.UserMCPFile, x.Args)
-			if err != nil {
-				return errors.New("Claude Code user MCP verification failed")
-			}
-			if !observed.Present {
-				return nil
-			}
-		} else {
-			observed := ObserveUserMCP(a.layout.UserMCPFile, name)
-			if observed.Err != nil {
-				return errors.New("Claude Code user MCP verification failed")
-			}
-			if observed.Present && x.Content != "" && observed.DefinitionFingerprint == x.Content {
-				return nil
-			}
-		}
-		r := a.runner.Run(ctx, Command{Executable: x.Command, Args: append([]string(nil), x.Args...), Timeout: 15_000_000_000, Description: x.Description})
-		if r.TimedOut {
-			return context.DeadlineExceeded
-		}
-		if r.Err != nil {
-			return errors.New("Claude Code user MCP command failed")
-		}
-		if r.ExitCode != 0 {
-			return fmt.Errorf("Claude Code user MCP command failed with status %d", r.ExitCode)
-		}
-		observed := ObserveUserMCP(a.layout.UserMCPFile, name)
-		if observed.Err != nil {
-			return errors.New("Claude Code user MCP verification failed")
-		}
-		if remove && observed.Present {
-			return errors.New("Claude Code user MCP removal did not converge")
-		}
-		if !remove && !observed.Present {
-			return errors.New("Claude Code user MCP addition did not converge")
-		}
-		if !remove && x.Content != "" && observed.DefinitionFingerprint != x.Content {
-			return errors.New("Claude Code user MCP definition did not match the sealed action")
-		}
-		return nil
 	}
 	return nil
 }
@@ -962,9 +731,6 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		if record.StateOwner == "" || record.ContributorID == "" || !compatibleClaudeOwnershipKind(record.Kind, x.Kind) || filepath.Clean(record.Target) != filepath.Clean(x.Target) || !slices.Contains(record.Contributors, record.ContributorID) {
 			return errors.New("Claude ownership identity does not exactly match the sealed action")
 		}
-		if x.Kind == ActionCommandHook && x.Mode == capabilitypack.ProjectionRemoveContent && record.HookProvenance != x.Source {
-			return errors.New("Claude hook creation provenance does not match ownership")
-		}
 		if x.Kind == ActionInstructionContribution {
 			o := ObserveInstructions(x.Target)
 			if o.Err != nil {
@@ -973,15 +739,6 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 			fp, ok := o.Contributions[record.ContributorID]
 			if ok && !fingerprintsEqual(fp, record.Fingerprint) {
 				return errors.New("owned Claude instruction contribution changed; preserving it")
-			}
-		}
-		if x.Kind == ActionCommandHook {
-			ok, err := settingsContainsFingerprint(x.Target, record.Fingerprint)
-			if err != nil {
-				return err
-			}
-			if !ok && x.Mode != capabilitypack.ProjectionDeleteTarget && x.Mode != capabilitypack.ProjectionRemoveContent {
-				return errors.New("owned Claude command hook changed; preserving it")
 			}
 		}
 	}
@@ -1037,12 +794,6 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		}
 		if x.Mode == capabilitypack.ProjectionDeleteTarget && (!record.DeletionAuthorized || len(record.Contributors) > 1) {
 			return errors.New("Claude rendered skill deletion is not authorized")
-		}
-		return nil
-	}
-	if x.Kind == ActionUserMCP {
-		if x.Mode == capabilitypack.ProjectionDeleteTarget && (record == nil || !record.DeletionAuthorized || len(record.Contributors) > 1) {
-			return errors.New("Claude user MCP deletion is not authorized by the fresh composite ownership snapshot")
 		}
 		return nil
 	}
@@ -1102,7 +853,7 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		if !fingerprintsEqual(fp, record.Fingerprint) {
 			return errors.New("owned Claude projection changed; preserving it")
 		}
-		if x.Kind == ActionInstructionContribution || x.Kind == ActionCommandHook {
+		if x.Kind == ActionInstructionContribution {
 			return errors.New("shared Claude documents cannot be deleted as exclusive targets")
 		}
 		return nil
@@ -1120,49 +871,21 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 
 func (a *SurfaceAdapter) preflight(actions []capabilitypack.ProjectionAction, snapshot OwnershipSnapshot) (string, error) {
 	for _, x := range actions {
-		if x.Kind == ActionUserMCP && x.Mode == capabilitypack.ProjectionDeleteTarget {
-			_, o, err := observeMCPRemoval(a.layout.UserMCPFile, x.Args)
-			if err != nil {
-				return x.ID, err
-			}
-			if !o.Present {
-				continue
-			}
-		}
 		if err := a.validateFreshOwnership(x, snapshot); err != nil {
 			return x.ID, err
 		}
-		if x.Mode == capabilitypack.ProjectionDeleteTarget && x.Kind != ActionUserMCP {
+		if x.Mode == capabilitypack.ProjectionDeleteTarget {
 			if _, err := os.Lstat(x.Target); os.IsNotExist(err) {
 				continue
 			}
 		}
-		if x.Kind == ActionInstructionContribution || x.Kind == ActionAgentFile || x.Kind == ActionSkillFile || x.Kind == ActionCommandHook {
+		if x.Kind == ActionInstructionContribution || x.Kind == ActionAgentFile {
 			current, err := readOptional(x.Target)
 			if err != nil {
 				return x.ID, err
 			}
 			if x.Command != "" && Fingerprint(current) != x.Command && string(current) != x.Content {
 				return x.ID, errors.New("stale Claude shared document revision")
-			}
-		}
-		if x.Kind == ActionUserMCP {
-			name, _ := mcpActionName(x.Args)
-			o := ObserveUserMCP(a.layout.UserMCPFile, name)
-			if o.Err != nil {
-				return x.ID, o.Err
-			}
-			var record *OwnershipRecord
-			for i := range snapshot.Records {
-				if snapshot.Records[i].ID == x.ID {
-					record = &snapshot.Records[i]
-				}
-			}
-			if o.Present && record == nil {
-				return x.ID, errors.New("foreign Claude user MCP collision")
-			}
-			if o.Present && record != nil && !fingerprintsEqual(o.DefinitionFingerprint, record.Fingerprint) {
-				return x.ID, errors.New("owned Claude user MCP changed; preserving it")
 			}
 		}
 	}
@@ -1187,12 +910,6 @@ func (a *SurfaceAdapter) runtimeReadiness(ctx context.Context, pack capabilitypa
 		}
 		participants++
 		signal := "loading"
-		switch projection.Action.Kind {
-		case ActionUserMCP:
-			signal = "connection"
-		case ActionCommandHook:
-			signal = "firing"
-		}
 		item, ok := byID[projection.ID]
 		wantRevision := runtimeEvidenceRevision(pack, projection, version.Version, policy)
 		if !ok || item.Kind != string(projection.Action.Kind) || item.Signal != signal || item.Revision != wantRevision {
@@ -1274,89 +991,6 @@ func optionalAuthorityReadiness(pack capabilitypack.Pack, auth AuthorizationObse
 	return result, nil
 }
 
-func claudeCommandSkill(resource capabilitypack.Resource, name string, prompt []byte) string {
-	description := resource.Description
-	if description == "" {
-		description = "Run the " + name + " command."
-	}
-	return fmt.Sprintf("---\nname: %s\ndescription: %q\n---\n\n%s\n", name, description, strings.TrimSpace(string(prompt)))
-}
-
-func claudeAgentDocument(resource capabilitypack.Resource, name string, authority capabilitypack.AgentAuthority, prompt []byte) string {
-	toolSet := map[string]bool{}
-	contract := make([]string, 0, len(authority.Authorities))
-	for _, record := range authority.Authorities {
-		for _, tool := range record.ClaudeTools {
-			toolSet[tool] = true
-		}
-		declarations := strings.Join(record.Declarations, ", ")
-		if declarations == "" {
-			declarations = "none"
-		}
-		claudeTools := strings.Join(record.ClaudeTools, ", ")
-		if claudeTools == "" {
-			claudeTools = "none"
-		}
-		contract = append(contract, fmt.Sprintf("- %s: declarations=[%s]; outcome=%s; claude_tools=[%s]; fallback=%s", record.Portable, declarations, record.Outcome, claudeTools, record.Fallback))
-	}
-	claudeTools := make([]string, 0, len(toolSet))
-	for tool := range toolSet {
-		claudeTools = append(claudeTools, tool)
-	}
-	sort.Strings(claudeTools)
-	tools := strings.Join(claudeTools, ", ")
-	if tools == "" {
-		tools = "[]"
-	}
-	return fmt.Sprintf("---\nname: %s\ndescription: %q\npermissionMode: %s\ntools: %s\n---\n\n## Packy authority contract\n\n- permission_mode: %s\n%s\n\n%s\n", name, resource.Description, authority.PermissionMode, tools, authority.PermissionMode, strings.Join(contract, "\n"), strings.TrimSpace(string(prompt)))
-}
-
-func (a *SurfaceAdapter) consumerAssets(pack capabilitypack.Pack, consumer capabilitypack.Resource, consumerID, targetDir string) ([]capabilitypack.ObservedProjection, error) {
-	resources := map[string]capabilitypack.Resource{}
-	for _, resource := range pack.Resources {
-		resources[resource.Kind+":"+resource.ID] = resource
-	}
-	seen := map[string]bool{}
-	assets := []capabilitypack.Resource{}
-	var visit func(string)
-	visit = func(id string) {
-		if seen[id] {
-			return
-		}
-		seen[id] = true
-		r, ok := resources[id]
-		if !ok {
-			return
-		}
-		if r.Kind == "asset" {
-			assets = append(assets, r)
-		}
-		for _, dependency := range r.Requires {
-			visit(dependency)
-		}
-	}
-	for _, dependency := range consumer.Requires {
-		visit(dependency)
-	}
-	sort.Slice(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
-	result := make([]capabilitypack.ObservedProjection, 0, len(assets))
-	for _, asset := range assets {
-		content, err := os.ReadFile(filepath.Join(asset.CatalogRootOr(a.catalogRoot), filepath.Clean(asset.Source)))
-		if err != nil {
-			return nil, err
-		}
-		target := filepath.Join(targetDir, filepath.Base(asset.Source))
-		observed, exists, err := localprojection.FingerprintPath(target)
-		if err != nil {
-			return nil, err
-		}
-		desired := localprojection.FingerprintBytes(content)
-		id := "asset:" + consumerID + ":" + asset.ID
-		result = append(result, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillFile, Target: target, Content: string(content), Description: "materialize Claude command dependency asset " + asset.ID}})
-	}
-	return result, nil
-}
-
 func (a *SurfaceAdapter) validateSkillAssetClosure(pack capabilitypack.Pack, consumer capabilitypack.Resource, source string) error {
 	root, err := canonicalPath(source)
 	if err != nil {
@@ -1406,28 +1040,6 @@ func canonicalPath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(resolved), nil
-}
-func mcpActionName(args []string) (string, bool) {
-	if len(args) >= 3 && args[0] == "mcp" && (args[1] == "add" || args[1] == "remove") {
-		return args[2], args[1] == "remove"
-	}
-	return "", false
-}
-func observeMCPRemoval(path string, args []string) (string, MCPObservation, error) {
-	name, remove := mcpActionName(args)
-	if !remove {
-		return name, MCPObservation{}, errors.New("not a Claude user MCP removal")
-	}
-	o := ObserveUserMCP(path, name)
-	return name, o, o.Err
-}
-func hasUserScope(args []string) bool {
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == "--scope" && args[i+1] == "user" {
-			return true
-		}
-	}
-	return false
 }
 func (a *SurfaceAdapter) lock() (func(), error) {
 	if a.stateRoot == "" {
@@ -1579,21 +1191,6 @@ func readOptional(path string) ([]byte, error) {
 	}
 	return b, err
 }
-func settingsContainsFingerprint(path, fingerprint string) (bool, error) {
-	settings := ObserveSettings(path, nil)
-	if settings.Err != nil {
-		return false, settings.Err
-	}
-	if len(settings.Raw) == 0 {
-		return false, nil
-	}
-	for _, entry := range observedHookEntries(settings) {
-		if fingerprintsEqual(HookOwnershipFingerprint(entry.event, entry.fingerprint), fingerprint) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
 func firstID(a []capabilitypack.ProjectionAction) string {
 	if len(a) > 0 {
 		return a[0].ID
@@ -1607,8 +1204,4 @@ func claudeBinding(r capabilitypack.Resource) (capabilitypack.Binding, bool) {
 		}
 	}
 	return capabilitypack.Binding{}, false
-}
-func fromBindingHook(b capabilitypack.Binding) CommandHookEntry {
-	h := b.Hook
-	return CommandHookEntry{Type: h.Type, Event: h.Event, Matcher: h.Matcher, Command: h.Command, Args: append([]string{}, h.Args...), TimeoutSeconds: h.TimeoutSeconds, Blocking: h.Blocking, Failure: h.Failure, Authorities: append([]string{}, h.Authorities...)}
 }

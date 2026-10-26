@@ -42,7 +42,6 @@
     "runtime_required": { "type": "boolean" },
     "runtime_effects": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/runtime_effect" } },
     "categories": { "type": "array", "items": { "type": "object" } },
-    "effects": { "type": "array", "items": { "type": "object" } },
     "sensitive_lock_identity": { "type": "string" },
     "blockers": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/blocker" } },
     "disposition": { "type": "string", "minLength": 1 },

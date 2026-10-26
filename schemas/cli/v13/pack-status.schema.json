@@ -580,10 +580,7 @@
           "enum": [
             "skill",
             "instruction",
-            "mcp_server",
-            "lifecycle",
             "agent",
-            "command",
             "asset",
             "notice"
           ]
@@ -602,7 +599,9 @@
         "roots"
       ],
       "properties": {
-        "client": { "const": "codex" },
+        "client": {
+          "const": "codex"
+        },
         "mode": {
           "enum": [
             "all",

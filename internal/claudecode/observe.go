@@ -2,12 +2,10 @@ package claudecode
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -43,49 +41,6 @@ type AgentObservation struct {
 	Fingerprint string
 	Err         error
 }
-type HookObservation struct {
-	Path, Revision     string
-	Parseable          bool
-	MatchingEntries    []string
-	Disabled, Shadowed bool
-	EntryFingerprint   string
-	Err                error
-}
-type MCPObservation struct {
-	Name                  string
-	Present               bool
-	Identity              MCPIdentity
-	DefinitionFingerprint string
-	Err                   error
-}
-
-func hookObservation(settings SettingsObservation) HookObservation {
-	return HookObservation{
-		Path: settings.Path, Revision: settings.Revision, Parseable: settings.Parseable,
-		Disabled: settings.Disabled, Shadowed: settings.Shadowed, Err: settings.Err,
-	}
-}
-
-type observedHookEntry struct{ event, fingerprint string }
-
-func observedHookEntries(settings SettingsObservation) []observedHookEntry {
-	hooks, _ := settings.Root["hooks"].(map[string]any)
-	var observed []observedHookEntry
-	for event, rawEntries := range hooks {
-		entries, _ := rawEntries.([]any)
-		for _, entry := range entries {
-			observed = append(observed, observedHookEntry{event: event, fingerprint: canonicalFingerprint(entry)})
-		}
-	}
-	sort.Slice(observed, func(i, j int) bool {
-		if observed[i].event != observed[j].event {
-			return observed[i].event < observed[j].event
-		}
-		return observed[i].fingerprint < observed[j].fingerprint
-	})
-	return observed
-}
-
 type RuntimeEvidence struct{ Kind, ID, Signal, Revision string }
 type OptionalAuthorityAvailability struct {
 	ModeID, Authority string
@@ -201,120 +156,5 @@ func ObserveInstructions(path string) InstructionObservation {
 		o.Contributions[id] = Fingerprint([]byte(body))
 		inside = inside[bodyEnd+len(endMarker):]
 	}
-	return o
-}
-
-type SettingsObservation struct {
-	Path, Revision                string
-	Raw                           []byte
-	Parseable, Disabled, Shadowed bool
-	Root                          map[string]any
-	Err                           error
-}
-
-func ObserveSettings(path string, higherPrecedence []byte) SettingsObservation {
-	o := SettingsObservation{Path: path}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		o.Parseable = true
-		o.Revision = Fingerprint(nil)
-		o.Raw = []byte{}
-		return o
-	}
-	if err != nil {
-		o.Err = err
-		return o
-	}
-	o.Raw = append([]byte(nil), b...)
-	o.Revision = Fingerprint(b)
-	if err = json.Unmarshal(b, &o.Root); err != nil {
-		o.Err = fmt.Errorf("invalid Claude settings JSON: %w", err)
-		return o
-	}
-	o.Parseable = true
-	if disabled, ok := o.Root["disableAllHooks"].(bool); ok {
-		o.Disabled = disabled
-	}
-	if len(higherPrecedence) > 0 {
-		var policy map[string]any
-		if err = json.Unmarshal(higherPrecedence, &policy); err != nil {
-			o.Err = fmt.Errorf("invalid higher-precedence Claude policy JSON: %w", err)
-			return o
-		}
-		if v, ok := policy["disableAllHooks"].(bool); ok && v {
-			o.Disabled = true
-			o.Shadowed = true
-		}
-		if policy["hooks"] != nil {
-			o.Shadowed = true
-		}
-	}
-	return o
-}
-
-// ObserveHooks statically classifies one exact typed hook. Policy may be
-// supplied from a higher-precedence settings document and is never mutated.
-func ObserveHooks(path string, wanted CommandHookEntry, higherPrecedence []byte) HookObservation {
-	return EnrichHookObservation(ObserveSettings(path, higherPrecedence), wanted)
-}
-func EnrichHookObservation(settings SettingsObservation, wanted CommandHookEntry) HookObservation {
-	o := hookObservation(settings)
-	if o.Err != nil {
-		return o
-	}
-	target := canonicalFingerprint(hookJSON(wanted))
-	for _, entry := range observedHookEntries(settings) {
-		if entry.event == wanted.Event && entry.fingerprint == target {
-			o.MatchingEntries = append(o.MatchingEntries, target)
-		}
-	}
-	if len(o.MatchingEntries) == 1 {
-		o.EntryFingerprint = target
-	}
-	return o
-}
-
-// ObserveUserMCP performs only a static read of the mixed user store. It never invokes Claude.
-func ObserveUserMCP(path, name string) MCPObservation {
-	o := MCPObservation{Name: name}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return o
-	}
-	if err != nil {
-		o.Err = err
-		return o
-	}
-	var root map[string]json.RawMessage
-	if err = json.Unmarshal(b, &root); err != nil {
-		o.Err = err
-		return o
-	}
-	var servers map[string]json.RawMessage
-	for _, key := range []string{"mcpServers", "mcp_servers"} {
-		if raw := root[key]; raw != nil {
-			if err = json.Unmarshal(raw, &servers); err != nil {
-				o.Err = fmt.Errorf("invalid Claude user MCP registry: %w", err)
-				return o
-			}
-			break
-		}
-	}
-	raw, ok := servers[name]
-	if !ok {
-		return o
-	}
-	var def struct {
-		Command string            `json:"command"`
-		Args    []string          `json:"args"`
-		Env     map[string]string `json:"env"`
-	}
-	if err = json.Unmarshal(raw, &def); err != nil {
-		o.Err = err
-		return o
-	}
-	o.Present = true
-	o.Identity = NewMCPIdentity(name, def.Command, def.Args, def.Env)
-	o.DefinitionFingerprint = canonicalFingerprint(o.Identity)
 	return o
 }

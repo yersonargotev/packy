@@ -30,8 +30,8 @@ func TestProjectUpdateAvailabilityRequiresAnIntactOlderInstallation(t *testing.T
 }
 
 func TestIssue458ClassifiesSensitiveVersionChangesForFreshPersonalActivation(t *testing.T) {
-	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationHooks, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
-	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationMCP, Surface: SurfaceClaude, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp:memory"}
+	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationAuthentication, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
+	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: SurfaceClaude, Resource: ResourceIdentity{Kind: "agent", ID: "memory"}, Detail: "mcp:memory"}
 	prior := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "1.0.0"}, Surface: SurfaceAgents}}, Sensitive: []ProjectSensitiveDisclosure{oldHook}}
 	desired := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "2.0.0"}, Surface: SurfaceAgents}}, Sensitive: []ProjectSensitiveDisclosure{oldHook, newMCP}}
 

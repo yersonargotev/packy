@@ -14,7 +14,7 @@ func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 		Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{
-				Kind: "command", ID: "consumer",
+				Kind: "skill", ID: "consumer",
 				Requires: []string{"skill:shared"}, Notices: []string{},
 				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "consumer", Mode: "native"}},
 			},
@@ -58,11 +58,11 @@ func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 		roots["skill:optional"].Reasons[0].Code != SelectionReasonRootExcluded {
 		t.Fatalf("optional custom root = %#v", roots["skill:optional"])
 	}
-	consumer := roots["command:consumer"]
+	consumer := roots["skill:consumer"]
 	if consumer.Available || len(consumer.Reasons) != 1 ||
 		consumer.Reasons[0].Code != SelectionReasonDependencyUnavailable ||
 		!reflect.DeepEqual(consumer.Reasons[0].DependencyChain, []ResourceIdentity{
-			{Kind: "command", ID: "consumer"}, {Kind: "skill", ID: "shared"},
+			{Kind: "skill", ID: "consumer"}, {Kind: "skill", ID: "shared"},
 		}) {
 		t.Fatalf("consumer validity = %#v", consumer)
 	}
@@ -72,7 +72,7 @@ func TestExternalExecutableAcquisitionIsSelectedOnlyWithItsDeclaringResourceClos
 	pack := Pack{
 		ID: "portable", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, Requires: Requirements{Tools: []string{"engram"}},
 		Resources: []Resource{
-			{Kind: "mcp_server", ID: "memory", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceAgents, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}},
+			{Kind: "skill", ID: "memory", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceAgents, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}},
 			{Kind: "skill", ID: "plain", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceAgents}}, SurfaceExclusions: []SurfaceExclusion{}},
 		},
 	}
@@ -86,7 +86,7 @@ func TestExternalExecutableAcquisitionIsSelectedOnlyWithItsDeclaringResourceClos
 	if planHasAction(plain, "external:engram:acquire") {
 		t.Fatal("unselected acquisition entered the plan")
 	}
-	selected, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "mcp_server", ID: "memory"}}}})
+	selected, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "memory"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 		Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{
-				Kind: "command", ID: "consumer",
+				Kind: "skill", ID: "consumer",
 				Requires: []string{"skill:derived"}, Notices: []string{},
 				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "consumer", Mode: "native"}},
 			},
@@ -139,7 +139,7 @@ func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 	plan, err := facade.Preview(context.Background(), ActivationRequest{
 		PackID: "app", Surface: SurfaceAgents,
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{
-			{Kind: "command", ID: "consumer"}, {Kind: "skill", ID: "other"},
+			{Kind: "skill", ID: "consumer"}, {Kind: "skill", ID: "other"},
 		}},
 	})
 	if err != nil {
@@ -156,7 +156,7 @@ func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"skill:derived", "dependency", "command:consumer -> skill:derived",
+		"skill:derived", "dependency", "skill:consumer -> skill:derived",
 		"skill:other", "root", "remove one explicit root",
 	} {
 		if !strings.Contains(conflict.Detail, want) {

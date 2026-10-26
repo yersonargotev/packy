@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/testprocess"
@@ -29,7 +28,7 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 				opts.catalogRootOverride = ""
 				opts.CatalogSource = source
 				opts.ClaudeLookPath = func(string) (string, error) { return "fixture-claude", nil }
-				opts.ClaudeRunner = issue823ClaudeRunner{home: fixture.home}
+				opts.ClaudeRunner = issue823ClaudeRunner{}
 				root := fixture.home
 				apply, remove := "activate", "deactivate"
 				selection := []string{}
@@ -95,11 +94,8 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 						targets = append(targets, path)
 					}
 				}
-				if surface == "claude" && scope == "global" {
-					targets = append(targets, filepath.Join(fixture.home, ".claude.json"))
-				}
 				content := issue823ProjectedContent(t, targets)
-				kinds := []string{"skill", "instruction", "mcp_server"}
+				kinds := []string{"skill", "instruction"}
 				if surface == "agents" {
 					kinds = []string{"skill"}
 					if scope == "project" {
@@ -110,15 +106,12 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 				}
 				for _, kind := range kinds {
 					want := "Reviewed " + surface + " " + kind
-					if kind == "mcp_server" {
-						want = surface + "-argument"
-					}
 					if !strings.Contains(content, want) {
 						t.Fatalf("missing %s in projected files:\n%s\nTargets %v", want, content, targets)
 					}
 				}
 				if surface != "agents" {
-					for _, kind := range []string{"agent", "command", "asset"} {
+					for _, kind := range []string{"agent", "asset"} {
 						if !strings.Contains(content, "Reviewed "+surface+" "+kind) {
 							t.Fatalf("missing %s variant in projections:\n%s", kind, content)
 						}
@@ -128,9 +121,6 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 					if !strings.Contains(content, "Reviewed "+surface+" notice") || !strings.Contains(content, "Original MIT notice and attribution.") {
 						t.Fatalf("selected notice missing: %s", content)
 					}
-				}
-				if surface == "claude" && !strings.Contains(content, "reviewed-hook") {
-					t.Fatalf("typed lifecycle hook missing: %s", content)
 				}
 				status := []string{"status", pack.ID(), "--surface", surface, "--json"}
 				if scope == "project" {
@@ -146,7 +136,7 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 				}
 				run(update...)
 				updatedContent := issue823ProjectedContent(t, targets)
-				if !strings.Contains(updatedContent, "Updated reviewed body") || (surface == "claude" && !strings.Contains(updatedContent, "updated")) {
+				if !strings.Contains(updatedContent, "Updated reviewed body") {
 					t.Fatalf("update omitted selected definitions: %s", updatedContent)
 				}
 				if scope == "project" {
@@ -290,29 +280,13 @@ func TestIssue823VariantImportKeepsOriginalAndLogicalIdentity(t *testing.T) {
 
 // The host transport is simulated; projection ownership and static verification
 // still use the production Claude adapter and actual sandbox files.
-type issue823ClaudeRunner struct{ home string }
+type issue823ClaudeRunner struct{}
 
 func (r issue823ClaudeRunner) Run(_ context.Context, command claudecode.Command) claudecode.Result {
 	if len(command.Args) == 1 && command.Args[0] == "--version" {
 		return claudecode.Result{Stdout: "2.1.0"}
 	}
-	if len(command.Args) < 3 || command.Args[0] != "mcp" {
-		return claudecode.Result{}
-	}
-	servers := map[string]any{}
-	if command.Args[1] == "add" {
-		for i, arg := range command.Args {
-			if arg == "--" && i+1 < len(command.Args) {
-				servers[command.Args[2]] = map[string]any{"type": "stdio", "command": command.Args[i+1], "args": command.Args[i+2:]}
-				break
-			}
-		}
-	}
-	data, err := json.Marshal(map[string]any{"mcpServers": servers})
-	if err == nil {
-		err = os.WriteFile(filepath.Join(r.home, ".claude.json"), data, 0600)
-	}
-	return claudecode.Result{Err: err}
+	return claudecode.Result{}
 }
 
 func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
@@ -357,7 +331,7 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 					t.Fatalf("real CLI %v: %v\n%s", args, err, output)
 				}
 				if args[0] == "activate" {
-					kinds := []string{"agent", "asset", "command", "instruction", "lifecycle", "mcp_server", "notice", "skill"}
+					kinds := []string{"agent", "asset", "instruction", "notice", "skill"}
 					if surface == "agents" {
 						kinds = []string{"agent", "notice", "skill"}
 					}
@@ -392,36 +366,6 @@ func TestIssue823RefreshFindsVariantOnlyProvenance(t *testing.T) {
 		data, err := os.ReadFile(filepath.Join(fixture.project, "packs/seed/skills", source, "SKILL.md"))
 		if err != nil || string(data) != want {
 			t.Fatalf("%s body = %s %v", source, data, err)
-		}
-	}
-}
-
-func TestIssue823VariantMCPUpdatePreservesUnmanagedAndDriftedEntries(t *testing.T) {
-	for _, surface := range []string{"claude"} {
-		for _, owned := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/owned=%t", surface, owned), func(t *testing.T) {
-				pack := testsupport.AllKindVariants("guarded")
-				fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
-				opts := fixture.options
-				root := t.TempDir()
-				writeTestGitWorktree(t, root)
-				opts.Getwd = func() (string, error) { return root, nil }
-				path := filepath.Join(root, ".mcp.json")
-				if owned {
-					if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--json"); err != nil {
-						t.Fatalf("install: %v\n%s", err, out)
-					}
-				}
-				content := `{"mcpServers":{"sample-mcp-server":{"type":"stdio","command":"unmanaged","args":[]}}}`
-				writeAuthoringFile(t, path, content)
-				before := snapshotTree(t, root)
-				if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--json"); err == nil {
-					t.Fatalf("changed or unowned MCP overwritten: %s", out)
-				}
-				if snapshotTree(t, root) != before {
-					t.Fatal("blocked MCP plan changed project")
-				}
-			})
 		}
 	}
 }
@@ -487,24 +431,5 @@ func TestIssue823RefreshBlocksOverlappingMaintainedVariant(t *testing.T) {
 	}
 	if snapshotTree(t, filepath.Join(fixture.project, "packs")) != before {
 		t.Fatal("overlapping refresh modified maintained tree")
-	}
-}
-
-func TestIssue823LifecycleVariantResolvesDependencyWithoutExecutingAuthoringCode(t *testing.T) {
-	pack := testsupport.AllKindVariants("lifecycle-dependency")
-	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
-	for _, surface := range []string{"claude"} {
-		out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.ID(), "--surface", surface, "--resource", "lifecycle:sample-lifecycle", "--dry-run", "--json")
-		if err != nil {
-			t.Fatalf("lifecycle %s: %v\n%s", surface, err, out)
-		}
-		for _, want := range []string{`"kind":"skill","id":"sample-skill"`, `"role":"dependency"`, `"definition":"surface_variant"`} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("lifecycle variant closure omitted %s: %s", want, out)
-			}
-		}
-	}
-	if len(fixture.options.Runner.(*fakeRunner).calls) != 0 {
-		t.Fatal("preview executed a child process")
 	}
 }

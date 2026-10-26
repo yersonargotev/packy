@@ -55,7 +55,7 @@ func TestIssue876RetiredPersonalStateBlocksProjectInstallAndApply(t *testing.T) 
 				t.Fatalf("initial preview: %v %+v", err, preview)
 			}
 			// Model an old binary's valid receipt without asking the current writer to accept it.
-			saveIssue797Orphan(t, packyHome, project, pack.ID, SurfaceAgents, nil)
+			saveIssue797Orphan(t, packyHome, project, pack.ID, SurfaceAgents)
 			directory, err := projectActivationDirectory(packyHome, project)
 			if err != nil {
 				t.Fatal(err)

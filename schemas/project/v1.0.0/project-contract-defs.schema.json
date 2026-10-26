@@ -4,10 +4,29 @@
   "title": "Packy project lifecycle shared definitions v1.0.0",
   "$defs": {
     "surface": { "enum": ["claude", "agents"] },
+    "client_projection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["client", "scopes"],
+      "properties": {
+        "client": { "const": "claude" },
+        "scopes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["global", "project"] }, "contains": { "const": "project" } }
+      }
+    },
+    "role_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "surface", "projection", "name", "invocation", "mode", "sharing", "client_projection"],
+      "properties": {
+        "kind": { "const": "agent" }, "id": { "type": "string", "minLength": 1 },
+        "surface": { "const": "claude" }, "projection": { "const": "agent" },
+        "name": { "type": "string", "minLength": 1 }, "invocation": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["native", "degraded"] }, "sharing": { "enum": ["exclusive", "shared"] },
+        "degradation": { "type": "string" }, "client_projection": { "$ref": "#/$defs/client_projection" }
+      }
+    },
     "resource": {
       "type": "object",
       "required": ["kind", "id"],
-      "properties": { "kind": { "type": "string", "minLength": 1 }, "id": { "type": "string", "minLength": 1 } },
+      "properties": { "kind": { "enum": ["skill", "instruction", "agent", "asset", "notice", "pack"] }, "id": { "type": "string", "minLength": 1 } },
       "additionalProperties": false
     },
     "selection": {
@@ -23,7 +42,7 @@
       "type": "object",
       "required": ["kind", "id", "name"],
       "properties": {
-        "kind": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["skill", "instruction", "agent", "asset", "notice", "pack"] },
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 }
       },
@@ -122,6 +141,7 @@
         "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } },
         "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } },
         "projections": { "type": "array", "items": { "$ref": "#/$defs/installed_projection" } },
+        "role_bindings": { "type": "array", "items": { "$ref": "#/$defs/role_binding" } },
         "sensitive": { "type": "array", "items": { "$ref": "#/$defs/sensitive" } }
       },
       "additionalProperties": false
@@ -130,6 +150,7 @@
       "type": "object",
       "required": ["resource", "target", "mode", "file_mode", "observed_state", "owner_pack", "surface"],
       "properties": {
+        "client_projection": { "$ref": "#/$defs/client_projection" },
         "resource": { "$ref": "#/$defs/resource" },
         "target": { "type": "string" },
         "mode": { "type": "string", "minLength": 1 },
@@ -162,7 +183,7 @@
       "type": "object",
       "required": ["category", "surface", "resource", "detail"],
       "properties": {
-        "category": { "enum": ["mcp", "hooks", "plugins", "external-requirements", "trust", "authentication"] },
+        "category": { "enum": ["external-requirements", "trust", "authentication"] },
         "surface": { "$ref": "#/$defs/surface" },
         "resource": { "$ref": "#/$defs/resource" },
         "detail": { "type": "string", "minLength": 1 }

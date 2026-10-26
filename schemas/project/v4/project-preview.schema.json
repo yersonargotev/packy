@@ -136,12 +136,6 @@
         "type": "object"
       }
     },
-    "effects": {
-      "type": "array",
-      "items": {
-        "type": "object"
-      }
-    },
     "sensitive_lock_identity": {
       "type": "string"
     },
@@ -192,12 +186,9 @@
                 "enum": [
                   "skill",
                   "agent",
-                  "command",
                   "instruction",
                   "asset",
-                  "notice",
-                  "mcp_server",
-                  "lifecycle"
+                  "notice"
                 ]
               },
               "id": {
@@ -261,12 +252,9 @@
                   "enum": [
                     "skill",
                     "agent",
-                    "command",
                     "instruction",
                     "asset",
-                    "notice",
-                    "mcp_server",
-                    "lifecycle"
+                    "notice"
                   ]
                 },
                 "id": {

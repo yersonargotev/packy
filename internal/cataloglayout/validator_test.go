@@ -226,7 +226,7 @@ func TestValidateProjectChecksCapabilityLayoutIndependentlyOfSkillSource(t *test
 	}
 }
 
-func TestValidateProjectRejectsSourceOnDeclarationOnlyResource(t *testing.T) {
+func TestValidateProjectRejectsRetiredHookBinding(t *testing.T) {
 	project := t.TempDir()
 	writeFile(t, filepath.Join(project, "instructions", "guide.md"), "guidance\n", 0o644)
 	writeFile(t, filepath.Join(project, "pack.json"), capabilityManifest, 0o644)
@@ -244,7 +244,7 @@ func TestValidateProjectRejectsSourceOnDeclarationOnlyResource(t *testing.T) {
 	})
 
 	_, err := ValidateProject(context.Background(), project, nil)
-	if err == nil || !strings.Contains(err.Error(), "does not own a source root") {
+	if err == nil || !strings.Contains(err.Error(), "unknown field \"hook\"") {
 		t.Fatalf("error = %v", err)
 	}
 }

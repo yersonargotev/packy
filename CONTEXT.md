@@ -148,7 +148,11 @@ and remains a declared resource dependency when a workflow requires that role.
 Agents currently supports explicit global Codex roles through a reviewed
 `client_projection` binding and a client-selected lifecycle. Unsupported client
 or scope combinations fail before mutation; shared Agents skills select no
-runtime client.
+runtime client. Claude native agent documents declare client `claude` and their
+reviewed global/project scopes; selecting the Claude surface identifies that
+client. Unsupported required scopes fail before mutation. Direct MCP, hooks,
+commands, and obsolete lifecycle resources are not Pack resources in the current
+contract.
 
 ### Plugin export
 

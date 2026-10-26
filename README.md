@@ -6,6 +6,9 @@ without becoming an agent runtime. Agents supplies shared global/project skills
 and project-only `AGENTS.md` contributions. It does not choose a runtime client
 or write Codex settings. Required Codex roles need an explicitly reviewed global
 projection and `--client codex`; see [custom agents](docs/capability-packs.md#explicit-custom-agent-projections).
+Claude retains global/project instructions, complete skills, and reviewed native
+custom agents with explicit scope support. Direct MCP, hooks, and command
+resources are rejected on both surfaces.
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source for reviewed Packs. The
@@ -88,7 +91,8 @@ packy install <pack> --surface <surface>
 ```
 
 Project installation writes reviewed project intent and one receipt per Pack
-and surface. Personal runtime effects remain a separate activation:
+and surface. Where a Pack requires personal trust or external prerequisites,
+personal activation remains separate from those shared files:
 
 ```sh
 packy activate <pack> --surface <surface> --project --dry-run

@@ -5,7 +5,7 @@ import "path/filepath"
 // CanonicalLayout is the complete user-global Claude Code filesystem surface.
 // It is derived only from the home supplied by the composition root.
 type CanonicalLayout struct {
-	Home, ConfigDir, SkillsDir, AgentsDir, InstructionsFile, SettingsFile, UserMCPFile string
+	Home, ConfigDir, SkillsDir, AgentsDir, InstructionsFile string
 }
 
 func NewCanonicalLayout(home string) CanonicalLayout {
@@ -13,7 +13,6 @@ func NewCanonicalLayout(home string) CanonicalLayout {
 	return CanonicalLayout{
 		Home: filepath.Clean(home), ConfigDir: config,
 		SkillsDir: filepath.Join(config, "skills"), AgentsDir: filepath.Join(config, "agents"),
-		InstructionsFile: filepath.Join(config, "CLAUDE.md"), SettingsFile: filepath.Join(config, "settings.json"),
-		UserMCPFile: filepath.Join(filepath.Clean(home), ".claude.json"),
+		InstructionsFile: filepath.Join(config, "CLAUDE.md"),
 	}
 }

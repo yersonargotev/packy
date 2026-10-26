@@ -141,9 +141,9 @@ func ApplyProjectPackUninstall(ctx context.Context, request ProjectPackUninstall
 	current, previewErr := PreviewProjectDeactivation(ctx, ProjectDeactivationRequest{
 		PackID: fresh.Pack.ID, Surface: approved.Surface, ProjectRoot: fresh.request.ProjectRoot, PackyHome: fresh.request.PackyHome, Adapter: fresh.request.RuntimeAdapter,
 	})
-	if previewErr != nil || projectDeactivationEffectsDigest(current) != projectDeactivationEffectsDigest(approved) {
+	if previewErr != nil || projectDeactivationConsentDigest(current) != projectDeactivationConsentDigest(approved) {
 		if previewErr == nil {
-			previewErr = errors.New("personal deactivation effects changed after project-owned removal")
+			previewErr = errors.New("personal deactivation consent changed after project-owned removal")
 		}
 		return ProjectPackUninstallApplyResult{Status: "partial", Stage: "verification", PendingSurfaces: []Surface{approved.Surface}}, previewErr
 	}
@@ -164,8 +164,12 @@ func sealProjectPackUninstallPreview(preview ProjectPackUninstallPreview) string
 	return hex.EncodeToString(sum[:])
 }
 
-func projectDeactivationEffectsDigest(preview JSONProjectDeactivationPreview) string {
-	data, _ := json.Marshal(preview.Effects)
+func projectDeactivationConsentDigest(preview JSONProjectDeactivationPreview) string {
+	data, _ := json.Marshal(struct {
+		Pack     ProjectManifestPack
+		Surface  Surface
+		Identity string
+	}{preview.Pack, preview.Surface, preview.SensitiveLockIdentity})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

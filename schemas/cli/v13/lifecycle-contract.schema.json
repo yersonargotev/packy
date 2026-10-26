@@ -8,10 +8,7 @@
       "required": [
         "Skills",
         "Instructions",
-        "MCPServers",
-        "Lifecycles",
         "Agents",
-        "Commands",
         "Assets",
         "Notices"
       ],
@@ -24,19 +21,7 @@
           "type": "integer",
           "minimum": 0
         },
-        "MCPServers": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "Lifecycles": {
-          "type": "integer",
-          "minimum": 0
-        },
         "Agents": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "Commands": {
           "type": "integer",
           "minimum": 0
         },
@@ -96,15 +81,20 @@
           ],
           "properties": {
             "client": {
-              "const": "codex"
+              "enum": [
+                "codex",
+                "claude"
+              ]
             },
             "scopes": {
               "type": "array",
               "items": {
-                "const": "global"
+                "enum": [
+                  "global",
+                  "project"
+                ]
               },
               "minItems": 1,
-              "maxItems": 1,
               "uniqueItems": true
             }
           }
@@ -542,12 +532,9 @@
                     "enum": [
                       "skill",
                       "agent",
-                      "command",
                       "instruction",
                       "asset",
-                      "notice",
-                      "mcp_server",
-                      "lifecycle"
+                      "notice"
                     ]
                   },
                   "id": {
@@ -611,12 +598,9 @@
                       "enum": [
                         "skill",
                         "agent",
-                        "command",
                         "instruction",
                         "asset",
-                        "notice",
-                        "mcp_server",
-                        "lifecycle"
+                        "notice"
                       ]
                     },
                     "id": {

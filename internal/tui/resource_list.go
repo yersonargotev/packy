@@ -162,7 +162,7 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if pack == nil {
 		return m, nil
 	}
-	if client := m.selectedRoleClient(); message.String() == "c" && client != "" {
+	if client := m.selectableRoleClient(); message.String() == "c" && client != "" {
 		if m.selectedClient == client {
 			m.selectedClient = ""
 		} else {
@@ -233,7 +233,7 @@ func (m Model) updateResourceList(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) syncResourceList() {
-	if m.selectedRoleClient() == "" {
+	if m.selectableRoleClient() == "" {
 		m.selectedClient = ""
 	}
 	selected := make(map[string]bool)
@@ -306,7 +306,13 @@ func (m Model) resourceSelectionFrame(width int) (string, string) {
 		resourceSurfaceStyle.Render(surfaceLine),
 		counts,
 	}, "\n")
-	if m.selectedRoleClient() != "" {
+	if client := m.selectedRoleClient(); client == "claude" {
+		roleScope := "global"
+		if m.project {
+			roleScope = "project"
+		}
+		header += "\nCustom-agent client: claude · scope: " + roleScope + " (fixed by surface)"
+	} else if m.selectableRoleClient() != "" {
 		client := "none"
 		if m.selectedClient != "" {
 			client = m.selectedClient
@@ -358,8 +364,12 @@ func (m Model) renderSelection() string {
 // selectedRoleClient exposes only the reviewed client of a selected role closure.
 func (m Model) selectedRoleClient() string {
 	pack := m.selectedPack()
-	if m.project || pack == nil {
+	if pack == nil {
 		return ""
+	}
+	scope := "global"
+	if m.project {
+		scope = "project"
 	}
 	surface := selectedSurface(*pack, m.surfaceIndex)
 	for _, resource := range pack.Resources {
@@ -367,10 +377,22 @@ func (m Model) selectedRoleClient() string {
 			continue
 		}
 		for _, projection := range resource.ClientProjections {
-			if projection.Surface == surface && slices.Contains(projection.Scopes, "global") {
+			if projection.Surface == surface && slices.Contains(projection.Scopes, scope) {
 				return projection.Client
 			}
 		}
+	}
+	return ""
+}
+
+// Only shared Agents roles require an explicit concrete-client choice.
+func (m Model) selectableRoleClient() string {
+	pack := m.selectedPack()
+	if m.project || pack == nil || selectedSurface(*pack, m.surfaceIndex) != "agents" {
+		return ""
+	}
+	if m.selectedRoleClient() == "codex" {
+		return "codex"
 	}
 	return ""
 }

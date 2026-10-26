@@ -62,8 +62,6 @@ type Resource struct {
 	Kind              string
 	ID                string
 	Source            string
-	Command           string
-	Args              []string
 	Description       string
 	Mode              string
 	Tools             []string
@@ -74,7 +72,6 @@ type Resource struct {
 	Notices           []string
 	Bindings          []Binding
 	SurfaceExclusions []SurfaceExclusion
-	Arguments         CommandArguments
 	License           string
 	Attribution       string
 	RuntimeModes      []RuntimeMode
@@ -250,7 +247,6 @@ type Binding struct {
 	Degradation      string              `json:"degradation,omitempty"`
 	Sharing          string              `json:"sharing"`
 	Capabilities     []SurfaceCapability `json:"capabilities"`
-	Hook             *CommandHook        `json:"hook,omitempty"`
 }
 
 // ReferencedSourcePaths returns the typed capability paths owned by this
@@ -378,28 +374,11 @@ type AuthorityRecord struct {
 	Fallback     string   `json:"fallback"`
 }
 
-type CommandHook struct {
-	Type           string   `json:"type"`
-	Event          string   `json:"event"`
-	Matcher        string   `json:"matcher"`
-	Command        string   `json:"command"`
-	Args           []string `json:"args"`
-	TimeoutSeconds int      `json:"timeout_seconds"`
-	Blocking       bool     `json:"blocking"`
-	Failure        string   `json:"failure"`
-	Authorities    []string `json:"authorities"`
-}
-
 type SurfaceExclusion struct {
 	Surface Surface `json:"surface"`
 	Mode    string  `json:"mode"`
 	Code    string  `json:"code"`
 	Reason  string  `json:"reason"`
-}
-
-type CommandArguments struct {
-	Mode        string `json:"mode"`
-	Placeholder string `json:"placeholder,omitempty"`
 }
 
 type Contract struct {
@@ -429,10 +408,7 @@ type Pack struct {
 type ResourceCounts struct {
 	Skills       int
 	Instructions int
-	MCPServers   int
-	Lifecycles   int
 	Agents       int
-	Commands     int
 	Assets       int
 	Notices      int
 }
@@ -445,14 +421,8 @@ func (p Pack) ResourceCounts() ResourceCounts {
 			counts.Skills++
 		case "instruction":
 			counts.Instructions++
-		case "mcp_server":
-			counts.MCPServers++
-		case "lifecycle":
-			counts.Lifecycles++
 		case "agent":
 			counts.Agents++
-		case "command":
-			counts.Commands++
 		case "asset":
 			counts.Assets++
 		case "notice":
@@ -739,7 +709,6 @@ func clonePack(pack Pack) Pack {
 			origin := *pack.Resources[i].Origin
 			pack.Resources[i].Origin = &origin
 		}
-		pack.Resources[i].Args = slices.Clone(pack.Resources[i].Args)
 		pack.Resources[i].Tools = slices.Clone(pack.Resources[i].Tools)
 		pack.Resources[i].Permissions = slices.Clone(pack.Resources[i].Permissions)
 		pack.Resources[i].Requires = slices.Clone(pack.Resources[i].Requires)
@@ -785,12 +754,6 @@ func clonePack(pack Pack) Pack {
 					copy := *binding.Capabilities[k].SkillTemplate
 					binding.Capabilities[k].SkillTemplate = &copy
 				}
-			}
-			if binding.Hook != nil {
-				copy := *binding.Hook
-				copy.Args = slices.Clone(copy.Args)
-				copy.Authorities = slices.Clone(copy.Authorities)
-				binding.Hook = &copy
 			}
 		}
 	}
@@ -941,15 +904,10 @@ func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []O
 		}
 	}
 	switch resource.Kind {
-	case "skill", "instruction", "agent", "command", "asset", "notice":
+	case "skill", "instruction", "agent", "asset", "notice":
 		if err := validateSourcePath(resource.Source); err != nil {
 			return fmt.Errorf("source: %w", err)
 		}
-	case "mcp_server":
-		if strings.TrimSpace(resource.Command) == "" || resource.Args == nil {
-			return fmt.Errorf("command and args are required")
-		}
-	case "lifecycle":
 	default:
 		return fmt.Errorf("unsupported resource kind %q", resource.Kind)
 	}
@@ -960,9 +918,6 @@ func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []O
 		if !sortedPortableSet(resource.Tools, idPattern.MatchString) || !sortedPortableSet(resource.Permissions, func(v string) bool { return portableAuthorities[v] }) {
 			return fmt.Errorf("agent tools and permissions must be sorted supported sets")
 		}
-	}
-	if resource.Kind == "command" && resource.Arguments.Mode != "none" && (resource.Arguments.Mode != "freeform" || resource.Arguments.Placeholder != "$ARGUMENTS") {
-		return fmt.Errorf("arguments must be none or freeform with $ARGUMENTS")
 	}
 	if resource.Kind == "notice" {
 		if resource.License == "" || strings.TrimSpace(resource.Attribution) == "" || len(resource.Requires) != 0 || len(resource.Bindings) != 0 || len(resource.SurfaceExclusions) != 0 {
@@ -1072,8 +1027,8 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 				return fmt.Errorf("surface capability %q project_instruction source: %w", capability.Type, err)
 			}
 		case SurfaceCapabilityClaudeCompositeSkill:
-			if binding.Surface != SurfaceClaude || binding.Projection != "skill" || resource.Kind != "skill" && resource.Kind != "command" {
-				return fmt.Errorf("surface capability %q requires a Claude skill or command binding", capability.Type)
+			if binding.Surface != SurfaceClaude || binding.Projection != "skill" || resource.Kind != "skill" {
+				return fmt.Errorf("surface capability %q requires a Claude skill binding", capability.Type)
 			}
 			if capability.ClaudeCompositeSkill == nil {
 				return fmt.Errorf("surface capability %q requires claude_composite_skill data", capability.Type)
@@ -1118,21 +1073,11 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 		}
 	}
 	if binding.Surface != SurfaceClaude {
-		if binding.Hook != nil {
-			return fmt.Errorf("Claude typed binding fields are forbidden on %s", binding.Surface)
-		}
 		return validateBinding(kind, binding)
 	}
-	want := map[string]string{"skill": "skill", "instruction": "instruction", "mcp_server": "mcp_server", "agent": "agent", "command": "skill", "lifecycle": "command_hook"}[kind]
+	want := map[string]string{"skill": "skill", "instruction": "instruction", "agent": "agent"}[kind]
 	if binding.Projection != want {
 		return fmt.Errorf("%s binding on claude must project as %s", kind, want)
-	}
-	currentContract := optionalModes == nil
-	if !currentContract && (binding.Hook != nil) != (kind == "lifecycle") {
-		return fmt.Errorf("typed Claude binding field does not match %s projection", kind)
-	}
-	if binding.Hook != nil {
-		return validateCommandHook(*binding.Hook)
 	}
 	if kind == "agent" && (len(resource.Tools) > 0 || len(resource.Permissions) > 0) && !resource.RequestsSurfaceCapability(SurfaceClaude, SurfaceCapabilityClaudeAgentDocument) {
 		return fmt.Errorf("Claude agent with tools or permissions requires %q", SurfaceCapabilityClaudeAgentDocument)
@@ -1284,34 +1229,27 @@ func validateAgentAuthority(authority AgentAuthority, tools, permissions []strin
 	return nil
 }
 
-func validateCommandHook(hook CommandHook) error {
-	events := map[string]bool{"PreToolUse": true, "PostToolUse": true, "PostToolUseFailure": true, "Notification": true, "UserPromptSubmit": true, "SessionStart": true, "SessionEnd": true, "Stop": true, "SubagentStart": true, "SubagentStop": true, "PreCompact": true, "PermissionRequest": true, "Setup": true}
-	if hook.Type != "command" || !events[hook.Event] || strings.TrimSpace(hook.Command) == "" || hook.Args == nil || hook.TimeoutSeconds <= 0 || (hook.Failure != "block" && hook.Failure != "warn") || hook.Authorities == nil {
-		return fmt.Errorf("hook type, event, command, args, positive timeout_seconds, failure, and authorities are invalid")
-	}
-	if !sortedPortableSet(hook.Authorities, func(v string) bool { return portableAuthorities[v] }) {
-		return fmt.Errorf("hook authorities must be a sorted supported set")
-	}
-	matcherRequired := map[string]bool{"PreToolUse": true, "PostToolUse": true, "PostToolUseFailure": true, "PermissionRequest": true}
-	if matcherRequired[hook.Event] && strings.TrimSpace(hook.Matcher) == "" {
-		return fmt.Errorf("hook matcher is required for event %s", hook.Event)
-	}
-	return nil
-}
-
 var portableAuthorities = map[string]bool{
 	"filesystem": true, "process": true, "network": true, "browser": true,
 	"subagent": true, "package-manager": true, "commit": true, "deploy": true,
 }
 
 func validateClientProjection(kind string, binding Binding) error {
-	if binding.Surface == SurfaceAgents && kind == "agent" {
-		projection := binding.ClientProjection
+	if kind != "agent" {
+		if binding.ClientProjection != nil {
+			return fmt.Errorf("client_projection is supported only for native agent bindings")
+		}
+		return nil
+	}
+	projection := binding.ClientProjection
+	if binding.Surface == SurfaceAgents {
 		if projection == nil || projection.Client != "codex" || len(projection.Scopes) != 1 || projection.Scopes[0] != "global" {
 			return fmt.Errorf("Agents agent binding requires an explicit reviewed client_projection for codex at global scope; other client/scope combinations are unsupported")
 		}
-	} else if binding.ClientProjection != nil {
-		return fmt.Errorf("client_projection is supported only for Agents agent bindings")
+	} else if binding.Surface == SurfaceClaude {
+		if projection == nil || projection.Client != "claude" || len(projection.Scopes) == 0 || !sortedPortableSet(projection.Scopes, func(scope string) bool { return scope == "global" || scope == "project" }) {
+			return fmt.Errorf("Claude agent binding requires an explicit reviewed client_projection for claude with supported global/project scopes")
+		}
 	}
 	return nil
 }
@@ -1502,7 +1440,7 @@ func validatePackResourceSources(pack Pack, fallbackRoot string) error {
 	}
 	for _, resource := range bodies {
 		root := resource.CatalogRootOr(fallbackRoot)
-		if resource.Kind == "skill" || resource.Kind == "instruction" || resource.Kind == "agent" || resource.Kind == "command" || resource.Kind == "asset" || resource.Kind == "notice" {
+		if resource.Kind == "skill" || resource.Kind == "instruction" || resource.Kind == "agent" || resource.Kind == "asset" || resource.Kind == "notice" {
 			if err := validateSource(root, resource); err != nil {
 				return fmt.Errorf("resource %q source: %w", resource.Kind+":"+resource.ID, err)
 			}

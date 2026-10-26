@@ -24,11 +24,7 @@ func TestIssue823AllKindVariantRestrictionsAndNonTargetGraphs(t *testing.T) {
 		mutate           func(*ResourceVariant)
 	}{
 		{"agent authority", "agent", "permissions", func(v *ResourceVariant) { permissions := []string{"arbitrary-authority"}; v.Permissions = &permissions }},
-		{"command arguments", "command", "arguments", func(v *ResourceVariant) { v.Arguments = &CommandArguments{Mode: "execute-shell"} }},
-		{"MCP file source", "mcp_server", "cannot have source", func(v *ResourceVariant) { source := "instructions/claude.md"; v.Source = &source }},
-		{"lifecycle file source", "lifecycle", "cannot have source", func(v *ResourceVariant) { source := "instructions/claude.md"; v.Source = &source }},
-		{"lifecycle executable override", "lifecycle", "only applicable", func(v *ResourceVariant) { command := "unreviewed"; v.Command = &command }},
-		{"non-target dependency cycle", "command", "cycle", func(v *ResourceVariant) { requires := []string{"command:sample-command"}; v.Requires = &requires }},
+		{"non-target dependency cycle", "skill", "cycle", func(v *ResourceVariant) { requires := []string{"skill:sample-skill"}; v.Requires = &requires }},
 		{"non-target missing asset", "instruction", "does not exist", func(v *ResourceVariant) { requires := []string{"asset:absent"}; v.Requires = &requires }},
 		{"non-target unknown conflict", "agent", "conflict", func(v *ResourceVariant) { conflicts := []string{"agent:absent"}; v.Conflicts = &conflicts }},
 	}

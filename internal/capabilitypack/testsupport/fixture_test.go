@@ -87,7 +87,7 @@ func TestRoleConstructorsUseDeliberatelySyntheticIdentities(t *testing.T) {
 	}
 }
 
-func TestCandidateRewritesVersionAndCapabilityRichOwnsRuntimeLifecycle(t *testing.T) {
+func TestCandidateRewritesVersionAndCapabilityRichOwnsNativeRoles(t *testing.T) {
 	current := CapabilityRich("capability-one")
 	candidate := current.Candidate()
 
@@ -98,8 +98,8 @@ func TestCandidateRewritesVersionAndCapabilityRichOwnsRuntimeLifecycle(t *testin
 		t.Fatal("Candidate() mutated the current fixture")
 	}
 	manifest := current.Manifest()
-	if !hasResource(manifest.Resources, "lifecycle", "session") {
-		t.Fatalf("CapabilityRich resources = %#v, want lifecycle:session", manifest.Resources)
+	if !hasResource(manifest.Resources, "agent", "reviewer") {
+		t.Fatalf("CapabilityRich resources = %#v, want agent:reviewer", manifest.Resources)
 	}
 }
 

@@ -70,12 +70,9 @@ func declaredBodies(resources []Resource) []Resource {
 			Notices:     resource.Notices,
 			Requires:    resource.Requires,
 			Conflicts:   resource.Conflicts,
-			Command:     resource.Command,
-			Args:        resource.Args,
 			Mode:        resource.Mode,
 			Tools:       resource.Tools,
 			Permissions: resource.Permissions,
-			Arguments:   resource.Arguments,
 			License:     resource.License,
 			Attribution: resource.Attribution,
 			Kind:        resource.Kind, ID: resource.ID, Variants: resource.Variants,
@@ -90,12 +87,9 @@ func declaredBodies(resources []Resource) []Resource {
 			body.Notices = effective.Notices
 			body.Requires = effective.Requires
 			body.Conflicts = effective.Conflicts
-			body.Command = effective.Command
-			body.Args = effective.Args
 			body.Mode = effective.Mode
 			body.Tools = effective.Tools
 			body.Permissions = effective.Permissions
-			body.Arguments = effective.Arguments
 			body.License = effective.License
 			body.Attribution = effective.Attribution
 			bodies = append(bodies, body)
@@ -112,14 +106,10 @@ func (resource Resource) MarshalJSON() ([]byte, error) {
 		wire
 		Tools       *[]string `json:"tools,omitempty"`
 		Permissions *[]string `json:"permissions,omitempty"`
-		Args        *[]string `json:"args,omitempty"`
 	}{wire: wire(resource)}
 	if resource.Kind == "agent" {
 		value.Tools = &resource.Tools
 		value.Permissions = &resource.Permissions
-	}
-	if resource.Kind == "mcp_server" {
-		value.Args = &resource.Args
 	}
 	return json.Marshal(value)
 }

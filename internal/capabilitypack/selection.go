@@ -22,7 +22,7 @@ func (r ResourceIdentity) String() string { return r.Kind + ":" + r.ID }
 
 func ParseResourceIdentity(value string) (ResourceIdentity, error) {
 	parts := strings.Split(value, ":")
-	kinds := map[string]bool{"skill": true, "instruction": true, "mcp_server": true, "agent": true, "command": true, "lifecycle": true, "asset": true, "notice": true}
+	kinds := map[string]bool{"skill": true, "instruction": true, "agent": true, "asset": true, "notice": true}
 	if len(parts) != 2 || !kinds[parts[0]] || !idPattern.MatchString(parts[1]) {
 		return ResourceIdentity{}, fmt.Errorf("resource identity %q must be canonical kind:id", value)
 	}

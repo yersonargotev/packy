@@ -66,15 +66,15 @@ func TestProjectActivationIdentityIsCanonicalAndCheckoutLocal(t *testing.T) {
 }
 
 func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
-	resource := ResourceIdentity{Kind: "mcp_server", ID: "memory"}
+	resource := ResourceIdentity{Kind: "agent", ID: "memory"}
 	lock := ProjectLockProposal{
 		Sensitive: []ProjectSensitiveDisclosure{
-			{Category: ProjectActivationMCP, Surface: SurfaceAgents, Resource: resource, Detail: "agents-mcp"},
-			{Category: ProjectActivationMCP, Surface: SurfaceClaude, Resource: resource, Detail: "claude-mcp"},
+			{Category: ProjectActivationTrust, Surface: SurfaceAgents, Resource: resource, Detail: "agents-role"},
+			{Category: ProjectActivationTrust, Surface: SurfaceClaude, Resource: resource, Detail: "claude-role"},
 		},
 		Bindings: []LifecycleBinding{
-			{Surface: SurfaceAgents, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
-			{Surface: SurfaceClaude, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
+			{Surface: SurfaceAgents, Kind: resource.Kind, ID: resource.ID, Projection: "agent"},
+			{Surface: SurfaceClaude, Kind: resource.Kind, ID: resource.ID, Projection: "agent"},
 		},
 		Projections: []ProjectProjectionPlan{
 			{Resource: resource, Target: ".agents/config.toml", OwnerPack: "pack", Surface: SurfaceAgents, Command: "agents-command"},
@@ -82,7 +82,7 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 		},
 	}
 	categories := projectActivationCategories(lock, SurfaceAgents)
-	if len(categories) != 1 || len(categories[0].Details) != 2 {
+	if len(categories) != 1 || len(categories[0].Details) != 1 {
 		t.Fatalf("Agents categories included the wrong surface: %+v", categories)
 	}
 	original := projectSensitiveLockIdentity(lock, categories)
@@ -103,11 +103,11 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approval := []ProjectActivationApproval{{Category: ProjectActivationMCP, Digest: "approved"}}
+	approval := []ProjectActivationApproval{{Category: ProjectActivationTrust, Digest: "approved"}}
 	for _, surface := range []Surface{SurfaceAgents, SurfaceClaude} {
-		receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved", Details: []ProjectSensitiveDisclosure{{Category: ProjectActivationMCP, Surface: surface, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "command:memory"}}}}
+		receipt := []projectActivationReceipt{{Category: ProjectActivationTrust, Digest: "approved", Details: []ProjectSensitiveDisclosure{{Category: ProjectActivationTrust, Surface: surface, Resource: ResourceIdentity{Kind: "agent", ID: "memory"}, Detail: "permission:filesystem"}}}}
 		state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
-		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil); err != nil {
+		if err := saveProjectActivationRecords(home, root, state, approval, receipt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -119,31 +119,15 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 	}
 }
 
-func TestProjectActivationSealIncludesPersonalTargetObservation(t *testing.T) {
-	action := ProjectionAction{ID: "project_trust:agents", Kind: ProjectionActionKind("retired-project-trust"), Target: "/personal/config.toml", Version: "exact-contribution", FileMode: 0o600, Precondition: "before"}
-	first := projectActivationActionObservation(action)
-	action.Precondition = "changed"
-	second := projectActivationActionObservation(action)
-	if first == second {
-		t.Fatal("personal target change retained the approved observation identity")
-	}
-	preview := JSONProjectActivationPreview{SchemaVersion: 1, Report: "project-activation-preview", Effects: []ProjectActivationEffectPreview{{Category: ProjectActivationTrust, Action: ProjectionActionKind("retired-project-trust"), Target: "<agents-home>/config.toml", Identity: action.Version, Observation: first}}}
-	approved := sealProjectActivationPreview(preview)
-	preview.Effects[0].Observation = second
-	if sealProjectActivationPreview(preview) == approved {
-		t.Fatal("personal target change retained the activation preview seal")
-	}
-}
-
 func TestProjectSensitiveDisclosuresIncludeEveryResourceToolRequirement(t *testing.T) {
 	pack := Pack{Resources: []Resource{
 		{Kind: "skill", ID: "helper", RequiresTools: []string{"helper-cli"}},
-		{Kind: "lifecycle", ID: "hook", RequiresTools: []string{"hook-cli"}},
+		{Kind: "agent", ID: "reviewer", RequiresTools: []string{"review-cli"}},
 	}}
 
 	disclosures := projectSensitiveDisclosures(pack, SurfaceAgents)
 	want := []ProjectSensitiveDisclosure{
-		{Category: ProjectActivationExternalRequirements, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "lifecycle", ID: "hook"}, Detail: "tool:hook-cli"},
+		{Category: ProjectActivationExternalRequirements, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "agent", ID: "reviewer"}, Detail: "tool:review-cli"},
 		{Category: ProjectActivationExternalRequirements, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "skill", ID: "helper"}, Detail: "tool:helper-cli"},
 	}
 	if len(disclosures) != len(want) {

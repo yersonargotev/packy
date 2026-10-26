@@ -119,7 +119,7 @@ func renderClaudeAgentDocument(pack capabilitypack.Pack, resource capabilitypack
 	for _, dependency := range dependencies {
 		fmt.Fprintf(&out, "  - %s\n", dependency)
 	}
-	fmt.Fprintf(&out, "---\n\n## Packy authority contract\n\n- permission_mode: default\n%s\n", strings.Join(contract, "\n"))
+	fmt.Fprintf(&out, "---\n\n## Packy authority contract\n\nReviewed policy guidance only; this document does not establish runtime authorization or observed usability.\n\n- permission_mode: default\n%s\n", strings.Join(contract, "\n"))
 	out.Write(decoded.Body)
 	return out.Bytes(), nil
 }

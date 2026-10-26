@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -123,16 +124,17 @@ type ProjectSelectionPreview struct {
 }
 
 type ProjectProjectionPlan struct {
-	Resource           ResourceIdentity `json:"resource"`
-	Target             string           `json:"target"`
-	Mode               string           `json:"mode"`
-	FileMode           uint32           `json:"file_mode"`
-	DesiredFingerprint string           `json:"desired_fingerprint,omitempty"`
-	ObservedState      string           `json:"observed_state"`
-	OwnerPack          string           `json:"owner_pack"`
-	Surface            Surface          `json:"surface"`
-	Command            string           `json:"command,omitempty"`
-	Args               []string         `json:"args,omitempty"`
+	ClientProjection   *ClientProjection `json:"client_projection,omitempty"`
+	Resource           ResourceIdentity  `json:"resource"`
+	Target             string            `json:"target"`
+	Mode               string            `json:"mode"`
+	FileMode           uint32            `json:"file_mode"`
+	DesiredFingerprint string            `json:"desired_fingerprint,omitempty"`
+	ObservedState      string            `json:"observed_state"`
+	OwnerPack          string            `json:"owner_pack"`
+	Surface            Surface           `json:"surface"`
+	Command            string            `json:"command,omitempty"`
+	Args               []string          `json:"args,omitempty"`
 }
 
 type JSONProjectInstallPreview struct {
@@ -487,7 +489,7 @@ func coalesceProjectComposableActions(actions []ProjectionAction) []ProjectionAc
 	result := make([]ProjectionAction, 0, len(actions))
 	indices := map[string]int{}
 	for _, action := range actions {
-		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction
 		if !composable {
 			result = append(result, action)
 			continue
@@ -645,10 +647,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
-		} else if projection.Action.Kind == ActionClaudeProjectMCP {
-			mode, fileMode = "merge_structured_file", projection.Action.FileMode
 		}
-		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, OwnerPack: pack.ID, Surface: request.Surface, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...)})
+		projections = append(projections, ProjectProjectionPlan{ClientProjection: selectedRoleProjection(pack, resource, request.Surface), Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, OwnerPack: pack.ID, Surface: request.Surface, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...)})
 		if state != "owned" && state != "drifted" {
 			action := projection.Action
 			action.PreviewOnly = false
@@ -963,6 +963,12 @@ func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, ali
 		ExternalRequirements: append([]string{}, pack.Requires.Tools...),
 		Selection:            cloneSelection(selection), Aliases: cloneAliases(aliases), Resources: []ResourceIdentity{}, Projections: []installedProjection{},
 	}
+	for _, binding := range LifecycleContractFor(pack, surface, aliases).Bindings {
+		if binding.Kind == "agent" {
+			binding.Surface = surface
+			receipt.RoleBindings = append(receipt.RoleBindings, binding)
+		}
+	}
 	for _, fact := range graph.Resources {
 		receipt.Resources = append(receipt.Resources, fact.Resource)
 	}
@@ -1066,8 +1072,6 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 	switch resource.Kind {
 	case "notice", "instruction":
 		return "merge_marked_file"
-	case "mcp_server":
-		return "merge_structured_file"
 	case "skill":
 		if surface == SurfaceAgents || surface == SurfaceClaude {
 			return "copy_tree"
@@ -1113,9 +1117,17 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 			}
 			mode := projectReceiptProjectionMode(receipt.Surface, resource)
 			lock.Projections = append(lock.Projections, ProjectProjectionPlan{
-				Resource: resource, Target: projection.Target, Mode: mode, FileMode: projection.FileMode,
+				ClientProjection: receiptRoleProjection(receipt, resource), Resource: resource, Target: projection.Target, Mode: mode, FileMode: projection.FileMode,
 				DesiredFingerprint: projection.Digest, ObservedState: "installed", OwnerPack: receipt.Pack.ID, Surface: receipt.Surface,
 			})
+			if resource.Kind == "agent" {
+				for _, binding := range receipt.RoleBindings {
+					if binding.ID == resource.ID {
+						lock.Bindings = append(lock.Bindings, binding)
+					}
+				}
+				continue
+			}
 			name := resource.ID
 			if resource.Kind == "skill" {
 				// The receipt target is the durable effective native identity.
@@ -1213,6 +1225,26 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 				return fmt.Errorf("project receipt for %s on %s has invalid resources", receipt.Pack.ID, receipt.Surface)
 			}
 			resourceSeen[resource] = true
+		}
+		roles := map[string]bool{}
+		for i, binding := range receipt.RoleBindings {
+			resource := ResourceIdentity{Kind: binding.Kind, ID: binding.ID}
+			if binding.Kind != "agent" || !resourceSeen[resource] || binding.Surface != receipt.Surface || roles[binding.ID] || i > 0 && receipt.RoleBindings[i-1].ID >= binding.ID {
+				return fmt.Errorf("project receipt has invalid native role bindings")
+			}
+			wire := Binding{Surface: binding.Surface, Projection: binding.Projection, Name: binding.Name, Invocation: binding.Invocation, Mode: binding.Mode, Degradation: binding.Degradation, Sharing: binding.Sharing, ClientProjection: binding.ClientProjection, Capabilities: []SurfaceCapability{}}
+			if err := validateBindingV3(Resource{Kind: "agent"}, wire, nil); err != nil {
+				return fmt.Errorf("project receipt role %s: %w", binding.ID, err)
+			}
+			if !slices.Contains(binding.ClientProjection.Scopes, "project") {
+				return fmt.Errorf("project receipt role %s does not support project scope", binding.ID)
+			}
+			roles[binding.ID] = true
+		}
+		for resource := range resourceSeen {
+			if resource.Kind == "agent" && !roles[resource.ID] {
+				return fmt.Errorf("project receipt role %s is missing its reviewed native binding", resource.ID)
+			}
 		}
 		if receipt.Sensitive != nil && digestJSON(receipt.Sensitive) != digestJSON(deduplicateProjectSensitiveDisclosures(receipt.Sensitive)) {
 			return fmt.Errorf("project receipt for %s on %s has non-canonical activation disclosures", receipt.Pack.ID, receipt.Surface)
@@ -1638,6 +1670,34 @@ func validateProjectTargetPath(projectRoot, target string) error {
 		}
 	} else if !os.IsNotExist(err) {
 		return err
+	}
+	return nil
+}
+
+func selectedRoleProjection(pack Pack, resource ResourceIdentity, surface Surface) *ClientProjection {
+	if resource.Kind != "agent" {
+		return nil
+	}
+	for _, item := range pack.Resources {
+		if item.Kind == resource.Kind && item.ID == resource.ID {
+			for _, binding := range item.Bindings {
+				if binding.Surface == surface {
+					return cloneClientProjection(binding.ClientProjection)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func receiptRoleProjection(receipt installedPackReceipt, resource ResourceIdentity) *ClientProjection {
+	if resource.Kind != "agent" {
+		return nil
+	}
+	for _, binding := range receipt.RoleBindings {
+		if binding.ID == resource.ID {
+			return cloneClientProjection(binding.ClientProjection)
+		}
 	}
 	return nil
 }

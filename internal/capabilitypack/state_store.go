@@ -38,6 +38,7 @@ type installedProjection struct {
 }
 
 type installedPackReceipt struct {
+	RoleBindings         []LifecycleBinding           `json:"role_bindings,omitempty"`
 	Pack                 installedPackIdentity        `json:"pack"`
 	Surface              Surface                      `json:"surface"`
 	ReadinessObligations []ReadinessObligation        `json:"readiness_obligations"`
@@ -316,7 +317,7 @@ func canonicalizeAliases(aliases *[]SurfaceAlias) error {
 	}
 	seen := map[string]bool{}
 	for _, alias := range *aliases {
-		if alias.Kind != "skill" && alias.Kind != "agent" && alias.Kind != "command" {
+		if alias.Kind != "skill" && alias.Kind != "agent" {
 			return fmt.Errorf("activation alias kind %q is unsupported", alias.Kind)
 		}
 		if !idPattern.MatchString(alias.ID) {
