@@ -487,13 +487,13 @@ func projectLocksEqual(left, right ProjectLockProposal) bool {
 
 func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, preview JSONProjectInstallPreview) error {
 	if preview.updateRequest.PackID != "" {
-		observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
+		observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: preview.Selection.Client, Desired: preview.pack, ProjectRoot: preview.projectRoot})
 		if err != nil {
 			return err
 		}
 		return verifyProjectProjectionObservation(preview.projectRoot, preview.Projections, observation)
 	}
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: preview.Selection.Client, Desired: preview.pack, ProjectRoot: preview.projectRoot})
 	if err != nil {
 		return err
 	}

@@ -102,8 +102,8 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 		native = ".claude"
 	}
 	installed := filepath.Join(workspace, "home", native, "skills", alias)
-	// Replace the native link, preserving its immutable catalog target.
-	if err := os.Remove(installed); err != nil {
+	// Replace the installed projection, preserving immutable catalog content.
+	if err := os.RemoveAll(installed); err != nil {
 		t.Fatal(err)
 	}
 	writeAccessFile(t, filepath.Join(installed, "SKILL.md"), []byte("Modified installed procedure\n"), 0600)

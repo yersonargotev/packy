@@ -14,12 +14,17 @@ import (
 )
 
 func TestIssue876RetiredSurfaceRejectsEveryLifecycleBeforeMutation(t *testing.T) {
+	assertRetiredSurfaceRejectsEveryLifecycleBeforeMutation(t, "opencode")
+}
+
+func assertRetiredSurfaceRejectsEveryLifecycleBeforeMutation(t *testing.T, retiredSurface string) {
+	t.Helper()
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, testsupport.SkillVariants("retirement"))
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts := fixture.options
 	opts.Getwd = func() (string, error) { return project, nil }
-	retired := filepath.Join(fixture.home, "xdg", "opencode", "opencode.json")
+	retired := filepath.Join(fixture.home, "xdg", retiredSurface, retiredSurface+".json")
 	if err := os.MkdirAll(filepath.Dir(retired), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +41,7 @@ func TestIssue876RetiredSurfaceRejectsEveryLifecycleBeforeMutation(t *testing.T)
 		if args[0] != "check" {
 			args = append(args, "--json")
 		}
-		args = append(args, "--surface", "opencode")
+		args = append(args, "--surface", retiredSurface)
 		out, err := executeCommand(t, NewRootCommand(opts), args...)
 		if err == nil || !strings.Contains(strings.ToLower(out+err.Error()), "unsupported") || !strings.Contains(out+err.Error(), "claude") || !strings.Contains(out+err.Error(), "agents") {
 			t.Errorf("%v: error=%v output=%s", args, err, out)
@@ -47,13 +52,18 @@ func TestIssue876RetiredSurfaceRejectsEveryLifecycleBeforeMutation(t *testing.T)
 	}
 	for _, args := range [][]string{{"--help"}, {"install", "--help"}, {"activate", "--help"}, {"uninstall", "--help"}} {
 		out, err := executeCommand(t, NewRootCommand(opts), args...)
-		if err != nil || strings.Contains(strings.ToLower(out), "opencode") {
+		if err != nil || strings.Contains(strings.ToLower(out), "--surface "+retiredSurface) || strings.Contains(strings.ToLower(out), "surface (claude or "+retiredSurface+")") {
 			t.Fatalf("advertised retired surface: %v %s", err, out)
 		}
 	}
 }
 
 func TestIssue876OfflineContractsAndAuditRejectRetiredState(t *testing.T) {
+	assertOfflineContractsAndAuditRejectRetiredState(t, "opencode")
+}
+
+func assertOfflineContractsAndAuditRejectRetiredState(t *testing.T, retiredSurface string) {
+	t.Helper()
 	for _, state := range []string{"global receipt", "project manifest", "project lock"} {
 		t.Run(state, func(t *testing.T) {
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, testsupport.SkillVariants("retirement"))
@@ -75,7 +85,7 @@ func TestIssue876OfflineContractsAndAuditRejectRetiredState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data = []byte(strings.ReplaceAll(string(data), `"agents"`, `"opencode"`))
+			data = []byte(strings.ReplaceAll(string(data), `"agents"`, `"`+retiredSurface+`"`))
 			if err := os.WriteFile(path, data, 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -106,13 +116,18 @@ func TestIssue876OfflineContractsAndAuditRejectRetiredState(t *testing.T) {
 }
 
 func TestIssue876TUIRejectsRetiredSurfaceBeforeObservation(t *testing.T) {
+	assertTUIRejectsRetiredSurfaceBeforeObservation(t, "opencode")
+}
+
+func assertTUIRejectsRetiredSurfaceBeforeObservation(t *testing.T, retiredSurface string) {
+	t.Helper()
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, testsupport.SkillVariants("retirement"))
 	opts := fixture.options.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	before := snapshotTree(t, fixture.home)
 	for _, scope := range []string{"global", "project"} {
 		for _, operation := range []string{"install", "configure", "activate", "deactivate", "update", "uninstall", "check"} {
-			_, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: operation, PackID: "retirement", Surface: "opencode", Scope: scope})
+			_, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: operation, PackID: "retirement", Surface: retiredSurface, Scope: scope})
 			if err == nil || !strings.Contains(err.Error(), "unsupported CLI surface") {
 				t.Fatalf("%s %s: %v", scope, operation, err)
 			}

@@ -205,7 +205,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 		return report, err
 	}
 	scopedInstallation := projectInstallationForPack(installation, pack.ID)
-	observation, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
+	observation, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{Client: projectSelectedClient(pack, request.Surface), ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
 	if err != nil {
 		return report, err
 	}
@@ -323,7 +323,7 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 		return ProjectActivationApplyResult{}, err
 	}
 	scopedInstallation := projectInstallationForPack(installation, preview.Pack.ID)
-	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: preview.projectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
+	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{Client: projectSelectedClient(preview.Pack, preview.Surface), ProjectRoot: preview.projectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
 	if err != nil || !projectActivationEffectsConverged(preview.Surface, verified) {
 		if err != nil {
 			return ProjectActivationApplyResult{}, err

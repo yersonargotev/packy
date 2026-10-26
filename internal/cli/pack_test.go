@@ -28,6 +28,9 @@ type controlledCheckHostAdapter struct {
 func (a *controlledCheckHostAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
 	inspection, err := a.delegate.InspectSurface(ctx, transition)
 	inspection.ControlledCheck.HostVersion = a.hostVersion
+	// This test host separately observes authorization; the shared filesystem adapter cannot.
+	inspection.Readiness.AuthorizationObserved = true
+	inspection.Readiness.Authorized = true
 	return inspection, err
 }
 
@@ -406,7 +409,7 @@ func TestPackActivateAgentsSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selected dry-run failed: %v\n%s", err, dryRun)
 	}
-	for _, want := range []string{"Activation dry-run plan", "Selection mode: custom", "Selection root: " + resourceID, "link skill helper"} {
+	for _, want := range []string{"Activation dry-run plan", "Selection mode: custom", "Selection root: " + resourceID, "copy complete skill helper"} {
 		if !strings.Contains(dryRun, want) {
 			t.Fatalf("selected dry-run missing %q:\n%s", want, dryRun)
 		}

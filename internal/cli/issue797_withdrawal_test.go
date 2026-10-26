@@ -16,8 +16,8 @@ import (
 )
 
 func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
-	withdrawn := testsupport.PortableAllSurfaces("withdrawn-runtime")
-	blockedActivation := testsupport.PortableAllSurfaces("withdrawn-inactive-surface")
+	withdrawn := testsupport.SkillVariants("withdrawn-runtime")
+	blockedActivation := testsupport.SkillVariants("withdrawn-inactive-surface")
 	remaining := testsupport.PortableAllSurfaces("catalog-current")
 	retainedSnapshot := strings.Repeat("7", 40)
 	currentSnapshot := strings.Repeat("8", 40)
@@ -286,7 +286,7 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 }
 
 func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T) {
-	v1 := testsupport.PortableAllSurfaces("withdrawn-multiversion")
+	v1 := testsupport.SkillVariants("withdrawn-multiversion")
 	v2 := v1.Candidate()
 	remaining := testsupport.PortableAllSurfaces("still-current")
 	firstSnapshot := strings.Repeat("1", 40)
@@ -384,7 +384,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	for _, command := range [][]string{{"init"}, {"install", pack.ID(), "--surface", "agents", "--resource", "skill:helper"}} {
+	for _, command := range [][]string{{"init"}, {"install", pack.ID(), "--surface", "claude", "--resource", "skill:helper"}} {
 		if out, err := executeCommand(t, NewRootCommand(opts), command...); err != nil {
 			t.Fatalf("%v: %v\n%s", command, err, out)
 		}
@@ -395,7 +395,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	}
 	resource := installation.Lock.ResourceGraph.Resources[0].Resource
 	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{{
-		Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceAgents, Resource: resource, Detail: "project-only-runtime-consent",
+		Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceClaude, Resource: resource, Detail: "project-only-runtime-consent",
 	}}
 	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {
@@ -404,14 +404,14 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), append(lock, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "agents"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "claude", "--resource", "skill:helper"); err != nil {
 		t.Fatalf("activate global Pack: %v\n%s", err, out)
 	}
 	source.release = catalogReleaseFixture(t, currentSnapshot, remaining)
 	if out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh"); err != nil {
 		t.Fatalf("withdraw Pack: %v\n%s", err, out)
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "status", pack.ID(), "--surface", "agents", "--project", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", pack.ID(), "--surface", "claude", "--project", "--json")
 	if err != nil {
 		t.Fatalf("compose retained global and project receipts: %v\n%s", err, out)
 	}

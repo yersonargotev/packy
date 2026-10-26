@@ -132,6 +132,18 @@ func TestIssue877RequiredCodexRoleIsExplicitOwnedAndRemovable(t *testing.T) {
 	if err != nil || !strings.Contains(string(original), "updated contract") {
 		t.Fatalf("role update: %q %v", original, err)
 	}
+	shared := testsupport.SkillVariants("unrelated-shared", testsupport.SurfaceAgents)
+	if err := shared.WriteCatalog(candidateRoot); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range []string{"activate", "deactivate"} {
+		if out, err := executeCommand(t, NewRootCommand(opts), operation, shared.ID(), "--surface", "agents"); err != nil {
+			t.Fatalf("ordinary shared skill alongside authorized role: %v %s", err, out)
+		}
+		if got, err := os.ReadFile(role); err != nil || string(got) != string(original) {
+			t.Fatalf("unrelated lifecycle altered role: %q %v", got, err)
+		}
+	}
 	collision := testsupport.CapabilityRich("other-role")
 	if err := collision.WriteCatalog(candidateRoot); err != nil {
 		t.Fatal(err)

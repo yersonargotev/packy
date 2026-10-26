@@ -44,10 +44,6 @@ func TestIssue817EmilAliasPreservesMattyThroughLifecycle(t *testing.T) {
 	}
 	prototype := filepath.Join(fixture.home, ".agents", "skills", "prototype")
 	beforeTree := snapshotTree(t, prototype)
-	beforeLink, err := os.Readlink(prototype)
-	if err != nil {
-		t.Fatal(err)
-	}
 	output, err := executeCommand(t, NewRootCommand(fixture.options), "activate", "emil", "--surface", "agents", "--resource", "skill:prototype", "--dry-run")
 	if err == nil || !strings.Contains(output, "ownership") {
 		t.Fatalf("unaliased collision: err=%v\n%s", err, output)
@@ -82,8 +78,7 @@ func TestIssue817EmilAliasPreservesMattyThroughLifecycle(t *testing.T) {
 		a, _ := json.Marshal(after)
 		t.Fatalf("Matty receipt changed: %s", a)
 	}
-	afterLink, err := os.Readlink(prototype)
-	if err != nil || afterLink != beforeLink || snapshotTree(t, prototype) != beforeTree {
-		t.Fatalf("Matty projection changed: %v", err)
+	if snapshotTree(t, prototype) != beforeTree {
+		t.Fatal("Matty projection changed")
 	}
 }

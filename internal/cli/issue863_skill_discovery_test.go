@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -117,12 +118,6 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 		}
 	}
 	installed := filepath.Join(env["HOME"], ".agents/skills/custom-shared")
-	if err := os.Remove(installed); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(installed, 0755); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(installed, "SKILL.md"), []byte("Modified local instructions\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -257,8 +252,8 @@ func checkIssue863Failures(t *testing.T, binary string) {
 		{"excluded", "Agents is not reviewed", func(m map[string]any) {
 			r := accessResource(m, "guide")
 			b := r["bindings"].([]any)
-			r["bindings"] = []any{b[0]}
-			r["variants"] = r["variants"].([]any)[:1]
+			r["bindings"] = slices.DeleteFunc(b, func(value any) bool { return value.(map[string]any)["surface"] == "agents" })
+			r["variants"] = slices.DeleteFunc(r["variants"].([]any), func(value any) bool { return value.(map[string]any)["surface"] == "agents" })
 			r["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "review-needed", "reason": "Agents is not reviewed"}}
 		}},
 	} {

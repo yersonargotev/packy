@@ -713,7 +713,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, OperationDeactivate, before.combinedPack(), combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, selection.Client, OperationDeactivate, before.combinedPack(), combined, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
@@ -814,7 +814,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		return ReconciliationPlan{}, err
 	}
 	adapter := f.activation.adapters[request.Surface]
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, selection.Client, OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect partial deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
@@ -962,7 +962,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, operation, previousPack, pack, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, selection.Client, operation, previousPack, pack, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect activation of pack %q on %s: %w", pack.ID, request.Surface, err)
 	}
@@ -1261,7 +1261,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	destructiveActions := phaseActions(request.Plan.phases, ConsentDestructiveCleanup)
 	prior := priorCombinedPack(request.Plan, pack)
-	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
+	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.selection.Client, request.Plan.operation, prior, combined, state.Ownership, resolutions))
 	if err != nil {
 		return ApplyResult{}, ReportSafeError(err, &request.Plan)
 	}
@@ -1306,7 +1306,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 	}
 	if len(externalActions) > 0 || len(destructiveActions) > 0 {
-		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
+		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.selection.Client, request.Plan.operation, prior, combined, state.Ownership, resolutions))
 		if err != nil {
 			return ApplyResult{}, ReportSafeError(err, &request.Plan)
 		}
@@ -1638,7 +1638,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("executable resolution changed after Preview; rerun %s to preview a fresh plan", plan.operation)}
 	}
 	before := priorCombinedPack(plan, pack)
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(plan.surface, plan.operation, before, combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(plan.surface, plan.selection.Client, plan.operation, before, combined, state.Ownership, resolutions))
 	if err != nil {
 		return planPreflight{}, err
 	}
@@ -1647,6 +1647,12 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	}
 	if observationDigest(observation) != plan.observationFingerprint {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("%s projections changed after Preview; rerun %s to preview a fresh plan", plan.surface, plan.operation)}
+	}
+	// Historical deactivation inspection needs the complete source Pack above,
+	// but the retained receipt must describe only the exact selected closure.
+	pack, err = selectPackResourcesForSurface(pack, plan.selection, plan.surface)
+	if err != nil {
+		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("selected resource closure changed after Preview: %v", err)}
 	}
 	return planPreflight{pack: pack, adapter: adapter, state: state, composition: current, combined: combined, resolutions: resolutions}, nil
 }
@@ -2476,12 +2482,11 @@ func validatePersonalProjectAction(_ ProjectionAction) error {
 	return errors.New("surface adapter returned an unsupported personal project action")
 }
 
-func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {
+func surfaceTransitionFacts(surface Surface, client string, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {
 	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
-	transition := SurfaceTransition{Client: selectedPackClient(desired), Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
+	transition := SurfaceTransition{Client: client, Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
 	switch operation {
 	case OperationDeactivate:
-		transition.Client = selectedPackClient(prior)
 		transition.Prior = prior
 	case OperationUpdate:
 		transition.Prior = prior

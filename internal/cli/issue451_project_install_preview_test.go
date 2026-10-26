@@ -108,17 +108,14 @@ func TestIssue451UnrepresentableProjectResourceIsNonActionable(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
-	human, humanErr := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents", "--dry-run")
-	if humanErr == nil || !strings.Contains(human, "Legal contribution: notice:mit") || !strings.Contains(human, "license=MIT") || !strings.Contains(human, "attribution=Packy Fixture Authors") {
-		t.Fatalf("human legal disclosure: err=%v\n%s", humanErr, human)
-	}
-	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents", "--dry-run", "--json")
-	if err == nil || !strings.Contains(err.Error(), "not actionable") {
-		t.Fatalf("unrepresentable preview error = %v\n%s", err, out)
-	}
-	var report capabilitypack.JSONProjectInstallPreview
-	if decodeErr := json.Unmarshal(firstJSONDocument(t, out), &report); decodeErr != nil || report.Disposition != capabilitypack.ProjectInstallBlocked || len(report.Blockers) == 0 || report.Blockers[0].Code != "unrepresentable_resource" {
-		t.Fatalf("blocked preview = %#v; decode=%v\n%s", report, decodeErr, out)
+	for _, args := range [][]string{
+		{"install", packID, "--surface", "agents", "--dry-run"},
+		{"install", packID, "--surface", "agents", "--dry-run", "--json"},
+	} {
+		out, err := executeCommand(t, NewRootCommand(opts), args...)
+		if err == nil || !strings.Contains(out+err.Error(), "project Codex roles are unsupported") {
+			t.Fatalf("unsupported required project role: %v\n%s", err, out)
+		}
 	}
 	if snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome || len(opts.Runner.(*fakeRunner).calls) != 0 {
 		t.Fatal("blocked preview caused effects")

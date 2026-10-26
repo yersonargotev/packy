@@ -408,8 +408,8 @@ func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
 		Kind: "skill", ID: "local", Source: "skills/local", Description: "Authored skill without external notices",
 		Requires: []string{}, Conflicts: []string{}, Notices: []string{}, SurfaceExclusions: []testsupport.SurfaceExclusion{},
 		Bindings: []testsupport.Binding{
+			{Surface: testsupport.SurfaceAgents, Projection: "skill", Name: "local", Invocation: "local", Mode: "native", Sharing: "exclusive", Capabilities: []testsupport.Capability{}},
 			{Surface: testsupport.SurfaceClaude, Projection: "skill", Name: "local", Invocation: "/local", Mode: "native", Sharing: "exclusive", Capabilities: []testsupport.Capability{}},
-			{Surface: testsupport.SurfaceAgents, Projection: "skill", Name: "local", Invocation: "$local", Mode: "native", Sharing: "exclusive", Capabilities: []testsupport.Capability{}},
 		},
 	})
 	slices.SortFunc(manifest.Resources, func(a, b testsupport.Resource) int {

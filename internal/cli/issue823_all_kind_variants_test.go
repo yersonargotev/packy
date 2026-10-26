@@ -33,14 +33,17 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 				root := fixture.home
 				apply, remove := "activate", "deactivate"
 				selection := []string{}
+				if surface == "agents" {
+					selection = []string{"--resource", "skill:sample-skill", "--resource", "agent:sample-agent", "--client", "codex"}
+				}
 				if scope == "project" {
 					root = t.TempDir()
 					writeTestGitWorktree(t, root)
 					opts.Getwd = func() (string, error) { return root, nil }
 					apply, remove = "install", "uninstall"
-					// Agents currently offers project-native skills, instructions and MCP only.
+					// Agents projects skills and instructions without selecting a runtime client.
 					if surface == "agents" {
-						selection = []string{"--resource", "skill:sample-skill", "--resource", "instruction:sample-instruction", "--resource", "mcp_server:sample-mcp-server"}
+						selection = []string{"--resource", "skill:sample-skill", "--resource", "instruction:sample-instruction"}
 					}
 				}
 				run := func(args ...string) string {
@@ -96,7 +99,16 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 					targets = append(targets, filepath.Join(fixture.home, ".claude.json"))
 				}
 				content := issue823ProjectedContent(t, targets)
-				for _, kind := range []string{"skill", "instruction", "mcp_server"} {
+				kinds := []string{"skill", "instruction", "mcp_server"}
+				if surface == "agents" {
+					kinds = []string{"skill"}
+					if scope == "project" {
+						kinds = append(kinds, "instruction")
+					} else {
+						kinds = append(kinds, "agent")
+					}
+				}
+				for _, kind := range kinds {
 					want := "Reviewed " + surface + " " + kind
 					if kind == "mcp_server" {
 						want = surface + "-argument"
@@ -105,7 +117,7 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 						t.Fatalf("missing %s in projected files:\n%s\nTargets %v", want, content, targets)
 					}
 				}
-				if scope == "global" || surface != "agents" {
+				if surface != "agents" {
 					for _, kind := range []string{"agent", "command", "asset"} {
 						if !strings.Contains(content, "Reviewed "+surface+" "+kind) {
 							t.Fatalf("missing %s variant in projections:\n%s", kind, content)
@@ -134,7 +146,7 @@ func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
 				}
 				run(update...)
 				updatedContent := issue823ProjectedContent(t, targets)
-				if !strings.Contains(updatedContent, "Updated reviewed body") || !strings.Contains(updatedContent, "updated") {
+				if !strings.Contains(updatedContent, "Updated reviewed body") || (surface == "claude" && !strings.Contains(updatedContent, "updated")) {
 					t.Fatalf("update omitted selected definitions: %s", updatedContent)
 				}
 				if scope == "project" {
@@ -321,13 +333,16 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 			opts := Options{Env: env, Runner: &fakeRunner{}, Terminal: &fakeTerminal{interactive: true, approve: true}, Getwd: func() (string, error) { return project, nil }, CatalogSource: &catalogSourceFixture{release: catalogReleaseFixture(t, strings.Repeat("c", 40), pack)}}
 			for _, args := range [][]string{{"init"}, {"install", pack.ID(), "--surface", surface, "--json"}} {
 				if args[0] == "install" && surface == "agents" {
-					args = append(args, "--resource", "skill:sample-skill", "--resource", "instruction:sample-instruction", "--resource", "mcp_server:sample-mcp-server")
+					args = append(args, "--resource", "skill:sample-skill", "--resource", "instruction:sample-instruction")
 				}
 				if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
 					t.Fatalf("prepare %v: %v\n%s", args, err, out)
 				}
 			}
 			for _, args := range [][]string{{"activate", pack.ID(), "--surface", surface, "--dry-run", "--json"}, {"verify", "--json"}, {"status", pack.ID(), "--surface", surface, "--project", "--json"}} {
+				if surface == "agents" && args[0] == "activate" {
+					args = append(args, "--resource", "skill:sample-skill", "--resource", "agent:sample-agent", "--client", "codex")
+				}
 				command := exec.Command(binary, args...)
 				command.Dir = project
 				if args[0] == "activate" {
@@ -342,7 +357,11 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 					t.Fatalf("real CLI %v: %v\n%s", args, err, output)
 				}
 				if args[0] == "activate" {
-					for _, kind := range []string{"agent", "asset", "command", "instruction", "lifecycle", "mcp_server", "notice", "skill"} {
+					kinds := []string{"agent", "asset", "command", "instruction", "lifecycle", "mcp_server", "notice", "skill"}
+					if surface == "agents" {
+						kinds = []string{"agent", "notice", "skill"}
+					}
+					for _, kind := range kinds {
 						if !strings.Contains(string(output), `"kind":"`+kind+`"`) {
 							t.Fatalf("built CLI omitted %s: %s", kind, output)
 						}
@@ -389,14 +408,14 @@ func TestIssue823VariantMCPUpdatePreservesUnmanagedAndDriftedEntries(t *testing.
 				opts.Getwd = func() (string, error) { return root, nil }
 				path := filepath.Join(root, ".mcp.json")
 				if owned {
-					if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--resource", "mcp_server:sample-mcp-server", "--json"); err != nil {
+					if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--json"); err != nil {
 						t.Fatalf("install: %v\n%s", err, out)
 					}
 				}
 				content := `{"mcpServers":{"sample-mcp-server":{"type":"stdio","command":"unmanaged","args":[]}}}`
 				writeAuthoringFile(t, path, content)
 				before := snapshotTree(t, root)
-				if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--resource", "mcp_server:sample-mcp-server", "--json"); err == nil {
+				if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--json"); err == nil {
 					t.Fatalf("changed or unowned MCP overwritten: %s", out)
 				}
 				if snapshotTree(t, root) != before {
@@ -474,7 +493,7 @@ func TestIssue823RefreshBlocksOverlappingMaintainedVariant(t *testing.T) {
 func TestIssue823LifecycleVariantResolvesDependencyWithoutExecutingAuthoringCode(t *testing.T) {
 	pack := testsupport.AllKindVariants("lifecycle-dependency")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
-	for _, surface := range []string{"agents", "claude"} {
+	for _, surface := range []string{"claude"} {
 		out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.ID(), "--surface", surface, "--resource", "lifecycle:sample-lifecycle", "--dry-run", "--json")
 		if err != nil {
 			t.Fatalf("lifecycle %s: %v\n%s", surface, err, out)

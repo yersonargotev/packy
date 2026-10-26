@@ -34,19 +34,6 @@ func validateSelectedClient(pack Pack, selection ResourceSelection, surface Surf
 	return nil
 }
 
-// selectedPackClient describes the already-authorized role closure passed to an
-// adapter, including previously selected Packs in a global composition.
-func selectedPackClient(pack Pack) string {
-	for _, resource := range pack.Resources {
-		for _, binding := range resource.Bindings {
-			if binding.Surface == SurfaceAgents && binding.ClientProjection != nil {
-				return binding.ClientProjection.Client
-			}
-		}
-	}
-	return ""
-}
-
 func cloneClientProjection(projection *ClientProjection) *ClientProjection {
 	if projection == nil {
 		return nil

@@ -44,7 +44,7 @@ func (f Facade) receiptStatusEntry(ctx context.Context, entry StatusEntry, inten
 			entry.PendingHumanActions = append(entry.PendingHumanActions, fmt.Sprintf("install %s and rerun status; Packy will not install it during Status", resolution.Tool))
 		}
 	}
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ObservationOnly: true, ReceiptOwnership: owners, CurrentOwnership: adapterOwnershipForSurface(state.Ownership, intent.Surface)})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: intent.Selection.Client, ObservationOnly: true, ReceiptOwnership: owners, CurrentOwnership: adapterOwnershipForSurface(state.Ownership, intent.Surface)})
 	if err != nil {
 		return StatusEntry{}, err
 	}

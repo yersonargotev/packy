@@ -359,7 +359,7 @@ func TestManifestDeterministicAndContentBound(t *testing.T) {
 
 func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 	items := []FileEvidence{
-		{Path: "home/.agents/AGENTS.md"},
+		{Path: "home/.codex/config.toml"},
 		{Path: "home/.claude/CLAUDE.md"},
 		{Path: "home/.claude.json"},
 		{Path: "home/.agents/skills/example/SKILL.md"},

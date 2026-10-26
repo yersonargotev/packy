@@ -175,7 +175,7 @@ func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *
 }
 
 func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState(t *testing.T) {
-	synthetic := testsupport.CapabilityRich("tui-selection")
+	synthetic := testsupport.SkillVariants("tui-selection")
 	manifest := synthetic.Manifest()
 	projectRoot := t.TempDir()
 	writeTestGitWorktree(t, projectRoot)
@@ -610,7 +610,7 @@ func TestTUIProductionBackendUpdatesAnOlderGlobalPack(t *testing.T) {
 			if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
 				t.Fatal(err)
 			}
-			if err := synthetic.Candidate().WithExactCopyBytes("skill:guide", "SKILL.md", []byte("---\nname: guide\ndescription: Updated guide.\n---\n\nNew catalog content.\n")).WriteCatalog(fixture.catalogRoot); err != nil {
+			if err := synthetic.Candidate().WriteCatalog(fixture.catalogRoot); err != nil {
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, fixture.home)
@@ -730,7 +730,7 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 
 	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: manifest.ID, Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: manifest.ID, Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "custom", Client: "codex", Roots: []string{"agent:reviewer", "skill:helper"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -747,7 +747,7 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 		t.Fatalf("catalog-current update = %#v; want explicit no-op", update)
 	}
 
-	resource := syntheticResource(t, synthetic, "instruction", "guidance")
+	resource := syntheticResource(t, synthetic, "agent", "reviewer")
 	root := resource.Kind + ":" + resource.ID
 	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
 		Operation: "deactivate", PackID: manifest.ID, Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
@@ -760,6 +760,24 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 	}
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: partial, ApprovedPhases: requiredTUIPhases(partial)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
+	}
+
+	retained, err := capabilitypack.NewFileActivationStore(filepath.Join(fixture.home, ".packy", "packs.json")).LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, intent := range retained.Intents {
+		if intent.PackID != manifest.ID {
+			continue
+		}
+		if intent.Selection.Client != "codex" || !slices.Equal(intent.Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "helper"}}) {
+			t.Fatalf("partial removal changed retained selection: %#v", intent)
+		}
+		if slices.ContainsFunc(intent.Resources, func(resource capabilitypack.ResourceIdentity) bool {
+			return resource.Kind == "instruction" || resource.Kind == "agent"
+		}) {
+			t.Fatalf("partial removal broadened retained resources: %#v", intent.Resources)
+		}
 	}
 
 	complete, err := backend.Preview(context.Background(), tui.PreviewRequest{
@@ -806,7 +824,7 @@ func TestTUIProductionBackendShowsDriftAndFailsDeactivationClosed(t *testing.T) 
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(home, ".agents", "skills", resource.ID)
+	target := filepath.Join(home, ".agents", "skills", resource.ID, "SKILL.md")
 	if err := os.Remove(target); err != nil {
 		t.Fatal(err)
 	}

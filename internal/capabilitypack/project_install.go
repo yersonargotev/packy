@@ -305,7 +305,7 @@ func (f Facade) addProjectUpdateRetirements(ctx context.Context, prior ProjectIn
 	var removals []ProjectionAction
 	seenRetirement := map[string]bool{}
 	surface := combined.Surface
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ProjectRoot: combined.projectRoot, ProjectInstallation: &prior, ProjectGoal: ProjectionAbsent})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: projectSelectedClient(prior.Manifest.Packs[0], surface), ProjectRoot: combined.projectRoot, ProjectInstallation: &prior, ProjectGoal: ProjectionAbsent})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -560,7 +560,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	selectedPack = composition.combinedPack()
 	compositionBlockers := projectCompositionBlockers(composition.blockers)
 	graph := mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, ResourceGraphForSurface(pack, selection, request.Surface, false))
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: selectedPack, ProjectRoot: request.ProjectRoot})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: selection.Client, Desired: selectedPack, ProjectRoot: request.ProjectRoot})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -607,7 +607,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		targetKey := filepath.Clean(target)
 		for _, locked := range existingLock.Projections {
-			if filepath.Clean(locked.Target) == targetKey && (locked.Resource != resource || !projectProjectionOwnedByPack(locked, pack.ID)) {
+			independentInstruction := locked.Mode == "merge_marked_file" && projection.Action.Kind == ActionInstructionFile && independentAgentsInstructions(locked.Surface, locked.Resource, request.Surface, resource, target)
+			if filepath.Clean(locked.Target) == targetKey && !independentInstruction && (locked.Resource != resource || !projectProjectionOwnedByPack(locked, pack.ID)) {
 				blockers = append(blockers, ProjectInstallBlocker{Code: "projection_collision", Resource: resource, Target: target, Detail: "another installed Pack receipt owns the same project path", Remediation: "select a non-colliding resource root or assign an explicit alias"})
 				break
 			}
@@ -952,6 +953,15 @@ func sortedProjectSurfaces(values []Surface) []Surface {
 	return result
 }
 
+func projectSelectedClient(pack ProjectManifestPack, surface Surface) string {
+	for _, intent := range projectSurfaceIntents(pack) {
+		if intent.Surface == surface {
+			return intent.Selection.Client
+		}
+	}
+	return ""
+}
+
 func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {
 	return append([]ProjectSurfaceIntent(nil), pack.SurfaceIntents...)
 }
@@ -1156,9 +1166,22 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 	return lock, nil
 }
 
+// Agents instruction ownership is scoped to the resource's marked contribution,
+// not the whole shared document. Equal marker identities remain collisions.
+func independentAgentsInstructions(leftSurface Surface, left ResourceIdentity, rightSurface Surface, right ResourceIdentity, target string) bool {
+	return leftSurface == SurfaceAgents && rightSurface == SurfaceAgents &&
+		left.Kind == "instruction" && right.Kind == "instruction" && left.ID != right.ID &&
+		filepath.Clean(target) == "AGENTS.md"
+}
+
 func validateProjectReceipts(receipts []installedPackReceipt) error {
 	seen := map[string]bool{}
-	targetOwners := map[string]string{}
+	type targetOwner struct {
+		pack     string
+		surface  Surface
+		resource ResourceIdentity
+	}
+	targetOwners := map[string][]targetOwner{}
 	for i, receipt := range receipts {
 		if err := validateReceiptClient(receipt, "project"); err != nil {
 			return err
@@ -1225,10 +1248,12 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 				}
 			}
 			cleanTarget := filepath.Clean(projection.Target)
-			if owner, occupied := targetOwners[cleanTarget]; occupied && owner != receipt.Pack.ID && !noticeProjection {
-				return fmt.Errorf("project receipts for Packs %s and %s collide at %s", owner, receipt.Pack.ID, projection.Target)
+			for _, owner := range targetOwners[cleanTarget] {
+				if owner.pack != receipt.Pack.ID && !noticeProjection && !independentAgentsInstructions(owner.surface, owner.resource, receipt.Surface, identity, cleanTarget) {
+					return fmt.Errorf("project receipts for Packs %s and %s collide at %s", owner.pack, receipt.Pack.ID, projection.Target)
+				}
 			}
-			targetOwners[cleanTarget] = receipt.Pack.ID
+			targetOwners[cleanTarget] = append(targetOwners[cleanTarget], targetOwner{pack: receipt.Pack.ID, surface: receipt.Surface, resource: identity})
 			projectionSeen[projectionKey] = true
 		}
 	}

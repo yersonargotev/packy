@@ -269,7 +269,11 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 	}
 	guide["requires"] = []string{"asset:guide-data", "skill:domain-modeling", "skill:grilling"}
 	for _, value := range guide["bindings"].([]any) {
-		value.(map[string]any)["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
+		binding := value.(map[string]any)
+		binding["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
+		if binding["surface"] == "agents" {
+			binding["invocation"] = binding["name"]
+		}
 	}
 
 	guide["on_demand"].(map[string]any)["entry_document"] = "ACCESS.md"
@@ -307,7 +311,7 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 			b["name"] = id
 			prefix := "/"
 			if b["surface"] == "agents" {
-				prefix = "$"
+				prefix = ""
 			}
 			b["invocation"] = prefix + id
 		}

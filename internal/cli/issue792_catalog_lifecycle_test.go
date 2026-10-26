@@ -95,7 +95,7 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 	if out, err := executeCommand(t, NewRootCommand(opts), "update", first.ID(), "--surface", "agents"); err != nil {
 		t.Fatalf("selected update: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", newPack.ID(), "--surface", "claude"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", newPack.ID(), "--surface", "claude", "--alias", "skill:guide=catalog-new-guide"); err != nil {
 		t.Fatalf("new Pack activation: %v\n%s", err, out)
 	}
 	receipts, err := os.ReadFile(filepath.Join(env["HOME"], ".packy", "packs.json"))

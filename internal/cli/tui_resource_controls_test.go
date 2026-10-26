@@ -18,6 +18,10 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 	for _, scope := range []string{"global", "project"} {
 		t.Run(scope, func(t *testing.T) {
 			ctx := context.Background()
+			surface := "agents"
+			if scope == "global" {
+				surface = "claude"
+			}
 			synthetic := testsupport.CapabilityRich("tui-configure-" + scope)
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
 			manifest := synthetic.Manifest()
@@ -36,7 +40,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			opts.Getwd = func() (string, error) { return project, nil }
 			opts = opts.withDefaults()
 			backend := newTUIBackend(opts, newWorkstationResolver(opts))
-			request := tui.PreviewRequest{Operation: "activate", PackID: synthetic.ID(), Surface: "agents", Scope: scope, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:helper"}}}
+			request := tui.PreviewRequest{Operation: "activate", PackID: synthetic.ID(), Surface: surface, Scope: scope, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:helper"}}}
 			if scope == "project" {
 				request.Operation, request.ProjectRoot = "install", project
 			}
@@ -84,7 +88,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 				return tui.SurfaceStatus{}
 			}
 			apply(preview(request))
-			if got := status("agents").Selection; got.Mode != "custom" || !slices.Equal(got.Roots, request.Selection.Roots) {
+			if got := status(surface).Selection; got.Mode != "custom" || !slices.Equal(got.Roots, request.Selection.Roots) {
 				t.Fatalf("initial selection = %#v", got)
 			}
 			if scope == "project" {
@@ -114,14 +118,14 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 				t.Fatal("preview or rejected Apply changed files")
 			}
 			apply(added)
-			if got := status("agents").Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
+			if got := status(surface).Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
 				t.Fatalf("direct roots were not preserved: %#v", got)
 			}
 			projectionRoot := fixture.home
 			if scope == "project" {
 				projectionRoot = project
 			}
-			helper := filepath.Join(projectionRoot, ".agents", "skills", "helper")
+			helper := filepath.Join(projectionRoot, "."+surface, "skills", "helper")
 			if _, err := os.Stat(helper); err != nil {
 				t.Fatalf("helper was not projected: %v", err)
 			}
@@ -135,7 +139,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			if _, err := os.Lstat(helper); scope == "global" && !os.IsNotExist(err) {
 				t.Fatalf("helper projection retained: %v", err)
 			}
-			if got := status("agents").Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
+			if got := status(surface).Selection; !slices.Equal(got.Roots, request.Selection.Roots) {
 				t.Fatalf("selection replacement merged old roots: %#v", got)
 			}
 
@@ -150,7 +154,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			}
 			apply(cleared)
 			if scope == "global" {
-				if status("agents").Active {
+				if status(surface).Active {
 					t.Fatal("empty selection retained global activation")
 				}
 			} else {

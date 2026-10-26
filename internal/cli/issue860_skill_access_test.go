@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -243,8 +244,8 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			{"excluded", "unsupported_surface", func(manifest map[string]any) {
 				skill := manifest["resources"].([]any)[1].(map[string]any)
 				bindings := skill["bindings"].([]any)
-				skill["bindings"] = []any{bindings[0]}
-				skill["variants"] = skill["variants"].([]any)[:1]
+				skill["bindings"] = slices.DeleteFunc(bindings, func(value any) bool { return value.(map[string]any)["surface"] == "agents" })
+				skill["variants"] = slices.DeleteFunc(skill["variants"].([]any), func(value any) bool { return value.(map[string]any)["surface"] == "agents" })
 				skill["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "review-needed", "reason": "Agents is not reviewed"}}
 			}},
 			{"native template", "incompatible_resource", func(manifest map[string]any) {
@@ -269,7 +270,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 					binding["name"] = "helper"
 					prefix := ""
 					if binding["surface"] == "agents" {
-						prefix = "$"
+						prefix = ""
 					}
 					if binding["surface"] == "claude" {
 						prefix = "/"
@@ -326,14 +327,8 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			t.Fatal("expected native Agents source link")
-		}
-		if err := os.Remove(installed); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Mkdir(installed, 0755); err != nil {
-			t.Fatal(err)
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			t.Fatal("expected native Agents copied skill tree")
 		}
 		if err := os.WriteFile(filepath.Join(installed, "SKILL.md"), []byte("Local customized installed guide\n"), 0644); err != nil {
 			t.Fatal(err)
