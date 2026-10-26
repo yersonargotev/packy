@@ -212,10 +212,10 @@ func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstal
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "engram", Version: "1.0.1", SurfaceStatuses: []tui.SurfaceStatus{
 				{Name: "codex", Supported: true},
-				{Name: "opencode", Supported: true, Installation: "installed", Runtime: "pending"},
+				{Name: "claude", Supported: true, Installation: "installed", Runtime: "pending"},
 			},
 		}}}},
-		preview: tui.Preview{ID: "activation-fresh", Digest: "activation-fresh", Operation: "activate", Disposition: "previewable", PackID: "engram", PackVersion: "1.0.1", Surface: "opencode", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "mcp", ApprovalRequired: true}}},
+		preview: tui.Preview{ID: "activation-fresh", Digest: "activation-fresh", Operation: "activate", Disposition: "previewable", PackID: "engram", PackVersion: "1.0.1", Surface: "claude", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "mcp", ApprovalRequired: true}}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
@@ -231,7 +231,7 @@ func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstal
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "activate" || backend.previewRequests[0].Surface != "opencode" || backend.previewRequests[0].Selection.Mode != "" {
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "activate" || backend.previewRequests[0].Surface != "claude" || backend.previewRequests[0].Selection.Mode != "" {
 		t.Fatalf("existing installation did not request fresh personal activation: %#v", backend.previewRequests)
 	}
 	if view := ansi.Strip(model.View().Content); strings.Contains(view, "install engram") || !strings.Contains(view, "activate engram") {
@@ -570,7 +570,7 @@ func TestChangingFromAnInactiveToActiveSurfaceRevealsItsLifecycleActions(t *test
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 		ID: "argote", Version: "2.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{
 			{Name: "codex", Supported: true},
-			{Name: "opencode", Supported: true, Active: true, UpdateAvailable: true},
+			{Name: "claude", Supported: true, Active: true, UpdateAvailable: true},
 		},
 	}}}}}
 	model := loadModel(t, backend)
@@ -581,7 +581,7 @@ func TestChangingFromAnInactiveToActiveSurfaceRevealsItsLifecycleActions(t *test
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Choose lifecycle action", "opencode", "Configure resources · selected", "Update", "Deactivate"} {
+	for _, want := range []string{"Choose lifecycle action", "claude", "Configure resources · selected", "Update", "Deactivate"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("active alternate surface missing %q:\n%s", want, view)
 		}
@@ -1283,7 +1283,6 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 				SurfaceStatuses: []tui.SurfaceStatus{
 					{Name: "claude", Supported: false},
 					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", ControlledCheckState: "stale", ControlledCheckResult: "true", ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
-					{Name: "opencode", Supported: false},
 				},
 			},
 		}},
@@ -1325,7 +1324,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
 		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
-		"install helper", "projection verified", "opencode: unsupported",
+		"install helper", "projection verified",
 	} {
 		if !strings.Contains(allDetailViews, want) {
 			t.Fatalf("Pack detail missing %q after scrolling:\n%s", want, allDetailViews)
@@ -1342,10 +1341,10 @@ func TestCatalogFilterMatchesSearchableCatalogMetadata(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{
 			{
-				ID: "coordination", Description: "Delegate complex work", Surfaces: []string{"opencode"}, Requirements: []string{"pack-tool", "shared-value"},
+				ID: "coordination", Description: "Delegate complex work", Surfaces: []string{"claude"}, Requirements: []string{"pack-tool", "shared-value"},
 				Resources: []tui.Resource{{
 					Identity: "skill:orchestrate", Description: "Route specialist agents", Requirements: []string{"resource-tool", "shared-value"},
-					SurfaceCapabilities: []tui.SurfaceCapability{{Surface: "opencode", Type: "external-executable-acquisition", Tool: "capability-tool"}},
+					SurfaceCapabilities: []tui.SurfaceCapability{{Surface: "claude", Type: "external-executable-acquisition", Tool: "capability-tool"}},
 				}},
 			},
 			{ID: "guidance", Description: "Write instructions"},
@@ -1364,7 +1363,7 @@ func TestCatalogFilterMatchesSearchableCatalogMetadata(t *testing.T) {
 	for name, query := range map[string]string{
 		"Pack ID":                       "COORD",
 		"Pack description":              "complex work",
-		"supported CLI surface":         "OPENCode",
+		"supported CLI surface":         "CLAUDE",
 		"Pack external requirement":     "pack-tool",
 		"resource identity":             "skill:orchestrate",
 		"resource description":          "specialist agents",
@@ -1637,9 +1636,9 @@ func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}},
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}, {Name: "opencode", Supported: true}, {Name: "claude", Supported: false}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}, {Name: "claude", Supported: true}},
 		}}}},
-		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "opencode", Scope: "global", Selection: tui.Selection{Mode: "all"}},
+		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "claude", Scope: "global", Selection: tui.Selection{Mode: "all"}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -1650,12 +1649,12 @@ func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	view = ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "CLI surface: opencode · selected") || strings.Contains(view, "CLI surface: claude · selected") {
+	if !strings.Contains(view, "CLI surface: claude · selected") || strings.Contains(view, "CLI surface: codex · selected") {
 		t.Fatalf("surface navigation did not choose the next supported surface:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Surface != "opencode" {
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Surface != "claude" {
 		t.Fatalf("preview did not target the reviewed surface: %#v", backend.previewRequests)
 	}
 }

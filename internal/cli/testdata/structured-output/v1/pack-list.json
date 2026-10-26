@@ -6,13 +6,13 @@
       "id": "addy",
       "version": "1.1.0",
       "description": "Addy agent skills",
-      "surfaces": ["claude", "codex", "opencode"]
+      "surfaces": ["claude", "codex"]
     },
     {
       "id": "argote",
       "version": "1.0.2",
       "description": "Yerson Argote's engineering and communication guidance",
-      "surfaces": ["claude", "codex", "opencode"]
+      "surfaces": ["claude", "codex"]
     },
     {
       "id": "engram",
@@ -30,7 +30,7 @@
       "id": "matty",
       "version": "1.0.4",
       "description": "Matty workflow",
-      "surfaces": ["claude", "codex", "opencode"]
+      "surfaces": ["claude", "codex"]
     },
     {
       "id": "orchestrate",

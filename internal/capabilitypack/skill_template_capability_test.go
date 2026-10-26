@@ -45,7 +45,7 @@ func TestSkillTemplateCapabilityRejectsInvalidOrForeignData(t *testing.T) {
 		{"missing data", func(_ *Resource, b *Binding) { b.Capabilities[0].SkillTemplate = nil }, "requires skill_template data"},
 		{"invalid naming", func(_ *Resource, b *Binding) { b.Capabilities[0].SkillTemplate.Naming = "custom" }, "naming must be native or pack"},
 		{"foreign data", func(_ *Resource, b *Binding) {
-			b.Capabilities[0].PrimaryPrompt = &PrimaryPromptCapability{ID: "x", Source: "instructions/x.md"}
+			b.Capabilities[0].ProjectInstruction = &ProjectInstructionCapability{ID: "x", Source: "instructions/x.md"}
 		}, "does not accept other capability data"},
 	}
 	for _, test := range tests {
@@ -146,7 +146,7 @@ func TestSkillTemplateGeneratedNameHasPortableLimit(t *testing.T) {
 	for _, length := range []int{58, 59} {
 		pack := Pack{ID: strings.Repeat("a", length), Resources: []Resource{{
 			Kind: "skill", ID: "guide", Bindings: []Binding{{
-				Surface: SurfaceOpenCode, Projection: "skill", Name: "guide", Capabilities: []SurfaceCapability{{
+				Surface: SurfaceClaude, Projection: "skill", Name: "guide", Capabilities: []SurfaceCapability{{
 					Type:          SurfaceCapabilitySkillTemplate,
 					SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingPack},
 				}},

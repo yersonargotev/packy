@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Opt-in discovery checks against skill-template-catalog.py owned workspaces.
 
-Codex lists skills without starting a thread. Claude and OpenCode send to an
-explicit localhost deterministic transport; no credentials or model inference.
+Codex lists skills without starting a thread. Claude sends to an explicit
+localhost recorder; no credentials or model inference.
 """
 import argparse
 import http.server
@@ -107,7 +107,7 @@ def contains_body(value, body):
     return False
 
 
-def transport_load(binary, surface, workspace, env, skill_name, expected_body):
+def claude_load(binary, workspace, env, skill_name, expected_body):
     requests = []
     class Provider(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -115,56 +115,24 @@ def transport_load(binary, surface, workspace, env, skill_name, expected_body):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append(body)
-            if surface == "claude":
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(b'{"type":"error","error":{"type":"invalid_request_error","message":"packy pre-inference probe"}}')
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            results = [message for message in body.get("messages", []) if message.get("role") == "tool"]
-            if not results:
-                delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "load_skill", "type": "function", "function": {"name": "skill", "arguments": json.dumps({"name": skill_name})}}]}
-                finish = "tool_calls"
-            else:
-                delta = {"role": "assistant", "content": "Deterministic Packy skill loading probe complete."}
-                finish = "stop"
-            for value, reason in ((delta, None), ({}, finish)):
-                chunk = {"id": "packy-probe", "object": "chat.completion.chunk", "created": int(time.time()),
-                         "model": "probe", "choices": [{"index": 0, "delta": value, "finish_reason": reason}]}
-                self.wfile.write(("data: " + json.dumps(chunk) + "\n\n").encode())
-            self.wfile.write(b"data: [DONE]\n\n")
-            self.wfile.flush()
+            self.wfile.write(b'{"type":"error","error":{"type":"invalid_request_error","message":"packy pre-inference probe"}}')
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Provider)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = "http://127.0.0.1:" + str(server.server_port)
     env = dict(env)
-    if surface == "claude":
-        env.update(ANTHROPIC_API_KEY="fake-local-only", ANTHROPIC_BASE_URL=url,
-                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1")
-        command = [binary, "-p", "/" + skill_name + " Show the supplied workflow only. Do not run it.",
-                   "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--tools", "",
-                   "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
-    else:
-        env.update(OPENCODE_DISABLE_DEFAULT_PLUGINS="1", OPENCODE_DISABLE_MODELS_FETCH="1", CI="true", NO_COLOR="1")
-        config = {"$schema": "https://opencode.ai/config.json", "enabled_providers": ["fixture"],
-                  "model": "fixture/probe", "small_model": "fixture/probe", "provider": {"fixture": {
-                      "npm": "@ai-sdk/openai-compatible", "name": "Local Packy fixture", "options": {"baseURL": url + "/v1", "apiKey": "fake-local-only"},
-                      "models": {"probe": {"name": "Probe", "limit": {"context": 64000, "output": 1024}}}}},
-                  "permission": {"*": "deny", "skill": "allow"}, "share": "disabled", "autoupdate": False}
-        config_path = workspace / "config/opencode/opencode.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(json.dumps(config))
-        command = [binary, "run", "--pure", "--format", "json", "Load " + skill_name + " and stop. Do not execute the workflow."]
+    env.update(ANTHROPIC_API_KEY="fake-local-only", ANTHROPIC_BASE_URL=url,
+               CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1")
+    command = [binary, "-p", "/" + skill_name + " Show the supplied workflow only. Do not run it.",
+               "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--tools", "",
+               "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
     try:
         result = run_host(command, workspace, env)
         if not contains_body(requests, expected_body):
-            raise RuntimeError(surface + " did not load " + skill_name + ": " + result.stderr[-1000:])
-        if surface == "opencode" and result.returncode != 0:
-            raise RuntimeError("OpenCode failed after tool loading: " + result.stderr[-1000:])
+            raise RuntimeError("Claude did not load " + skill_name + ": " + result.stderr[-1000:])
         return {"name": skill_name, "body_loaded": True, "requests": len(requests),
                 "exit_status": result.returncode, "model_inference": False}
     finally:
@@ -184,7 +152,9 @@ def main():
     for case in evidence["outcomes"]:
         surface, scope = case["surface"], case["scope"]
         workspace = Path(case["workspace"])
-        binary = shutil.which("codex" if surface == "codex" else "claude" if surface == "claude" else "opencode")
+        if surface not in ("codex", "claude"):
+            raise RuntimeError("unsupported probe surface: " + surface)
+        binary = shutil.which(surface)
         if not binary:
             raise RuntimeError("host executable is unavailable: " + surface)
         env = environment(workspace)
@@ -197,7 +167,7 @@ def main():
                 native = Path(case["skills"]) / skill_name / "SKILL.md"
                 content = native.read_text().replace("\r\n", "\n")
                 body = content.split("\n---\n", 1)[1].strip()
-                loads.append(transport_load(binary, surface, workspace, env, skill_name, body))
+                loads.append(claude_load(binary, workspace, env, skill_name, body))
             result = {"loads": loads}
         results.append({"surface": surface, "scope": scope, "version": version, **result})
     summary = {"report": "skill-template-host-loading", "result": "passed", "outcomes": results}

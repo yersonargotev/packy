@@ -210,8 +210,7 @@
           "surface": {
             "enum": [
               "codex",
-              "claude",
-              "opencode"
+              "claude"
             ]
           },
           "definition": {

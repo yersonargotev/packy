@@ -29,7 +29,7 @@ func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) 
 		{},
 		func() ProjectionAction { value := action; value.PreviewOnly = false; return value }(),
 		func() ProjectionAction { value := action; value.Precondition = ""; return value }(),
-		func() ProjectionAction { value := action; value.Surface = SurfaceOpenCode; return value }(),
+		func() ProjectionAction { value := action; value.Surface = SurfaceClaude; return value }(),
 	} {
 		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{malformed}}}, transition)
 		if err == nil || !strings.Contains(err.Error(), "personal") || !strings.Contains(err.Error(), "project action") {
@@ -163,7 +163,7 @@ func TestObservationDigestIgnoresNewGoalAndReadinessEvidence(t *testing.T) {
 	changedProvenance := withUnifiedFacts
 	changedProvenance.Projections = append([]ObservedProjection(nil), withUnifiedFacts.Projections...)
 	withUnifiedFacts.Projections[0].AdapterProvenance = "codex-projection/v1/codex-instruction-file"
-	changedProvenance.Projections[0].AdapterProvenance = "opencode-projection/v1/opencode-instruction-file"
+	changedProvenance.Projections[0].AdapterProvenance = "claude-projection/v1/claude-instruction-file"
 	if observationDigest(withUnifiedFacts) == observationDigest(changedProvenance) {
 		t.Fatal("authoritative adapter provenance was omitted from the stale-plan fingerprint")
 	}

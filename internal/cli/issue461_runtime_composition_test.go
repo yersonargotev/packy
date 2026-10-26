@@ -16,7 +16,7 @@ func TestIssue461ProjectRuntimeCompositionUsesOneHumanAndStructuredVocabulary(t 
 		Coverage: capabilitypack.ProjectRuntimeCoverageInheritedGlobal, GlobalVersion: "1.0.0",
 	}
 	status := capabilitypack.JSONProjectStatusReport{SchemaVersion: capabilitypack.ProjectStatusSchemaVersion, Report: "project-status", ProjectRoot: "<project-root>", Packs: []capabilitypack.JSONProjectPackStatus{{
-		Pack: capabilitypack.ProjectManifestPack{ID: "runtime-pack", Version: "1.0.0"}, Surface: capabilitypack.SurfaceOpenCode,
+		Pack: capabilitypack.ProjectManifestPack{ID: "runtime-pack", Version: "1.0.0"}, Surface: capabilitypack.SurfaceCodex,
 		Installation: capabilitypack.ProjectInstallationInstalled, Runtime: capabilitypack.ProjectRuntimeInheritedGlobal, RuntimeRequired: true,
 		Readiness: capabilitypack.ReadinessStatus{Configured: capabilitypack.ReadinessTrue, Authorized: capabilitypack.ReadinessUnknown, Usable: capabilitypack.ReadinessUnknown}, Conditions: []capabilitypack.ReadinessCondition{},
 		RuntimeEffects: []capabilitypack.ProjectRuntimeEffectStatus{effect}, Projections: []capabilitypack.ProjectProjectionStatus{}, Blockers: []capabilitypack.ProjectInstallBlocker{}, PendingHumanActions: []string{}, Evidence: []string{},

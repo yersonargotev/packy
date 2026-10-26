@@ -16,12 +16,12 @@ import (
 func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 	details := []capabilitypack.CatalogDetail{{
 		Pack: capabilitypack.Pack{
-			ID: "synthetic", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
+			ID: "synthetic", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude},
 			Requires: capabilitypack.Requirements{Tools: []string{"pack-tool"}},
 			Resources: []capabilitypack.Resource{{
 				Kind: "skill", ID: "coordinate", Description: "Coordinate workers", RequiresTools: []string{"resource-tool"},
 				Bindings: []capabilitypack.Binding{{
-					Surface: capabilitypack.SurfaceOpenCode,
+					Surface: capabilitypack.SurfaceClaude,
 					Capabilities: []capabilitypack.SurfaceCapability{{
 						Type:                          capabilitypack.SurfaceCapabilityExternalExecutableAcquisition,
 						ExternalExecutableAcquisition: &capabilitypack.ExternalExecutableAcquisitionCapability{Tool: "capability-tool"},
@@ -40,7 +40,7 @@ func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 		t.Fatalf("adapted catalog = %#v", packs)
 	}
 	resource := packs[0].Resources[0]
-	if !slices.Equal(packs[0].Surfaces, []string{"opencode"}) || !slices.Equal(packs[0].Requirements, []string{"pack-tool"}) {
+	if !slices.Equal(packs[0].Surfaces, []string{"claude"}) || !slices.Equal(packs[0].Requirements, []string{"pack-tool"}) {
 		t.Fatalf("Pack search metadata = %#v", packs[0])
 	}
 	if resource.Identity != "skill:coordinate" || resource.Description != "Coordinate workers" || !slices.Contains(resource.Requirements, "resource-tool") {
@@ -50,7 +50,7 @@ func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 		t.Fatalf("surface capabilities = %#v", resource.SurfaceCapabilities)
 	}
 	capability := resource.SurfaceCapabilities[0]
-	if capability.Surface != "opencode" || capability.Type != "external-executable-acquisition" || capability.Tool != "capability-tool" {
+	if capability.Surface != "claude" || capability.Type != "external-executable-acquisition" || capability.Tool != "capability-tool" {
 		t.Fatalf("surface capability = %#v", capability)
 	}
 }
@@ -333,7 +333,7 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 		t.Fatalf("project preview accepted a different Git repository: %v", err)
 	}
 	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "claude", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -384,7 +384,7 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 		t.Fatal(err)
 	}
 	pack := findTUIPack(dashboard.Project.Packs, manifest.ID)
-	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "claude" })
 	if index < 0 || pack.SurfaceStatuses[index].Installation != "installed" {
 		t.Fatalf("fresh project status did not retain project installation: %#v", pack)
 	}
@@ -402,7 +402,7 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 
 	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "claude", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -410,11 +410,11 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "claude", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Operation != "uninstall" || preview.Disposition != "previewable" || preview.Surface != "opencode" || !slices.Equal(requiredTUIPhases(preview), []string{"destructive-cleanup"}) {
+	if preview.Operation != "uninstall" || preview.Disposition != "previewable" || preview.Surface != "claude" || !slices.Equal(requiredTUIPhases(preview), []string{"destructive-cleanup"}) {
 		t.Fatalf("project uninstall preview = %#v", preview)
 	}
 	for _, target := range []string{"packy.json", "packy.lock.json", "PACKY-NOTICES.md"} {
@@ -457,7 +457,7 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 		t.Fatal(err)
 	}
 	pack := findTUIPack(dashboard.Project.Packs, manifest.ID)
-	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "claude" })
 	if index < 0 || (pack.SurfaceStatuses[index].Installation != "" && pack.SurfaceStatuses[index].Installation != "absent") || pack.SurfaceStatuses[index].Runtime == "active" {
 		t.Fatalf("fresh status did not verify complete uninstall: %#v", pack)
 	}
@@ -473,7 +473,7 @@ func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testin
 	opts.Getwd = func() (string, error) { return project, nil }
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
-	install, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+	install, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: manifest.ID, Surface: "claude", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +485,7 @@ func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testin
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "claude", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,7 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 		roots   []string
 	}{
 		{surface: "codex", roots: []string{codexOnly.String(), shared.String()}},
-		{surface: "opencode", roots: []string{shared.String()}},
+		{surface: "claude", roots: []string{shared.String()}},
 	}
 	for _, current := range installs {
 		args := []string{"install", packID, "--surface", current.surface}
@@ -550,9 +550,9 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 	var removedTarget, retainedTarget string
 	for key, surfaces := range projectionSurfaces {
 		switch {
-		case surfaces[capabilitypack.SurfaceOpenCode]:
+		case surfaces[capabilitypack.SurfaceClaude]:
 			retainedTarget = key.target
-		case surfaces[capabilitypack.SurfaceCodex] && !surfaces[capabilitypack.SurfaceOpenCode]:
+		case surfaces[capabilitypack.SurfaceCodex] && !surfaces[capabilitypack.SurfaceClaude]:
 			removedTarget = key.target
 		}
 	}
@@ -574,10 +574,10 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
+	if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceClaude}) {
 		t.Fatalf("selected-surface uninstall changed retained intent: %#v", installation.Manifest.Packs)
 	}
-	if len(installation.Lock.Receipts) != 1 || installation.Lock.Receipts[0].Surface != capabilitypack.SurfaceOpenCode {
+	if len(installation.Lock.Receipts) != 1 || installation.Lock.Receipts[0].Surface != capabilitypack.SurfaceClaude {
 		t.Fatalf("selected-surface uninstall retained wrong receipts: %#v", installation.Lock.Receipts)
 	}
 	if _, err := os.Stat(filepath.Join(project, filepath.FromSlash(removedTarget))); !os.IsNotExist(err) {
@@ -591,7 +591,7 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 }
 
 func TestTUIProductionBackendUpdatesAnOlderGlobalPack(t *testing.T) {
-	for _, surface := range []string{"codex", "opencode", "claude"} {
+	for _, surface := range []string{"codex", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			synthetic := testsupport.PortableAllSurfaces("tui-global-update")
 			manifest := synthetic.Manifest()

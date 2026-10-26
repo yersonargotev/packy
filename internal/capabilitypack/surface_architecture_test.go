@@ -43,8 +43,8 @@ func internalProductionSources(t *testing.T) []productionSource {
 }
 
 func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
-	if _, err := os.Stat(filepath.Join("..", "opencode"+"activation")); !os.IsNotExist(err) {
-		t.Fatal("obsolete OpenCode activation package exists")
+	if _, err := os.Stat(filepath.Join("..", "opencode")); !os.IsNotExist(err) {
+		t.Fatal("retired OpenCode adapter package exists")
 	}
 
 	sources := internalProductionSources(t)
@@ -74,10 +74,10 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 				t.Fatalf("%s reintroduced obsolete surface structure %q", source.path, forbidden)
 			}
 		}
-		supportedHost := strings.Contains(source.path, "/codex/") || strings.Contains(source.path, "/opencode/") || strings.Contains(source.path, "/claudecode/")
+		supportedHost := strings.Contains(source.path, "/codex/") || strings.Contains(source.path, "/claudecode/")
 		adapterDefinitions := strings.Count(source.text, "type SurfaceAdapter struct")
 		if adapterDefinitions > 0 && !supportedHost {
-			t.Fatalf("%s introduced a concrete surface adapter outside Codex, OpenCode, or Claude Code", source.path)
+			t.Fatalf("%s introduced a concrete surface adapter outside Codex or Claude Code", source.path)
 		}
 		if supportedHost {
 			dispatches, err := literalIdentityDispatches(source.path, source.text)
@@ -97,7 +97,7 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			}
 		}
 		if strings.Contains(source.path, "/capabilitypack/") {
-			for _, hostPolicy := range []string{"internal/codex", "internal/opencode", "internal/claudecode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
+			for _, hostPolicy := range []string{"internal/codex", "internal/claudecode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
 				if strings.Contains(source.text, hostPolicy) {
 					t.Fatalf("%s redistributed host policy through %q", source.path, hostPolicy)
 				}
@@ -120,10 +120,10 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			t.Fatalf("%s reintroduced a removal-candidate side channel", source.path)
 		}
 	}
-	if concreteAdapters != 3 {
-		t.Fatalf("found %d concrete production surface adapters, want Codex, OpenCode, and Claude Code only", concreteAdapters)
+	if concreteAdapters != 2 {
+		t.Fatalf("found %d concrete production surface adapters, want Codex and Claude Code only", concreteAdapters)
 	}
-	if inspectionImplementations != 3 || applicationImplementations != 3 {
+	if inspectionImplementations != 2 || applicationImplementations != 2 {
 		t.Fatalf("found %d inspection and %d application implementations, want one complete implementation per host", inspectionImplementations, applicationImplementations)
 	}
 	if directInspections != 1 {

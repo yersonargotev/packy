@@ -201,6 +201,11 @@ func (f Facade) observationTime() time.Time {
 }
 
 func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport, error) {
+	if request.Surface != "" {
+		if err := ValidateSurface(request.Surface); err != nil {
+			return StatusReport{}, err
+		}
+	}
 	return withCatalogObservation(ctx, f, func(locked Facade) (StatusReport, error) {
 		return locked.status(ctx, request)
 	})

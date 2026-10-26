@@ -120,8 +120,7 @@
             "surface": {
               "enum": [
                 "claude",
-                "codex",
-                "opencode"
+                "codex"
               ]
             },
             "resource": {
@@ -284,8 +283,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex",
-            "opencode"
+            "codex"
           ]
         },
         "intent": {

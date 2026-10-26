@@ -12,7 +12,7 @@ import (
 )
 
 func TestVariantCatalogClosesEveryReviewedBodyAndBuildsDeterministically(t *testing.T) {
-	fixture := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceCodex, testsupport.SurfaceOpenCode)
+	fixture := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceCodex)
 	root := t.TempDir()
 	if err := fixture.WriteCatalog(root); err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestVariantCatalogClosesEveryReviewedBodyAndBuildsDeterministically(t *test
 	for _, file := range pack.Files {
 		files[file.Path] = true
 	}
-	for _, body := range []string{"common", "claude", "codex", "opencode"} {
+	for _, body := range []string{"common", "claude", "codex"} {
 		for _, file := range []string{"SKILL.md", "references/detail.md", "agents/openai.yaml"} {
 			if !files["skills/"+body+"/"+file] {
 				t.Fatalf("missing reviewed body %s/%s", body, file)

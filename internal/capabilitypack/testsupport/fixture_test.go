@@ -27,7 +27,7 @@ func TestPortableAllSurfacesWritesBundleAndDerivesVersions(t *testing.T) {
 	if got, want := manifest.ID, "portable-one"; got != want {
 		t.Fatalf("manifest ID = %q, want %q", got, want)
 	}
-	if got, want := manifest.Surfaces, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}; !reflect.DeepEqual(got, want) {
+	if got, want := manifest.Surfaces, []Surface{SurfaceClaude, SurfaceCodex}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("surfaces = %#v, want %#v", got, want)
 	}
 

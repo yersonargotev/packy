@@ -72,6 +72,11 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		ProjectRoot: "<project-root>", projectRoot: request.ProjectRoot, request: request,
 		Contracts: []string{"PACKY-NOTICES.md", "packy.json", "packy.lock.json"}, Blockers: []ProjectInstallBlocker{},
 	}
+	if request.Surface != "" {
+		if err := ValidateSurface(request.Surface); err != nil {
+			return report, err
+		}
+	}
 	if request.ProjectRoot == "" || request.PackID == "" || adapter == nil {
 		return report, errors.New("project uninstall preview requires the project root, pack, and adapter")
 	}
@@ -322,7 +327,7 @@ func coalesceProjectRemovalActions(actions []ProjectionAction) ([]ProjectionActi
 	groups := map[string]int{}
 	originals := map[string]string{}
 	for _, action := range actions {
-		composable := action.Kind == ActionInstructionFile || action.Kind == ActionOpenCodeInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
 		if !composable {
 			result = append(result, action)
 			continue

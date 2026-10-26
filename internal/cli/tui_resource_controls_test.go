@@ -89,7 +89,7 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 			}
 			if scope == "project" {
 				other := request
-				other.Surface = "opencode"
+				other.Surface = "claude"
 				apply(preview(other))
 			}
 
@@ -158,13 +158,13 @@ func TestTUIBackendConfiguresExactResourcesAndClearsPack(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
+				if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceClaude}) {
 					t.Fatalf("clearing Codex changed other surface: %#v", installation.Manifest.Packs)
 				}
-				if got := status("opencode").Selection; !slices.Equal(got.Roots, []string{"skill:helper"}) {
+				if got := status("claude").Selection; !slices.Equal(got.Roots, []string{"skill:helper"}) {
 					t.Fatalf("other surface selection changed: %#v", got)
 				}
-				if _, err := os.Stat(filepath.Join(project, ".opencode", "skills", "helper")); err != nil {
+				if _, err := os.Stat(filepath.Join(project, ".claude", "skills", "helper")); err != nil {
 					t.Fatalf("other surface projection removed: %v", err)
 				}
 			}

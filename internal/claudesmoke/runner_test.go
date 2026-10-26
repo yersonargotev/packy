@@ -360,13 +360,12 @@ func TestManifestDeterministicAndContentBound(t *testing.T) {
 func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 	items := []FileEvidence{
 		{Path: "home/.codex/AGENTS.md"},
-		{Path: "config/opencode/opencode.json"},
 		{Path: "home/.claude/CLAUDE.md"},
 		{Path: "home/.claude.json"},
 		{Path: "home/.agents/skills/example/SKILL.md"},
 	}
 	got := surfaceManifest(items)
-	if len(got) != 5 {
+	if len(got) != 4 {
 		t.Fatalf("surface manifest = %#v", got)
 	}
 	changed := append(append([]FileEvidence(nil), got...), FileEvidence{Path: "home/.codex/new-surface-file"})

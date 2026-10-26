@@ -82,7 +82,7 @@ func TestSurfaceVariantDependenciesResolveBeforeSelectionAndRemainDetached(t *te
 		t.Fatal("resolution mutated common catalog")
 	}
 	pack.Resources[2].Bindings = pack.Resources[2].Bindings[:1]
-	pack.Resources[2].SurfaceExclusions = []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not available"}, {Surface: SurfaceOpenCode, Mode: "optional", Code: "unsupported", Reason: "not available"}}
+	pack.Resources[2].SurfaceExclusions = []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not available"}}
 	if err := validateVariants(pack); err == nil || !strings.Contains(err.Error(), "excluded") {
 		t.Fatalf("excluded effective dependency accepted: %v", err)
 	}

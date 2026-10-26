@@ -21,7 +21,7 @@ import (
 
 func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) {
 	hostBin := t.TempDir()
-	for _, name := range []string{"codex", "claude", "opencode", "engram", "brew"} {
+	for _, name := range []string{"codex", "claude", "engram", "brew"} {
 		script := "#!/bin/sh\nprintf executed > '" + filepath.Join(hostBin, "executed") + "'\nexit 99\n"
 		if err := os.WriteFile(filepath.Join(hostBin, name), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
@@ -188,17 +188,13 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 			if _, err := os.Lstat(filepath.Join(claude, "guide")); !os.IsNotExist(err) {
 				t.Fatalf("retired Claude guide remains: %v", err)
 			}
-			apply(install, "transition", "--surface", "opencode", "--resource", "skill:guide")
-			opencode := filepath.Join(workspace, "project", ".opencode", "skills")
-			if scope == "global" {
-				opencode = filepath.Join(workspace, "config", "opencode", "skills")
+			apply(install, "transition", "--surface", "claude", "--resource", "skill:guide")
+			if _, err := os.Lstat(filepath.Join(claude, "helper")); !os.IsNotExist(err) {
+				t.Fatalf("Claude reinstallation inherited Codex-only dependency: %v", err)
 			}
-			if _, err := os.Lstat(filepath.Join(opencode, "helper")); !os.IsNotExist(err) {
-				t.Fatalf("OpenCode inherited Codex-only dependency: %v", err)
-			}
-			apply(remove, "transition", "--surface", "opencode")
-			if _, err := os.Lstat(filepath.Join(opencode, "guide")); !os.IsNotExist(err) {
-				t.Fatalf("retired OpenCode guide remains: %v", err)
+			apply(remove, "transition", "--surface", "claude")
+			if _, err := os.Lstat(filepath.Join(claude, "guide")); !os.IsNotExist(err) {
+				t.Fatalf("retired Claude guide remains after reinstallation: %v", err)
 			}
 			if got := readIssue798File(t, unrelated); string(got) != "preserve unrelated\n" {
 				t.Fatalf("unrelated bytes changed: %s", got)

@@ -16,7 +16,7 @@ func TestIssue520RecoveryOrientedReconcileCommandIsRemoved(t *testing.T) {
 }
 
 func TestIssue520CurrentLifecycleAcrossSupportedAdapters(t *testing.T) {
-	for _, surface := range []string{"codex", "opencode", "claude"} {
+	for _, surface := range []string{"codex", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			pack := testsupport.PortableAllSurfaces("lifecycle-" + surface)

@@ -17,7 +17,7 @@ import (
 )
 
 func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testing.T) {
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		for _, scope := range []string{"global", "project"} {
 			for _, reverse := range []bool{false, true} {
 				order := "legacy-first"
@@ -165,7 +165,7 @@ func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testin
 }
 
 func TestIssue851ExplicitAliasesOverrideGeneratedNamesAndReferences(t *testing.T) {
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		t.Run(surface, func(t *testing.T) {
 			legacy := testsupport.CapabilityRich("legacy-alias")
 			templated := testsupport.CapabilityRich("pstack-alias")
@@ -199,7 +199,7 @@ func TestIssue851ExplicitAliasesOverrideGeneratedNamesAndReferences(t *testing.T
 }
 
 func TestIssue851LegacyAliasesStillFailClosedOnDivergentNativeDiscovery(t *testing.T) {
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		t.Run(surface, func(t *testing.T) {
 			first := testsupport.CapabilityRich("legacy-one")
 			second := testsupport.CapabilityRich("legacy-two")
@@ -255,7 +255,7 @@ func TestIssue851ChangedTemplateContractInvalidatesApprovedPreview(t *testing.T)
 }
 
 func TestIssue851UpdateAdoptsTemplateNamingBeforeInstallingLegacyNeighbor(t *testing.T) {
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		for _, scope := range []string{"global", "project"} {
 			t.Run(surface+"/"+scope, func(t *testing.T) {
 				migrating := testsupport.CapabilityRich("migrating-flow")
@@ -517,7 +517,7 @@ func issue851SkillResource(packID, id, name, originPath string, requires []strin
 		requires = []string{}
 	}
 	bindings := make([]any, 0, 3)
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		invocation := name
 		switch surface {
 		case "claude":
@@ -609,8 +609,6 @@ func issue851SkillPath(root, scope, surface, name string) string {
 		switch surface {
 		case "claude":
 			return filepath.Join(root, ".claude", "skills", name)
-		case "opencode":
-			return filepath.Join(root, ".opencode", "skills", name)
 		default:
 			return filepath.Join(root, ".agents", "skills", name)
 		}
@@ -618,8 +616,6 @@ func issue851SkillPath(root, scope, surface, name string) string {
 	switch surface {
 	case "claude":
 		return filepath.Join(root, ".claude", "skills", name)
-	case "opencode":
-		return filepath.Join(root, "xdg", "opencode", "skills", name)
 	default:
 		return filepath.Join(root, ".agents", "skills", name)
 	}

@@ -18,7 +18,6 @@ readonly packages=(
   ./internal/codex
   ./internal/engrambin
   ./internal/localprojection
-  ./internal/opencode
   ./internal/setuphealth
   ./internal/skillbundle
   ./internal/tools/claudesmoke

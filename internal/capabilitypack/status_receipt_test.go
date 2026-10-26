@@ -147,9 +147,9 @@ func TestReceiptStatusRetainsSurfaceRemovedFromCurrentCatalog(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			facade, store, _ := receiptStatusFixture(t, nil, nil)
-			facade.catalog.packs[0].Surfaces = []Surface{SurfaceOpenCode}
+			facade.catalog.packs[0].Surfaces = []Surface{SurfaceClaude}
 			facade.catalog.packs[0].Resources = nil
-			facade.activation.adapters[SurfaceOpenCode] = &fakeSurfaceAdapter{}
+			facade.activation.adapters[SurfaceClaude] = &fakeSurfaceAdapter{}
 			report, err := facade.Status(context.Background(), request)
 			if err != nil {
 				t.Fatal(err)
@@ -178,10 +178,10 @@ func TestReceiptStatusRejectsUnsupportedSurfaceWithoutActiveReceipt(t *testing.T
 	for _, surface := range []Surface{SurfaceCodex, Surface("unrecognized")} {
 		t.Run(string(surface), func(t *testing.T) {
 			facade, store, adapter := receiptStatusFixture(t, nil, nil)
-			facade.catalog.packs[0].Surfaces = []Surface{SurfaceOpenCode}
+			facade.catalog.packs[0].Surfaces = []Surface{SurfaceClaude}
 			store.state.Intent.Active = false
 			_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: surface})
-			if err == nil || !strings.Contains(err.Error(), "does not support CLI surface") {
+			if err == nil || (!strings.Contains(err.Error(), "does not support CLI surface") && !strings.Contains(err.Error(), "unsupported CLI surface")) {
 				t.Fatalf("unsupported surface error = %v", err)
 			}
 			if adapter.inspectCalls != 0 {
@@ -193,7 +193,7 @@ func TestReceiptStatusRejectsUnsupportedSurfaceWithoutActiveReceipt(t *testing.T
 
 func TestReceiptStatusRejectsSurfaceInconsistentWithMatchingManifest(t *testing.T) {
 	facade, _, adapter := receiptStatusFixture(t, nil, nil)
-	facade.catalog.packs[0].Surfaces = []Surface{SurfaceOpenCode}
+	facade.catalog.packs[0].Surfaces = []Surface{SurfaceClaude}
 	facade.catalog.packs[0].Version = "1.0.0"
 	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex})
 	if err == nil || !strings.Contains(err.Error(), "absent from matching catalog Pack") {

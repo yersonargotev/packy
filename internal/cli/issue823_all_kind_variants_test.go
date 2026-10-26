@@ -19,7 +19,7 @@ import (
 )
 
 func TestIssue823AllKindsGlobalAndProjectVariantLifecycle(t *testing.T) {
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		for _, scope := range []string{"global", "project"} {
 			t.Run(surface+"/"+scope, func(t *testing.T) {
 				pack := testsupport.AllKindVariants("all-kinds")
@@ -311,7 +311,7 @@ func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		t.Run(surface, func(t *testing.T) {
 			environment := testprocess.Env(t)
 			env := adoptionEnvironmentMap(environment)
@@ -378,7 +378,7 @@ func TestIssue823RefreshFindsVariantOnlyProvenance(t *testing.T) {
 }
 
 func TestIssue823VariantMCPUpdatePreservesUnmanagedAndDriftedEntries(t *testing.T) {
-	for _, surface := range []string{"opencode", "claude"} {
+	for _, surface := range []string{"claude"} {
 		for _, owned := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/owned=%t", surface, owned), func(t *testing.T) {
 				pack := testsupport.AllKindVariants("guarded")
@@ -387,19 +387,13 @@ func TestIssue823VariantMCPUpdatePreservesUnmanagedAndDriftedEntries(t *testing.
 				root := t.TempDir()
 				writeTestGitWorktree(t, root)
 				opts.Getwd = func() (string, error) { return root, nil }
-				path := filepath.Join(root, "opencode.json")
-				if surface == "claude" {
-					path = filepath.Join(root, ".mcp.json")
-				}
+				path := filepath.Join(root, ".mcp.json")
 				if owned {
 					if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--resource", "mcp_server:sample-mcp-server", "--json"); err != nil {
 						t.Fatalf("install: %v\n%s", err, out)
 					}
 				}
-				content := `{"mcp":{"sample-mcp-server":{"type":"local","command":["unmanaged"],"enabled":true}}}`
-				if surface == "claude" {
-					content = `{"mcpServers":{"sample-mcp-server":{"type":"stdio","command":"unmanaged","args":[]}}}`
-				}
+				content := `{"mcpServers":{"sample-mcp-server":{"type":"stdio","command":"unmanaged","args":[]}}}`
 				writeAuthoringFile(t, path, content)
 				before := snapshotTree(t, root)
 				if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.ID(), "--surface", surface, "--resource", "mcp_server:sample-mcp-server", "--json"); err == nil {
@@ -480,7 +474,7 @@ func TestIssue823RefreshBlocksOverlappingMaintainedVariant(t *testing.T) {
 func TestIssue823LifecycleVariantResolvesDependencyWithoutExecutingAuthoringCode(t *testing.T) {
 	pack := testsupport.AllKindVariants("lifecycle-dependency")
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		out, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.ID(), "--surface", surface, "--resource", "lifecycle:sample-lifecycle", "--dry-run", "--json")
 		if err != nil {
 			t.Fatalf("lifecycle %s: %v\n%s", surface, err, out)

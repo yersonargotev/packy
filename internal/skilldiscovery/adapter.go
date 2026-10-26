@@ -1,4 +1,4 @@
-// Package skilldiscovery observes native and compatibility skill discovery.
+// Package skilldiscovery observes native skill discovery.
 // It does not own files, install launch settings, or grant runtime authority.
 package skilldiscovery
 
@@ -68,9 +68,6 @@ func (a Observer) Observe(_ context.Context, transition capabilitypack.SurfaceTr
 	for surface, root := range a.GlobalRoots {
 		if root != "" {
 			roots = append(roots, tree{surface: surface, path: root})
-			if surface == capabilitypack.SurfaceOpenCode {
-				roots = append(roots, tree{surface: surface, path: filepath.Join(filepath.Dir(root), "skill")})
-			}
 		}
 	}
 	cwd := transition.ProjectRoot
@@ -78,11 +75,8 @@ func (a Observer) Observe(_ context.Context, transition capabilitypack.SurfaceTr
 		cwd = a.WorkingDirectory
 	}
 	for cwd != "" && cwd != "." {
-		for surface, dir := range map[capabilitypack.Surface]string{capabilitypack.SurfaceCodex: ".agents", capabilitypack.SurfaceClaude: ".claude", capabilitypack.SurfaceOpenCode: ".opencode"} {
+		for surface, dir := range map[capabilitypack.Surface]string{capabilitypack.SurfaceCodex: ".agents", capabilitypack.SurfaceClaude: ".claude"} {
 			roots = append(roots, tree{surface: surface, path: filepath.Join(cwd, dir, "skills")})
-			if surface == capabilitypack.SurfaceOpenCode {
-				roots = append(roots, tree{surface: surface, path: filepath.Join(cwd, dir, "skill")})
-			}
 		}
 		if _, err := os.Stat(filepath.Join(cwd, ".git")); err == nil {
 			break
@@ -107,9 +101,8 @@ func (a Observer) Observe(_ context.Context, transition capabilitypack.SurfaceTr
 		}
 	}
 	for _, root := range roots {
-		// Codex and Claude do not discover each other's roots. OpenCode discovers
-		// both; either installation order can change what OpenCode will load.
-		if a.Surface != capabilitypack.SurfaceOpenCode && root.surface != capabilitypack.SurfaceOpenCode && root.surface != a.Surface {
+		// Each supported surface discovers only its own roots.
+		if root.surface != a.Surface {
 			continue
 		}
 		candidates, err := scan(root.path, map[string]bool{}, excluded)
@@ -121,11 +114,7 @@ func (a Observer) Observe(_ context.Context, transition capabilitypack.SurfaceTr
 				if filepath.Clean(candidate.path) == filepath.Clean(d.path) || candidate.name != d.name {
 					continue
 				}
-				host := capabilitypack.SurfaceOpenCode
-				if root.surface == a.Surface {
-					host = a.Surface
-				}
-				facts = append(facts, capabilitypack.SkillDiscoveryFact{Host: host, Name: d.name, Target: d.path, OtherTarget: candidate.path, Fingerprint: d.fingerprint, OtherFingerprint: candidate.fingerprint})
+				facts = append(facts, capabilitypack.SkillDiscoveryFact{Host: a.Surface, Name: d.name, Target: d.path, OtherTarget: candidate.path, Fingerprint: d.fingerprint, OtherFingerprint: candidate.fingerprint})
 			}
 		}
 	}

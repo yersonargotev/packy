@@ -12,7 +12,7 @@ import (
 func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 	root := repositoryRoot(t)
 	documents := map[string][]string{
-		"CONTEXT.md":                 {"### CLI surface", "The supported surfaces are Codex", "OpenCode", "Claude Code", "Antigravity and GitHub Copilot CLI remain outside"},
+		"CONTEXT.md":                 {"### CLI surface", "The supported surfaces are Codex", "Claude Code", "Antigravity and GitHub Copilot CLI remain outside"},
 		"README.md":                  {"Claude Code", "docs/claude-code.md", claudecode.MinimumSupportedVersion},
 		"docs/claude-code.md":        {"Prerequisite", "Global projections", "Explicit activation", "Preservation and cleanup", "Readiness", "No authentication or model calls", claudecode.MinimumSupportedVersion},
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},

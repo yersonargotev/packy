@@ -1,7 +1,7 @@
 # Packy
 
 Packy is a lightweight installer and configurator for reviewed capability
-Packs. It installs selected Pack resources for Codex, OpenCode, and Claude Code
+Packs. It installs selected Pack resources for Codex and Claude Code
 without becoming an agent runtime.
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
@@ -69,8 +69,8 @@ Before replacing a `v0.1.x` installation, follow the warning-first
 [one-time v0.2 reset](docs/reset-v0.2.md). Packy intentionally provides no
 automatic migration or cleanup command.
 
-For installations created by the release-coupled Installed Source model,
-follow the [clean Catalog adoption procedure](docs/catalog-adoption.md): use
+If your current binary supports OpenCode, or your installations use the
+release-coupled Installed Source model, follow the [clean Catalog adoption procedure](docs/catalog-adoption.md): use
 the previous Packy to inventory, preview, deactivate, and uninstall its
 receipts before replacing the binary, then initialize and explicitly reinstall
 with the current Catalog Snapshot model.

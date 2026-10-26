@@ -27,7 +27,7 @@ func TestClaudePersonalSkillTopologyDoesNotClaimSharedAgentsTarget(t *testing.T)
 	}}}
 	bindAdapterProvenance(&inspection)
 	projection := inspection.Projections[0]
-	if projection.Shared || projection.Action.Shared || len(projection.DiscoverableBy) != 0 || len(projection.Action.DiscoverableBy) != 0 {
+	if projection.Shared || projection.Action.Shared {
 		t.Fatalf("Claude personal skill was misclassified as shared: %+v", projection)
 	}
 }

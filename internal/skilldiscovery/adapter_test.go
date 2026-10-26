@@ -22,50 +22,77 @@ func putSkill(t *testing.T, root, name, body string) {
 	}
 }
 
-func TestNativeAndCompatibilityDiscoveryInBothOrders(t *testing.T) {
-	for _, other := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceClaude} {
-		for _, reverse := range []bool{false, true} {
-			t.Run(string(other)+map[bool]string{false: "-forward", true: "-reverse"}[reverse], func(t *testing.T) {
-				root := t.TempDir()
-				roots := map[capabilitypack.Surface]string{capabilitypack.SurfaceCodex: filepath.Join(root, "home/.agents/skills"), capabilitypack.SurfaceClaude: filepath.Join(root, "home/.claude/skills"), capabilitypack.SurfaceOpenCode: filepath.Join(root, "config/opencode/skills")}
-				desiredHost, installedHost := capabilitypack.SurfaceOpenCode, other
-				if reverse {
-					desiredHost, installedHost = other, capabilitypack.SurfaceOpenCode
-				}
-				source := filepath.Join(root, "source")
-				putSkill(t, source, "guide", "desired")
-				target := filepath.Join(roots[desiredHost], "guide")
-				existing := filepath.Join(roots[installedHost], "guide")
-				putSkill(t, existing, "guide", "installed")
-				observer := Observer{Surface: desiredHost, GlobalRoots: roots}
-				observation := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{ID: "skill:guide", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: source, Target: target}}}}
-				facts, err := observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
-				if err != nil || len(facts) != 1 || facts[0].Fingerprint == facts[0].OtherFingerprint {
-					t.Fatalf("facts=%+v err=%v", facts, err)
-				}
-				putSkill(t, existing, "guide", "desired")
-				facts, err = observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
-				if err != nil || len(facts) != 1 || facts[0].Fingerprint != facts[0].OtherFingerprint {
-					t.Fatalf("equal facts=%+v err=%v", facts, err)
-				}
-				if err := os.WriteFile(filepath.Join(existing, "helper.txt"), []byte("changed auxiliary"), 0644); err != nil {
-					t.Fatal(err)
-				}
-				facts, err = observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
-				if err != nil || facts[0].Fingerprint == facts[0].OtherFingerprint {
-					t.Fatalf("auxiliary facts=%+v err=%v", facts, err)
-				}
-				putSkill(t, existing, "guide", "desired")
-				if err := os.Chmod(filepath.Join(existing, "helper.txt"), 0700); err != nil {
-					t.Fatal(err)
-				}
-				facts, err = observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
-				if err != nil || facts[0].Fingerprint == facts[0].OtherFingerprint {
-					t.Fatalf("executable mode facts=%+v err=%v", facts, err)
-				}
+func TestSameSurfaceDiscoveryComparesCompleteTrees(t *testing.T) {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceClaude} {
+		t.Run(string(surface), func(t *testing.T) {
+			root := t.TempDir()
+			nativeRoot := filepath.Join(root, "native/skills")
+			source := filepath.Join(root, "source")
+			putSkill(t, source, "guide", "desired")
+			target := filepath.Join(nativeRoot, "guide")
+			existing := filepath.Join(nativeRoot, "another-directory")
+			putSkill(t, existing, "guide", "installed")
+			observer := Observer{Surface: surface, GlobalRoots: map[capabilitypack.Surface]string{surface: nativeRoot}}
+			observation := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{ID: "skill:guide", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: source, Target: target}}}}
+			facts, err := observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
+			if err != nil || len(facts) != 1 || facts[0].Fingerprint == facts[0].OtherFingerprint {
+				t.Fatalf("divergent facts=%+v err=%v", facts, err)
+			}
+			putSkill(t, existing, "guide", "desired")
+			facts, err = observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
+			if err != nil || len(facts) != 1 || facts[0].Fingerprint != facts[0].OtherFingerprint {
+				t.Fatalf("equal facts=%+v err=%v", facts, err)
+			}
+			if err := os.WriteFile(filepath.Join(existing, "helper.txt"), []byte("changed auxiliary"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			facts, err = observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
+			if err != nil || len(facts) != 1 || facts[0].Fingerprint == facts[0].OtherFingerprint {
+				t.Fatalf("auxiliary facts=%+v err=%v", facts, err)
+			}
+			putSkill(t, existing, "guide", "desired")
+			if err := os.Chmod(filepath.Join(existing, "helper.txt"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			facts, err = observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, observation)
+			if err != nil || len(facts) != 1 || facts[0].Fingerprint == facts[0].OtherFingerprint {
+				t.Fatalf("executable mode facts=%+v err=%v", facts, err)
+			}
+		})
+	}
+}
 
-			})
-		}
+func TestDiscoveryIgnoresOtherSurfacesAndRetiredRoots(t *testing.T) {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceClaude} {
+		t.Run(string(surface), func(t *testing.T) {
+			root := t.TempDir()
+			project := filepath.Join(root, "project")
+			if err := os.MkdirAll(filepath.Join(project, ".git"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			roots := map[capabilitypack.Surface]string{
+				capabilitypack.SurfaceCodex:        filepath.Join(root, "home/.agents/skills"),
+				capabilitypack.SurfaceClaude:       filepath.Join(root, "home/.claude/skills"),
+				capabilitypack.Surface("opencode"): filepath.Join(root, "config/opencode/skills"),
+			}
+			other := capabilitypack.SurfaceCodex
+			if surface == other {
+				other = capabilitypack.SurfaceClaude
+			}
+			putSkill(t, filepath.Join(roots[other], "guide"), "guide", "other surface")
+			putSkill(t, filepath.Join(roots[capabilitypack.Surface("opencode")], "guide"), "guide", "retired global")
+			for _, path := range []string{".opencode/skills/guide", ".opencode/skill/guide"} {
+				putSkill(t, filepath.Join(project, path), "guide", "retired project")
+			}
+			source := filepath.Join(root, "source")
+			putSkill(t, source, "guide", "desired")
+			observer := Observer{Surface: surface, GlobalRoots: roots, WorkingDirectory: project}
+			inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{ID: "skill:guide", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: source, Target: filepath.Join(roots[surface], "guide")}}}}
+			facts, err := observer.Observe(context.Background(), capabilitypack.SurfaceTransition{}, inspection)
+			if err != nil || len(facts) != 0 {
+				t.Fatalf("foreign roots discovered: %+v %v", facts, err)
+			}
+		})
 	}
 }
 
@@ -80,7 +107,7 @@ func TestDiscoveryUsesFrontmatterAndStopsAtWorktreeBoundary(t *testing.T) {
 	}
 	source := filepath.Join(root, "source")
 	putSkill(t, source, "guide", "desired")
-	outside := filepath.Join(root, ".opencode/skills/guide")
+	outside := filepath.Join(root, ".agents/skills/guide")
 	putSkill(t, outside, "guide", "outside")
 	observer := Observer{Surface: capabilitypack.SurfaceCodex, WorkingDirectory: nested}
 	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{ID: "skill:guide", Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Source: source, Target: filepath.Join(root, "home/.agents/skills/renamed")}}}}
@@ -88,7 +115,7 @@ func TestDiscoveryUsesFrontmatterAndStopsAtWorktreeBoundary(t *testing.T) {
 	if err != nil || len(facts) != 0 {
 		t.Fatalf("escaped worktree: %+v %v", facts, err)
 	}
-	foreign := filepath.Join(project, ".opencode/skills/another-directory")
+	foreign := filepath.Join(project, ".agents/skills/another-directory")
 	putSkill(t, foreign, "guide", "foreign")
 	if err := os.WriteFile(filepath.Join(foreign, "SKILL.md"), []byte("---\ndescription: 'literal --- delimiter'\nname: guide\n---\nforeign\n"), 0644); err != nil {
 		t.Fatal(err)

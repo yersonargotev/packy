@@ -6,7 +6,7 @@ import (
 )
 
 // SkillDiscoveryFact compares one intended tree with a same-name tree in a
-// native or compatibility discovery root. It grants no ownership.
+// native discovery root. It grants no ownership.
 type SkillDiscoveryFact struct {
 	Host                                                     Surface
 	Name, Target, OtherTarget, Fingerprint, OtherFingerprint string
@@ -19,9 +19,6 @@ func skillDiscoveryBlockers(facts []SkillDiscoveryFact) []PlanBlocker {
 			continue
 		}
 		detail := fmt.Sprintf("%s discovers divergent or unverified skill %q at %s and %s; deterministic coexistence is not verified. Keep only one definition in these discovery roots, or use distinct native skill names.", fact.Host, fact.Name, fact.Target, fact.OtherTarget)
-		if fact.Host == SurfaceOpenCode {
-			detail += " OPENCODE_DISABLE_EXTERNAL_SKILLS=1 isolates an explicitly controlled OpenCode launch only; Packy cannot verify every launch context and does not accept its own environment as persistent isolation."
-		}
 		blockers = append(blockers, PlanBlocker{Kind: BlockerHostDiscovery, Subject: "skill:" + fact.Name, Detail: detail})
 	}
 	sortBlockers(blockers)

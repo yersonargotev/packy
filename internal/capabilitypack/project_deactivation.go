@@ -67,6 +67,9 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 		ProjectRoot: "<project-root>", Surface: request.Surface, Effects: []ProjectActivationEffectPreview{}, Blockers: []ProjectInstallBlocker{},
 		projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request,
 	}
+	if err := ValidateSurface(request.Surface); err != nil {
+		return report, err
+	}
 	if request.ProjectRoot == "" || request.PackyHome == "" || request.PackID == "" || request.Adapter == nil {
 		return report, errors.New("project deactivation preview requires the project root, Packy Home, pack, and surface adapter")
 	}

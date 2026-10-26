@@ -407,7 +407,9 @@ func checkInvalidCrossPackCatalog(t *testing.T, binary string) {
 		project := crossPackAccessProject(t, "unsupported")
 		editCrossPackManifest(t, project, "third", func(m map[string]any) {
 			guide := accessResource(m, "guide")
-			guide["bindings"] = slices.DeleteFunc(guide["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] != "opencode" })
+			binding := guide["bindings"].([]any)[0].(map[string]any)
+			binding["surface"] = "opencode"
+			guide["bindings"] = []any{binding}
 			guide["variants"] = []any{}
 			guide["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
 			guide["on_demand"].(map[string]any)["dependencies"] = []any{map[string]any{"type": "skill", "target": "missing:guide"}}
@@ -418,7 +420,7 @@ func checkInvalidCrossPackCatalog(t *testing.T, binary string) {
 			}
 		}
 		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "validate", "--project", project, "--json")
-		if err == nil || !strings.Contains(string(out)+stderr, "Codex or Claude") {
+		if err == nil || !strings.Contains(string(out)+stderr, "unsupported") {
 			t.Fatalf("invalid unrequested declaration: %v %s %s", err, out, stderr)
 		}
 	})

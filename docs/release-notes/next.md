@@ -4,12 +4,20 @@
 
 The previous stable release is `v0.2.30`.
 
+- Retire OpenCode from the CLI, TUI, catalog contracts, installation state, and
+  discovery. Supported surfaces in this bounded step are `codex` and `claude`.
+  Retired surface values and OpenCode capabilities fail without mutation; no
+  aliases, legacy readers, or automatic migration are provided. Before replacing
+  an OpenCode-capable binary, use it to preview and remove its owned global and
+  project installations. Preserve unrelated files and retained content until the
+  [explicit handoff](https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md)
+  is complete.
+
 - Obtain a qualified skill with `packy get skill <pack>:<skill> --surface codex`
   or `--surface claude`, with readable output or `--json`. Explicit host selection
   resolves the reviewed Effective Resource; installed copies and aliases do not
-  replace the catalog resource. Initial On-demand Skill Access supports Codex and
-  Claude Code. Existing OpenCode native installation behavior remains available;
-  OpenCode on-demand access is outside this release's scope.
+  replace the catalog resource. On-demand Skill Access supports Codex and
+  Claude Code.
 - Discover current local candidates with `packy list [--json]` and
   `packy show <pack> --surface codex|claude [--json]`. Inspection exposes qualified
   identities, host-effective descriptions and provenance, native names, direct

@@ -690,8 +690,8 @@ func parseSurfaces(values []string) ([]capabilitypack.Surface, error) {
 	seen := map[capabilitypack.Surface]bool{}
 	for _, value := range values {
 		surface := capabilitypack.Surface(value)
-		if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceCodex && surface != capabilitypack.SurfaceOpenCode {
-			return nil, fmt.Errorf("unsupported surface %q", value)
+		if surface != capabilitypack.SurfaceClaude && surface != capabilitypack.SurfaceCodex {
+			return nil, fmt.Errorf("unsupported CLI surface %q; choose claude or codex", value)
 		}
 		if seen[surface] {
 			return nil, fmt.Errorf("surface %q is duplicated", value)

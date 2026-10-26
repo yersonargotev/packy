@@ -73,7 +73,7 @@ func (a *SurfaceAdapter) receiptTarget(id string) (root, target string, skill bo
 		return invalid()
 	}
 	for _, name := range parts[:len(parts)-1] {
-		if !receiptNamePattern.MatchString(name) && name != "mcp_server" && name != "primary_prompt" {
+		if !receiptNamePattern.MatchString(name) && name != "mcp_server" {
 			return invalid()
 		}
 	}

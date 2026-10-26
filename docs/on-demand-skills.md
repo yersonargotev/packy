@@ -11,8 +11,8 @@ packy get skill example:guide --surface claude --json
 `example:guide` is illustrative. Use `packy list` and `packy show <pack>` to
 inspect your local catalog. The skill must explicitly declare reviewed on-demand
 compatibility; a native binding or an installed copy is insufficient. Host
-selection is mandatory. This slice supports Codex and Claude Code, using their
-respective Effective Resources. OpenCode is unsupported for this operation.
+selection is mandatory. Supported surfaces are Codex and Claude Code, using
+their respective Effective Resources.
 
 Retrieval uses local retained data, works outside Git, and does not require the
 skill's script runtimes. It does not refresh, download, execute scripts, install
@@ -72,8 +72,8 @@ included in discovery output.
 `prerequisites_verified` is always false. Empty declarations mean none are
 reported, not that unknown requirements were checked and found absent.
 Compatibility establishes reviewed resource access only. It does not establish
-runtime readiness or successful workflow execution. OpenCode native support
-never enables on-demand access; choose `codex` or `claude` for discovery.
+runtime readiness or successful workflow execution. Choose `codex` or `claude`
+for discovery.
 
 Keep qualified identities when matching a request. If several Packs share a
 native name, preserve all candidates and ask the user which workflow they want;
@@ -148,9 +148,8 @@ relative to those documents, including when the target has a host variant.
 Malformed or undeclared references, missing listed files, and missing entry
 documents fail during complete-catalog validation, construction, and consumption, including
 in unrelated Packs. A common `on_demand` declaration requires a Codex or Claude
-binding. Explicit OpenCode `on_demand` variant declarations are unsupported;
-ordinary native OpenCode bindings can coexist with a common declaration without
-adding OpenCode access or cross-Pack installation requirements.
+binding. Every surface, binding, exclusion, and variant must use the supported
+surface vocabulary; retired declarations invalidate the complete snapshot.
 Omitted optional fields keep dependency-free trees
 usable. An explicit null is invalid. Other bytes and modes remain unchanged,
 including scripts, host invocations, native `{{packy.skill:...}}` tokens, and

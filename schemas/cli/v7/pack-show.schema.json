@@ -76,8 +76,7 @@
       "items": {
         "enum": [
           "claude",
-          "codex",
-          "opencode"
+          "codex"
         ]
       },
       "minItems": 1,
@@ -126,8 +125,7 @@
           "surface": {
             "enum": [
               "claude",
-              "codex",
-              "opencode"
+              "codex"
             ]
           },
           "catalog_identity": {
@@ -179,8 +177,7 @@
                     "surface": {
                       "enum": [
                         "codex",
-                        "claude",
-                        "opencode"
+                        "claude"
                       ]
                     },
                     "definition": {

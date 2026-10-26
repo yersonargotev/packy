@@ -60,6 +60,9 @@ func NewFileActivationStore(path string) *FileActivationStore {
 }
 
 func (s *FileActivationStore) LoadSnapshot(_ context.Context, surface Surface) (ActivationState, error) {
+	if err := ValidateSurface(surface); err != nil {
+		return ActivationState{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	document, err := s.load()
@@ -74,6 +77,9 @@ func (s *FileActivationStore) SaveSnapshot(_ context.Context, surface Surface, e
 }
 
 func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, expectedIntentRevision int, state ActivationState, compareDocument bool) (int, error) {
+	if err := ValidateSurface(surface); err != nil {
+		return 0, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
@@ -218,6 +224,9 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 	bySurface := map[Surface]*ActivationState{}
 	owners := map[string]ProjectionOwnership{}
 	for _, receipt := range receipts.Receipts {
+		if err := ValidateSurface(receipt.Surface); err != nil {
+			return activationDocument{}, err
+		}
 		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" {
 			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, and surface")
 		}
@@ -255,7 +264,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 }
 
 func receiptProjectionOwnershipID(surface Surface, projection installedProjection) string {
-	if (surface == SurfaceCodex || surface == SurfaceOpenCode) && strings.HasPrefix(projection.ID, "skill:") && projection.Target != "" {
+	if surface == SurfaceCodex && strings.HasPrefix(projection.ID, "skill:") && projection.Target != "" {
 		return "path:" + filepath.Clean(projection.Target)
 	}
 	return "surface:" + string(surface) + ":" + projection.ID

@@ -308,6 +308,9 @@ func controlledCheckResources(graph ResourceGraph) []ResourceIdentity {
 func controlledCheckValidity(identity ControlledCheckIdentity) string { return digestJSON(identity) }
 
 func (s *FileControlledCheckStore) Status(ctx context.Context, identity ControlledCheckIdentity) (ControlledCheckStatus, error) {
+	if err := ValidateSurface(identity.Surface); err != nil {
+		return ControlledCheckStatus{}, err
+	}
 	document, err := s.Load(ctx)
 	if err != nil {
 		return ControlledCheckStatus{}, err
@@ -437,6 +440,9 @@ func canonicalizeControlledCheckDocument(document *controlledCheckDocument) erro
 
 func validateControlledCheckEvidence(value controlledCheckEvidence) error {
 	i := value.Identity
+	if err := ValidateSurface(i.Surface); err != nil {
+		return err
+	}
 	if i.Pack == "" || i.PackVersion == "" || i.Surface == "" || i.ProjectionRevision == "" || i.AdapterVersion == "" || i.HostVersion == "" {
 		return errors.New("identity is incomplete")
 	}

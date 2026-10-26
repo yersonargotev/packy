@@ -31,7 +31,7 @@ func TestProjectUpdateAvailabilityRequiresAnIntactOlderInstallation(t *testing.T
 
 func TestIssue458ClassifiesSensitiveVersionChangesForFreshPersonalActivation(t *testing.T) {
 	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationHooks, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
-	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationMCP, Surface: SurfaceOpenCode, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp:memory"}
+	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationMCP, Surface: SurfaceClaude, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp:memory"}
 	prior := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "1.0.0"}, Surface: SurfaceCodex}}, Sensitive: []ProjectSensitiveDisclosure{oldHook}}
 	desired := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "2.0.0"}, Surface: SurfaceCodex}}, Sensitive: []ProjectSensitiveDisclosure{oldHook, newMCP}}
 
@@ -61,7 +61,7 @@ func TestIssue458RetirementRequiresSeparateDestructiveCleanupApproval(t *testing
 func TestIssue626DerivedProjectPackUsesSemanticVersionPrecedence(t *testing.T) {
 	pack := deriveProjectManifestPack(ProjectManifestPack{ID: "app", SurfaceIntents: []ProjectSurfaceIntent{
 		{Surface: SurfaceCodex, Version: "1.0.0-alpha.2", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
-		{Surface: SurfaceOpenCode, Version: "1.0.0-alpha.10", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
+		{Surface: SurfaceClaude, Version: "1.0.0-alpha.10", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
 	}})
 	if pack.Version != "1.0.0-alpha.10" {
 		t.Fatalf("derived version = %q, want semantic maximum", pack.Version)

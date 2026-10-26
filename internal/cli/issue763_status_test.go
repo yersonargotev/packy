@@ -19,7 +19,7 @@ func TestOlderReceiptStatusPresentationsBeforeApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, surface := range []string{"codex", "opencode", "claude"} {
+	for _, surface := range []string{"codex", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			pack := testsupport.PortableAllSurfaces("historical-status")
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack, testsupport.PortableAllSurfaces("unrelated-current"))

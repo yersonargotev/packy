@@ -21,7 +21,7 @@ func TestIssue823NoticeVariantPreservesOriginalLegalTextAndAttribution(t *testin
 			}
 			packRoot := filepath.Join(root, "packs/legal")
 			if failure == "text" {
-				if err := os.WriteFile(filepath.Join(packRoot, "notices/opencode.md"), []byte("Replacement omits original terms\n"), 0644); err != nil {
+				if err := os.WriteFile(filepath.Join(packRoot, "notices/codex.md"), []byte("Replacement omits original terms\n"), 0644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -42,9 +42,9 @@ func TestIssue823NoticeVariantPreservesOriginalLegalTextAndAttribution(t *testin
 					}
 					changed := "Replacement"
 					if failure == "attribution" {
-						r.Variants[2].Attribution = &changed
+						r.Variants[1].Attribution = &changed
 					} else {
-						r.Variants[2].License = &changed
+						r.Variants[1].License = &changed
 					}
 				}
 				data, err = json.Marshal(manifest)

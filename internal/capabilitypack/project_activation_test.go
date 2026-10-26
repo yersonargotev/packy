@@ -10,7 +10,7 @@ import (
 
 func TestProjectActivationRecognizesEverySupportedSurface(t *testing.T) {
 	facade := NewFacade(Catalog{})
-	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
 		_, err := facade.PreviewProjectActivation(context.Background(), ProjectActivationRequest{Surface: surface})
 		if err == nil || strings.Contains(err.Error(), "supports only") {
 			t.Fatalf("%s activation qualification error = %v", surface, err)
@@ -70,15 +70,15 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 	lock := ProjectLockProposal{
 		Sensitive: []ProjectSensitiveDisclosure{
 			{Category: ProjectActivationMCP, Surface: SurfaceCodex, Resource: resource, Detail: "codex-mcp"},
-			{Category: ProjectActivationMCP, Surface: SurfaceOpenCode, Resource: resource, Detail: "opencode-mcp"},
+			{Category: ProjectActivationMCP, Surface: SurfaceClaude, Resource: resource, Detail: "claude-mcp"},
 		},
 		Bindings: []LifecycleBinding{
 			{Surface: SurfaceCodex, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
-			{Surface: SurfaceOpenCode, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
+			{Surface: SurfaceClaude, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
 		},
 		Projections: []ProjectProjectionPlan{
 			{Resource: resource, Target: ".codex/config.toml", OwnerPack: "pack", Surface: SurfaceCodex, Command: "codex-command"},
-			{Resource: resource, Target: "opencode.json", OwnerPack: "pack", Surface: SurfaceOpenCode, Command: "opencode-command"},
+			{Resource: resource, Target: "claude.json", OwnerPack: "pack", Surface: SurfaceClaude, Command: "claude-command"},
 		},
 	}
 	categories := projectActivationCategories(lock, SurfaceCodex)
@@ -86,9 +86,9 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 		t.Fatalf("Codex categories included the wrong surface: %+v", categories)
 	}
 	original := projectSensitiveLockIdentity(lock, categories)
-	lock.Projections[1].Command = "changed-opencode-command"
+	lock.Projections[1].Command = "changed-claude-command"
 	if changed := projectSensitiveLockIdentity(lock, categories); changed != original {
-		t.Fatal("OpenCode-only change invalidated Codex consent")
+		t.Fatal("Claude-only change invalidated Codex consent")
 	}
 	lock.Projections[0].Command = "changed-codex-command"
 	if changed := projectSensitiveLockIdentity(lock, categories); changed == original {
@@ -104,14 +104,14 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	approval := []ProjectActivationApproval{{Category: ProjectActivationMCP, Digest: "approved"}}
-	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
 		receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved", Details: []ProjectSensitiveDisclosure{{Category: ProjectActivationMCP, Surface: surface, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "command:memory"}}}}
 		state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
 		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
 		document, exists, err := loadProjectActivationDocumentForSurface(home, root, "pack", surface)
 		if err != nil || !exists || document.State.Surface != surface || document.SensitiveLockIdentity != "lock-"+string(surface) {
 			t.Fatalf("%s document = %+v exists=%v err=%v", surface, document, exists, err)

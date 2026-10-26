@@ -49,28 +49,28 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 	if err != nil {
 		t.Fatalf("Claude project status for synthetic Pack: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), []string{"install", packID, "--surface", "opencode", "--resource", "skill:helper", "--resource", "agent:reviewer"}...); err != nil {
-		t.Fatalf("add OpenCode project surface: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), []string{"install", packID, "--surface", "codex", "--resource", "skill:helper"}...); err != nil {
+		t.Fatalf("add Codex project surface: %v\n%s", err, out)
 	}
 	missingSkill := filepath.Join(project, ".claude", "skills", "helper")
 	if err := os.RemoveAll(missingSkill); err != nil {
 		t.Fatal(err)
 	}
-	missingOpenCodeAgent := filepath.Join(project, ".opencode", "agents", "reviewer.md")
-	if err := os.Remove(missingOpenCodeAgent); err != nil {
+	missingCodexSkill := filepath.Join(project, ".agents", "skills", "helper")
+	if err := os.RemoveAll(missingCodexSkill); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), issue457RichInstallArgs(packID, "claude")...); err != nil {
 		t.Fatalf("reconcile Claude receipt: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), []string{"install", packID, "--surface", "opencode", "--resource", "skill:helper", "--resource", "agent:reviewer"}...); err != nil {
-		t.Fatalf("reconcile OpenCode receipt: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), []string{"install", packID, "--surface", "codex", "--resource", "skill:helper"}...); err != nil {
+		t.Fatalf("reconcile Codex receipt: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(filepath.Join(missingSkill, "SKILL.md")); err != nil {
 		t.Fatalf("Claude project reconcile did not restore the locked skill: %v", err)
 	}
-	if _, err := os.Stat(missingOpenCodeAgent); err != nil {
-		t.Fatalf("OpenCode receipt reconcile did not restore its projection: %v", err)
+	if _, err := os.Stat(filepath.Join(missingCodexSkill, "SKILL.md")); err != nil {
+		t.Fatalf("Codex receipt reconcile did not restore its projection: %v", err)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID, "--surface", "claude"); err != nil {
 		t.Fatalf("uninstall synthetic Pack for Claude: %v\n%s", err, out)

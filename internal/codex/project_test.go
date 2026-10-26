@@ -248,7 +248,7 @@ func TestCodexProjectInspectionBuildsSharedComposableInstructions(t *testing.T) 
 	}
 	one := findProjectProjection(t, inspection.Projections, "instruction:one")
 	for _, projection := range []capabilitypack.ObservedProjection{one} {
-		if projection.Action.Target != target || projection.Action.Kind != capabilitypack.ActionInstructionFile || !projection.Shared || len(projection.DiscoverableBy) != 1 || projection.DiscoverableBy[0] != capabilitypack.SurfaceOpenCode {
+		if projection.Action.Target != target || projection.Action.Kind != capabilitypack.ActionInstructionFile || !projection.Shared {
 			t.Fatalf("shared instruction projection = %#v", projection)
 		}
 	}

@@ -12,7 +12,7 @@ import (
 )
 
 func TestIssue851ShortNamesPreserveMixedSurfaceDiscoveryAndOwnership(t *testing.T) {
-	for _, pair := range [][2]string{{"codex", "opencode"}, {"claude", "opencode"}, {"codex", "claude"}} {
+	for _, pair := range [][2]string{{"codex", "claude"}} {
 		for _, divergent := range []bool{false, true} {
 			for _, reverse := range []bool{false, true} {
 				for _, firstScope := range []string{"global", "project"} {
@@ -25,7 +25,7 @@ func TestIssue851ShortNamesPreserveMixedSurfaceDiscoveryAndOwnership(t *testing.
 						t.Run(name, func(t *testing.T) {
 							pack := testsupport.SkillVariants("short-names")
 							if divergent {
-								pack = testsupport.SkillVariants("short-names", testsupport.SurfaceCodex, testsupport.SurfaceClaude, testsupport.SurfaceOpenCode)
+								pack = testsupport.SkillVariants("short-names", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
 							}
 							fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 							issue851EnablePackNaming(t, fixture.catalogRoot, pack.ID())
@@ -53,30 +53,9 @@ func TestIssue851ShortNamesPreserveMixedSurfaceDiscoveryAndOwnership(t *testing.
 							if body := readFileString(t, filepath.Join(firstTarget, "SKILL.md")); !strings.Contains(body, "name: short-names-guide") {
 								t.Fatalf("default name requires no alias:\n%s", body)
 							}
-							beforeHome, beforeProject := snapshotTree(t, fixture.home), snapshotTree(t, project)
 							out, err := executeCommand(t, NewRootCommand(opts), command(secondScope), pack.ID(), "--surface", second, "--json")
-							blocked := divergent && (first == "opencode" || second == "opencode")
-							if blocked {
-								if err == nil || !strings.Contains(out, "deterministic coexistence is not verified") || !strings.Contains(out, "short-names-guide") {
-									t.Fatalf("expected divergent short-name discovery block: %v\n%s", err, out)
-								}
-								if beforeHome != snapshotTree(t, fixture.home) || beforeProject != snapshotTree(t, project) {
-									t.Fatal("blocked installation changed projections or receipts")
-								}
-								return
-							}
 							if err != nil {
 								t.Fatalf("compatible short names failed: %v\n%s", err, out)
-							}
-							if divergent {
-								beforeHome, beforeProject = snapshotTree(t, fixture.home), snapshotTree(t, project)
-								out, err := executeCommand(t, NewRootCommand(opts), command(secondScope), pack.ID(), "--surface", "opencode", "--json")
-								if err == nil || !strings.Contains(out, "deterministic coexistence is not verified") {
-									t.Fatalf("OpenCode did not reject the existing Codex/Claude variants: %v\n%s", err, out)
-								}
-								if beforeHome != snapshotTree(t, fixture.home) || beforeProject != snapshotTree(t, project) {
-									t.Fatal("blocked three-root discovery changed projections or receipts")
-								}
 							}
 							secondTarget := issue851SkillPath(root(secondScope), secondScope, second, "short-names-guide")
 							if body := readFileString(t, filepath.Join(secondTarget, "SKILL.md")); !strings.Contains(body, "name: short-names-guide") {

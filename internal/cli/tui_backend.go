@@ -229,6 +229,11 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		}
 	}
 	surface := capabilitypack.Surface(request.Surface)
+	if surface != "" {
+		if err := capabilitypack.ValidateSurface(surface); err != nil {
+			return tui.Preview{}, err
+		}
+	}
 	if request.Scope == "project" {
 		if request.ProjectRoot == "" {
 			return tui.Preview{}, errors.New("project preview requires the current project root")
@@ -252,7 +257,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			if selectionErr != nil {
 				return tui.Preview{}, selectionErr
 			}
-			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
 			preview, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{
 				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection,
 			}, adapter)
@@ -269,7 +274,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 				}
 				selection = &selected
 			}
-			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
 			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
@@ -439,7 +444,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		if selectionErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, selectionErr
 		}
-		adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+		adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
 		fresh, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
@@ -485,7 +490,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			}
 			selection = &selected
 		}
-		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
 		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr

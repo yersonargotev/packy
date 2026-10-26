@@ -484,7 +484,7 @@ func coalesceProjectComposableActions(actions []ProjectionAction) []ProjectionAc
 	result := make([]ProjectionAction, 0, len(actions))
 	indices := map[string]int{}
 	for _, action := range actions {
-		composable := action.Kind == ActionInstructionFile || action.Kind == ActionOpenCodeInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
 		if !composable {
 			result = append(result, action)
 			continue
@@ -501,8 +501,8 @@ func coalesceProjectComposableActions(actions []ProjectionAction) []ProjectionAc
 }
 
 func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
-	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
-		return JSONProjectInstallPreview{}, fmt.Errorf("project installation preview does not support CLI surface %q", request.Surface)
+	if err := ValidateSurface(request.Surface); err != nil {
+		return JSONProjectInstallPreview{}, err
 	}
 	if request.ProjectRoot == "" || request.PackyHome == "" {
 		return JSONProjectInstallPreview{}, errors.New("project root and Packy Home are required")
@@ -633,12 +633,12 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
-		if projection.Action.Kind == ActionOpenCodeProjectSkillTree || projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
+		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o755
 		}
-		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
+		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
-		} else if projection.Action.Kind == ActionOpenCodeMCPConfig || projection.Action.Kind == ActionClaudeProjectMCP {
+		} else if projection.Action.Kind == ActionClaudeProjectMCP {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
 		}
 		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, OwnerPack: pack.ID, Surface: request.Surface, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...)})
@@ -798,6 +798,32 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 func projectOrphanedActivationBlockers(packyHome, projectRoot, packID string, installation ProjectInstallation, installed bool) ([]ProjectInstallBlocker, error) {
 	if packyHome == "" {
 		return nil, errors.New("Packy Home is required to inspect personal project activation receipts")
+	}
+	// Inspect retained documents before limiting reconciliation to current surfaces.
+	// Retired personal state must block the handoff rather than become invisible.
+	directory, err := projectActivationDirectory(packyHome, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "state-") || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var candidate projectActivationDocument
+		if strictDecode(data, &candidate) != nil || candidate.State.PackID != packID {
+			continue
+		}
+		if err := ValidateSurface(candidate.State.Surface); err != nil {
+			return nil, err
+		}
 	}
 	declaredSurfaces := map[Surface]bool{}
 	if installed {
@@ -1039,7 +1065,7 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 		}
 		return "merge_structured_file"
 	case "skill":
-		if surface == SurfaceCodex || surface == SurfaceClaude || surface == SurfaceOpenCode {
+		if surface == SurfaceCodex || surface == SurfaceClaude {
 			return "copy_tree"
 		}
 	}
@@ -1130,8 +1156,11 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 	seen := map[string]bool{}
 	targetOwners := map[string]string{}
 	for i, receipt := range receipts {
+		if err := ValidateSurface(receipt.Surface); err != nil {
+			return err
+		}
 		key := receipt.Pack.ID + "\x00" + string(receipt.Surface)
-		if !idPattern.MatchString(receipt.Pack.ID) || !semverPattern.MatchString(receipt.Pack.Version) || receipt.Surface != SurfaceCodex && receipt.Surface != SurfaceOpenCode && receipt.Surface != SurfaceClaude || seen[key] {
+		if !idPattern.MatchString(receipt.Pack.ID) || !semverPattern.MatchString(receipt.Pack.Version) || seen[key] {
 			return errors.New("project lock contains an invalid or duplicate Pack receipt")
 		}
 		if i > 0 {

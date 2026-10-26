@@ -69,7 +69,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 		}
 	}
 	ambientBefore := catalogTreeState(t, ambientRoots)
-	for _, surface := range []string{"codex", "opencode", "claude"} {
+	for _, surface := range []string{"codex", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			workspace := filepath.Join(t.TempDir(), "workspace")
 			prefix := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}
@@ -170,9 +170,6 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 			skillRoot := ".agents"
 			if surface == "claude" {
 				skillRoot = ".claude"
-			}
-			if surface == "opencode" {
-				skillRoot = ".opencode"
 			}
 			retiredSkill := filepath.Join(ownedProject, skillRoot, "skills", "guide")
 			if _, err := os.Stat(retiredSkill); !os.IsNotExist(err) {

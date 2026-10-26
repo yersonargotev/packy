@@ -27,15 +27,13 @@ def adapt(source, destination):
     shutil.copytree(source / "packs", destination / "packs")
     path = destination / "packs/pstack/pack.json"
     manifest = json.loads(path.read_text())
-    if manifest["version"] != "4.3.0":
-        raise RuntimeError("this reviewed probe requires pstack 4.3.0 as its baseline")
-    manifest["version"] = "5.0.0"
+    manifest["version"] = str(int(manifest["version"].split(".")[0]) + 1) + ".0.0"
     for resource in manifest["resources"]:
         if resource["kind"] != "skill":
             continue
         if resource["id"] in ("tdd", "teach"):
             for binding in resource["bindings"]:
-                binding["invocation"] = ("$" if binding["surface"] == "codex" else "/" if binding["surface"] == "claude" else "") + binding["name"]
+                binding["invocation"] = {"codex": "$", "claude": "/"}[binding["surface"]] + binding["name"]
                 binding["capabilities"].append({"type": "skill-template", "skill_template": {"naming": "pack"}})
                 binding["capabilities"].sort(key=lambda item: item["type"])
         elif resource["id"] == "poteto-help":
@@ -103,7 +101,7 @@ def main():
         evidence.update(candidate)
         evidence["baseline_archive_sha256"] = baseline["archive_sha256"]
         original = module.Probe(executable, root / "baseline-dist", root, env, evidence, 60)
-        for surface in module.SURFACES:
+        for surface in ("codex", "claude"):
             for scope in ("project", "global"):
                 probe.set_context("skill-template-acceptance", surface=surface, scope=scope)
                 original.set_context("skill-template-negative-control", surface=surface, scope=scope)
@@ -119,8 +117,6 @@ def main():
                                "catalog transition changed an installed Pack")
                 base = workspace / ("project" if scope == "project" else "home")
                 skills = base / module.SKILL_DIRECTORIES[surface]
-                if scope == "global" and surface == "opencode":
-                    skills = workspace / "config/opencode/skills"
                 legacy = {name: module.tree(skills / name) for name in ("tdd", "teach")}
                 probe.apply(workspace, [apply, "pstack", "--surface", surface])
                 for name in ("tdd", "teach"):

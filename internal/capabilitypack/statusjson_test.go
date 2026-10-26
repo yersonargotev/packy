@@ -11,7 +11,7 @@ func TestStatusJSONDistinguishesObservedFalseFromUnknownAndSorts(t *testing.T) {
 		{ModeID: "browser", Authority: "network", State: OptionalAuthorityAvailable, Fallback: "static evidence"},
 		{ModeID: "browser", Authority: "browser", State: OptionalAuthorityUnknown, Fallback: "static evidence"},
 	}, Conditions: []ReadinessCondition{{Type: ConditionRuntimeUsability, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed", Evidence: []string{}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "z/usable"}}}, Blockers: []string{"z", "a"}, Evidence: nil, PendingHumanActions: []string{"reload", "login"}}
-	unknown := StatusEntry{Pack: Pack{ID: "a", Version: "1"}, Surface: SurfaceOpenCode, Readiness: ReadinessStatus{Configured: ReadinessTrue, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}}
+	unknown := StatusEntry{Pack: Pack{ID: "a", Version: "1"}, Surface: SurfaceClaude, Readiness: ReadinessStatus{Configured: ReadinessTrue, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}}
 	report := (StatusReport{Entries: []StatusEntry{knownFalse, unknown}}).JSONReport(false)
 	if report.SchemaVersion != StatusSchemaVersion {
 		t.Fatalf("status schema version = %d", report.SchemaVersion)

@@ -84,7 +84,7 @@ func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 	pack := Pack{ID: "lifecycle-fixture", Version: "1.0.0",
 		Resources: []Resource{
 			{Kind: "agent", ID: "reviewer", Permissions: []string{"network", "filesystem", "network"}, Bindings: []Binding{
-				{Surface: SurfaceOpenCode, Projection: "agent", Name: "fixture-reviewer", Invocation: "@fixture-reviewer", Mode: "native", Sharing: "exclusive"},
+				{Surface: SurfaceClaude, Projection: "agent", Name: "fixture-reviewer", Invocation: "@fixture-reviewer", Mode: "native", Sharing: "exclusive"},
 				{Surface: SurfaceCodex, Projection: "agent", Name: "reviewer", Invocation: "delegate", Mode: "degraded", Degradation: "no nested delegation", Sharing: "exclusive"},
 			}},
 			{Kind: "skill", ID: "run", Permissions: []string{"process"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "run", Invocation: "$run", Mode: "native", Sharing: "shared"}}},

@@ -109,7 +109,7 @@ func ValidateOnDemandCatalog(packs []Pack) error {
 	for _, pack := range packs {
 		for _, resource := range pack.Resources {
 			if resource.OnDemand != nil && bindingForSurface(resource, SurfaceCodex) == nil && bindingForSurface(resource, SurfaceClaude) == nil {
-				return fmt.Errorf("on_demand skill %s:%s requires a Codex or Claude binding; OpenCode access is unsupported", pack.ID, resource.ID)
+				return fmt.Errorf("on_demand skill %s:%s requires a Codex or Claude binding", pack.ID, resource.ID)
 			}
 			for _, variant := range resource.Variants {
 				if variant.OnDemand != nil && variant.Surface != SurfaceCodex && variant.Surface != SurfaceClaude {

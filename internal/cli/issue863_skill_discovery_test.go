@@ -143,9 +143,9 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	wantPacks := []packListEntryJSON{
-		{ID: "other", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}},
-		{ID: "reviewed", Version: "1.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}},
-		{ID: "third", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}},
+		{ID: "other", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex"}},
+		{ID: "reviewed", Version: "1.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex"}},
+		{ID: "third", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"claude", "codex"}},
 	}
 	if !reflect.DeepEqual(listed.Packs, wantPacks) {
 		t.Fatalf("current Packs: %s", list)
@@ -183,7 +183,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 				DescriptiveResource: capabilitypack.DescriptiveResource{Resource: resource, Description: host + " discovery procedure", Role: "operational", Dependencies: []capabilitypack.ResourceIdentity{{Kind: "asset", ID: "guide-data"}, {Kind: "skill", ID: dependency}}, Notices: notice},
 				QualifiedSkill:      owner + ":guide", PackID: owner, PackVersion: version,
 				Definition:        capabilitypack.ResourceDefinition{Resource: resource, Surface: capabilitypack.Surface(host), Definition: "surface_variant", Source: "skills/" + host, Notices: notice},
-				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}, NativeName: "guide", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", Prerequisites: []string{host + "-runtime"}, Dependencies: []capabilitypack.OnDemandDependency{{Type: "skill", Target: foreign}}}, Compatible: true, Prerequisites: prereqs,
+				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex"}, NativeName: "guide", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", Prerequisites: []string{host + "-runtime"}, Dependencies: []capabilitypack.OnDemandDependency{{Type: "skill", Target: foreign}}}, Compatible: true, Prerequisites: prereqs,
 			}
 			if !reflect.DeepEqual(report.Skills[2], expected) {
 				t.Fatalf("complete effective guide metadata mismatch\ngot: %+v\nwant: %+v\n%s", report.Skills[2], expected, out)
@@ -199,7 +199,7 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 				DescriptiveResource: capabilitypack.DescriptiveResource{Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "shared"}, Description: "Reviewed variant guide", Role: "operational", Dependencies: []capabilitypack.ResourceIdentity{}, Notices: notice},
 				QualifiedSkill:      owner + ":shared", PackID: owner, PackVersion: version,
 				Definition:        capabilitypack.ResourceDefinition{Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "shared"}, Surface: capabilitypack.Surface(host), Definition: "common", Source: "skills/shared", Notices: notice},
-				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}, NativeName: "shared", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", ReferenceFiles: []string{"ACCESS.md", "references/nested.md"}, Prerequisites: []string{}}, Compatible: true, Prerequisites: commonPrereqs,
+				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex"}, NativeName: "shared", OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", ReferenceFiles: []string{"ACCESS.md", "references/nested.md"}, Prerequisites: []string{}}, Compatible: true, Prerequisites: commonPrereqs,
 			}
 			if !reflect.DeepEqual(common, expectedCommon) {
 				t.Fatalf("complete common candidate: %+v, want %+v", common, expectedCommon)
@@ -257,7 +257,7 @@ func checkIssue863Failures(t *testing.T, binary string) {
 		{"excluded", "Codex is not reviewed", func(m map[string]any) {
 			r := accessResource(m, "guide")
 			b := r["bindings"].([]any)
-			r["bindings"] = []any{b[0], b[2]}
+			r["bindings"] = []any{b[0]}
 			r["variants"] = r["variants"].([]any)[:1]
 			r["surface_exclusions"] = []any{map[string]any{"surface": "codex", "mode": "optional", "code": "review-needed", "reason": "Codex is not reviewed"}}
 		}},
