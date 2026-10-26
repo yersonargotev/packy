@@ -123,6 +123,21 @@ func TestBuildCatalogSnapshotRejectsInvalidIdentityAndValidatedSourceDrift(t *te
 		t.Fatalf("invalid identity error = %v", err)
 	}
 
+	for _, builder := range []string{"", "yersonargotev/packy@unknown", "yersonargotev/packy@main"} {
+		output := filepath.Join(t.TempDir(), "dist")
+		_, err := BuildCatalogSnapshot(context.Background(), project, validation, CatalogSnapshotSource{
+			Repository: "yersonargotev/packy-catalog",
+			Commit:     strings.Repeat("a", 40),
+			Builder:    builder,
+		}, output)
+		if err == nil || !strings.Contains(err.Error(), "builder identity") || !strings.Contains(err.Error(), "packy version --json") {
+			t.Fatalf("builder %q error = %v", builder, err)
+		}
+		if _, err := os.Stat(output); !os.IsNotExist(err) {
+			t.Fatalf("invalid builder created output: %v", err)
+		}
+	}
+
 	if err := os.WriteFile(filepath.Join(project, "packs", "alpha", "skills", "alpha", "SKILL.md"), []byte("drifted\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

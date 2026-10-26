@@ -182,12 +182,18 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			return result.EntryDocument, body
 		}
 		path, body := get(firstID)
-		for _, identity := range []string{"reviewed:missing", "missing:guide"} {
-			out, _, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", identity, "--surface", "codex", "--json")
-			if err == nil || !bytes.Contains(out, []byte(`"unknown_skill"`)) {
-				t.Fatalf("unknown identity %s: %v %s", identity, err, out)
+		for _, surface := range []string{"codex", "claude"} {
+			for _, identity := range []string{"reviewed:missing", "missing:guide"} {
+				out, stderr, err := runSkillAccessCLI(t, binary, directory, environment, "get", "skill", identity, "--surface", surface, "--json")
+				if err == nil || !bytes.Contains(out, []byte(`"unknown_skill"`)) {
+					t.Fatalf("unknown identity %s for %s: %v %s", identity, surface, err, out)
+				}
+				command := "packy show " + strings.Split(identity, ":")[0] + " --surface " + surface
+				if !bytes.Contains(out, []byte(command)) || !strings.Contains(stderr, command) {
+					t.Fatalf("unknown identity omitted %q: stdout=%s stderr=%s", command, out, stderr)
+				}
+				assertReport(t, out)
 			}
-			assertReport(t, out)
 		}
 		sourceRoot := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", firstID)
 		before := snapshotTree(t, sourceRoot)
