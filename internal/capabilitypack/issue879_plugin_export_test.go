@@ -133,3 +133,36 @@ func TestIssue879UnsafeSourcesAndOutput(t *testing.T) {
 		t.Fatal("snapshot destination accepted")
 	}
 }
+
+func TestIssue879GeneratedMetadataCannotOverwriteDeclaredResources(t *testing.T) {
+	for _, reserved := range []string{"plugin.json", "packy-provenance.json"} {
+		t.Run(reserved, func(t *testing.T) {
+			root := t.TempDir()
+			packRoot := filepath.Join(root, "packs", "sample")
+			if err := os.MkdirAll(filepath.Join(packRoot, "skills/guide"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			manifest := map[string]any{"schema_version": 3, "id": "sample", "version": "1.0.0", "description": "Domain boundary collision fixture", "selectable": true, "surfaces": []string{"agents"}, "readiness_obligations": []string{}, "external_requirements": []string{}, "origins": []any{}, "resources": []any{
+				map[string]any{"kind": "asset", "id": "reserved", "source": reserved, "description": "Required supporting bytes", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}},
+				map[string]any{"kind": "skill", "id": "guide", "source": "skills/guide", "description": "Reviewed guide", "requires": []string{"asset:reserved"}, "conflicts": []string{}, "bindings": []any{map[string]any{"surface": "agents", "projection": "skill", "name": "guide", "invocation": "guide", "mode": "native", "sharing": "exclusive", "capabilities": []any{}}}, "surface_exclusions": []any{}, "plugin_exports": []any{map[string]any{"format": "agent-plugins", "name": "guide", "prerequisites": []string{}, "references": []any{}, "roles": []any{}}}},
+			}}
+			data, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for path, body := range map[string][]byte{"pack.json": data, reserved: []byte("Required resource must never be overwritten"), "skills/guide/SKILL.md": []byte("---\nname: guide\ndescription: Reviewed guide.\n---\nBody\n")} {
+				if err := os.WriteFile(filepath.Join(packRoot, path), body, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			output := filepath.Join(t.TempDir(), "plugin")
+			_, err = ExportPlugin(context.Background(), root, strings.Repeat("a", 40), "sample", SurfaceAgents, nil, output)
+			if err == nil || !strings.Contains(err.Error(), "collision") {
+				t.Fatalf("reserved resource overwritten: %v", err)
+			}
+			if _, err := os.Lstat(output); !os.IsNotExist(err) {
+				t.Fatal("collision published partial output")
+			}
+		})
+	}
+}

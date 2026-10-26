@@ -271,6 +271,12 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 	if len(pack.ID) > 64 {
 		return pluginPlan{}, fmt.Errorf("plugin Pack name exceeds 64 characters")
 	}
+	if _, exists := files["plugin.json"]; exists {
+		return pluginPlan{}, fmt.Errorf("plugin output path collision at plugin.json")
+	}
+	if _, exists := files["packy-provenance.json"]; exists {
+		return pluginPlan{}, fmt.Errorf("plugin output path collision at packy-provenance.json")
+	}
 	data, _ := json.MarshalIndent(manifest, "", "  ")
 	files["plugin.json"] = pluginFile{append(data, '\n'), 0644}
 	provenance := struct {
@@ -293,7 +299,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 
 func pluginSourceFiles(ctx context.Context, root *os.Root, source, target string, tree bool) (map[string]pluginFile, error) {
 	result := map[string]pluginFile{}
-	if !validAccessPath(source) || !validAccessPath(target) {
+	if !validPluginPath(source) || !validPluginPath(target) {
 		return nil, fmt.Errorf("unsafe plugin source or destination path")
 	}
 	// Lstat every ancestor as well as leaves: no linked directory can import
@@ -403,6 +409,13 @@ func validatePluginSkill(data []byte, name string) error {
 	if err := yaml.Unmarshal(normalized[4:4+end], &header); err != nil {
 		return err
 	}
+	for field := range header {
+		switch field {
+		case "name", "description", "license", "compatibility", "metadata", "allowed-tools":
+		default:
+			return fmt.Errorf("unsupported Agent Skills frontmatter field %q; declare a reviewed plugin adaptation", field)
+		}
+	}
 	if header["name"] != name {
 		return fmt.Errorf("skill name does not match plugin directory")
 	}
@@ -434,7 +447,7 @@ func validatePluginSkill(data []byte, name string) error {
 
 func validatePluginFiles(files map[string]pluginFile) error {
 	for file, content := range files {
-		if !validAccessPath(file) || strings.Contains("/"+file+"/", "/.git/") {
+		if !validPluginPath(file) || strings.Contains("/"+strings.ToLower(file)+"/", "/.git/") {
 			return fmt.Errorf("unsafe plugin output path %s", file)
 		}
 		// Do not infer or rewrite prose. Unrendered authored Packy markers are invalid

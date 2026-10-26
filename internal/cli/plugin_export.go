@@ -8,8 +8,11 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/yersonargotev/packy/internal/agents"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/catalogstore"
+	"github.com/yersonargotev/packy/internal/claudecode"
+	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -80,12 +83,13 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			destination = filepath.Join(directory, destination)
 		}
 		// Keep Packy-managed inputs/state and native client content outside caller output.
-		protected := []string{root, catalogstore.DefaultDataRoot(station.Home()), filepath.Join(station.Home(), ".packy"), filepath.Join(station.Home(), ".agents"), filepath.Join(station.Home(), ".claude"), filepath.Join(station.Home(), ".codex")}
+		protected := []string{root, catalogstore.DefaultDataRoot(station.Home()), station.PackyHome()}
+		protected = append(protected, pluginClientContentDirectories(station.Home())...)
 		directory, wdErr := opts.Getwd()
 		if wdErr != nil {
 			return failure(cmd, "export_failed", wdErr)
 		}
-		protected = append(protected, filepath.Join(directory, ".agents"), filepath.Join(directory, ".claude"), filepath.Join(directory, ".codex"))
+		protected = append(protected, pluginClientContentDirectories(directory)...)
 		if opts.localCandidate != nil {
 			protected = append(protected, filepath.Dir(opts.localCandidate.Home))
 		}
@@ -144,4 +148,9 @@ func checkPluginOutputBoundary(output, boundary string) error {
 		return fmt.Errorf("export output must be separate from managed input and client state %s", boundary)
 	}
 	return nil
+}
+
+// Obtain convention roots from their owners instead of duplicating host layouts.
+func pluginClientContentDirectories(root string) []string {
+	return []string{filepath.Dir(skilllayout.NewGlobalLayout(root).Root()), claudecode.NewCanonicalLayout(root).ConfigDir, filepath.Dir(agents.NewCanonicalLayout(root).RolesDir())}
 }

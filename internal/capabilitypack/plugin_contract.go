@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 const AgentPluginsFormat = "agent-plugins"
@@ -81,7 +83,7 @@ func validatePluginExports(resource Resource) error {
 		return fmt.Errorf("plugin_exports is only applicable to skills")
 	}
 	for i, contract := range resource.PluginExports {
-		if contract.Source != "" && !validAccessPath(contract.Source) {
+		if contract.Source != "" && !validPluginPath(contract.Source) {
 			return fmt.Errorf("plugin export source must be a portable Pack-relative path")
 		}
 		if contract.Source != "" && resource.Origin != nil && contract.Origin == nil {
@@ -109,7 +111,7 @@ func validatePluginExports(resource Resource) error {
 			if !idPattern.MatchString(ref.ID) || j > 0 && contract.References[j-1].ID >= ref.ID {
 				return fmt.Errorf("plugin references must have sorted unique kebab-case ids")
 			}
-			if !validAccessPath(ref.File) {
+			if !validPluginPath(ref.File) {
 				return fmt.Errorf("plugin reference file must be a portable skill-relative path")
 			}
 			target, err := ParseResourceIdentity(ref.Target)
@@ -215,4 +217,10 @@ func (reference *PluginReference) UnmarshalJSON(data []byte) error {
 	}
 	*reference = PluginReference(decoded)
 	return nil
+}
+
+// Reviewed supporting filenames may contain spaces. Only normalized contained
+// paths are accepted; contract identifiers keep their separate kebab-case rules.
+func validPluginPath(value string) bool {
+	return value != "." && fs.ValidPath(value) && !strings.ContainsAny(value, "\\:") && strings.IndexFunc(value, unicode.IsControl) < 0
 }

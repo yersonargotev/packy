@@ -64,7 +64,7 @@ func TestIssue879PluginExportExecutable(t *testing.T) {
 		if report.PackID != "reviewed" || report.PluginName != "reviewed" || report.PackVersion != "1.0.0" || report.SnapshotID != strings.Repeat("a", 40) || report.Surface != "agents" || report.Format != "agent-plugins" || strings.Join(report.SelectedSkills, ",") != "guide,helper,leaf" {
 			t.Fatalf("report identity: %+v", report)
 		}
-		for _, relative := range []string{"plugin.json", "packy-provenance.json", "skills/guide/SKILL.md", "skills/guide/agents/openai.yaml", "skills/guide/scripts/run.sh", "skills/guide/references/detail.md", "skills/helper/SKILL.md", "skills/leaf/SKILL.md", "assets/data.bin", "notices/reviewed-mit"} {
+		for _, relative := range []string{"plugin.json", "packy-provenance.json", "skills/guide/SKILL.md", "skills/guide/agents/openai.yaml", "skills/guide/scripts/run.sh", "skills/guide/references/detail.md", "skills/guide/references/Deep Guide.md", "skills/helper/SKILL.md", "skills/leaf/SKILL.md", "assets/data.bin", "notices/reviewed-mit"} {
 			if _, err := os.Stat(filepath.Join(first, relative)); err != nil {
 				t.Fatal(err)
 			}
@@ -153,6 +153,26 @@ func TestIssue879PluginExportExecutable(t *testing.T) {
 			assertReport(t, out)
 		}
 	})
+
+	t.Run("logical identity stays distinct from exported skill name", func(t *testing.T) {
+		logical := strings.Repeat("a", 65)
+		project := pluginExportProject(t, func(m map[string]any) {
+			resources := m["resources"].([]any)
+			resources = append(resources, map[string]any{"kind": "skill", "id": logical, "source": "skills/long-logical", "description": "Long logical identity with a short reviewed native name", "requires": []string{}, "conflicts": []string{}, "notices": []string{"notice:mit"}, "bindings": []any{map[string]any{"surface": "agents", "projection": "skill", "name": "short-name", "invocation": "short-name", "mode": "native", "sharing": "exclusive", "capabilities": []any{}}, map[string]any{"surface": "claude", "projection": "skill", "name": "short-name", "invocation": "/short-name", "mode": "native", "sharing": "exclusive", "capabilities": []any{}}}, "surface_exclusions": []any{}, "plugin_exports": []any{pluginExportContract("short-name")}})
+			m["resources"] = resources
+		})
+		writePluginFixtureFile(t, filepath.Join(project, "packs/reviewed/skills/long-logical/SKILL.md"), "---\nname: short-name\ndescription: Reviewed logical identity.\n---\nBody\n", 0644)
+		assets := pluginExportAssets(t, project, strings.Repeat("8", 40))
+		output := filepath.Join(t.TempDir(), "plugin")
+		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t), "catalog", "candidate", "--snapshot", assets, "--workspace", filepath.Join(t.TempDir(), "candidate"), "--", "export", "reviewed", "--surface", "agents", "--skill", logical, "--output", output, "--json")
+		if err != nil {
+			t.Fatalf("logical identity: %v %s %s", err, out, stderr)
+		}
+		assertReport(t, out)
+		if _, err := os.Stat(filepath.Join(output, "skills/short-name/SKILL.md")); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("retained offline export uses exact snapshot without installed state", func(t *testing.T) {
 		environment := testprocess.Env(t, "PATH="+t.TempDir())
 		env := adoptionEnvironmentMap(environment)
@@ -211,6 +231,7 @@ func TestIssue879PluginExportExecutable(t *testing.T) {
 				}
 			}},
 			{name: "unresolved marker", file: "skills/plugin-guide/references/detail.md", body: "{{packy.export:undeclared}}"},
+			{name: "unsupported native metadata", file: "skills/plugin-guide/SKILL.md", body: "---\nname: guide\ndescription: Reviewed skill.\nagent: native-role\n---\nMust use reviewed adaptation"},
 			{name: "invalid skill metadata", file: "skills/plugin-guide/SKILL.md", body: "---\nname: guide\ndescription: 123\n---\ninvalid metadata"},
 			{name: "instruction dependency", edit: func(m map[string]any) {
 				for _, value := range m["resources"].([]any) {
@@ -386,8 +407,9 @@ func pluginExportProject(t *testing.T, edit func(map[string]any)) string {
 		writePluginFixtureFile(t, filepath.Join(root, "skills", id, "SKILL.md"), "---\nname: "+id+"\ndescription: Reviewed helper.\n---\nHelper content\n", 0644)
 	}
 	writePluginFixtureFile(t, filepath.Join(root, "instructions/guide.md"), "Project instructions must not be exported\n", 0644)
-	writePluginFixtureFile(t, filepath.Join(root, "skills/plugin-guide/SKILL.md"), "---\nname: original-guide\ndescription: Reviewed guide.\nallowed-tools: Read\ncustom-field: retained\nmetadata:\n  author: reviewed\n---\nordinary guide prose stays unchanged\nHelper {{packy.export:helper-name}} at {{packy.export:helper-path}}\nCall {{packy.export:helper-call}}\n[Asset]({{packy.export:asset}})\n[Notice]({{packy.export:notice}})\n[Detail](references/detail.md)\n", 0644)
+	writePluginFixtureFile(t, filepath.Join(root, "skills/plugin-guide/SKILL.md"), "---\nname: original-guide\ndescription: Reviewed guide.\nallowed-tools: Read\nmetadata:\n  custom-field: retained\n  author: reviewed\n---\nordinary guide prose stays unchanged\nHelper {{packy.export:helper-name}} at {{packy.export:helper-path}}\nCall {{packy.export:helper-call}}\n[Asset]({{packy.export:asset}})\n[Notice]({{packy.export:notice}})\n[Detail](references/detail.md)\n", 0644)
 	writePluginFixtureFile(t, filepath.Join(root, "skills/plugin-guide/agents/openai.yaml"), "interface:\n  display_name: Reviewed Guide\npolicy:\n  allow_implicit_invocation: false\n", 0644)
+	writePluginFixtureFile(t, filepath.Join(root, "skills/plugin-guide/references/Deep Guide.md"), "Reviewed supporting filename with spaces.\n", 0644)
 	writePluginFixtureFile(t, filepath.Join(root, "skills/plugin-guide/references/detail.md"), "Complete supporting reference\n", 0644)
 	writePluginFixtureFile(t, filepath.Join(root, "skills/plugin-guide/scripts/run.sh"), "#!/bin/sh\nprintf executed > \"$HOME/sentinel-executed\"\n", 0755)
 	return project
@@ -445,6 +467,7 @@ func TestIssue879PluginCompatibilitySchemaMatchesCatalog(t *testing.T) {
 		{"unknown field", false, func(c map[string]any) { c["execute"] = true }},
 		{"missing prerequisites", false, func(c map[string]any) { delete(c, "prerequisites") }},
 		{"null prerequisites", false, func(c map[string]any) { c["prerequisites"] = nil }},
+		{"empty source", false, func(c map[string]any) { c["source"] = "" }},
 		{"null source", false, func(c map[string]any) { c["source"] = nil }},
 		{"null references", false, func(c map[string]any) { c["references"] = nil }},
 		{"escaping source", false, func(c map[string]any) { c["source"] = "../escape" }},

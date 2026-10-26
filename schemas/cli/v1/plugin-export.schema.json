@@ -102,9 +102,7 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "type": "string",
-        "maxLength": 64,
-        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        "$ref": "#/$defs/id"
       }
     },
     "resources": {
@@ -135,27 +133,33 @@
                 ]
               },
               "id": {
-                "type": "string",
-                "maxLength": 64,
-                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                "$ref": "#/$defs/id"
               }
             }
           },
           "source": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^[^/\\\\:\\s]+(?:/[^/\\\\:\\s]+)*$",
-            "not": {
-              "pattern": "(^|/)\\.{1,2}(/|$)"
-            }
+            "allOf": [
+              {
+                "$ref": "#/$defs/path"
+              },
+              {
+                "not": {
+                  "pattern": "[:\\x00-\\x1f\\x7f]"
+                }
+              }
+            ]
           },
           "path": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^[^/\\\\:\\s]+(?:/[^/\\\\:\\s]+)*$",
-            "not": {
-              "pattern": "(^|/)\\.{1,2}(/|$)"
-            }
+            "allOf": [
+              {
+                "$ref": "#/$defs/path"
+              },
+              {
+                "not": {
+                  "pattern": "[:\\x00-\\x1f\\x7f]"
+                }
+              }
+            ]
           },
           "origin": {
             "type": "object",

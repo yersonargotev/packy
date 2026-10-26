@@ -71,7 +71,9 @@ Every object is closed and has required `format`, `name`, `prerequisites`,
 64 characters. Packy changes only the frontmatter name scalar, preserving other
 reviewed metadata bytes and the complete skill tree, including optional
 `agents/openai.yaml`, scripts, references, assets, and executable modes.
-The entry must satisfy the Agent Skills metadata contract.
+The entry must satisfy the Agent Skills metadata contract, including its closed
+frontmatter field set. Custom fields belong under `metadata`; incompatible native
+frontmatter requires an explicit reviewed source adaptation.
 
 Optional `source` names an explicitly reviewed Pack-relative skill tree for the
 format. Omission uses the effective native skill source. A format adaptation
