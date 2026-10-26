@@ -38,6 +38,7 @@ type installedProjection struct {
 }
 
 type installedPackReceipt struct {
+	RoleBindings         []LifecycleBinding           `json:"role_bindings,omitempty"`
 	Pack                 installedPackIdentity        `json:"pack"`
 	Surface              Surface                      `json:"surface"`
 	ReadinessObligations []ReadinessObligation        `json:"readiness_obligations"`

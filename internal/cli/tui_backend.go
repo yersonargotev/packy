@@ -776,7 +776,11 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, proje
 		if kind == "" {
 			kind = "project-projection"
 		}
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: kind, Target: projection.Target, Description: "project projection for " + projection.Resource.String()})
+		description := "project projection for " + projection.Resource.String()
+		if client := projection.ClientProjection; client != nil {
+			description += fmt.Sprintf("; client=%s scope=project supported_scopes=%s", client.Client, strings.Join(client.Scopes, ", "))
+		}
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: kind, Target: projection.Target, Description: description})
 		switch projection.ObservedState {
 		case "missing":
 			preview.Diff.Added = append(preview.Diff.Added, projection.Target)

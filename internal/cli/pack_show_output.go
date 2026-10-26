@@ -198,6 +198,11 @@ func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContra
 			binding.Kind, binding.ID, binding.Invocation, mode, binding.Projection, binding.Name, binding.Sharing); err != nil {
 			return err
 		}
+		if projection := binding.ClientProjection; projection != nil {
+			if _, err := fmt.Fprintf(w, "Custom-agent projection: %s:%s client=%s scopes=%s\n", binding.Kind, binding.ID, projection.Client, strings.Join(projection.Scopes, ", ")); err != nil {
+				return err
+			}
+		}
 	}
 	for _, exclusion := range contract.Exclusions {
 		if _, err := fmt.Fprintf(w,

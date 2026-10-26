@@ -398,6 +398,11 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s -> %s mode=%s observed=%s\n", projection.Resource, projection.Target, projection.Mode, projection.ObservedState); err != nil {
 			return err
 		}
+		if client := projection.ClientProjection; client != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Custom-agent projection: %s client=%s scope=project supported_scopes=%s\n", projection.Resource, client.Client, strings.Join(client.Scopes, ", ")); err != nil {
+				return err
+			}
+		}
 	}
 	for _, projection := range report.Retirements {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Retirement: %s -> %s observed=%s\n", projection.Resource, projection.Target, projection.ObservedState); err != nil {
