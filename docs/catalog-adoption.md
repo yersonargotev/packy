@@ -1,46 +1,44 @@
 # Adopt a new catalog generation
 
-Packy does not convert installations created by an incompatible catalog
-generation. This includes the legacy Installed Source model, Catalog
-Snapshot schema v1/v2, and the move from shared Codex/OpenCode skill roots to
-native OpenCode roots. Adopt the current catalog with a clean, explicit handoff.
-Keep the previous Packy binary and every source directory or retained snapshot
-it references until the handoff is complete.
+Packy does not convert installations created by an incompatible generation.
+This includes retired OpenCode contracts, the legacy Installed Source model,
+and Catalog Snapshot schema v1/v2. Adopt the current catalog with a clean,
+explicit handoff. Keep the previous Packy binary and every source directory or
+retained snapshot it references until the handoff is complete.
+
+The current engine accepts only `codex` and `claude` surfaces. OpenCode surface
+values, bindings, capabilities, project intent, receipts, and locks are rejected
+rather than translated. A complete catalog containing retired declarations is
+invalid; Packy does not silently load only its compatible Packs.
 
 This procedure changes only Packy-owned installations and receipts. It does
-not convert or delete source directories, personal files, credentials, Engram
-Memory, or configuration owned by Codex, Claude Code, OpenCode, or another
-tool.
+not convert or delete source directories, personal files, credentials, Engram Memory, or
+configuration owned by Codex, Claude Code, OpenCode, or another tool.
 
-## Surface variants and the previous shared skill root
+## Retired OpenCode installations
 
-The variant-aware engine uses Pack manifest and Catalog Snapshot schema v3.
-Its OpenCode skill targets are `$XDG_CONFIG_HOME/opencode/skills` globally
-(defaulting to `$HOME/.config/opencode/skills`) and `.opencode/skills` in a
-project. Earlier installations can still own skills under `$HOME/.agents/skills`
-and project `.agents/skills`, shared with Codex. Moving the new target does not
-transfer or remove those earlier receipts.
+Before replacing an OpenCode-capable binary, use that binary to inventory and
+preview removal of its global installations, personal project activations, and
+shared project installations in every affected worktree. Preserve the old
+binary and its referenced content until all affected receipts are removed.
+The replacement binary cannot read or remove those retired contracts.
 
-Before replacing the engine or acquiring the incompatible snapshot, use the
-previous engine to deactivate old global installations, deactivate personal
-project activations, and uninstall affected project installations in every
-worktree. Preserve the old engine and its referenced snapshots until those
-steps complete. Do not move or delete `.agents/skills` wholesale: it can contain
-Codex installations and unmanaged user skills. If both surfaces own a shared
-projection, remove each affected receipt through the old engine and let its
-ownership rules decide whether the shared path can be removed.
+Do not move or delete a skill or configuration directory wholesale. Earlier
+OpenCode installations may share `.agents/skills` projections with Codex;
+other directories can contain unmanaged user files. Remove every affected
+receipt through the previous binary and let its ownership and drift rules
+decide which paths can be removed. Retained snapshots and unrelated host
+configuration remain untouched.
 
-Only then upgrade and explicitly reinstall each desired surface. Native
-OpenCode paths do not disable its compatibility discovery of Codex/Claude
-skills. Review the new [host-discovery checks](skill-discovery.md); divergent
-same-name intent can remain blocked after a clean handoff. An external-skills
-environment flag on one launch is not proof that all launches are isolated.
+Only then upgrade and explicitly reinstall desired Packs on the remaining
+supported surfaces. No OpenCode reinstall, alias, automatic state converter,
+or old-root cleanup is provided.
 
 The coordinated rollout is engine-first, then complete catalog validation and
 publication against the released immutable engine revision. These instructions
 do not assert that either release or catalog publication has already happened.
 Do not perform the handoff until that compatible engine/catalog pair is
-available. No automatic state converter or old-root cleanup is provided.
+available.
 
 ## 1. Inventory with the previous Packy
 

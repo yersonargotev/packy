@@ -2,8 +2,7 @@
 
 Capability Packs are opt-in, Git-reviewed content installed by Packy. Catalog
 inspection and `--dry-run` are read-only. Mutation requires an explicit Pack,
-CLI surface, and operation. Supported surfaces are Codex, OpenCode, and Claude
-Code.
+CLI surface, and operation. Supported surfaces are Codex and Claude Code.
 
 The public [`yersonargotev/packy-catalog`](https://github.com/yersonargotev/packy-catalog)
 Catalog Project is the canonical authoring source. Use `packy list` for the
@@ -40,9 +39,9 @@ between Packs. Multiple Packs can coexist, but each lifecycle command acts on
 one Pack and installed Pack receipt.
 
 For skill variants, review the [native roots and host-discovery limits](skill-discovery.md).
-OpenCode compatibility discovery can block divergent same-name skills even
-when their physical targets differ. Existing shared-root installations require
-the [clean adoption procedure](catalog-adoption.md).
+Same-surface duplicate native names can block installation even when their
+physical targets differ. Installations using retired contracts require the
+[clean adoption procedure](catalog-adoption.md).
 
 ## Controlled runtime checks
 
@@ -108,13 +107,9 @@ Every binding declares a non-null `capabilities` array. Most bindings use an
 empty array. A binding that needs reusable host-native behavior selects only a
 reviewed typed capability. The `project-instruction` capability carries
 typed `project_instruction` data with a stable lowercase kebab-case `id` and a
-reviewed relative `source`; Codex and OpenCode translate it into an independently
-owned marked contribution in the project's `AGENTS.md`. The
-`opencode-primary-prompt` capability carries typed `primary_prompt` data with
-the same identity and source constraints; OpenCode translates it into the
-global primary instruction document and its workstation configuration reference.
-Project guidance remains a separate `project-instruction` contribution. Unknown capability
-types, missing typed data, and extension fields are rejected during admission.
+reviewed relative `source`; Codex translates it into an independently owned
+marked contribution in the project's `AGENTS.md`. Unknown capability types,
+missing typed data, and extension fields are rejected during admission.
 
 The typed `external-executable-acquisition` capability explicitly enables one
 supported acquisition flow for a declared external requirement on that
@@ -146,7 +141,7 @@ An author can opt a skill binding into deterministic rendering:
 
 The generated default name is `<pack-id>-<binding-name>`. An explicit
 user alias overrides that default. Template bindings declare the canonical
-invocation: `$<name>` for Codex, `/<name>` for Claude, and `<name>` for OpenCode.
+invocation: `$<name>` for Codex and `/<name>` for Claude.
 Preview and show output follow the resolved name, including explicit aliases. Choose `"naming": "native"` for a consumer
 that retains its own name while referencing renamed dependencies. Packy renders
 both kinds as regular, receipt-owned trees in global and project installations.

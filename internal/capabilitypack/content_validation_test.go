@@ -27,10 +27,10 @@ func TestValidatePortableContentValidatesEveryManifestAndReferencedResource(t *t
 
 func TestBindingReferencedSourcePathsOwnsTypedCapabilityVocabulary(t *testing.T) {
 	binding := Binding{Capabilities: []SurfaceCapability{
-		{Type: SurfaceCapabilityOpenCodePrimaryPrompt, PrimaryPrompt: &PrimaryPromptCapability{Source: "instructions/primary.md"}},
+
 		{Type: SurfaceCapabilityProjectInstruction, ProjectInstruction: &ProjectInstructionCapability{Source: "instructions/project.md"}},
 	}}
-	want := []string{"instructions/primary.md", "instructions/project.md"}
+	want := []string{"instructions/project.md"}
 	if got := binding.ReferencedSourcePaths(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("referenced source paths = %#v, want %#v", got, want)
 	}
@@ -116,16 +116,6 @@ func TestLoadCurrentManifestRejectsInvalidSurfaceCapabilities(t *testing.T) {
 			replace: `          "capabilities": [{"type": "project-instruction", "project_instruction": {"id": "guide", "source": "instructions/guide.md"}, "data": {"custom": true}}]`,
 			want:    `unknown field "data"`,
 		},
-		{
-			name:    "missing primary prompt data",
-			replace: `          "capabilities": [{"type": "opencode-primary-prompt"}]`,
-			want:    `surface capability "opencode-primary-prompt" requires primary_prompt data`,
-		},
-		{
-			name:    "malformed primary prompt identity",
-			replace: `          "capabilities": [{"type": "opencode-primary-prompt", "primary_prompt": {"id": "Primary Prompt", "source": "instructions/guide.md"}}]`,
-			want:    `surface capability "opencode-primary-prompt" primary_prompt id must be lowercase kebab-case`,
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			bundle := t.TempDir()
@@ -133,10 +123,6 @@ func TestLoadCurrentManifestRejectsInvalidSurfaceCapabilities(t *testing.T) {
 			path := filepath.Join(packDir, "pack.json")
 			data := string(mustReadFile(t, path))
 			data = strings.Replace(data, `          "capabilities": [{"type": "project-instruction", "project_instruction": {"id": "guide", "source": "instructions/guide.md"}}]`, test.replace, 1)
-			if strings.Contains(test.replace, `"type": "opencode-primary-prompt"`) {
-				data = strings.Replace(data, `"surfaces": ["codex"]`, `"surfaces": ["opencode"]`, 1)
-				data = strings.Replace(data, `"surface": "codex"`, `"surface": "opencode"`, 1)
-			}
 			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}

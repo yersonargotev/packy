@@ -131,7 +131,7 @@ links pinned to their snapshot until normal previewed activation/update, and
 retain every snapshot referenced by installed receipts or links. Downloading
 the whole catalog must not apply every Pack.
 [Codex projection](../../../internal/codex/surface.go),
-[OpenCode projection](../../../internal/opencode/surface.go),
+[OpenCode projection](https://github.com/yersonargotev/packy/blob/372cf5ac9b63890319e25decc9f3d0839ac25374/internal/opencode/surface.go),
 [Claude projection](../../../internal/claudecode/surface.go)
 
 A failed download or incompatible catalog must leave the previous usable

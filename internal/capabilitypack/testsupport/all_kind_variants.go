@@ -8,7 +8,7 @@ import (
 // AllKindVariants exercises all eight logical kinds with reviewed host bodies.
 // Bindings remain fixed, including each host's explicit capability sources.
 func AllKindVariants(id string) Fixture {
-	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode})
+	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
 	f.manifest.Origins = []Origin{}
 	kinds := []string{"agent", "asset", "command", "instruction", "lifecycle", "mcp_server", "notice", "skill"}
 	roots := map[string]string{"agent": "agents", "asset": "assets", "command": "commands", "instruction": "instructions", "notice": "notices", "skill": "skills"}
@@ -33,7 +33,7 @@ func AllKindVariants(id string) Fixture {
 			r.Command = "common-server"
 			r.Args = []string{"common-argument"}
 		}
-		for _, body := range []string{"common", "claude", "codex", "opencode"} {
+		for _, body := range []string{"common", "claude", "codex"} {
 			source := ""
 			if root := roots[kind]; root != "" {
 				source = root + "/" + body
@@ -92,7 +92,7 @@ func AllKindVariants(id string) Fixture {
 				continue
 			}
 			projection, invocation := kind, r.ID
-			if kind == "command" && body != "opencode" {
+			if kind == "command" {
 				projection = "skill"
 			}
 			if kind == "command" {

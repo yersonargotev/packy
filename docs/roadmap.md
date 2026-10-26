@@ -1,7 +1,7 @@
 # Packy roadmap
 
-Packy `v0.2.0` establishes the current product: reviewed Packs, installed Pack
-receipts, Codex/OpenCode/Claude Code support, proportional validation, native
+Packy's current product provides reviewed Packs, installed Pack receipts,
+Codex and Claude Code support, proportional validation, native
 GitHub integration controls, and an immutable binary release. Use the
 manifest-backed Pack catalog through `packy list` for current membership and
 versions. Claude Code support requires stable version **2.1.203 or newer**.
@@ -24,7 +24,7 @@ versions. Claude Code support requires stable version **2.1.203 or newer**.
 The following are outside the current product until a separate decision is
 accepted:
 
-- another CLI surface beyond Codex, OpenCode, and Claude Code;
+- another CLI surface beyond Codex and Claude Code;
 - another reviewed Pack beyond the current manifest-backed catalog;
 - a different binary distribution channel; or
 - broader platform support beyond the published Darwin and Linux artifacts.

@@ -55,17 +55,12 @@ const (
 	ActionSkillLink                ProjectionActionKind = "skill-link"
 	ActionSkillTree                ProjectionActionKind = "skill-tree"
 	ActionInstructionFile          ProjectionActionKind = "instruction-file"
-	ActionOpenCodeSkillLink        ProjectionActionKind = "opencode-skill-link"
-	ActionOpenCodeInstructionFile  ProjectionActionKind = "opencode-instruction-file"
-	ActionOpenCodePrimaryPrompt    ProjectionActionKind = "opencode-primary-prompt"
-	ActionOpenCodeConfigReference  ProjectionActionKind = "opencode-config-reference"
 	ActionCodexMCPConfig           ProjectionActionKind = "codex-mcp-config"
 	ActionCodexProjectTrust        ProjectionActionKind = "codex-project-trust"
 	ActionCodexAgentFile           ProjectionActionKind = "codex-agent-file"
 	ActionCodexWorkflowSkill       ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile           ProjectionActionKind = "codex-asset-file"
 	ActionCodexProjectSkillTree    ProjectionActionKind = "codex-project-skill-tree"
-	ActionOpenCodeProjectSkillTree ProjectionActionKind = "opencode-project-skill-tree"
 	ActionClaudeProjectSkillTree   ProjectionActionKind = "claude-project-skill-tree"
 	ActionClaudeProjectFile        ProjectionActionKind = "claude-project-file"
 	ActionClaudeProjectInstruction ProjectionActionKind = "claude-project-instruction"
@@ -73,10 +68,6 @@ const (
 	ActionProjectManifestFile      ProjectionActionKind = "project-manifest-file"
 	ActionProjectLockFile          ProjectionActionKind = "project-lock-file"
 	ActionProjectNoticesFile       ProjectionActionKind = "project-notices-file"
-	ActionOpenCodeMCPConfig        ProjectionActionKind = "opencode-mcp-config"
-	ActionOpenCodeAgentFile        ProjectionActionKind = "opencode-agent-file"
-	ActionOpenCodeCommandFile      ProjectionActionKind = "opencode-command-file"
-	ActionOpenCodeAssetFile        ProjectionActionKind = "opencode-asset-file"
 	ActionExternalCommand          ProjectionActionKind = "external-command"
 	ActionHostFollowUp             ProjectionActionKind = "host-follow-up"
 	ProjectionRemoveContent        ProjectionActionMode = "remove-content"
@@ -181,11 +172,10 @@ type ProjectionAction struct {
 	ContributionEndMarker   string               `json:"contribution_end_marker,omitempty"`
 	// ProjectionKey identifies the physical target when several surface
 	// adapters translate different logical projection IDs to one shared target.
-	ProjectionKey  string               `json:"projection_key,omitempty"`
-	Shared         bool                 `json:"shared,omitempty"`
-	DiscoverableBy []Surface            `json:"discoverable_by,omitempty"`
-	PreviewOnly    bool                 `json:"preview_only,omitempty"`
-	TreeFiles      []ProjectionTreeFile `json:"-"`
+	ProjectionKey string               `json:"projection_key,omitempty"`
+	Shared        bool                 `json:"shared,omitempty"`
+	PreviewOnly   bool                 `json:"preview_only,omitempty"`
+	TreeFiles     []ProjectionTreeFile `json:"-"`
 }
 
 // ProjectionTreeFile carries one inert file for a generated tree projection.
@@ -223,7 +213,6 @@ type ObservedProjection struct {
 	AdapterProvenance   string
 	ProjectionKey       string
 	Shared              bool
-	DiscoverableBy      []Surface
 	ExternallyManaged   bool
 	Action              ProjectionAction
 }
@@ -1663,8 +1652,8 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if f.activation == nil || f.activation.store == nil {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation is not configured")
 	}
-	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
-		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation does not support CLI surface %q", request.Surface)
+	if err := ValidateSurface(request.Surface); err != nil {
+		return Pack{}, nil, ActivationState{}, err
 	}
 	adapter := f.activation.adapters[request.Surface]
 	if adapter == nil {
@@ -2240,7 +2229,7 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	}
 	observation = cloneSurfaceInspection(observation)
 	for _, fact := range observation.SkillDiscovery {
-		if fact.Name == "" || fact.Target == "" || fact.OtherTarget == "" || fact.Fingerprint == "" || fact.OtherFingerprint == "" || (fact.Host != SurfaceCodex && fact.Host != SurfaceClaude && fact.Host != SurfaceOpenCode) {
+		if fact.Name == "" || fact.Target == "" || fact.OtherTarget == "" || fact.Fingerprint == "" || fact.OtherFingerprint == "" || (fact.Host != SurfaceCodex && fact.Host != SurfaceClaude) {
 			return SurfaceInspection{}, errors.New("surface adapter returned malformed skill discovery facts")
 		}
 	}

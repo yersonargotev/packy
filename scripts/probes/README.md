@@ -16,27 +16,30 @@ python3 -B scripts/probes/skill-template-catalog.py \
   --out-dir /tmp/new-packy-skill-template-evidence
 ```
 
-The supplied Catalog checkout must contain the reviewed Matty 4.0.0 and pstack
-4.3.0 baseline and its existing bounded `content-probes.py` candidate runner.
+The supplied Catalog checkout must contain reviewed, compatible Codex/Claude
+Matty and pstack definitions and its existing bounded `content-probes.py`
+candidate runner. Retired surface declarations are rejected
+by the executing engine; this probe does not convert an older catalog.
 The output directory must be new. Add `--focus-pair` to build only the complete
 Matty and pstack closures for a focused acceptance run; the default includes all
 Packs from the supplied checkout. The probe preserves the checkout, copies its
-complete Pack set, and authors one isolated pstack 5.0.0 candidate adaptation:
+complete Pack set, and authors one isolated pstack candidate adaptation at
+the next major version:
 name them `pstack-tdd` and `pstack-teach` on every surface without user aliases,
 render the Codex help's three files,
 and declare its direct TDD/teaching dependencies. This version is a local
 candidate label, not a published Pack release or release request.
 
-It builds the original and adapted Catalog Snapshots and, on all three surfaces
-in project and global scope, verifies original complete-Pack collisions, failure
+It builds the original and adapted Catalog Snapshots and, on both supported
+surfaces in project and global scope, verifies original complete-Pack collisions, failure
 of directory aliases, read-only availability transition, full adapted coexistence,
 correct native frontmatter, pstack-local help routes, and preservation of Matty.
 Successful workspaces remain under the owned output directory for inspection;
 project installations additionally pass portable `verify`. Ordinary CLI tests
 cover both installation orders, lifecycle update/removal, drift, stale plans,
 explicit aliases, and adoption of generated naming by an already installed Pack.
-The short-name matrix also covers all surface pairs, both orders, all global/project
-combinations, identical/divergent trees, and refusal of divergent three-root discovery.
+The short-name matrix also covers both surfaces, both orders, all global/project
+combinations, and identical/divergent trees within each surface's discovery roots.
 
 To check the installed real hosts against those workspaces:
 
@@ -50,12 +53,9 @@ app-server to verify all four native identities without a thread or model turn,
 following the [official protocol](https://learn.chatgpt.com/docs/app-server).
 Claude requests both original Matty commands and both namespaced pstack commands against a localhost recorder
 that returns HTTP 400 after observing pre-inference skill expansion. A nonzero
-Claude exit is expected after that recorded expansion. OpenCode uses a localhost
-deterministic provider to request its actual skill-loading tool for all four
-definitions, then stop. Each recorded request is checked against the complete
-expected installed body, rather than a shared heading or marker.
-Neither transport performs model inference. OpenCode's ordinary compatibility
-roots remain enabled; the probe does not claim persistent launch isolation.
+Claude exit is expected after that recorded expansion. Each recorded request
+is checked against the complete expected installed body, rather than a shared
+heading or marker. Neither probe performs model inference.
 
 The host probe uses HOME/config/data/state/cache/temp directories beneath each
 owned candidate workspace, with an explicit minimal environment and localhost

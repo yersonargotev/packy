@@ -1,7 +1,6 @@
 # Claude Code
 
-Packy supports stable Claude Code **2.1.203 or newer** alongside Codex and
-OpenCode. Packy does not install or upgrade Claude Code.
+Packy supports stable Claude Code **2.1.203 or newer** alongside Codex. Packy does not install or upgrade Claude Code.
 
 ## Prerequisite
 

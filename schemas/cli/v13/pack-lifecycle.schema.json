@@ -74,17 +74,6 @@
         "shared": {
           "type": "boolean"
         },
-        "discoverable_by": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "claude",
-              "codex",
-              "opencode"
-            ]
-          },
-          "uniqueItems": true
-        },
         "preview_only": {
           "type": "boolean"
         }
@@ -208,8 +197,7 @@
             "surface": {
               "enum": [
                 "claude",
-                "codex",
-                "opencode"
+                "codex"
               ]
             },
             "resource": {
@@ -346,8 +334,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex",
-            "opencode"
+            "codex"
           ]
         },
         "intent_revision": {

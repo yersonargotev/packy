@@ -12,59 +12,48 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
-func TestIssue824DivergentDiscoveryBlocksBothHostsAndBothScopesBeforeMutation(t *testing.T) {
-	t.Setenv("OPENCODE_DISABLE_EXTERNAL_SKILLS", "1")
-	schemaRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, other := range []string{"codex", "claude"} {
-		for _, reverse := range []bool{false, true} {
-			for _, firstScope := range []string{"global", "project"} {
-				for _, secondScope := range []string{"global", "project"} {
-					first, second := other, "opencode"
-					if reverse {
-						first, second = second, first
-					}
-					t.Run(first+"-"+firstScope+"-then-"+second+"-"+secondScope, func(t *testing.T) {
-						pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex, testsupport.SurfaceClaude, testsupport.SurfaceOpenCode)
-						fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
-						project := t.TempDir()
-						writeTestGitWorktree(t, project)
-						opts := fixture.options
-						opts.Getwd = func() (string, error) { return project, nil }
-						command := func(scope string) string {
-							if scope == "project" {
-								return "install"
-							}
-							return "activate"
-						}
-						if out, err := executeCommand(t, NewRootCommand(opts), command(firstScope), pack.ID(), "--surface", first); err != nil {
-							t.Fatalf("initial %v\n%s", err, out)
-						}
-						beforeHome, beforeProject := snapshotTree(t, fixture.home), snapshotTree(t, project)
-						out, err := executeCommand(t, NewRootCommand(opts), command(secondScope), pack.ID(), "--surface", second, "--json")
-						if err == nil || !strings.Contains(out, "deterministic coexistence is not verified") {
-							t.Fatalf("expected actionable block: %v\n%s", err, out)
-						}
-						preview := strings.Split(strings.TrimSpace(out), "\n")[0]
-						if secondScope == "project" {
-							assertProjectStructuredOutput(t, schemaRoot, "project-preview.schema.json", preview)
-						} else {
-							assertStructuredOutput(t, schemaRoot, "pack-lifecycle.schema.json", preview)
-						}
-						if beforeHome != snapshotTree(t, fixture.home) || beforeProject != snapshotTree(t, project) {
-							t.Fatal("blocked discovery changed projections or receipts")
-						}
-					})
+func TestIssue876RetiredDiscoveryRootsDoNotBlockRemainingSurfaces(t *testing.T) {
+	for _, surface := range []string{"codex", "claude"} {
+		for _, scope := range []string{"global", "project"} {
+			t.Run(surface+"-"+scope, func(t *testing.T) {
+				pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex, testsupport.SurfaceClaude)
+				fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+				project := t.TempDir()
+				writeTestGitWorktree(t, project)
+				opts := fixture.options
+				opts.Getwd = func() (string, error) { return project, nil }
+				retired := []string{filepath.Join(fixture.home, "xdg/opencode/skills"), filepath.Join(fixture.home, "xdg/opencode/skill"), filepath.Join(project, ".opencode/skills"), filepath.Join(project, ".opencode/skill")}
+				before := map[string]string{}
+				for _, root := range retired {
+					file := filepath.Join(root, "foreign-directory", "SKILL.md")
+					issue851WriteFile(t, file, []byte("---\nname: guide\ndescription: retired unmanaged definition\n---\nKeep this content.\n"))
+					before[root] = snapshotTree(t, root)
 				}
-			}
+				install, remove := "activate", "deactivate"
+				if scope == "project" {
+					install, remove = "install", "uninstall"
+				}
+				for _, command := range []string{install, "status", remove} {
+					args := []string{command, pack.ID(), "--surface", surface}
+					if command == "status" && scope == "project" {
+						args = append(args, "--project")
+					}
+					if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
+						t.Fatalf("%v: %v\n%s", args, err, out)
+					}
+				}
+				for _, root := range retired {
+					if snapshotTree(t, root) != before[root] {
+						t.Fatalf("lifecycle changed retired unmanaged root %s", root)
+					}
+				}
+			})
 		}
 	}
 }
 
-func TestIssue824UnmanagedCompatibilityAndStaleGlobalPlan(t *testing.T) {
-	pack := testsupport.SkillVariants("coexist", testsupport.SurfaceOpenCode)
+func TestIssue824SameSurfaceDiscoveryInvalidatesStaleGlobalPlan(t *testing.T) {
+	pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex)
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
@@ -74,7 +63,7 @@ func TestIssue824UnmanagedCompatibilityAndStaleGlobalPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := facade.Preview(context.Background(), capabilitypack.ActivationRequest{PackID: pack.ID(), Surface: capabilitypack.SurfaceOpenCode})
+	plan, err := facade.Preview(context.Background(), capabilitypack.ActivationRequest{PackID: pack.ID(), Surface: capabilitypack.SurfaceCodex})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +82,7 @@ func TestIssue824UnmanagedCompatibilityAndStaleGlobalPlan(t *testing.T) {
 	if before != snapshotTree(t, fixture.home) {
 		t.Fatal("stale plan mutated user content")
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "opencode")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "codex")
 	if err == nil || !strings.Contains(out, "foreign-directory") {
 		t.Fatalf("frontmatter name collision was missed: %v\n%s", err, out)
 	}
@@ -153,7 +142,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 	}
 	for _, scope := range []string{"global", "project"} {
 		t.Run(scope, func(t *testing.T) {
-			pack := testsupport.SkillVariants("coexist", testsupport.SurfaceOpenCode)
+			pack := testsupport.SkillVariants("coexist", testsupport.SurfaceCodex)
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 			opts := fixture.options
 			project := t.TempDir()
@@ -163,10 +152,10 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 			if scope == "project" {
 				install, remove, root = "install", "uninstall", project
 			}
-			if out, err := executeCommand(t, NewRootCommand(opts), install, pack.ID(), "--surface", "opencode"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), install, pack.ID(), "--surface", "codex"); err != nil {
 				t.Fatalf("install: %v %s", err, out)
 			}
-			foreign := filepath.Join(root, ".agents/skills/guide")
+			foreign := filepath.Join(root, ".agents/skills/foreign-directory")
 			if err := os.MkdirAll(foreign, 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -174,7 +163,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, foreign)
-			args := []string{"status", pack.ID(), "--surface", "opencode", "--json"}
+			args := []string{"status", pack.ID(), "--surface", "codex", "--json"}
 			if scope == "project" {
 				args = append(args, "--project")
 			}
@@ -187,7 +176,7 @@ func TestIssue824StatusReportsDiscoveryWithoutClaimingForeignOwnership(t *testin
 			} else {
 				assertStructuredOutput(t, schemaRoot, "pack-status.schema.json", out)
 			}
-			if out, err := executeCommand(t, NewRootCommand(opts), remove, pack.ID(), "--surface", "opencode"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), remove, pack.ID(), "--surface", "codex"); err != nil {
 				t.Fatalf("remove: %v %s", err, out)
 			}
 			if snapshotTree(t, foreign) != before {

@@ -11,7 +11,7 @@ import (
 func TestIssue797ProjectInstallApplyRejectsOrphanCreatedAfterPreview(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 	pack := Pack{
-		ID: "orphan-race", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex, SurfaceOpenCode},
+		ID: "orphan-race", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex, SurfaceClaude},
 		ReadinessObligations: []ReadinessObligation{}, Requires: Requirements{Tools: []string{}}, Resources: []Resource{}, Contract: Contract{OptionalModes: []OptionalMode{}},
 	}
 	adapter := &fakeSurfaceAdapter{}
@@ -28,9 +28,9 @@ func TestIssue797ProjectInstallApplyRejectsOrphanCreatedAfterPreview(t *testing.
 		t.Fatal(err)
 	}
 	resource := ResourceIdentity{Kind: "instruction", ID: "guidance"}
-	detail := ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: SurfaceOpenCode, Resource: resource, Detail: "project-trust"}
+	detail := ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: SurfaceClaude, Resource: resource, Detail: "project-trust"}
 	state := projectActivationState{
-		SchemaVersion: projectActivationDocumentSchemaVersion, PackID: pack.ID, Version: pack.Version, Surface: SurfaceOpenCode,
+		SchemaVersion: projectActivationDocumentSchemaVersion, PackID: pack.ID, Version: pack.Version, Surface: SurfaceClaude,
 		ProjectRootDigest: rootDigest, SensitiveLockIdentity: "orphan-lock", Active: true,
 	}
 	if err := saveProjectActivationRecords(packyHome, project, state,
@@ -84,9 +84,9 @@ func TestIssue797FocusedProjectStatusIgnoresUnrelatedOrphan(t *testing.T) {
 	}
 	adapter.applied = true
 
-	saveIssue797Orphan(t, packyHome, project, "unrelated", SurfaceOpenCode, []ProjectActivationEffectReceipt{{
-		Action: ActionCodexProjectTrust, Surface: SurfaceOpenCode, Target: filepath.Join(t.TempDir(), "config.toml"),
-		ContributionIdentity: "unrelated-contribution", AdapterProvenance: "opencode-project/v1/project-trust", StartMarker: "start", EndMarker: "end", PriorState: "absent",
+	saveIssue797Orphan(t, packyHome, project, "unrelated", SurfaceClaude, []ProjectActivationEffectReceipt{{
+		Action: ActionCodexProjectTrust, Surface: SurfaceClaude, Target: filepath.Join(t.TempDir(), "config.toml"),
+		ContributionIdentity: "unrelated-contribution", AdapterProvenance: "claude-project/v1/project-trust", StartMarker: "start", EndMarker: "end", PriorState: "absent",
 	}})
 
 	report, err := InspectProjectStatus(context.Background(), ProjectStatusRequest{

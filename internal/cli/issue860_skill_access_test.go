@@ -243,7 +243,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			{"excluded", "unsupported_surface", func(manifest map[string]any) {
 				skill := manifest["resources"].([]any)[1].(map[string]any)
 				bindings := skill["bindings"].([]any)
-				skill["bindings"] = []any{bindings[0], bindings[2]}
+				skill["bindings"] = []any{bindings[0]}
 				skill["variants"] = skill["variants"].([]any)[:1]
 				skill["surface_exclusions"] = []any{map[string]any{"surface": "codex", "mode": "optional", "code": "review-needed", "reason": "Codex is not reviewed"}}
 			}},
@@ -400,7 +400,9 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			}},
 			{"OpenCode-only access declaration", false, func(m map[string]any) {
 				r := m["resources"].([]any)[1].(map[string]any)
-				r["bindings"] = []any{r["bindings"].([]any)[2]}
+				binding := r["bindings"].([]any)[0].(map[string]any)
+				binding["surface"] = "opencode"
+				r["bindings"] = []any{binding}
 				r["variants"] = []any{}
 				r["surface_exclusions"] = []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}, map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed"}}
 			}},

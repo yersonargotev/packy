@@ -11,8 +11,8 @@ Independent catalog authoring and publication are recorded in
 
 ### Packy
 
-A terminal installer and configurator for reviewed capability Packs on Codex,
-OpenCode, and Claude Code. Its interactive and command-line interfaces expose
+A terminal installer and configurator for reviewed capability Packs on Codex
+and Claude Code. Its interactive and command-line interfaces expose
 the same Pack lifecycle.
 
 ### Pack
@@ -108,8 +108,8 @@ it into one or more host-native projections.
 
 ### CLI surface
 
-A supported host Packy can configure. The supported surfaces are Codex,
-OpenCode, and Claude Code. Antigravity and GitHub Copilot CLI remain outside
+A supported host Packy can configure. The supported surfaces are Codex
+and Claude Code. Antigravity and GitHub Copilot CLI remain outside
 the current product.
 
 ### Surface capability
@@ -118,9 +118,6 @@ A closed, reviewed, typed Pack-binding request for reusable host-native
 behavior that is not implied by Pack, version, or resource identity.
 `project-instruction` projects reviewed source as an independently owned marked
 contribution in a project's native instruction document.
-`opencode-primary-prompt` projects reviewed source as OpenCode's global primary
-instruction document and registers that document in workstation OpenCode
-configuration; project-native guidance remains owned by `project-instruction`.
 `external-executable-acquisition` explicitly selects one reviewed acquisition
 flow for a declared external requirement. It may install the shared executable
 but never grants a tool authority to configure a CLI surface. Engram uses it to

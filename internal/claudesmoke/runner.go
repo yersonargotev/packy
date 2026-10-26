@@ -521,7 +521,7 @@ func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox stri
 }
 
 func surfaceManifest(items []FileEvidence) []FileEvidence {
-	prefixes := []string{"home/.codex", "config/opencode", "home/.claude", "home/.claude.json", "home/.agents/skills"}
+	prefixes := []string{"home/.codex", "home/.claude", "home/.claude.json", "home/.agents/skills"}
 	result := make([]FileEvidence, 0, len(items))
 	for _, item := range items {
 		for _, prefix := range prefixes {

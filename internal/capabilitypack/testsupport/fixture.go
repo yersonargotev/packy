@@ -22,9 +22,8 @@ import (
 type Surface string
 
 const (
-	SurfaceClaude   Surface = "claude"
-	SurfaceCodex    Surface = "codex"
-	SurfaceOpenCode Surface = "opencode"
+	SurfaceClaude Surface = "claude"
+	SurfaceCodex  Surface = "codex"
 )
 
 type Relationship string
@@ -133,7 +132,6 @@ type Capability struct {
 	ClaudeCompositeSkill          *ClaudeCompositeSkill          `json:"claude_composite_skill,omitempty"`
 	Type                          string                         `json:"type"`
 	ExternalExecutableAcquisition *ExternalExecutableAcquisition `json:"external_executable_acquisition,omitempty"`
-	PrimaryPrompt                 *SourceCapability              `json:"primary_prompt,omitempty"`
 	ProjectInstruction            *SourceCapability              `json:"project_instruction,omitempty"`
 }
 
@@ -201,7 +199,7 @@ type Fixture struct {
 func PortableAllSurfaces(id string) Fixture {
 	source := "instructions/" + id + ".md"
 	bytes := []byte("# " + title(id) + " guidance\n\nSynthetic guidance for every supported surface.\n")
-	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode})
+	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
 	fixture.manifest.Resources = []Resource{
 		derivedResource(id, "instruction", "guidance", source, "Portable synthetic guidance", portableBindings("guidance", source)),
 		noticeResource(id),
@@ -213,8 +211,8 @@ func PortableAllSurfaces(id string) Fixture {
 	return fixture
 }
 
-// CapabilityRich returns a compact fixture with typed primary-prompt and
-// project-instruction capabilities. More resource roles are added by focused
+// CapabilityRich returns a compact fixture with typed project-instruction and
+// Claude composition capabilities. More resource roles are added by focused
 // helpers rather than a general scenario builder.
 func CapabilityRich(id string) Fixture {
 	instructionSource := "instructions/" + id + ".md"
@@ -228,7 +226,7 @@ func CapabilityRich(id string) Fixture {
 	agentBytes := []byte("---\nname: reviewer\ndescription: Synthetic reviewer agent.\n---\n\nReview the supplied change.\n")
 	assetSource := "assets/" + id + "-reference.md"
 	assetBytes := []byte("# Workflow reference\n\nSynthetic reference asset.\n")
-	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode})
+	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
 	fixture.manifest.Resources = []Resource{
 		{
 			Kind: "agent", ID: "reviewer", Source: agentSource,
@@ -244,7 +242,6 @@ func CapabilityRich(id string) Fixture {
 					},
 				}}),
 				binding(SurfaceCodex, "agent", "reviewer", "$reviewer", "exclusive", nil),
-				binding(SurfaceOpenCode, "agent", "reviewer", "reviewer", "exclusive", nil),
 			},
 			SurfaceExclusions: []SurfaceExclusion{},
 		},
@@ -254,9 +251,6 @@ func CapabilityRich(id string) Fixture {
 			binding(SurfaceCodex, "instruction", "guidance", "guidance", "shared", []Capability{{
 				Type: "project-instruction", ProjectInstruction: &SourceCapability{ID: id + "-project", Source: instructionSource},
 			}}),
-			binding(SurfaceOpenCode, "instruction", "guidance", "guidance", "shared", []Capability{{
-				Type: "opencode-primary-prompt", PrimaryPrompt: &SourceCapability{ID: id + "-primary", Source: instructionSource},
-			}}),
 		}),
 		{
 			Kind: "lifecycle", ID: "session", Description: "Synthetic runtime session lifecycle",
@@ -264,7 +258,6 @@ func CapabilityRich(id string) Fixture {
 			Bindings: []Binding{
 				binding(SurfaceClaude, "command_hook", "session", "session", "exclusive", nil),
 				binding(SurfaceCodex, "lifecycle", "session", "session", "exclusive", nil),
-				binding(SurfaceOpenCode, "lifecycle", "session", "session", "exclusive", nil),
 			},
 			SurfaceExclusions: []SurfaceExclusion{},
 		},
@@ -277,7 +270,6 @@ func CapabilityRich(id string) Fixture {
 		derivedResource(id, "skill", "helper", helperSource, "Synthetic copied-tree helper skill", []Binding{
 			binding(SurfaceClaude, "skill", "helper", "/helper", "exclusive", nil),
 			binding(SurfaceCodex, "skill", "helper", "$helper", "exclusive", nil),
-			binding(SurfaceOpenCode, "skill", "helper", "helper", "exclusive", nil),
 		}),
 		{
 			Kind: "skill", ID: "workflow", Source: workflowSource,
@@ -293,7 +285,6 @@ func CapabilityRich(id string) Fixture {
 					},
 				}}),
 				binding(SurfaceCodex, "skill", "workflow", "$workflow", "exclusive", nil),
-				binding(SurfaceOpenCode, "skill", "workflow", "workflow", "exclusive", nil),
 			},
 			SurfaceExclusions: []SurfaceExclusion{},
 		},
@@ -685,9 +676,6 @@ func portableBindings(id, source string) []Binding {
 		binding(SurfaceCodex, "instruction", id, id, "shared", []Capability{{
 			Type: "project-instruction", ProjectInstruction: &SourceCapability{ID: id, Source: source},
 		}}),
-		binding(SurfaceOpenCode, "instruction", id, id, "shared", []Capability{{
-			Type: "project-instruction", ProjectInstruction: &SourceCapability{ID: id, Source: source},
-		}}),
 	}
 }
 
@@ -749,12 +737,11 @@ func writeFile(root, relative string, data []byte) error {
 // SkillVariants keeps one logical skill and its reviewed original, with complete
 // adapted trees for the requested surfaces. Other surfaces inherit the original.
 func SkillVariants(id string, surfaces ...Surface) Fixture {
-	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode})
+	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
 	f.fileModes = map[string]os.FileMode{}
 	f.manifest.Resources = []Resource{noticeResource(id), derivedResource(id, "skill", "guide", "skills/common", "Reviewed variant guide", []Binding{
 		binding(SurfaceClaude, "skill", "guide", "/guide", "exclusive", nil),
 		binding(SurfaceCodex, "skill", "guide", "$guide", "exclusive", nil),
-		binding(SurfaceOpenCode, "skill", "guide", "guide", "exclusive", nil),
 	})}
 	f.operational = ResourceIdentity{Kind: "skill", ID: "guide"}
 	f.files[noticePath(id)] = noticeBytes(id)
@@ -795,7 +782,6 @@ func SkillVariantDependencies(id string) Fixture {
 	helper := derivedResource(id, "skill", "helper", "skills/helper", "Surface dependency", []Binding{
 		binding(SurfaceClaude, "skill", "helper", "/helper", "exclusive", nil),
 		binding(SurfaceCodex, "skill", "helper", "$helper", "exclusive", nil),
-		binding(SurfaceOpenCode, "skill", "helper", "helper", "exclusive", nil),
 	})
 	helper.Origin.Path = "guide"
 	helper.Origin.Relationship = RelationshipAdapted

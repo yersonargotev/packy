@@ -9,21 +9,21 @@ import (
 func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *testing.T) {
 	pack := Pack{
 		ID:       "fitness",
-		Surfaces: []Surface{SurfaceOpenCode, SurfaceCodex},
+		Surfaces: []Surface{SurfaceClaude, SurfaceCodex},
 		Resources: []Resource{
 			{Kind: "asset", ID: "payload"},
 			{Kind: "notice", ID: "license"},
 			{
 				Kind: "skill", ID: "consumer", Requires: []string{"instruction:shared"}, Notices: []string{"notice:license"},
-				Bindings: []Binding{{Surface: SurfaceOpenCode, Projection: "skill", Name: "consumer"}, {Surface: SurfaceCodex, Projection: "skill", Name: "consumer"}},
+				Bindings: []Binding{{Surface: SurfaceClaude, Projection: "skill", Name: "consumer"}, {Surface: SurfaceCodex, Projection: "skill", Name: "consumer"}},
 			},
 			{
 				Kind: "instruction", ID: "shared",
-				Bindings: []Binding{{Surface: SurfaceOpenCode, Projection: "instruction", Name: "shared"}, {Surface: SurfaceCodex, Projection: "instruction", Name: "shared"}},
+				Bindings: []Binding{{Surface: SurfaceClaude, Projection: "instruction", Name: "shared"}, {Surface: SurfaceCodex, Projection: "instruction", Name: "shared"}},
 			},
 			{
-				Kind: "agent", ID: "opencode-only",
-				Bindings:          []Binding{{Surface: SurfaceOpenCode, Projection: "agent", Name: "helper"}},
+				Kind: "agent", ID: "claude-only",
+				Bindings:          []Binding{{Surface: SurfaceClaude, Projection: "agent", Name: "helper"}},
 				SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not supported"}},
 			},
 		},
@@ -48,14 +48,14 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 		mode    SelectionMode
 		root    string
 	}{
+		{SurfaceClaude, SelectionAll, ""},
+		{SurfaceClaude, SelectionCustom, "agent:claude-only"},
+		{SurfaceClaude, SelectionCustom, "instruction:shared"},
+		{SurfaceClaude, SelectionCustom, "skill:consumer"},
 		{SurfaceCodex, SelectionAll, ""},
-		{SurfaceCodex, SelectionCustom, "agent:opencode-only"},
+		{SurfaceCodex, SelectionCustom, "agent:claude-only"},
 		{SurfaceCodex, SelectionCustom, "instruction:shared"},
 		{SurfaceCodex, SelectionCustom, "skill:consumer"},
-		{SurfaceOpenCode, SelectionAll, ""},
-		{SurfaceOpenCode, SelectionCustom, "agent:opencode-only"},
-		{SurfaceOpenCode, SelectionCustom, "instruction:shared"},
-		{SurfaceOpenCode, SelectionCustom, "skill:consumer"},
 	}
 	for i, want := range wantSelections {
 		row := first.Rows[i]
@@ -67,11 +67,11 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 			t.Fatalf("row %d identity = %s/%s/%s, want %s/%s/%s", i, row.Surface, row.Selection.Mode, root, want.surface, want.mode, want.root)
 		}
 	}
-	excluded := first.Rows[1]
+	excluded := first.Rows[5]
 	if excluded.Availability.Available || len(excluded.Availability.Reasons) != 1 || excluded.Availability.Reasons[0].Code != SelectionReasonRootExcluded || len(excluded.Resources) != 0 || len(excluded.Projections) != 0 {
 		t.Fatalf("surface-excluded row = %#v", excluded)
 	}
-	consumer := first.Rows[3]
+	consumer := first.Rows[7]
 	if got, want := consumer.Resources, []ResourceIdentity{{Kind: "instruction", ID: "shared"}, {Kind: "notice", ID: "license"}, {Kind: "skill", ID: "consumer"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("consumer closure = %#v, want %#v", got, want)
 	}
@@ -93,7 +93,7 @@ func TestEvaluateRuntimeFitnessRejectsUnavailableSelections(t *testing.T) {
 			name: "dependency unavailable",
 			pack: Pack{ID: "dependency", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
 				{Kind: "skill", ID: "consumer", Requires: []string{"instruction:missing-here"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "consumer"}}},
-				{Kind: "instruction", ID: "missing-here", Bindings: []Binding{{Surface: SurfaceOpenCode, Projection: "instruction", Name: "missing-here"}}, SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not supported"}}},
+				{Kind: "instruction", ID: "missing-here", Bindings: []Binding{{Surface: SurfaceClaude, Projection: "instruction", Name: "missing-here"}}, SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not supported"}}},
 			}},
 			want: "dependency-unavailable",
 		},

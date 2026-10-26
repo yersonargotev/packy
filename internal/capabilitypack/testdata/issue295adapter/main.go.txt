@@ -10,7 +10,6 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/codex"
-	"github.com/yersonargotev/packy/internal/opencode"
 )
 
 type claudeRunner struct{}
@@ -95,8 +94,6 @@ func adapter(surface, bundle, root string, transition capabilitypack.SurfaceTran
 	switch surface {
 	case "codex":
 		return codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
-	case "opencode":
-		return opencode.NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "AGENTS.md"))
 	case "claude":
 		return claudecode.NewSurfaceAdapter(bundle, claudecode.NewCanonicalLayout(root), filepath.Join(root, ".packy"), "claude", claudeRunner{}, claudeOwnership(transition, bundle, root))
 	default:

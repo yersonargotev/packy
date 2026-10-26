@@ -44,7 +44,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	if out, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "codex"); err != nil {
 		t.Fatalf("install Pack in project before withdrawal: %v\n%s", err, out)
 	}
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		if out, err := executeCommand(t, NewRootCommand(opts), "activate", withdrawn.ID(), "--surface", surface); err != nil {
 			t.Fatalf("activate Pack on %s before withdrawal: %v\n%s", surface, err, out)
 		}
@@ -84,14 +84,14 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	}
 
 	beforeRejectedActivation := snapshotTree(t, fixture.home)
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", blockedActivation.ID(), "--surface", "opencode", "--dry-run"); err == nil || !strings.Contains(err.Error(), "current catalog") {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", blockedActivation.ID(), "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "current catalog") {
 		t.Fatalf("new activation from withdrawn Pack = %v\n%s", err, out)
 	}
 	if after := snapshotTree(t, fixture.home); after != beforeRejectedActivation {
 		t.Fatal("rejected activation mutated Packy Home or host projections")
 	}
 
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		statusOutput, err := executeCommand(t, NewRootCommand(opts), "status", withdrawn.ID(), "--surface", surface, "--json")
 		if err != nil {
 			t.Fatalf("inspect withdrawn Pack status on %s: %v\n%s", surface, err, statusOutput)
@@ -149,7 +149,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 		t.Fatalf("TUI retained project status = %#v", projectPack.SurfaceStatuses)
 	}
 
-	for _, surface := range []string{"claude", "codex", "opencode"} {
+	for _, surface := range []string{"claude", "codex"} {
 		preview, err := backend.Preview(context.Background(), tui.PreviewRequest{
 			Operation: "deactivate", PackID: withdrawn.ID(), Surface: surface, Scope: "global", Selection: tui.Selection{Mode: "all"},
 		})
@@ -247,7 +247,7 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), claudeLock, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	blockedOutput, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "opencode", "--dry-run", "--json")
+	blockedOutput, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "codex", "--dry-run", "--json")
 	if err == nil || !strings.Contains(err.Error(), "project install preview is not actionable: blocked") || !strings.Contains(blockedOutput, `"code":"orphaned_personal_activation"`) {
 		t.Fatalf("install while orphan remains was not blocked: %v\n%s", err, blockedOutput)
 	}
@@ -426,7 +426,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 
 func TestIssue797RemovedSurfaceKeepsEvidenceWithoutOfferingUpdate(t *testing.T) {
 	v1 := testsupport.PortableAllSurfaces("removed-surface-version")
-	v2 := v1.Candidate().WithSurfaces(testsupport.SurfaceOpenCode)
+	v2 := v1.Candidate().WithSurfaces(testsupport.SurfaceCodex)
 	firstSnapshot := strings.Repeat("6", 40)
 	secondSnapshot := strings.Repeat("a", 40)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, firstSnapshot, v1)}
@@ -472,7 +472,7 @@ func TestIssue797RemovedSurfaceKeepsEvidenceWithoutOfferingUpdate(t *testing.T) 
 	if err := json.Unmarshal([]byte(showOutput), &document); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(document.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
+	if !slices.Equal(document.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) {
 		t.Fatalf("current supported surfaces = %#v", document.Surfaces)
 	}
 	claudeContract := slices.IndexFunc(document.SurfaceContracts, func(contract packShowSurfaceJSON) bool { return contract.Surface == capabilitypack.SurfaceClaude })

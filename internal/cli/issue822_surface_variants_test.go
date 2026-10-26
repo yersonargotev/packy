@@ -10,7 +10,7 @@ import (
 )
 
 func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testing.T) {
-	pack := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceCodex, testsupport.SurfaceOpenCode)
+	pack := testsupport.SkillVariants("variants", testsupport.SurfaceClaude, testsupport.SurfaceCodex)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, strings.Repeat("a", 40), pack)}
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	opts := fixture.options
@@ -25,7 +25,7 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 		return out
 	}
 	run("init")
-	for _, surface := range []string{"codex", "claude", "opencode", "codex"} {
+	for _, surface := range []string{"codex", "claude", "codex"} {
 		preview := run("activate", pack.ID(), "--surface", surface, "--dry-run", "--json")
 		if !strings.Contains(preview, `"definition":"surface_variant"`) || !strings.Contains(preview, `"relationship":"adapted"`) {
 			t.Fatalf("preview does not explain selected variant provenance: %s", preview)
@@ -35,9 +35,6 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 		if surface == "claude" {
 			relative = ".claude/skills/guide"
 		}
-		if surface == "opencode" {
-			relative = "xdg/opencode/skills/guide"
-		}
 		target := filepath.Join(fixture.home, relative)
 		for _, file := range []string{"SKILL.md", "references/detail.md", "agents/openai.yaml"} {
 			data, err := os.ReadFile(filepath.Join(target, file))
@@ -46,15 +43,6 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 			}
 		}
 		run("status", pack.ID(), "--surface", surface, "--json")
-		if surface == "codex" {
-			before := snapshotTree(t, target)
-			if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "opencode"); err == nil {
-				t.Fatalf("unverified divergent discovery accepted: %s", out)
-			}
-			if snapshotTree(t, target) != before {
-				t.Fatal("collision modified installed tree")
-			}
-		}
 		aux := filepath.Join(target, "references/detail.md")
 		original, err := os.ReadFile(aux)
 		if err != nil {
@@ -87,7 +75,7 @@ func TestIssue822SkillVariantsThroughAcquiredCatalogAndGlobalLifecycle(t *testin
 }
 
 func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T) {
-	pack := testsupport.SkillVariants("variants", testsupport.SurfaceCodex, testsupport.SurfaceOpenCode)
+	pack := testsupport.SkillVariants("variants", testsupport.SurfaceCodex)
 	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
 	opts := fixture.options
 	project := t.TempDir()
@@ -101,7 +89,7 @@ func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T)
 		}
 		return out
 	}
-	for _, surface := range []string{"codex", "claude", "opencode"} {
+	for _, surface := range []string{"codex", "claude"} {
 		run("install", pack.ID(), "--surface", surface, "--dry-run", "--json")
 		run("install", pack.ID(), "--surface", surface)
 		relative := ".agents/skills/guide"
@@ -109,9 +97,6 @@ func TestIssue822SkillVariantsProjectLifecycleAndCommonInheritance(t *testing.T)
 		if surface == "claude" {
 			relative = ".claude/skills/guide"
 			body = "common"
-		}
-		if surface == "opencode" {
-			relative = ".opencode/skills/guide"
 		}
 		target := filepath.Join(project, relative)
 		data, err := os.ReadFile(filepath.Join(target, "references/detail.md"))

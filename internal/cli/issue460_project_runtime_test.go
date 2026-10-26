@@ -11,8 +11,8 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
-func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testing.T) {
-	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceOpenCode, capabilitypack.SurfaceClaude} {
+func TestIssue460ProjectRuntimeUsesOneVocabularyOnClaude(t *testing.T) {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			pack := testsupport.CapabilityRich("project-runtime-" + string(surface))

@@ -317,7 +317,7 @@ func validateWorkspace(root string, requireGit bool) error {
 			// Isolation roots and project projections must never be redirected.
 			relative, _ := filepath.Rel(root, path)
 			parts := strings.Split(filepath.ToSlash(relative), "/")
-			global := len(parts) == 4 && parts[2] == "skills" && (parts[0] == "home" && (parts[1] == ".agents" || parts[1] == ".claude") || parts[0] == "config" && parts[1] == "opencode")
+			global := len(parts) == 4 && parts[2] == "skills" && parts[0] == "home" && (parts[1] == ".agents" || parts[1] == ".claude")
 			target, err := filepath.EvalSymlinks(path)
 			if !global || err != nil || !strings.HasPrefix(target, filepath.Join(root, "snapshots")+string(filepath.Separator)) {
 				return fmt.Errorf("candidate workspace contains an unsafe path %q", path)

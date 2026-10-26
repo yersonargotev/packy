@@ -97,10 +97,10 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 		},
 		{
 			name:     "missing requirement",
-			pack:     ActivePack{ID: "engram", Surface: "opencode", MissingRequirements: 1},
+			pack:     ActivePack{ID: "engram", Surface: "claude", MissingRequirements: 1},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"1 missing requirements", "packy status engram --surface opencode"},
+			want:     []string{"1 missing requirements", "packy status engram --surface claude"},
 		},
 		{
 			name:     "pending human action",
@@ -142,7 +142,7 @@ func TestDiagnoseWithNoActivePacksReportsOnlyCoreHealth(t *testing.T) {
 func TestDiagnoseIncludesStateObservationFailuresAndContinues(t *testing.T) {
 	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{
 		FailedStateSurfaces: []string{"codex"},
-		ActivePacks:         []ActivePack{{ID: "engram", Surface: "opencode"}},
+		ActivePacks:         []ActivePack{{ID: "engram", Surface: "claude"}},
 	})
 	if len(report.Checks) != 3 || report.Checks[0].Name != "packy-core" || report.Checks[1].Name != "pack-state-codex" || report.Checks[1].Severity != Fail || report.Checks[2].Severity != Pass {
 		t.Fatalf("report = %+v", report)

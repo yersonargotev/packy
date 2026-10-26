@@ -86,9 +86,8 @@ func observeAuditProject(ctx context.Context, resolver *workstation.Resolver) au
 		return audit.ProjectObservation{State: audit.ProjectAbsent, Detail: "the current Git project has no Pack contract"}
 	}
 	verification := capabilitypack.VerifyProject(ctx, projectRoot, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-		capabilitypack.SurfaceClaude:   projectOfflineAdapter(capabilitypack.SurfaceClaude),
-		capabilitypack.SurfaceCodex:    projectOfflineAdapter(capabilitypack.SurfaceCodex),
-		capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
+		capabilitypack.SurfaceClaude: projectOfflineAdapter(capabilitypack.SurfaceClaude),
+		capabilitypack.SurfaceCodex:  projectOfflineAdapter(capabilitypack.SurfaceCodex),
 	})
 	observation := audit.ProjectObservation{Summary: audit.VerificationSummary{
 		Packs: verification.Summary.Packs, Surfaces: verification.Summary.Surfaces,

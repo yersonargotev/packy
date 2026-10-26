@@ -177,8 +177,7 @@ func TestClearingResourceConfigurationPreviewsWholeRemovalAndCanBeCancelled(t *t
 func TestResourceConfigurationLoadsSelectionForChangedSurface(t *testing.T) {
 	pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{
 		{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:a"}}},
-		{Name: "opencode", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:b"}}},
-		{Name: "claude", Supported: true},
+		{Name: "claude", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:b"}}},
 	}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
 	var model tea.Model = openResourceConfiguration(t, backend, false)
@@ -187,6 +186,12 @@ func TestResourceConfigurationLoadsSelectionForChangedSurface(t *testing.T) {
 	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "[ ] skill:a") || !strings.Contains(view, "[x] skill:b") {
 		t.Fatalf("surface selection leaked:\n%s", view)
 	}
+	// An inactive alternate surface starts fresh rather than inheriting the
+	// active surface's selection or lifecycle operation.
+	pack.SurfaceStatuses[1].Active = false
+	pack.SurfaceStatuses[1].Selection = tui.Selection{}
+	backend = &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
+	model = openResourceConfiguration(t, backend, false)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))

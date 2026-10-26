@@ -168,7 +168,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			projections = append(projections, capabilitypack.ObservedProjection{
 				ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
 				ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: provenance,
-				ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
+				ProjectionKey: "path:" + filepath.Clean(target), Shared: true,
 				Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, FileMode: 0o755, Target: target, Version: desired, Precondition: observed, AdapterProvenance: provenance, TreeFiles: files, Description: fmt.Sprintf("render %s in the Codex project skill tree", identity), PreviewOnly: true},
 			})
 			continue
@@ -184,7 +184,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		projections = append(projections, capabilitypack.ObservedProjection{
 			ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
 			ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/copied-skill-tree",
-			ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
+			ProjectionKey: "path:" + filepath.Clean(target), Shared: true,
 			Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, FileMode: 0o755, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
 		})
 	}
@@ -229,8 +229,8 @@ func codexProjectInstructionProjection(identity capabilitypack.ResourceIdentity,
 	return capabilitypack.ObservedProjection{
 		ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed,
 		DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/shared-composable-instruction/" + state,
-		ProjectionKey: key, Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
-		Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionInstructionFile, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, ProjectionKey: key, Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}, Description: fmt.Sprintf("merge %s into the shared project AGENTS.md", identity), PreviewOnly: true},
+		ProjectionKey: key, Shared: true,
+		Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionInstructionFile, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, ProjectionKey: key, Shared: true, Description: fmt.Sprintf("merge %s into the shared project AGENTS.md", identity), PreviewOnly: true},
 	}
 }
 

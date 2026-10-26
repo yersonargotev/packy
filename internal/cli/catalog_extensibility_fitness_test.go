@@ -23,7 +23,6 @@ func TestUnrelatedSyntheticPacksPreserveReadinessAcrossSurfacesScopesAndPresenta
 		projectScope        bool
 	}{
 		{pack: testsupport.PortableAllSurfaces("fitness-cedar"), surface: "codex", globalAuthorization: "unknown", projectScope: true},
-		{pack: testsupport.PortableAllSurfaces("fitness-orbit"), surface: "opencode", globalAuthorization: "unknown", projectScope: true},
 		{pack: testsupport.PortableAllSurfaces("fitness-sable"), surface: "claude", globalAuthorization: "unknown", pendingActions: 3},
 	}
 	packs := make([]testsupport.Fixture, 0, len(cases))

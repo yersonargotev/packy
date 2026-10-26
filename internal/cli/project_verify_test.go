@@ -63,7 +63,7 @@ func TestProjectVerifyPassesOfflineWithoutPersonalState(t *testing.T) {
 }
 
 func TestProjectVerifyPassesAfterGitCheckout(t *testing.T) {
-	for _, surface := range []string{"codex", "claude", "opencode"} {
+	for _, surface := range []string{"codex", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			pack := testsupport.SkillVariants("verify-checkout", testsupport.Surface(surface))
 			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)

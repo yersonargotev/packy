@@ -7,8 +7,8 @@ import (
 	"os/exec"
 )
 
-// Runner is the seam for external tools such as brew, engram, codex, and
-// opencode. Commands receive it through Options so tests can inject a fake.
+// Runner is the seam for external tools such as brew, engram, and codex.
+// Commands receive it through Options so tests can inject a fake.
 type Runner interface {
 	LookPath(name string) (string, error)
 	Run(ctx context.Context, name string, args ...string) error

@@ -156,8 +156,8 @@ type projectActivationDocument struct {
 
 func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectActivationRequest) (JSONProjectActivationPreview, error) {
 	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, Effects: []ProjectActivationEffectPreview{}, RuntimeEffects: []ProjectRuntimeEffectStatus{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
-	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
-		return report, fmt.Errorf("project activation preview does not support CLI surface %q", request.Surface)
+	if err := ValidateSurface(request.Surface); err != nil {
+		return report, err
 	}
 	if request.ProjectRoot == "" || request.PackyHome == "" || request.PackID == "" || request.Adapter == nil {
 		return report, errors.New("project activation preview requires the project root, Packy Home, pack, and surface adapter")
@@ -619,6 +619,9 @@ func projectActivationDirectory(packyHome, projectRoot string) (string, error) {
 }
 
 func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID string, surface Surface) (projectActivationDocument, bool, error) {
+	if err := ValidateSurface(surface); err != nil {
+		return projectActivationDocument{}, false, err
+	}
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
 		return projectActivationDocument{}, false, err
@@ -672,7 +675,7 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID stri
 }
 
 func validProjectActivationEffectReceipt(effect ProjectActivationEffectReceipt) bool {
-	if (effect.Surface != SurfaceCodex && effect.Surface != SurfaceOpenCode && effect.Surface != SurfaceClaude) || !filepath.IsAbs(effect.Target) || effect.ContributionIdentity == "" || effect.AdapterProvenance == "" || effect.PriorState != "absent" {
+	if (effect.Surface != SurfaceCodex && effect.Surface != SurfaceClaude) || !filepath.IsAbs(effect.Target) || effect.ContributionIdentity == "" || effect.AdapterProvenance == "" || effect.PriorState != "absent" {
 		return false
 	}
 	switch effect.Action {
@@ -684,6 +687,9 @@ func validProjectActivationEffectReceipt(effect ProjectActivationEffectReceipt) 
 }
 
 func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []ProjectActivationEffectReceipt) error {
+	if err := ValidateSurface(state.Surface); err != nil {
+		return err
+	}
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
 		return err

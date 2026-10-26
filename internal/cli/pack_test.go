@@ -14,7 +14,6 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/codex"
-	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/skilllayout"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -142,8 +141,7 @@ func alwaysUsableAdapters(t *testing.T, opts Options) map[capabilitypack.Surface
 	layout := resolvePackTestLayout(t, opts.Env)
 	catalogRoot := opts.catalogRootOverride
 	return map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-		capabilitypack.SurfaceCodex:    alwaysUsableAdapter{delegate: codex.NewSurfaceAdapterWithConfig(catalogRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile())},
-		capabilitypack.SurfaceOpenCode: alwaysUsableAdapter{delegate: opencode.NewSurfaceAdapter(catalogRoot, layout.skills.Root(), layout.openCode.ConfigFile(), layout.openCode.PromptFile())},
+		capabilitypack.SurfaceCodex: alwaysUsableAdapter{delegate: codex.NewSurfaceAdapterWithConfig(catalogRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile())},
 	}
 }
 
@@ -152,7 +150,6 @@ type packTestLayout struct {
 	state     capabilitypack.StateLayout
 	skills    skilllayout.GlobalLayout
 	codex     codex.CanonicalLayout
-	openCode  opencode.CanonicalLayout
 }
 
 func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
@@ -169,7 +166,6 @@ func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
 		state:     capabilitypack.NewStateLayout(snapshot.PackyHome()),
 		skills:    skilllayout.NewGlobalLayout(snapshot.Home()),
 		codex:     codex.NewCanonicalLayout(snapshot.Home()),
-		openCode:  opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 	}
 }
 
@@ -819,7 +815,7 @@ func TestPackStatusRequiresCompleteTarget(t *testing.T) {
 	}{
 		{[]string{"status", packID}, "--surface is required"},
 		{[]string{"status", "--surface", "codex"}, "a pack is required"},
-		{[]string{"status", packID, "--surface", "vscode"}, "does not support CLI surface"},
+		{[]string{"status", packID, "--surface", "vscode"}, "unsupported CLI surface"},
 		{[]string{"status", "missing", "--surface", "codex"}, "unknown capability pack"},
 	} {
 		_, err := executeCommand(t, NewRootCommand(opts), tc.args...)
@@ -861,7 +857,7 @@ func TestPackStatusRequireUsableIsIndependentNonInteractiveGate(t *testing.T) {
 }
 
 func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testing.T) {
-	for _, surface := range []string{"codex", "opencode"} {
+	for _, surface := range []string{"codex"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			pack := testsupport.PortableAllSurfaces("pending-" + surface)
@@ -883,88 +879,8 @@ func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testin
 	}
 }
 
-// TestMattyOpenCodeActivationDryRunPreservesCurrentPublicContract protects the
-// reviewed OpenCode skill-only projection and retired-instruction exclusions.
-// TestCurrentMattyActivationProjectsSurfaceCapabilities protects Matty's
-// reviewed Codex/OpenCode primary-prompt and skill projection contract.
-func TestPackActivateOpenCodeRejectsNonTTYBeforeEffects(t *testing.T) {
-	terminal := &fakeTerminal{interactive: false, approve: true}
-	pack := testsupport.PortableAllSurfaces("non-tty-opencode")
-	fixture := newSyntheticCLIFixture(t, terminal, pack)
-	_, err := executeCommand(t, NewRootCommand(fixture.options), "activate", pack.Manifest().ID, "--surface", "opencode")
-	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
-		t.Fatalf("error = %v", err)
-	}
-	if terminal.calls != 0 {
-		t.Fatal("non-TTY requested approval")
-	}
-	for _, path := range []string{filepath.Join(fixture.home, ".packy", "packs.json"), filepath.Join(fixture.home, ".agents"), filepath.Join(fixture.home, "xdg", "opencode")} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("non-TTY wrote %s: %v", path, err)
-		}
-	}
-}
-
-func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("opencode-preserve")
-	fixture := newSyntheticCLIFixture(t, terminal, pack)
-	opts, home, packID := fixture.options, fixture.home, pack.Manifest().ID
-	xdg := filepath.Join(home, "xdg", "opencode")
-	if err := os.MkdirAll(xdg, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(xdg, "opencode.json")
-	existing := "// keep host syntax\n{\n  \"model\": \"anthropic/test\",\n  \"mcp\": {\"jira\": {\"enabled\": true,},},\n  \"instructions\": [\"CONTRIBUTING.md\",],\n}\n"
-	if err := os.WriteFile(configPath, []byte(existing), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	codexPath := filepath.Join(home, ".codex", "AGENTS.md")
-	if err := os.MkdirAll(filepath.Dir(codexPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(codexPath, []byte("unmanaged Codex guidance\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "opencode")
-	if err != nil {
-		t.Fatalf("activate failed: %v\n%s", err, out)
-	}
-	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") {
-		t.Fatalf("interaction/output calls=%d\n%s", terminal.calls, out)
-	}
-	updated, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"// keep host syntax", `"model": "anthropic/test"`, `"jira"`, `"CONTRIBUTING.md"`} {
-		if !strings.Contains(string(updated), want) {
-			t.Fatalf("OpenCode config lost %q:\n%s", want, updated)
-		}
-	}
-	codex, err := os.ReadFile(codexPath)
-	if err != nil || string(codex) != "unmanaged Codex guidance\n" {
-		t.Fatalf("Codex mutated: %q err=%v", codex, err)
-	}
-
-	out, err = executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "opencode")
-	if err != nil {
-		t.Fatalf("repeat failed: %v\n%s", err, out)
-	}
-	if terminal.calls != 1 || !strings.Contains(out, "Already converged") {
-		t.Fatalf("repeat not no-op: calls=%d\n%s", terminal.calls, out)
-	}
-}
-
-// TestPackActivateEngramDryRunShowsOnlyReviewedSkillAndNoEffects protects the
-// reviewed Engram skill-plus-notice inventory and absence of retired setup.
-// TestPackActivateEngramInstallsOnlyTheReviewedSkill protects Engram's exact
-// reviewed skill target and its deliberately absent host-setup artifacts.
-// TestPackActivateEngramAcquiresOnlyWhenExecutableIsMissing protects Engram's
-// reviewed executable-acquisition capability and Codex-only lifecycle.
 func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
-	for _, surface := range []string{"codex", "opencode"} {
+	for _, surface := range []string{"codex"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			pack := testsupport.PortableAllSurfaces("deactivate-" + surface)

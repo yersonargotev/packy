@@ -371,7 +371,7 @@ const validManifest = `{
   "version": "1.0.0",
   "description": "Example Managed Pack",
   "selectable": true,
-  "surfaces": ["claude", "codex", "opencode"],
+  "surfaces": ["claude", "codex"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [
@@ -420,15 +420,6 @@ const validManifest = `{
         },
         {
           "surface": "codex",
-          "projection": "skill",
-          "name": "guide",
-          "invocation": "guide",
-          "mode": "native",
-          "sharing": "shared",
-          "capabilities": []
-        },
-        {
-          "surface": "opencode",
           "projection": "skill",
           "name": "guide",
           "invocation": "guide",

@@ -263,6 +263,11 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 
 func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JSONProjectStatusReport, error) {
 	report := JSONProjectStatusReport{SchemaVersion: ProjectStatusSchemaVersion, Report: "project-status", ProjectRoot: "<project-root>", Packs: []JSONProjectPackStatus{}}
+	if request.Surface != "" {
+		if err := ValidateSurface(request.Surface); err != nil {
+			return report, err
+		}
+	}
 	manifestMissing, err := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.json"))
 	if err != nil {
 		return report, err
@@ -550,8 +555,8 @@ func inspectOrphanedProjectActivations(ctx context.Context, request ProjectStatu
 			continue
 		}
 		surface := candidate.State.Surface
-		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
-			continue
+		if err := ValidateSurface(surface); err != nil {
+			return nil, err
 		}
 		if request.PackID != "" && request.PackID != candidate.State.PackID {
 			continue
@@ -954,8 +959,8 @@ func validateProjectManifestPack(pack ProjectManifestPack) error {
 		return errors.New("project manifest surfaces are empty, duplicated, or unsorted")
 	}
 	for _, surface := range pack.Surfaces {
-		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
-			return fmt.Errorf("project manifest schema version 1 does not support CLI surface %q", surface)
+		if err := ValidateSurface(surface); err != nil {
+			return err
 		}
 	}
 	selection, err := canonicalSelection(pack.Selection)

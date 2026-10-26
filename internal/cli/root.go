@@ -88,7 +88,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "packy",
 		Short: "Packy is an installer and configurator for reviewed capability Packs",
-		Long: `Packy is an installer and configurator for reviewed capability Packs on Claude Code, Codex, and OpenCode.
+		Long: `Packy is an installer and configurator for reviewed capability Packs on Claude Code and Codex.
 
 Lifecycle commands preview an immutable plan before interactive Apply. Approvals
 are requested separately for each consent kind. A verified Apply can succeed while

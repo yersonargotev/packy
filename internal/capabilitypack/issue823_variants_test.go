@@ -25,8 +25,8 @@ func TestIssue823AllKindVariantRestrictionsAndNonTargetGraphs(t *testing.T) {
 	}{
 		{"agent authority", "agent", "permissions", func(v *ResourceVariant) { permissions := []string{"arbitrary-authority"}; v.Permissions = &permissions }},
 		{"command arguments", "command", "arguments", func(v *ResourceVariant) { v.Arguments = &CommandArguments{Mode: "execute-shell"} }},
-		{"MCP file source", "mcp_server", "cannot have source", func(v *ResourceVariant) { source := "instructions/opencode.md"; v.Source = &source }},
-		{"lifecycle file source", "lifecycle", "cannot have source", func(v *ResourceVariant) { source := "instructions/opencode.md"; v.Source = &source }},
+		{"MCP file source", "mcp_server", "cannot have source", func(v *ResourceVariant) { source := "instructions/claude.md"; v.Source = &source }},
+		{"lifecycle file source", "lifecycle", "cannot have source", func(v *ResourceVariant) { source := "instructions/claude.md"; v.Source = &source }},
 		{"lifecycle executable override", "lifecycle", "only applicable", func(v *ResourceVariant) { command := "unreviewed"; v.Command = &command }},
 		{"non-target dependency cycle", "command", "cycle", func(v *ResourceVariant) { requires := []string{"command:sample-command"}; v.Requires = &requires }},
 		{"non-target missing asset", "instruction", "does not exist", func(v *ResourceVariant) { requires := []string{"asset:absent"}; v.Requires = &requires }},
@@ -38,12 +38,12 @@ func TestIssue823AllKindVariantRestrictionsAndNonTargetGraphs(t *testing.T) {
 			for i := range candidate.Resources {
 				resource := &candidate.Resources[i]
 				if resource.Kind == test.kind {
-					test.mutate(&resource.Variants[2])
+					test.mutate(&resource.Variants[0])
 				}
 			}
-			// Catalog admission checks OpenCode even when a caller would install Codex.
+			// Catalog admission checks Claude even when a caller would install Codex.
 			if err := validateCurrentPack(candidate); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("invalid OpenCode declaration accepted: %v", err)
+				t.Fatalf("invalid Claude declaration accepted: %v", err)
 			}
 		})
 	}

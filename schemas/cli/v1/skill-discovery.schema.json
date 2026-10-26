@@ -77,8 +77,7 @@
               "surface": {
                 "enum": [
                   "claude",
-                  "codex",
-                  "opencode"
+                  "codex"
                 ]
               },
               "definition": {
@@ -135,8 +134,7 @@
             "items": {
               "enum": [
                 "claude",
-                "codex",
-                "opencode"
+                "codex"
               ]
             },
             "uniqueItems": true
@@ -156,8 +154,7 @@
                   "surface": {
                     "enum": [
                       "claude",
-                      "codex",
-                      "opencode"
+                      "codex"
                     ]
                   },
                   "mode": {
