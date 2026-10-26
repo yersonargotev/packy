@@ -48,6 +48,7 @@ func TestRenderClaudeClaudeAgentExactBytesAndEffectiveDependency(t *testing.T) {
 		"  - addy-using-agent-skills\n" +
 		"---\n\n" +
 		"## Packy authority contract\n\n" +
+		"Reviewed policy guidance only; this document does not establish runtime authorization or observed usability.\n\n" +
 		"- permission_mode: default\n" +
 		"- browser: declarations=[optional-mode:browser-network:browser, tool:browser]; outcome=fallback; claude_tools=[none]; fallback=static evidence-only analysis\n" +
 		"- commit: declarations=[optional-mode:privileged-shipping:commit]; outcome=guarded; claude_tools=[Bash]; fallback=none\n" +

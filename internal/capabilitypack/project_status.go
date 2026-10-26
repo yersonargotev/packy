@@ -308,20 +308,6 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 							effects = append(effects, ProjectRuntimeEffectStatus{Category: receipt.Category, Resource: detail.Resource, Detail: detail.Detail, Coverage: ProjectRuntimeCoverageProject})
 						}
 					}
-					adapter := request.Adapters[request.Surface]
-					if adapter == nil && len(document.Effects) > 0 {
-						return report, fmt.Errorf("project activation inspection does not support CLI surface %q", request.Surface)
-					}
-					observed, inspectErr := inspectProjectEffectReceipts(ctx, adapter, request.ProjectRoot, document.Effects)
-					if inspectErr != nil {
-						return report, inspectErr
-					}
-					for _, effect := range observed {
-						if effect.State == ProjectEffectDrifted {
-							runtime = ProjectRuntimeBlocked
-							blockers = append(blockers, ProjectInstallBlocker{Code: "personal_effect_drift", Target: "<personal-host-path>", Detail: "the receipted personal contribution differs from exact adapter evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"})
-						}
-					}
 					pendingActions = append(pendingActions, fmt.Sprintf("packy deactivate %s --surface %s --project", request.PackID, request.Surface))
 				}
 			}
@@ -597,21 +583,7 @@ func inspectOrphanedProjectActivationDocument(ctx context.Context, request Proje
 			effects = append(effects, ProjectRuntimeEffectStatus{Category: receipt.Category, Resource: detail.Resource, Detail: detail.Detail, Coverage: ProjectRuntimeCoverageProject})
 		}
 	}
-	adapter := request.Adapters[document.State.Surface]
-	if adapter == nil && len(document.Effects) > 0 {
-		return JSONProjectPackStatus{}, fmt.Errorf("project activation inspection does not support CLI surface %q", document.State.Surface)
-	}
-	observed, err := inspectProjectEffectReceipts(ctx, adapter, request.ProjectRoot, document.Effects)
-	if err != nil {
-		return JSONProjectPackStatus{}, err
-	}
 	blockers := []ProjectInstallBlocker{}
-	for _, effect := range observed {
-		if effect.State == ProjectEffectDrifted {
-			runtime = ProjectRuntimeBlocked
-			blockers = append(blockers, ProjectInstallBlocker{Code: "personal_effect_drift", Target: "<personal-host-path>", Detail: "the receipted personal contribution differs from exact adapter evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"})
-		}
-	}
 	readiness, conditions := evaluateReadiness(readinessEvaluation{
 		Pack: Pack{ID: document.State.PackID, Version: document.State.Version, ReadinessObligations: []ReadinessObligation{}}, Surface: document.State.Surface,
 		Scope: ReadinessScopeProject, Revision: "project-installation-absent",
@@ -867,18 +839,6 @@ func projectPersonalRuntimeStatus(ctx context.Context, adapter SurfaceAdapter, p
 	if !exists || !state.Active {
 		return ProjectRuntimePending, effects
 	}
-	observed, inspectErr := inspectProjectEffectReceipts(ctx, adapter, projectRoot, document.Effects)
-	if inspectErr != nil {
-		return ProjectRuntimeBlocked, effects
-	}
-	for _, effect := range observed {
-		if effect.State == ProjectEffectDrifted {
-			return ProjectRuntimeBlocked, effects
-		}
-		if effect.State == ProjectEffectAbsent {
-			return ProjectRuntimeStale, effects
-		}
-	}
 	if state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
 		return ProjectRuntimeStale, effects
 	}
@@ -1071,12 +1031,12 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 	}
 	for _, projection := range lock.Projections {
-		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" && projection.Mode != "merge_structured_file" {
+		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" {
 			return fmt.Errorf("project lock projection %s has unsupported mode %q", projection.Resource, projection.Mode)
 		}
 		physicalTargetKey := projection.Target
 		targetKey := string(projection.Surface) + "\x00" + projection.Target
-		if projection.Mode == "merge_marked_file" || projection.Mode == "merge_structured_file" {
+		if projection.Mode == "merge_marked_file" {
 			physicalTargetKey = projection.Resource.String() + "\x00" + projection.Target
 			targetKey = string(projection.Surface) + "\x00" + physicalTargetKey
 		}
@@ -1089,7 +1049,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 			}
 			sharedTargets[physicalTargetKey] = projection
 		}
-		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && !resources[projection.Resource] {
+		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file") && !resources[projection.Resource] {
 			return fmt.Errorf("project lock projection %s is outside the receipt resource closure", projection.Resource)
 		}
 		if projection.FileMode == 0 || projection.FileMode&^0o777 != 0 {
@@ -1102,7 +1062,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 
 func validProjectActivationCategory(category ProjectActivationCategory) bool {
 	switch category {
-	case ProjectActivationMCP, ProjectActivationHooks, ProjectActivationPlugins, ProjectActivationExternalRequirements, ProjectActivationTrust, ProjectActivationAuthentication:
+	case ProjectActivationExternalRequirements, ProjectActivationTrust, ProjectActivationAuthentication:
 		return true
 	default:
 		return false

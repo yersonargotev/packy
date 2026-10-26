@@ -162,8 +162,8 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 }
 
 func showResourceTotal(counts ResourceCounts) int {
-	return counts.Skills + counts.Instructions + counts.MCPServers + counts.Lifecycles +
-		counts.Agents + counts.Commands + counts.Assets + counts.Notices
+	return counts.Skills + counts.Instructions +
+		counts.Agents + counts.Assets + counts.Notices
 }
 
 func joinShowSurfaces(surfaces []Surface) string {

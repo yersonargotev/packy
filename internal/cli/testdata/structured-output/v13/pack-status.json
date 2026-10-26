@@ -50,10 +50,7 @@
         "logical_resource_counts": {
           "Skills": 1,
           "Instructions": 0,
-          "MCPServers": 0,
-          "Lifecycles": 0,
           "Agents": 0,
-          "Commands": 0,
           "Assets": 0,
           "Notices": 0
         },

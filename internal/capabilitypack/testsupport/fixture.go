@@ -60,14 +60,11 @@ type ResourceOrigin struct {
 }
 
 type ResourceVariant struct {
-	Description string            `json:"description,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Args        *[]string         `json:"args,omitempty"`
-	Mode        string            `json:"mode,omitempty"`
-	Tools       *[]string         `json:"tools,omitempty"`
-	Permissions *[]string         `json:"permissions,omitempty"`
-	Arguments   *CommandArguments `json:"arguments,omitempty"`
-	Attribution string            `json:"attribution,omitempty"`
+	Description string    `json:"description,omitempty"`
+	Mode        string    `json:"mode,omitempty"`
+	Tools       *[]string `json:"tools,omitempty"`
+	Permissions *[]string `json:"permissions,omitempty"`
+	Attribution string    `json:"attribution,omitempty"`
 
 	Requires *[]string       `json:"requires,omitempty"`
 	Surface  Surface         `json:"surface"`
@@ -75,28 +72,7 @@ type ResourceVariant struct {
 	Origin   *ResourceOrigin `json:"origin,omitempty"`
 }
 
-type CommandArguments struct {
-	Mode        string `json:"mode"`
-	Placeholder string `json:"placeholder,omitempty"`
-}
-
-type CommandHook struct {
-	Type           string   `json:"type"`
-	Event          string   `json:"event"`
-	Matcher        string   `json:"matcher"`
-	Command        string   `json:"command"`
-	Args           []string `json:"args"`
-	TimeoutSeconds int      `json:"timeout_seconds"`
-	Blocking       bool     `json:"blocking"`
-	Failure        string   `json:"failure"`
-	Authorities    []string `json:"authorities"`
-}
-
 type Resource struct {
-	Command   string            `json:"command,omitempty"`
-	Args      []string          `json:"args,omitempty"`
-	Arguments *CommandArguments `json:"arguments,omitempty"`
-
 	Variants          []ResourceVariant  `json:"variants,omitempty"`
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
@@ -123,7 +99,6 @@ type ClientProjection struct {
 type Binding struct {
 	ClientProjection *ClientProjection `json:"client_projection,omitempty"`
 	Degradation      string            `json:"degradation,omitempty"`
-	Hook             *CommandHook      `json:"hook,omitempty"`
 	Surface          Surface           `json:"surface"`
 	Projection       string            `json:"projection"`
 	Name             string            `json:"name"`
@@ -258,14 +233,7 @@ func CapabilityRich(id string) Fixture {
 				Type: "project-instruction", ProjectInstruction: &SourceCapability{ID: id + "-project", Source: instructionSource},
 			}}),
 		}),
-		{
-			Kind: "lifecycle", ID: "session", Description: "Synthetic runtime session lifecycle",
-			Requires: []string{}, Conflicts: []string{},
-			Bindings: []Binding{
-				binding(SurfaceClaude, "command_hook", "session", "session", "exclusive", nil),
-			},
-			SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "Agents does not project runtime lifecycle configuration"}},
-		},
+
 		{
 			Kind: "notice", ID: "apache", Source: "notices/" + id + "-apache",
 			Description: "Synthetic secondary fixture notice", License: "Apache-2.0", Attribution: "Packy Fixture Authors",
@@ -695,6 +663,9 @@ func binding(surface Surface, projection, name, invocation, sharing string, capa
 		capabilities = []Capability{}
 	}
 	var client *ClientProjection
+	if surface == SurfaceClaude && projection == "agent" {
+		client = &ClientProjection{Client: "claude", Scopes: []string{"global", "project"}}
+	}
 	if surface == SurfaceAgents && projection == "agent" {
 		client = &ClientProjection{Client: "codex", Scopes: []string{"global"}}
 	}

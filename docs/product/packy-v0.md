@@ -13,7 +13,8 @@ current discovery.
 | Authoring | One reviewed manifest and reviewed content per Pack. |
 | Surfaces | Agents and Claude. |
 | Global lifecycle | Inspect, activate, update, status, deactivate, and remove one Pack at a time. |
-| Project lifecycle | Declare and install Packs in a Git worktree; activate personal runtime effects separately. |
+| Project lifecycle | Declare and install Packs in a Git worktree; record applicable personal prerequisites separately. |
+| Content | Instructions, complete skills, and reviewed custom agents with explicit client/scope support; no direct MCP, hooks, or command projections. |
 | State | Minimal installed Pack receipts for ownership, drift, collisions, update, and removal. |
 | External tools | Detect requirements such as Engram without making one Pack depend on another. |
 | Distribution | Immutable GitHub Release archives, checksums, and Homebrew formula. |
@@ -25,7 +26,7 @@ current discovery.
 - Every mutation names one Pack and uses a fresh preview.
 - Multiple Packs coexist through independent receipts.
 - Drift and collisions fail before mutation.
-- Project intent remains reviewable while personal runtime consent stays local.
+- Project intent remains reviewable while personal consent and runtime evidence stay local.
 - Unchanged receipt-owned projections can be updated or removed without
   granting authority over unrelated files.
 - Whole-catalog validation gives maintainers a short authoring feedback loop.

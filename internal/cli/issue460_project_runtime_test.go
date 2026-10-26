@@ -33,9 +33,9 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyOnClaude(t *testing.T) {
 			if len(installation.Lock.ResourceGraph.Resources) == 0 {
 				t.Fatal("installed project lock has no selected resources")
 			}
-			resource := installation.Lock.ResourceGraph.Resources[0].Resource
+			resource := capabilitypack.ResourceIdentity{Kind: "skill", ID: "helper"}
 			installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
-				{Category: capabilitypack.ProjectActivationMCP, Surface: surface, Resource: resource, Detail: "host-owned-runtime-consent"},
+				{Category: capabilitypack.ProjectActivationTrust, Surface: surface, Resource: resource, Detail: "host-owned-runtime-consent"},
 			}
 			lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 			if err != nil {
@@ -46,7 +46,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyOnClaude(t *testing.T) {
 			}
 
 			human, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", string(surface), "--project", "--dry-run")
-			if err != nil || !strings.Contains(human, "Runtime activation: previewable") || !strings.Contains(human, "Approval category: mcp") {
+			if err != nil || !strings.Contains(human, "Runtime activation: previewable") || !strings.Contains(human, "Approval category: trust") {
 				t.Fatalf("human activation preview: %v\n%s", err, human)
 			}
 			structured, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", string(surface), "--project", "--dry-run", "--json")
@@ -54,7 +54,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyOnClaude(t *testing.T) {
 				t.Fatalf("structured activation preview: %v\n%s", err, structured)
 			}
 			var preview capabilitypack.JSONProjectActivationPreview
-			if err := json.Unmarshal([]byte(structured), &preview); err != nil || preview.Surface != surface || preview.Disposition != capabilitypack.ProjectActivationPreviewable || len(preview.Categories) != 1 || preview.Categories[0].Kind != capabilitypack.ProjectActivationMCP || preview.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || len(preview.Conditions) == 0 {
+			if err := json.Unmarshal([]byte(structured), &preview); err != nil || preview.Surface != surface || preview.Disposition != capabilitypack.ProjectActivationPreviewable || len(preview.Categories) != 1 || preview.Categories[0].Kind != capabilitypack.ProjectActivationTrust || preview.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || len(preview.Conditions) == 0 {
 				t.Fatalf("structured preview = %+v, %v", preview, err)
 			}
 
@@ -72,7 +72,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyOnClaude(t *testing.T) {
 			}
 			statusJSON, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", string(surface), "--project", "--json")
 			var report capabilitypack.JSONProjectStatusReport
-			if err != nil || json.Unmarshal([]byte(statusJSON), &report) != nil || len(report.Packs) != 1 || len(report.Packs[0].PendingHumanActions) == 0 || len(report.Packs[0].Evidence) == 0 {
+			if err != nil || json.Unmarshal([]byte(statusJSON), &report) != nil || len(report.Packs) != 1 || report.Packs[0].Readiness.Authorized != capabilitypack.ReadinessUnknown || report.Packs[0].Readiness.Usable != capabilitypack.ReadinessUnknown {
 				t.Fatalf("structured project status = %+v, err=%v, output=%s", report, err, statusJSON)
 			}
 		})

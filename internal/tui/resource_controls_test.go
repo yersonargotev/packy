@@ -71,13 +71,13 @@ func TestResourceConfigurationStagesChangesAndDeselectsConsumers(t *testing.T) {
 	pack := tui.Pack{ID: "resource-controls", Version: "1.0.0", Resources: []tui.Resource{
 		{Identity: "skill:writer", Role: "operational", SelectionClosures: map[string][]string{"agents": {"skill:writer", "skill:helper", "notice:mit"}}},
 		{Identity: "skill:helper", Role: "operational"},
-		{Identity: "mcp_server:search", Role: "operational"},
+		{Identity: "skill:search", Role: "operational"},
 		{Identity: "notice:mit", Role: "notice"},
 	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:writer"}}}}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
 	model := openResourceConfiguration(t, backend, false)
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"[x] skill:writer", "[x] skill:helper", "[ ] mcp_server:search", "notice:mit"} {
+	for _, want := range []string{"[x] skill:writer", "[x] skill:helper", "[ ] skill:search", "notice:mit"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("current selection missing %q:\n%s", want, view)
 		}
@@ -87,7 +87,7 @@ func TestResourceConfigurationStagesChangesAndDeselectsConsumers(t *testing.T) {
 		next, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: code}))
 	}
 	view = ansi.Strip(next.View().Content)
-	for _, want := range []string{"[ ] skill:writer", "[ ] skill:helper", "[x] mcp_server:search", "Also deselected dependent resources: skill:writer"} {
+	for _, want := range []string{"[ ] skill:writer", "[ ] skill:helper", "[x] skill:search", "Also deselected dependent resources: skill:writer"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("staged selection missing %q:\n%s", want, view)
 		}
@@ -97,7 +97,7 @@ func TestResourceConfigurationStagesChangesAndDeselectsConsumers(t *testing.T) {
 	}
 	next, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	runModelMessage(t, next, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "configure" || !slices.Equal(backend.previewRequests[0].Selection.Roots, []string{"mcp_server:search"}) {
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "configure" || !slices.Equal(backend.previewRequests[0].Selection.Roots, []string{"skill:search"}) {
 		t.Fatalf("desired selection was not previewed exactly: %#v", backend.previewRequests)
 	}
 }
@@ -146,7 +146,7 @@ func TestResourceConfigurationAppliesOnlyAfterAllConsentAndReloads(t *testing.T)
 func TestClearingResourceConfigurationPreviewsWholeRemovalAndCanBeCancelled(t *testing.T) {
 	for _, project := range []bool{false, true} {
 		t.Run(fmt.Sprintf("project=%t", project), func(t *testing.T) {
-			pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "command:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Installation: "installed", Runtime: "active", Selection: tui.Selection{Mode: "all"}}}}
+			pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "agent:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Installation: "installed", Runtime: "active", Selection: tui.Selection{Mode: "all"}}}}
 			scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
 			backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope}}
 			backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
@@ -203,24 +203,24 @@ func TestResourceConfigurationLoadsSelectionForChangedSurface(t *testing.T) {
 func TestResourceSearchPreservesHiddenSelectionsAndAcceptsQuitLetter(t *testing.T) {
 	pack := tui.Pack{ID: "resource-list", Resources: []tui.Resource{
 		{Identity: "skill:query", Role: "operational", Description: "Query the project"},
-		{Identity: "command:report", Role: "operational", Description: "Write a report"},
+		{Identity: "skill:report", Role: "operational", Description: "Write a report"},
 	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
 	var model tea.Model = openResourceConfiguration(t, backend, false)
 	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: '/', Text: "/"}))
 	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: 'q', Text: "q"}))
-	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "skill:query") || strings.Contains(view, "command:report") {
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "skill:query") || strings.Contains(view, "skill:report") {
 		t.Fatalf("resource search did not filter the list:\n%s", view)
 	}
 	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: ' ', Text: " "}))
 	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
-	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "[ ] skill:query") || !strings.Contains(view, "[x] command:report") || !strings.Contains(view, "1 of 2 selected") {
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "[ ] skill:query") || !strings.Contains(view, "[x] skill:report") || !strings.Contains(view, "1 of 2 selected") {
 		t.Fatalf("filtering lost or toggled a hidden selection:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if len(backend.previewRequests) != 1 || !slices.Equal(backend.previewRequests[0].Selection.Roots, []string{"command:report"}) {
+	if len(backend.previewRequests) != 1 || !slices.Equal(backend.previewRequests[0].Selection.Roots, []string{"skill:report"}) {
 		t.Fatalf("filtered edit sent the wrong desired resources: %#v", backend.previewRequests)
 	}
 }

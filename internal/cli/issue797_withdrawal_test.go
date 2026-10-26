@@ -393,9 +393,9 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resource := installation.Lock.ResourceGraph.Resources[0].Resource
+	resource := capabilitypack.ResourceIdentity{Kind: "skill", ID: "helper"}
 	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{{
-		Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceClaude, Resource: resource, Detail: "project-only-runtime-consent",
+		Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceClaude, Resource: resource, Detail: "project-only-runtime-consent",
 	}}
 	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {

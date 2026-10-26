@@ -299,7 +299,7 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
     {
       "kind": "agent", "id": "reviewer", "source": "agents/reviewer.md", "description": "Reviews changes", "mode": "subagent",
       "tools": [], "permissions": [], "requires": ["skill:workflow"], "conflicts": [],
-      "bindings": [{"surface":"claude","projection":"agent","name":"reviewer","invocation":"@reviewer","mode":"native","sharing":"exclusive","capabilities":[{"type":"claude-agent-document","claude_agent_document":{"skills":[{"kind":"skill","id":"workflow"}],"authority":{"permission_mode":"default","authorities":[]}}}]}],
+      "bindings": [{"surface":"claude","projection":"agent","client_projection":{"client":"claude","scopes":["global","project"]},"name":"reviewer","invocation":"@reviewer","mode":"native","sharing":"exclusive","capabilities":[{"type":"claude-agent-document","claude_agent_document":{"skills":[{"kind":"skill","id":"workflow"}],"authority":{"permission_mode":"default","authorities":[]}}}]}],
       "surface_exclusions": []
     },
     {

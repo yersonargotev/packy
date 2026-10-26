@@ -12,6 +12,15 @@ The previous stable release is `v0.2.30`.
   mutation, and role files do not prove runtime delegation. Retired `codex`
   contracts require the previous-binary handoff rather than an alias or migration.
 
+- Narrow Claude to global/project instructions, complete skills, and reviewed
+  native custom-agent documents with explicit client/scope support. Required
+  roles retain dependencies, ownership, drift protection, update, and removal.
+  Retire direct MCP, hooks, commands, and their runtime setup paths; retired
+  contracts are rejected instead of converted. Skill templates and compositions
+  remain supported for skills. Generated role policy is not enforced permission
+  or evidence of successful delegation. Use the previous binary to remove
+  retired projections before adopting this generation.
+
 - Retire OpenCode from the CLI, TUI, catalog contracts, installation state, and
   discovery. Supported surfaces are `agents` and `claude`.
   Retired surface values and OpenCode capabilities fail without mutation; no

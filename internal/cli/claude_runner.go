@@ -10,7 +10,7 @@ import (
 )
 
 // execClaudeRunner is the bounded output-capturing boundary required by
-// Claude's version and official user-MCP effects. Command.String remains the
+// Claude's version observation. Command.String remains the
 // only renderable description, so environment values never enter errors.
 type execClaudeRunner struct{}
 

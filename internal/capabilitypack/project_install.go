@@ -487,7 +487,7 @@ func coalesceProjectComposableActions(actions []ProjectionAction) []ProjectionAc
 	result := make([]ProjectionAction, 0, len(actions))
 	indices := map[string]int{}
 	for _, action := range actions {
-		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction
 		if !composable {
 			result = append(result, action)
 			continue
@@ -645,8 +645,6 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
-		} else if projection.Action.Kind == ActionClaudeProjectMCP {
-			mode, fileMode = "merge_structured_file", projection.Action.FileMode
 		}
 		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, OwnerPack: pack.ID, Surface: request.Surface, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...)})
 		if state != "owned" && state != "drifted" {
@@ -1066,8 +1064,6 @@ func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) st
 	switch resource.Kind {
 	case "notice", "instruction":
 		return "merge_marked_file"
-	case "mcp_server":
-		return "merge_structured_file"
 	case "skill":
 		if surface == SurfaceAgents || surface == SurfaceClaude {
 			return "copy_tree"

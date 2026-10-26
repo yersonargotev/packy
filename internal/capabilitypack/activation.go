@@ -60,7 +60,6 @@ const (
 	ActionClaudeProjectSkillTree   ProjectionActionKind = "claude-project-skill-tree"
 	ActionClaudeProjectFile        ProjectionActionKind = "claude-project-file"
 	ActionClaudeProjectInstruction ProjectionActionKind = "claude-project-instruction"
-	ActionClaudeProjectMCP         ProjectionActionKind = "claude-project-mcp"
 	ActionProjectManifestFile      ProjectionActionKind = "project-manifest-file"
 	ActionProjectLockFile          ProjectionActionKind = "project-lock-file"
 	ActionProjectNoticesFile       ProjectionActionKind = "project-notices-file"
@@ -240,24 +239,6 @@ type SurfaceTransition struct {
 	ProjectInstallation    *ProjectInstallation
 	ProjectGoal            ProjectionGoal
 	ProjectInspectionScope ProjectInspectionScope
-	ProjectEffectReceipts  []ProjectActivationEffectReceipt
-}
-
-type ProjectEffectState string
-
-const (
-	ProjectEffectAbsent  ProjectEffectState = "absent"
-	ProjectEffectExact   ProjectEffectState = "exact"
-	ProjectEffectDrifted ProjectEffectState = "drifted"
-)
-
-type ObservedProjectEffect struct {
-	Kind                ProjectionActionKind
-	Target              string
-	State               ProjectEffectState
-	ObservedFingerprint string
-	AdapterProvenance   string
-	Action              ProjectionAction
 }
 
 type SurfaceInspection struct {
@@ -267,16 +248,14 @@ type SurfaceInspection struct {
 	// check. Empty fields are normalized by the capability-pack domain so older
 	// adapters remain safe: they can never accidentally share evidence across a
 	// later adapter or observable host identity.
-	ControlledCheck            ControlledCheckDescriptor
-	Projections                []ObservedProjection
-	OccupiedNames              []OccupiedName
-	RuntimeModeEvidence        []RuntimeModeEvidence
-	RuntimeModeResults         []RuntimeModeResult
-	Readiness                  ReadinessObservation
-	PendingHumanActions        []string
-	Unrepresentable            []UnrepresentableResource
-	ProjectActivationActions   []ProjectionAction
-	ProjectDeactivationEffects []ObservedProjectEffect
+	ControlledCheck     ControlledCheckDescriptor
+	Projections         []ObservedProjection
+	OccupiedNames       []OccupiedName
+	RuntimeModeEvidence []RuntimeModeEvidence
+	RuntimeModeResults  []RuntimeModeResult
+	Readiness           ReadinessObservation
+	PendingHumanActions []string
+	Unrepresentable     []UnrepresentableResource
 }
 
 type UnrepresentableResource struct {
@@ -1141,7 +1120,7 @@ func isPackResourceProjection(id string) bool {
 		return false
 	}
 	switch kind {
-	case "skill", "instruction", "mcp_server", "lifecycle", "agent", "command", "asset", "notice":
+	case "skill", "instruction", "agent", "asset", "notice":
 		return true
 	default:
 		return false
@@ -2335,56 +2314,6 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return SurfaceInspection{}, fmt.Errorf("surface adapter returned zero goal for projection %q", projection.ID)
 		}
 	}
-	activationActions := make(map[string]struct{}, len(observation.ProjectActivationActions))
-	for _, action := range observation.ProjectActivationActions {
-		key := action.ID + "\x00" + action.Target
-		if transition.ProjectRoot == "" || transition.ProjectInstallation == nil {
-			return SurfaceInspection{}, errors.New("surface adapter returned a personal project action outside locked project inspection")
-		}
-		if err := validatePersonalProjectAction(action); err != nil {
-			return SurfaceInspection{}, err
-		}
-		if _, duplicate := activationActions[key]; duplicate {
-			return SurfaceInspection{}, errors.New("surface adapter returned a duplicate personal Agents project action")
-		}
-		activationActions[key] = struct{}{}
-	}
-	expectedEffects := make(map[string]ProjectActivationEffectReceipt, len(transition.ProjectEffectReceipts))
-	for _, receipt := range transition.ProjectEffectReceipts {
-		key := string(receipt.Action) + "\x00" + receipt.Target
-		if _, duplicate := expectedEffects[key]; duplicate || !validProjectActivationEffectReceipt(receipt) {
-			return SurfaceInspection{}, errors.New("project effect transition contains malformed or duplicate receipts")
-		}
-		expectedEffects[key] = receipt
-	}
-	observedEffects := make(map[string]struct{}, len(observation.ProjectDeactivationEffects))
-	for _, effect := range observation.ProjectDeactivationEffects {
-		key := string(effect.Kind) + "\x00" + effect.Target
-		receipt, expected := expectedEffects[key]
-		if !expected {
-			return SurfaceInspection{}, errors.New("surface adapter returned an unreceipted personal project effect")
-		}
-		if _, duplicate := observedEffects[key]; duplicate || effect.AdapterProvenance == "" {
-			return SurfaceInspection{}, errors.New("surface adapter returned a malformed or duplicate personal project effect")
-		}
-		observedEffects[key] = struct{}{}
-		switch effect.State {
-		case ProjectEffectAbsent, ProjectEffectDrifted:
-			if effect.Action.Kind != "" {
-				return SurfaceInspection{}, errors.New("surface adapter granted a reversal action for a non-exact personal project effect")
-			}
-		case ProjectEffectExact:
-			action := effect.Action
-			if effect.AdapterProvenance != receipt.AdapterProvenance || action.Kind != receipt.Action || action.Surface != receipt.Surface || filepath.Clean(action.Target) != filepath.Clean(receipt.Target) || action.AdapterProvenance != receipt.AdapterProvenance || action.Consent != ConsentDestructiveCleanup || !action.PreviewOnly || action.Content == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" {
-				return SurfaceInspection{}, errors.New("surface adapter returned a malformed receipted personal project reversal")
-			}
-		default:
-			return SurfaceInspection{}, errors.New("surface adapter returned an unsupported personal project effect state")
-		}
-	}
-	if len(observedEffects) != len(expectedEffects) {
-		return SurfaceInspection{}, errors.New("surface adapter omitted a receipted personal project effect")
-	}
 	unrepresentable := make(map[string]struct{}, len(observation.Unrepresentable))
 	for _, resource := range observation.Unrepresentable {
 		key := resource.Resource.String()
@@ -2467,12 +2396,7 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		}
 		return observation.OccupiedNames[i].Name < observation.OccupiedNames[j].Name
 	})
-	sort.Slice(observation.ProjectActivationActions, func(i, j int) bool {
-		return observation.ProjectActivationActions[i].ID+"\x00"+observation.ProjectActivationActions[i].Target < observation.ProjectActivationActions[j].ID+"\x00"+observation.ProjectActivationActions[j].Target
-	})
-	sort.Slice(observation.ProjectDeactivationEffects, func(i, j int) bool {
-		return string(observation.ProjectDeactivationEffects[i].Kind)+"\x00"+observation.ProjectDeactivationEffects[i].Target < string(observation.ProjectDeactivationEffects[j].Kind)+"\x00"+observation.ProjectDeactivationEffects[j].Target
-	})
+
 	sort.Strings(observation.PendingHumanActions)
 	sort.Strings(observation.Readiness.PendingHumanActions)
 	sort.Strings(observation.Readiness.Evidence)
@@ -2487,10 +2411,6 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			runtimeModeEvidenceKey(observation.RuntimeModeEvidence[j].ResourceID, observation.RuntimeModeEvidence[j].ModeID)
 	})
 	return observation, nil
-}
-
-func validatePersonalProjectAction(_ ProjectionAction) error {
-	return errors.New("surface adapter returned an unsupported personal project action")
 }
 
 // Deactivation still needs the prior explicit client to inspect and retire its
@@ -2543,7 +2463,6 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 		value.ReceiptOwnership = append([]ProjectionOwnership{}, value.ReceiptOwnership...)
 	}
 	value.ResolvedExecutables = cloneResolutions(value.ResolvedExecutables)
-	value.ProjectEffectReceipts = append([]ProjectActivationEffectReceipt(nil), value.ProjectEffectReceipts...)
 	if value.ProjectInstallation != nil {
 		data, _ := json.Marshal(value.ProjectInstallation)
 		var installation ProjectInstallation
@@ -2565,14 +2484,6 @@ func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
 	value.RuntimeModeResults = cloneRuntimeModeResults(value.RuntimeModeResults)
 	for i := range value.Projections {
 		value.Projections[i].Action.Args = append([]string(nil), value.Projections[i].Action.Args...)
-	}
-	value.ProjectActivationActions = append([]ProjectionAction(nil), value.ProjectActivationActions...)
-	for i := range value.ProjectActivationActions {
-		value.ProjectActivationActions[i].Args = append([]string(nil), value.ProjectActivationActions[i].Args...)
-	}
-	value.ProjectDeactivationEffects = append([]ObservedProjectEffect(nil), value.ProjectDeactivationEffects...)
-	for i := range value.ProjectDeactivationEffects {
-		value.ProjectDeactivationEffects[i].Action.Args = append([]string(nil), value.ProjectDeactivationEffects[i].Action.Args...)
 	}
 	value.PendingHumanActions = append([]string(nil), value.PendingHumanActions...)
 	value.Unrepresentable = append([]UnrepresentableResource(nil), value.Unrepresentable...)

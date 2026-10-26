@@ -12,7 +12,7 @@ import (
 
 func TestIssue461ProjectRuntimeCompositionUsesOneHumanAndStructuredVocabulary(t *testing.T) {
 	effect := capabilitypack.ProjectRuntimeEffectStatus{
-		Category: capabilitypack.ProjectActivationMCP, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp_server",
+		Category: capabilitypack.ProjectActivationTrust, Resource: capabilitypack.ResourceIdentity{Kind: "agent", ID: "reviewer"}, Detail: "reviewed-agent-trust",
 		Coverage: capabilitypack.ProjectRuntimeCoverageInheritedGlobal, GlobalVersion: "1.0.0",
 	}
 	status := capabilitypack.JSONProjectStatusReport{SchemaVersion: capabilitypack.ProjectStatusSchemaVersion, Report: "project-status", ProjectRoot: "<project-root>", Packs: []capabilitypack.JSONProjectPackStatus{{

@@ -129,13 +129,13 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(w,
-		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nCatalog authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
+		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nCatalog authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d agent, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
 		document.CatalogIdentity.PackID, document.CatalogIdentity.Version, document.CatalogIdentity.SchemaVersion,
 		document.CatalogIdentity.Limitation, joinSurfaces(document.Surfaces), joinOrNone(document.Requires.Tools),
 		document.ResourceCounts.Skills, document.ResourceCounts.Instructions,
-		document.ResourceCounts.MCPServers, document.ResourceCounts.Lifecycles, document.ResourceCounts.Agents,
-		document.ResourceCounts.Commands, document.ResourceCounts.Assets, document.ResourceCounts.Notices,
+		document.ResourceCounts.Agents,
+		document.ResourceCounts.Assets, document.ResourceCounts.Notices,
 		yesNo(document.LifecycleAvailability.FreshActivationAvailable), yesNo(document.LifecycleAvailability.CatalogUpdateAvailable),
 		yesNo(document.LifecycleAvailability.LifecycleVerbsAvailable), yesNo(document.LifecycleAvailability.AutomaticDowngrade),
 	); err != nil {
@@ -183,8 +183,8 @@ func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContra
 	}
 	counts := contract.Counts
 	if _, err := fmt.Fprintf(w,
-		"Logical resources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nDependency closure: %s\n",
-		counts.Skills, counts.Instructions, counts.MCPServers, counts.Lifecycles, counts.Agents, counts.Commands,
+		"Logical resources: %d skill, %d instruction, %d agent, %d asset, %d notice\nDependency closure: %s\n",
+		counts.Skills, counts.Instructions, counts.Agents,
 		counts.Assets, counts.Notices, joinFacts(contract.DependencyClosure),
 	); err != nil {
 		return err

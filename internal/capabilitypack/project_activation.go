@@ -20,9 +20,6 @@ const ProjectActivationPreviewSchemaVersion = 3
 type ProjectActivationCategory string
 
 const (
-	ProjectActivationMCP                  ProjectActivationCategory = "mcp"
-	ProjectActivationHooks                ProjectActivationCategory = "hooks"
-	ProjectActivationPlugins              ProjectActivationCategory = "plugins"
 	ProjectActivationExternalRequirements ProjectActivationCategory = "external-requirements"
 	ProjectActivationTrust                ProjectActivationCategory = "trust"
 	ProjectActivationAuthentication       ProjectActivationCategory = "authentication"
@@ -54,16 +51,6 @@ type ProjectActivationCategoryPreview struct {
 	ApprovalRequired bool                         `json:"approval_required"`
 }
 
-type ProjectActivationEffectPreview struct {
-	Category          ProjectActivationCategory `json:"category"`
-	Action            ProjectionActionKind      `json:"action"`
-	Target            string                    `json:"target"`
-	Identity          string                    `json:"identity"`
-	Observation       string                    `json:"observation"`
-	AdapterProvenance string                    `json:"adapter_provenance,omitempty"`
-	Consent           ConsentKind               `json:"consent,omitempty"`
-}
-
 type ProjectActivationRequest struct {
 	PackID      string
 	Surface     Surface
@@ -82,7 +69,6 @@ type JSONProjectActivationPreview struct {
 	RuntimeRequired       bool                               `json:"runtime_required"`
 	Disposition           ProjectActivationDisposition       `json:"disposition"`
 	Categories            []ProjectActivationCategoryPreview `json:"categories"`
-	Effects               []ProjectActivationEffectPreview   `json:"effects"`
 	SensitiveLockIdentity string                             `json:"sensitive_lock_identity"`
 	RuntimeEffects        []ProjectRuntimeEffectStatus       `json:"runtime_effects"`
 	Digest                string                             `json:"digest"`
@@ -91,7 +77,6 @@ type JSONProjectActivationPreview struct {
 	projectRoot           string
 	packyHome             string
 	request               ProjectActivationRequest
-	actions               []ProjectionAction
 }
 
 type ProjectActivationApproval struct {
@@ -134,28 +119,16 @@ type projectActivationReceipt struct {
 	Details  []ProjectSensitiveDisclosure `json:"details"`
 }
 
-type ProjectActivationEffectReceipt struct {
-	Action               ProjectionActionKind `json:"action"`
-	Surface              Surface              `json:"surface"`
-	Target               string               `json:"target"`
-	ContributionIdentity string               `json:"contribution_identity"`
-	AdapterProvenance    string               `json:"adapter_provenance"`
-	StartMarker          string               `json:"start_marker"`
-	EndMarker            string               `json:"end_marker"`
-	PriorState           string               `json:"prior_state"`
-}
-
 type projectActivationDocument struct {
-	SchemaVersion         int                              `json:"schema_version"`
-	State                 projectActivationState           `json:"state"`
-	Approvals             []ProjectActivationApproval      `json:"approvals"`
-	Receipts              []projectActivationReceipt       `json:"receipts"`
-	Effects               []ProjectActivationEffectReceipt `json:"effects"`
-	SensitiveLockIdentity string                           `json:"sensitive_lock_identity"`
+	SchemaVersion         int                         `json:"schema_version"`
+	State                 projectActivationState      `json:"state"`
+	Approvals             []ProjectActivationApproval `json:"approvals"`
+	Receipts              []projectActivationReceipt  `json:"receipts"`
+	SensitiveLockIdentity string                      `json:"sensitive_lock_identity"`
 }
 
 func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectActivationRequest) (JSONProjectActivationPreview, error) {
-	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, Effects: []ProjectActivationEffectPreview{}, RuntimeEffects: []ProjectRuntimeEffectStatus{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
+	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, RuntimeEffects: []ProjectRuntimeEffectStatus{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
 	if err := ValidateSurface(request.Surface); err != nil {
 		return report, err
 	}
@@ -212,12 +185,6 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if blockers := skillDiscoveryBlockers(observation.SkillDiscovery); len(blockers) > 0 {
 		return report, errors.New(blockers[0].Detail)
 	}
-	report.actions = append([]ProjectionAction(nil), observation.ProjectActivationActions...)
-	for _, action := range report.actions {
-		if effect, ok := projectActivationEffectPreview(action); ok {
-			report.Effects = append(report.Effects, effect)
-		}
-	}
 	categories := projectActivationCategories(scopedInstallation.Lock, request.Surface)
 	report.Pack, report.Surface, report.RuntimeEffects = pack, request.Surface, status.Packs[0].RuntimeEffects
 	report.ExpectedReadiness, report.Conditions = status.Packs[0].Readiness, cloneReadinessConditions(status.Packs[0].Conditions)
@@ -239,7 +206,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 		return report, nil
 	}
 	state := document.State
-	if exists && projectActivationEffectsConverged(request.Surface, observation) && status.Packs[0].Runtime == ProjectRuntimeActive && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
+	if exists && status.Packs[0].Runtime == ProjectRuntimeActive && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
 		report.Disposition = ProjectActivationConverged
 	} else {
 		report.Disposition = ProjectActivationPreviewable
@@ -259,14 +226,6 @@ func ProjectPackRequiresActivation(lock ProjectLockProposal, packID string, surf
 
 func (f Facade) ApproveProjectActivation(preview JSONProjectActivationPreview, category ProjectActivationCategory) ProjectActivationApproval {
 	return ProjectActivationApproval{Category: category, Digest: preview.Digest}
-}
-
-func projectActivationEffectPreview(_ ProjectionAction) (ProjectActivationEffectPreview, bool) {
-	return ProjectActivationEffectPreview{}, false
-}
-
-func projectActivationEffectsConverged(_ Surface, observation SurfaceInspection) bool {
-	return len(observation.ProjectActivationActions) == 0
 }
 
 func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActivationApplyRequest) (ProjectActivationApplyResult, error) {
@@ -305,33 +264,17 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	for _, category := range preview.Categories {
 		receipts = append(receipts, projectActivationReceipt{Category: category.Kind, Digest: preview.Digest, Details: append([]ProjectSensitiveDisclosure(nil), category.Details...)})
 	}
-	effectReceipts := projectActivationEffectReceipts(fresh.actions)
-	if existing, exists, loadErr := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface); loadErr != nil {
-		return ProjectActivationApplyResult{}, loadErr
-	} else if exists {
-		effectReceipts = mergeProjectActivationEffectReceipts(existing.Effects, effectReceipts)
-	}
-	actions := append([]ProjectionAction(nil), fresh.actions...)
-	for i := range actions {
-		actions[i].PreviewOnly = false
-	}
-	if actionErr := request.Adapter.ApplyProjections(ctx, actions); actionErr != nil {
-		return ProjectActivationApplyResult{}, actionErr
-	}
 	installation, err := LoadProjectInstallation(preview.projectRoot)
 	if err != nil {
 		return ProjectActivationApplyResult{}, err
 	}
 	scopedInstallation := projectInstallationForPack(installation, preview.Pack.ID)
 	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: preview.projectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
-	if err != nil || !projectActivationEffectsConverged(preview.Surface, verified) {
-		if err != nil {
-			return ProjectActivationApplyResult{}, err
-		}
-		return ProjectActivationApplyResult{}, fmt.Errorf("%s project runtime effects were not verified after activation", preview.Surface)
+	if err != nil {
+		return ProjectActivationApplyResult{}, err
 	}
 	state.Active = true
-	if err := saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts, effectReceipts); err != nil {
+	if err := saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts); err != nil {
 		return ProjectActivationApplyResult{}, err
 	}
 	readinessPack := projectReadinessPack(scopedInstallation.Lock, preview.Surface, preview.Pack)
@@ -355,24 +298,7 @@ func projectActivationCategories(lock ProjectLockProposal, surface Surface) []Pr
 			byCategory[disclosure.Category] = append(byCategory[disclosure.Category], disclosure)
 		}
 	}
-	for _, binding := range lock.Bindings {
-		if binding.Surface != surface {
-			continue
-		}
-		category := ProjectActivationCategory("")
-		switch {
-		case binding.Kind == "mcp_server" || binding.Projection == "mcp_server":
-			category = ProjectActivationMCP
-		case binding.Kind == "lifecycle" || binding.Projection == "lifecycle":
-			category = ProjectActivationHooks
-		case binding.Projection == "plugin":
-			category = ProjectActivationPlugins
-		}
-		if category != "" {
-			byCategory[category] = append(byCategory[category], ProjectSensitiveDisclosure{Category: category, Surface: surface, Resource: ResourceIdentity{Kind: binding.Kind, ID: binding.ID}, Detail: binding.Projection})
-		}
-	}
-	order := []ProjectActivationCategory{ProjectActivationMCP, ProjectActivationHooks, ProjectActivationPlugins, ProjectActivationExternalRequirements, ProjectActivationTrust, ProjectActivationAuthentication}
+	order := []ProjectActivationCategory{ProjectActivationExternalRequirements, ProjectActivationTrust, ProjectActivationAuthentication}
 	result := make([]ProjectActivationCategoryPreview, 0, len(order))
 	for _, kind := range order {
 		details := deduplicateProjectSensitiveDisclosures(byCategory[kind])
@@ -391,11 +317,6 @@ func projectSensitiveDisclosures(pack Pack, surface Surface) []ProjectSensitiveD
 		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
 		for _, tool := range resource.RequiresTools {
 			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: identity, Detail: "tool:" + tool})
-		}
-		for _, binding := range resource.Bindings {
-			if binding.Surface == surface && (resource.Kind == "mcp_server" || binding.Projection == "mcp_server") {
-				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: identity, Detail: "project-trust"})
-			}
 		}
 		for _, permission := range resource.Permissions {
 			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: identity, Detail: permission})
@@ -419,17 +340,7 @@ func projectSensitiveDisclosures(pack Pack, surface Surface) []ProjectSensitiveD
 		}
 	}
 	for _, tool := range pack.Requires.Tools {
-		matchedResource := false
-		for _, resource := range pack.Resources {
-			if resource.Kind == "mcp_server" && resource.Command == tool {
-				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, Detail: "tool:" + tool})
-				matchedResource = true
-				break
-			}
-		}
-		if !matchedResource {
-			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: ResourceIdentity{Kind: "pack", ID: pack.ID}, Detail: "tool:" + tool})
-		}
+		values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: ResourceIdentity{Kind: "pack", ID: pack.ID}, Detail: "tool:" + tool})
 	}
 	return deduplicateProjectSensitiveDisclosures(values)
 }
@@ -454,12 +365,6 @@ func deduplicateProjectSensitiveDisclosures(values []ProjectSensitiveDisclosure)
 
 func projectActivationCategoryIndex(category ProjectActivationCategory) int {
 	switch category {
-	case ProjectActivationMCP:
-		return 0
-	case ProjectActivationHooks:
-		return 1
-	case ProjectActivationPlugins:
-		return 2
 	case ProjectActivationExternalRequirements:
 		return 3
 	case ProjectActivationTrust:
@@ -520,7 +425,7 @@ func projectProjectionOwnedBySurface(projection ProjectProjectionPlan, surface S
 
 func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
 	catalogSnapshot := preview.Pack.CatalogSnapshot
-	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request, preview.actions = "", "", "", "", ProjectActivationRequest{}, nil
+	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request = "", "", "", "", ProjectActivationRequest{}
 	preview.ExpectedReadiness, preview.Conditions = ReadinessStatus{}, nil
 	data, _ := json.Marshal(struct {
 		Preview         JSONProjectActivationPreview `json:"preview"`
@@ -528,40 +433,6 @@ func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
 	}{Preview: preview, CatalogSnapshot: catalogSnapshot})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
-}
-
-func projectActivationActionObservation(action ProjectionAction) string {
-	data, _ := json.Marshal(struct {
-		ID, Target, Version, Precondition, AdapterProvenance string
-		Kind                                                 ProjectionActionKind
-		Consent                                              ConsentKind
-		FileMode                                             uint32
-	}{action.ID, action.Target, action.Version, action.Precondition, action.AdapterProvenance, action.Kind, action.Consent, action.FileMode})
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func projectActivationEffectReceipts(actions []ProjectionAction) []ProjectActivationEffectReceipt {
-	receipts := make([]ProjectActivationEffectReceipt, 0, len(actions))
-	for _, action := range actions {
-		receipts = append(receipts, ProjectActivationEffectReceipt{Action: action.Kind, Surface: action.Surface, Target: action.Target, ContributionIdentity: action.Version, AdapterProvenance: action.AdapterProvenance, StartMarker: action.ContributionStartMarker, EndMarker: action.ContributionEndMarker, PriorState: "absent"})
-	}
-	return receipts
-}
-
-func mergeProjectActivationEffectReceipts(left, right []ProjectActivationEffectReceipt) []ProjectActivationEffectReceipt {
-	byTarget := map[string]ProjectActivationEffectReceipt{}
-	for _, receipt := range append(append([]ProjectActivationEffectReceipt(nil), left...), right...) {
-		byTarget[string(receipt.Action)+"\x00"+receipt.Target] = receipt
-	}
-	result := make([]ProjectActivationEffectReceipt, 0, len(byTarget))
-	for _, receipt := range byTarget {
-		result = append(result, receipt)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return string(result[i].Action)+"\x00"+result[i].Target < string(result[j].Action)+"\x00"+result[j].Target
-	})
-	return result
 }
 
 func validateProjectActivationApprovals(preview JSONProjectActivationPreview, approvals []ProjectActivationApproval) error {
@@ -650,22 +521,10 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID stri
 		}
 		receipts[receipt.Category] = true
 	}
-	effects := map[string]bool{}
-	for _, effect := range document.Effects {
-		key := string(effect.Action) + "\x00" + effect.Target
-		if effects[key] || !validProjectActivationEffectReceipt(effect) {
-			return projectActivationDocument{}, false, errors.New("project activation effect receipts are malformed or duplicated")
-		}
-		effects[key] = true
-	}
 	return document, true, nil
 }
 
-func validProjectActivationEffectReceipt(_ ProjectActivationEffectReceipt) bool {
-	return false // No current surface owns personal configuration effects.
-}
-
-func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []ProjectActivationEffectReceipt) error {
+func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt) error {
 	if err := ValidateSurface(state.Surface); err != nil {
 		return err
 	}
@@ -677,7 +536,7 @@ func saveProjectActivationRecords(packyHome, projectRoot string, state projectAc
 		return err
 	}
 	document := projectActivationDocument{
-		SchemaVersion: projectActivationDocumentSchemaVersion, State: state, Approvals: approvals, Receipts: receipts, Effects: effects,
+		SchemaVersion: projectActivationDocumentSchemaVersion, State: state, Approvals: approvals, Receipts: receipts,
 		SensitiveLockIdentity: state.SensitiveLockIdentity,
 	}
 	data, err := json.Marshal(document)

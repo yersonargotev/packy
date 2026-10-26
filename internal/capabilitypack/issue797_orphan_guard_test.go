@@ -35,7 +35,7 @@ func TestIssue797ProjectInstallApplyRejectsOrphanCreatedAfterPreview(t *testing.
 	}
 	if err := saveProjectActivationRecords(packyHome, project, state,
 		[]ProjectActivationApproval{{Category: ProjectActivationTrust, Digest: "approved"}},
-		[]projectActivationReceipt{{Category: ProjectActivationTrust, Digest: "approved", Details: []ProjectSensitiveDisclosure{detail}}}, nil,
+		[]projectActivationReceipt{{Category: ProjectActivationTrust, Digest: "approved", Details: []ProjectSensitiveDisclosure{detail}}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -84,10 +84,7 @@ func TestIssue797FocusedProjectStatusIgnoresUnrelatedOrphan(t *testing.T) {
 	}
 	adapter.applied = true
 
-	saveIssue797Orphan(t, packyHome, project, "unrelated", SurfaceClaude, []ProjectActivationEffectReceipt{{
-		Action: ProjectionActionKind("retired-project-trust"), Surface: SurfaceClaude, Target: filepath.Join(t.TempDir(), "config.toml"),
-		ContributionIdentity: "unrelated-contribution", AdapterProvenance: "claude-project/v1/project-trust", StartMarker: "start", EndMarker: "end", PriorState: "absent",
-	}})
+	saveIssue797Orphan(t, packyHome, project, "unrelated", SurfaceClaude)
 
 	report, err := InspectProjectStatus(context.Background(), ProjectStatusRequest{
 		ProjectRoot: project, PackyHome: packyHome, PackID: installed.ID, Surface: SurfaceAgents,
@@ -103,7 +100,7 @@ func TestIssue797FocusedProjectStatusIgnoresUnrelatedOrphan(t *testing.T) {
 
 func TestIssue797OrphanFailsProjectStatusRequirements(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
-	saveIssue797Orphan(t, packyHome, project, "orphan", SurfaceAgents, nil)
+	saveIssue797Orphan(t, packyHome, project, "orphan", SurfaceAgents)
 
 	for _, test := range []struct {
 		name             string
@@ -132,7 +129,7 @@ func TestIssue797OrphanFailsProjectStatusRequirements(t *testing.T) {
 	}
 }
 
-func saveIssue797Orphan(t *testing.T, packyHome, projectRoot, packID string, surface Surface, effects []ProjectActivationEffectReceipt) {
+func saveIssue797Orphan(t *testing.T, packyHome, projectRoot, packID string, surface Surface) {
 	t.Helper()
 	rootDigest, err := projectActivationRootDigest(projectRoot)
 	if err != nil {
@@ -146,7 +143,7 @@ func saveIssue797Orphan(t *testing.T, packyHome, projectRoot, packID string, sur
 	detail := ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: resource, Detail: "project-trust"}
 	if err := saveProjectActivationRecords(packyHome, projectRoot, state,
 		[]ProjectActivationApproval{{Category: ProjectActivationTrust, Digest: "approved"}},
-		[]projectActivationReceipt{{Category: ProjectActivationTrust, Digest: "approved", Details: []ProjectSensitiveDisclosure{detail}}}, effects,
+		[]projectActivationReceipt{{Category: ProjectActivationTrust, Digest: "approved", Details: []ProjectSensitiveDisclosure{detail}}},
 	); err != nil {
 		t.Fatal(err)
 	}

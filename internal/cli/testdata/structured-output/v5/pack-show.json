@@ -32,26 +32,6 @@
       "role": "operational",
       "dependencies": [],
       "notices": []
-    },
-    {
-      "resource": {
-        "kind": "lifecycle",
-        "id": "engram-memory"
-      },
-      "description": "Runs Engram's host setup so Agents and OpenCode receive their native memory integration",
-      "role": "operational",
-      "dependencies": [],
-      "notices": []
-    },
-    {
-      "resource": {
-        "kind": "mcp_server",
-        "id": "engram"
-      },
-      "description": "Makes Engram memory tools available to agents through MCP",
-      "role": "operational",
-      "dependencies": [],
-      "notices": []
     }
   ],
   "lifecycle_availability": {},

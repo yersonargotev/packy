@@ -291,10 +291,7 @@
             "asset",
             "notice",
             "instruction",
-            "mcp_server",
-            "agent",
-            "command",
-            "lifecycle"
+            "agent"
           ]
         },
         "id": {

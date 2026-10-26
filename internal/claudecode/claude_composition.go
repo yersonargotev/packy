@@ -11,9 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
@@ -53,7 +51,7 @@ func claudeCompositeSkillBuilder(pack capabilitypack.Pack, resource capabilitypa
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" {
 		return nil
 	}
-	if _, ok := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); ok && (resource.Kind == "skill" || resource.Kind == "command") {
+	if _, ok := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); ok && resource.Kind == "skill" {
 		return composeClaudeSkill
 	}
 	return nil
@@ -74,7 +72,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	if !ok || capability.ClaudeCompositeSkill == nil {
 		return compositeSkill{}, errors.New("resource does not declare Claude composite skill capability")
 	}
-	if resource.Kind != "skill" && resource.Kind != "command" {
+	if resource.Kind != "skill" {
 		return compositeSkill{}, fmt.Errorf("unsupported Claude composite kind %q", resource.Kind)
 	}
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" || binding.Name == "" {
@@ -84,34 +82,7 @@ func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	if err != nil {
 		return compositeSkill{}, err
 	}
-	var files []compositeFile
-	if resource.Kind == "skill" {
-		files, err = readCompositeTree(source)
-	} else {
-		var raw []byte
-		var info os.FileInfo
-		info, err = os.Lstat(source)
-		if err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
-			err = errors.New("Claude command source is not a regular file")
-		}
-		if err == nil {
-			raw, err = os.ReadFile(source)
-		}
-		if err == nil {
-			var command claudeCommandSource
-			command, err = decodeClaudeCommandSource(raw)
-			if err == nil {
-				var dependencies []string
-				dependencies, err = resolveClaudeCompositeDependencies(pack, capability.ClaudeCompositeSkill.Dependencies)
-				if err == nil {
-					files = []compositeFile{
-						{Path: "SKILL.md", Content: renderClaudeCommandSkill(binding.Name, command, dependencies), Mode: 0o644},
-						{Path: "source/" + filepath.Base(resource.Source), Content: append([]byte(nil), raw...), Mode: 0o644},
-					}
-				}
-			}
-		}
-	}
+	files, err := readCompositeTree(source)
 	if err != nil {
 		return compositeSkill{}, err
 	}
@@ -258,197 +229,6 @@ func uniqueResource(pack capabilitypack.Pack, kind, id string) (capabilitypack.R
 	return *found, nil
 }
 
-func resolveClaudeCompositeDependencies(pack capabilitypack.Pack, requested []capabilitypack.ResourceIdentity) ([]string, error) {
-	seen := map[string]bool{}
-	result := []string{}
-	for _, identity := range requested {
-		required := identity.Kind + ":" + identity.ID
-		if seen[required] {
-			return nil, fmt.Errorf("duplicate Claude requirement %q", required)
-		}
-		seen[required] = true
-		parts := strings.Split(required, ":")
-		if len(parts) != 2 || (parts[0] != "skill" && parts[0] != "agent" && parts[0] != "asset") {
-			return nil, fmt.Errorf("unsupported Claude requirement %q", required)
-		}
-		r, err := uniqueResource(pack, parts[0], parts[1])
-		if err != nil {
-			return nil, err
-		}
-		if parts[0] == "asset" {
-			result = append(result, "reference:"+filepath.Base(r.Source))
-			continue
-		}
-		var names []string
-		for _, b := range r.Bindings {
-			if b.Surface == capabilitypack.SurfaceClaude {
-				names = append(names, b.Name)
-			}
-		}
-		if len(names) != 1 || names[0] == "" {
-			return nil, fmt.Errorf("Claude dependency %s has %d Claude bindings", required, len(names))
-		}
-		result = append(result, parts[0]+":"+names[0])
-	}
-	sort.Strings(result)
-	return result, nil
-}
-
-type claudeCommandSource struct{ Description, Prompt string }
-
-func decodeClaudeCommandSource(data []byte) (claudeCommandSource, error) {
-	if !utf8.Valid(data) {
-		return claudeCommandSource{}, errors.New("Claude command is not valid UTF-8")
-	}
-	i, values := 0, map[string]string{}
-	for {
-		skipTOMLSpace(data, &i)
-		if i == len(data) {
-			break
-		}
-		start := i
-		for i < len(data) && ((data[i] >= 'a' && data[i] <= 'z') || data[i] == '_') {
-			i++
-		}
-		if start == i {
-			return claudeCommandSource{}, fmt.Errorf("invalid Claude command TOML at byte %d", i)
-		}
-		key := string(data[start:i])
-		if key != "description" && key != "prompt" {
-			return claudeCommandSource{}, fmt.Errorf("unknown Claude command key %q", key)
-		}
-		if _, ok := values[key]; ok {
-			return claudeCommandSource{}, fmt.Errorf("duplicate Claude command key %q", key)
-		}
-		for i < len(data) && (data[i] == ' ' || data[i] == '\t') {
-			i++
-		}
-		if i >= len(data) || data[i] != '=' {
-			return claudeCommandSource{}, fmt.Errorf("invalid Claude command assignment %q", key)
-		}
-		i++
-		for i < len(data) && (data[i] == ' ' || data[i] == '\t') {
-			i++
-		}
-		value, next, err := parseTOMLString(data, i)
-		if err != nil {
-			return claudeCommandSource{}, fmt.Errorf("Claude command %s: %w", key, err)
-		}
-		values[key], i = value, next
-		for i < len(data) && (data[i] == ' ' || data[i] == '\t') {
-			i++
-		}
-		if i < len(data) && data[i] == '#' {
-			for i < len(data) && data[i] != '\n' {
-				i++
-			}
-		}
-		if i < len(data) && data[i] != '\n' && data[i] != '\r' {
-			return claudeCommandSource{}, fmt.Errorf("trailing Claude command syntax at byte %d", i)
-		}
-	}
-	if _, ok := values["description"]; !ok {
-		return claudeCommandSource{}, errors.New("Claude command is missing description")
-	}
-	if _, ok := values["prompt"]; !ok {
-		return claudeCommandSource{}, errors.New("Claude command is missing prompt")
-	}
-	return claudeCommandSource{values["description"], values["prompt"]}, nil
-}
-
-func skipTOMLSpace(data []byte, i *int) {
-	for *i < len(data) {
-		if data[*i] == ' ' || data[*i] == '\t' || data[*i] == '\r' || data[*i] == '\n' {
-			*i++
-			continue
-		}
-		if data[*i] == '#' {
-			for *i < len(data) && data[*i] != '\n' {
-				*i++
-			}
-			continue
-		}
-		break
-	}
-}
-
-func parseTOMLString(data []byte, i int) (string, int, error) {
-	if i >= len(data) || (data[i] != '"' && data[i] != '\'') {
-		return "", i, errors.New("value must be a string")
-	}
-	quote := data[i]
-	triple := i+2 < len(data) && data[i+1] == quote && data[i+2] == quote
-	if triple {
-		i += 3
-		if i < len(data) && data[i] == '\n' {
-			i++
-		}
-		start := i
-		marker := bytes.Repeat([]byte{quote}, 3)
-		end := bytes.Index(data[i:], marker)
-		if end < 0 {
-			return "", i, errors.New("unterminated multiline string")
-		}
-		raw := data[start : i+end]
-		i += end + 3
-		if quote == '\'' {
-			return string(raw), i, nil
-		}
-		value, err := unescapeTOML(raw)
-		return value, i, err
-	}
-	i++
-	start := i
-	if quote == '\'' {
-		end := bytes.IndexByte(data[i:], quote)
-		if end < 0 {
-			return "", i, errors.New("unterminated string")
-		}
-		return string(data[start : i+end]), i + end + 1, nil
-	}
-	for i < len(data) {
-		if data[i] == '\\' {
-			i += 2
-			continue
-		}
-		if i < len(data) && data[i] == quote {
-			value, err := strconv.Unquote(string(data[start-1 : i+1]))
-			return value, i + 1, err
-		}
-		if data[i] == '\n' || data[i] == '\r' {
-			break
-		}
-		i++
-	}
-	return "", i, errors.New("unterminated string")
-}
-
-func unescapeTOML(raw []byte) (string, error) {
-	escaped := strings.ReplaceAll(string(raw), "\r", `\r`)
-	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	value, err := strconv.Unquote(`"` + escaped + `"`)
-	return value, err
-}
-
-func renderClaudeCommandSkill(name string, command claudeCommandSource, dependencies []string) []byte {
-	var b strings.Builder
-	b.WriteString("---\nname: ")
-	b.WriteString(yamlScalar(name))
-	b.WriteString("\ndescription: ")
-	b.WriteString(yamlScalar(command.Description))
-	b.WriteString("\n---\n\n")
-	b.WriteString("## Packy dependency contract\n\n")
-	for _, dependency := range dependencies {
-		b.WriteString("- `")
-		b.WriteString(dependency)
-		b.WriteString("`\n")
-	}
-	b.WriteString("\n## Arguments\n\nUse the caller-provided arguments exactly as `$ARGUMENTS`.\n\n")
-	b.WriteString(command.Prompt)
-	return []byte(b.String())
-}
-
 func yamlScalar(value string) string { encoded, _ := json.Marshal(value); return string(encoded) }
 
 func canonicalizeCompositeFiles(files []compositeFile) error {
@@ -513,7 +293,7 @@ func decodeCompositeOwnership(data string) (compositeOwnership, error) {
 	if err != nil || canonical != data {
 		return compositeOwnership{}, errors.New("noncanonical composite ownership")
 	}
-	if ownership.PackID == "" || ownership.PackVersion == "" || (ownership.PortableKind != "skill" && ownership.PortableKind != "command") || ownership.PortableID == "" || ownership.EffectiveName == "" || ownership.TargetType != "claude-personal-skill" {
+	if ownership.PackID == "" || ownership.PackVersion == "" || ownership.PortableKind != "skill" || ownership.PortableID == "" || ownership.EffectiveName == "" || ownership.TargetType != "claude-personal-skill" {
 		return compositeOwnership{}, errors.New("incomplete composite ownership")
 	}
 	for _, fingerprint := range []string{ownership.SourceFingerprint, ownership.TreeFingerprint, ownership.DefinitionFingerprint} {

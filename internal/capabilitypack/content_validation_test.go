@@ -183,7 +183,6 @@ func TestLoadCurrentManifestRequiresDescriptionForEveryResourceKind(t *testing.T
 	}{
 		{"agent", "agent", "reviewer", nil},
 		{"asset", "asset", "checklist", nil},
-		{"command", "command", "build", nil},
 		{"instruction", "instruction", "guidance", nil},
 		{"notice", "notice", "terms", nil},
 		{"skill", "skill", "api-design", nil},
@@ -242,19 +241,12 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
       "kind": "agent", "id": "reviewer", "source": "agents/reviewer.md",
       "description": "Reviews a synthetic change", "mode": "subagent", "tools": [], "permissions": [],
       "requires": [], "conflicts": [],
-      "bindings": [{"surface": "claude", "projection": "agent", "name": "reviewer", "invocation": "$reviewer", "mode": "native", "sharing": "exclusive", "capabilities": []}],
+      "bindings": [{"surface": "claude", "projection": "agent", "client_projection":{"client":"claude","scopes":["global","project"]}, "name": "reviewer", "invocation": "$reviewer", "mode": "native", "sharing": "exclusive", "capabilities": []}],
       "surface_exclusions": []
     },
     {
       "kind": "asset", "id": "checklist", "source": "assets/checklist.md",
       "description": "Supplies a synthetic checklist", "requires": [], "conflicts": [], "bindings": [], "surface_exclusions": []
-    },
-    {
-      "kind": "command", "id": "build", "source": "commands/build.md",
-      "description": "Builds a synthetic target", "arguments": {"mode": "none"},
-      "requires": [], "conflicts": [],
-      "bindings": [{"surface": "claude", "projection": "skill", "name": "build", "invocation": "/build", "mode": "native", "sharing": "exclusive", "capabilities": []}],
-      "surface_exclusions": []
     },
     {
       "kind": "instruction", "id": "guidance", "source": "instructions/guidance.md",

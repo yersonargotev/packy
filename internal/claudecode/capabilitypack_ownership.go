@@ -59,7 +59,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 		pack = capabilitypack.ResolvePackForSurface(pack, capabilitypack.SurfaceClaude)
 		for _, portableResource := range pack.Resources {
 			resource := resourceWithAliases(portableResource, intent.Aliases)
-			if resource.Kind != "skill" && resource.Kind != "command" && resource.Kind != "instruction" && resource.Kind != "agent" && resource.Kind != "lifecycle" && resource.Kind != "mcp_server" {
+			if resource.Kind != "skill" && resource.Kind != "instruction" && resource.Kind != "agent" {
 				continue
 			}
 			name := resource.ID
@@ -113,34 +113,6 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 					return OwnershipSnapshot{}, err
 				}
 				record.Fingerprint = observed
-			} else if resource.Kind == "command" {
-				record.Kind, record.Target = string(ActionSkillFile), filepath.Join(o.layout.SkillsDir, name, "SKILL.md")
-				observed, _, err := localprojection.FingerprintPath(record.Target)
-				if err != nil {
-					return OwnershipSnapshot{}, err
-				}
-				record.Fingerprint = observed
-			} else if resource.Kind == "lifecycle" {
-				if binding.Hook == nil {
-					continue
-				}
-				record.Kind, record.Target = string(ActionCommandHook), o.layout.SettingsFile
-				hook := fromBindingHook(*binding)
-				observation := EnrichHookObservation(ObserveSettings(record.Target, nil), hook)
-				if observation.Err != nil {
-					return OwnershipSnapshot{}, observation.Err
-				}
-				record.Fingerprint = HookOwnershipFingerprint(hook.Event, observation.EntryFingerprint)
-				record.HookEvent = hook.Event
-			} else if resource.Kind == "mcp_server" {
-				record.Kind, record.Target = string(ActionUserMCP), name
-				observation := ObserveUserMCP(o.layout.UserMCPFile, name)
-				if observation.Err != nil {
-					return OwnershipSnapshot{}, observation.Err
-				}
-				record.Fingerprint = observation.DefinitionFingerprint
-				identity := NewMCPIdentity(name, resource.Command, resource.Args, map[string]string{})
-				record.Command, record.Args, record.EnvironmentKeys, record.EnvironmentFingerprint = identity.Command, identity.Args, identity.EnvironmentKeys, identity.EnvironmentFingerprint
 			} else {
 				record.Kind, record.Target = string(ActionSkillLink), filepath.Join(o.layout.SkillsDir, name)
 				source := filepath.Join(resource.CatalogRootOr(o.catalogRoot), filepath.FromSlash(resource.Source))
@@ -155,26 +127,6 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 			}
 			records = append(records, record)
 			recorded[id] = true
-			if resource.Kind == "command" && !isClaudeCompositeProjection(pack, resource, *binding) {
-				for _, asset := range dependencyAssets(pack, resource) {
-					assetID := "asset:" + id + ":" + asset.ID
-					if recorded[assetID] {
-						continue
-					}
-					assetOwner, retained := owners[assetID]
-					if !retained {
-						continue
-					}
-					target := filepath.Join(o.layout.SkillsDir, name, filepath.Base(asset.Source))
-					fingerprint, _, err := localprojection.FingerprintPath(target)
-					if err != nil {
-						return OwnershipSnapshot{}, err
-					}
-					contributors := []string{assetOwner.PackID}
-					records = append(records, OwnershipRecord{StateOwner: "capabilitypack", ContributorID: assetOwner.PackID, ID: assetID, Kind: string(ActionSkillFile), Target: target, Fingerprint: fingerprint, Contributors: contributors, DeletionAuthorized: true})
-					recorded[assetID] = true
-				}
-			}
 		}
 	}
 	return NewOwnershipSnapshot(records...), nil

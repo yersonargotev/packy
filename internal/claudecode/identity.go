@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -24,40 +23,6 @@ func (i SkillIdentity) Matches(surface, projectionID, path, expectedSource strin
 
 type InstructionIdentity struct{ Document, StartMarker, EndMarker, ContributorID, ContributionFingerprint string }
 type AgentIdentity struct{ Surface, ProjectionID, Path, FileFingerprint string }
-type HookIdentity struct {
-	Event, Matcher, Command string
-	Args                    []string
-	TimeoutSeconds          int
-	Blocking                bool
-	Failure                 string
-	Authorities             []string
-	EntryFingerprint        string
-}
-
-// HookOwnershipFingerprint binds the parent event to the canonical hook entry.
-// Claude stores the event as the containing object key rather than in the entry.
-func HookOwnershipFingerprint(event, entryFingerprint string) string {
-	return canonicalFingerprint([]string{event, entryFingerprint})
-}
-
-type MCPIdentity struct {
-	Scope, Name, Command   string
-	Args, EnvironmentKeys  []string
-	EnvironmentFingerprint string
-}
-
-func NewMCPIdentity(name, command string, args []string, environment map[string]string) MCPIdentity {
-	keys := make([]string, 0, len(environment))
-	for k := range environment {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	ordered := make([][2]string, 0, len(keys))
-	for _, k := range keys {
-		ordered = append(ordered, [2]string{k, environment[k]})
-	}
-	return MCPIdentity{Scope: "user", Name: name, Command: command, Args: append([]string(nil), args...), EnvironmentKeys: keys, EnvironmentFingerprint: canonicalFingerprint(ordered)}
-}
 
 func Redact(value string, secrets ...string) string {
 	for _, s := range secrets {
@@ -72,13 +37,8 @@ type OwnershipRecord struct {
 	StateOwner, ContributorID, ID, Kind, Target, Fingerprint string
 	Contributors                                             []string
 	DeletionAuthorized                                       bool
-	HookProvenance                                           string
-	HookEvent                                                string
 	Skill                                                    SkillIdentity
 	Composite                                                compositeOwnership
-	Command                                                  string
-	Args, EnvironmentKeys                                    []string
-	EnvironmentFingerprint                                   string
 }
 
 func (r OwnershipRecord) MatchesSkill(surface, projectionID, path, expectedSource string, observation SkillObservation) bool {
@@ -107,8 +67,6 @@ func NewOwnershipSnapshot(records ...OwnershipRecord) OwnershipSnapshot {
 	copyRecords := append([]OwnershipRecord(nil), records...)
 	for i := range copyRecords {
 		copyRecords[i].Contributors = append([]string(nil), copyRecords[i].Contributors...)
-		copyRecords[i].Args = append([]string(nil), copyRecords[i].Args...)
-		copyRecords[i].EnvironmentKeys = append([]string(nil), copyRecords[i].EnvironmentKeys...)
 	}
 	return OwnershipSnapshot{Records: copyRecords, Revision: canonicalFingerprint(copyRecords)}
 }

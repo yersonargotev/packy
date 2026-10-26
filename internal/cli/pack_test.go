@@ -48,18 +48,18 @@ func TestParseSurfaceAliasesAcceptsRepeatableQualifiedAliases(t *testing.T) {
 	if aliases, err := parseSurfaceAliases(nil); err != nil || aliases != nil {
 		t.Fatalf("omitted aliases = %+v, err=%v; want nil intent-preserving input", aliases, err)
 	}
-	aliases, err := parseSurfaceAliases([]string{"command:build=synthetic-build", "agent:reviewer=synthetic-reviewer"})
+	aliases, err := parseSurfaceAliases([]string{"skill:build=synthetic-build", "agent:reviewer=synthetic-reviewer"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []capabilitypack.SurfaceAlias{{Kind: "command", ID: "build", Name: "synthetic-build"}, {Kind: "agent", ID: "reviewer", Name: "synthetic-reviewer"}}
+	want := []capabilitypack.SurfaceAlias{{Kind: "skill", ID: "build", Name: "synthetic-build"}, {Kind: "agent", ID: "reviewer", Name: "synthetic-reviewer"}}
 	if !reflect.DeepEqual(aliases, want) {
 		t.Fatalf("aliases = %+v, want %+v", aliases, want)
 	}
 }
 
 func TestParseSurfaceAliasesRejectsMalformedInput(t *testing.T) {
-	for _, input := range []string{"build", "command:build", "command:=name", ":build=name", "command:build=", "command:build=name=extra"} {
+	for _, input := range []string{"build", "skill:build", "command:=name", ":build=name", "skill:build=", "skill:build=name=extra"} {
 		t.Run(input, func(t *testing.T) {
 			if _, err := parseSurfaceAliases([]string{input}); err == nil || !strings.Contains(err.Error(), "--alias") {
 				t.Fatalf("parse error = %v", err)

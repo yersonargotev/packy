@@ -191,7 +191,13 @@
       ],
       "properties": {
         "kind": {
-          "$ref": "#/$defs/id"
+          "enum": [
+            "skill",
+            "instruction",
+            "agent",
+            "asset",
+            "notice"
+          ]
         },
         "id": {
           "$ref": "#/$defs/id"
@@ -411,57 +417,6 @@
         }
       ]
     },
-    "hook": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "event",
-        "matcher",
-        "command",
-        "args",
-        "timeout_seconds",
-        "blocking",
-        "failure",
-        "authorities"
-      ],
-      "properties": {
-        "type": {
-          "type": "string"
-        },
-        "event": {
-          "type": "string"
-        },
-        "matcher": {
-          "type": "string"
-        },
-        "command": {
-          "type": "string"
-        },
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "timeout_seconds": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "blocking": {
-          "type": "boolean"
-        },
-        "failure": {
-          "type": "string"
-        },
-        "authorities": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
     "binding": {
       "type": "object",
       "additionalProperties": false,
@@ -484,15 +439,20 @@
           ],
           "properties": {
             "client": {
-              "const": "codex"
+              "enum": [
+                "codex",
+                "claude"
+              ]
             },
             "scopes": {
               "type": "array",
               "items": {
-                "const": "global"
+                "enum": [
+                  "global",
+                  "project"
+                ]
               },
               "minItems": 1,
-              "maxItems": 1,
               "uniqueItems": true
             }
           }
@@ -504,8 +464,11 @@
           ]
         },
         "projection": {
-          "type": "string",
-          "minLength": 1
+          "enum": [
+            "skill",
+            "instruction",
+            "agent"
+          ]
         },
         "name": {
           "$ref": "#/$defs/id"
@@ -534,42 +497,12 @@
           "items": {
             "$ref": "#/$defs/capability"
           }
-        },
-        "hook": {
-          "$ref": "#/$defs/hook"
         }
       },
       "allOf": [
         {
           "if": {
             "properties": {
-              "surface": {
-                "const": "agents"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "projection": {
-                "enum": [
-                  "agent",
-                  "instruction",
-                  "skill"
-                ]
-              },
-              "mode": {
-                "const": "native"
-              },
-              "degradation": false
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "surface": {
-                "const": "agents"
-              },
               "projection": {
                 "const": "agent"
               }
@@ -583,6 +516,46 @@
           "else": {
             "properties": {
               "client_projection": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "surface": {
+                "const": "agents"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mode": {
+                "const": "native"
+              },
+              "degradation": false,
+              "client_projection": {
+                "properties": {
+                  "client": {
+                    "const": "codex"
+                  },
+                  "scopes": {
+                    "const": [
+                      "global"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "client_projection": {
+                "properties": {
+                  "client": {
+                    "const": "claude"
+                  }
+                }
+              }
             }
           }
         }
@@ -619,24 +592,6 @@
         }
       }
     },
-    "arguments": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "mode"
-      ],
-      "properties": {
-        "mode": {
-          "enum": [
-            "none",
-            "freeform"
-          ]
-        },
-        "placeholder": {
-          "type": "string"
-        }
-      }
-    },
     "resource": {
       "type": "object",
       "additionalProperties": false,
@@ -654,10 +609,7 @@
           "enum": [
             "agent",
             "asset",
-            "command",
             "instruction",
-            "lifecycle",
-            "mcp_server",
             "notice",
             "skill"
           ]
@@ -667,15 +619,6 @@
         },
         "source": {
           "$ref": "#/$defs/path"
-        },
-        "command": {
-          "type": "string"
-        },
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
         },
         "description": {
           "type": "string",
@@ -695,9 +638,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "arguments": {
-          "$ref": "#/$defs/arguments"
         },
         "license": {
           "type": "string"
@@ -800,29 +740,6 @@
           "if": {
             "properties": {
               "kind": {
-                "const": "command"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "required": [
-              "source",
-              "arguments"
-            ],
-            "properties": {
-              "source": {
-                "pattern": "^commands/"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
                 "const": "instruction"
               }
             },
@@ -889,66 +806,6 @@
         },
         {
           "if": {
-            "properties": {
-              "kind": {
-                "const": "mcp_server"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "required": [
-              "command",
-              "args"
-            ],
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "source"
-                  ]
-                },
-                {
-                  "required": [
-                    "origin"
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "lifecycle"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "source"
-                  ]
-                },
-                {
-                  "required": [
-                    "origin"
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        {
-          "if": {
             "required": [
               "origin"
             ]
@@ -984,22 +841,7 @@
                     "anyOf": [
                       {
                         "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
                           "attribution"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "command"
                         ]
                       },
                       {
@@ -1048,86 +890,12 @@
                     "anyOf": [
                       {
                         "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
                           "attribution"
                         ]
                       },
                       {
                         "required": [
-                          "command"
-                        ]
-                      },
-                      {
-                        "required": [
                           "license"
-                        ]
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "command"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "properties": {
-              "variants": {
-                "items": {
-                  "not": {
-                    "anyOf": [
-                      {
-                        "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "attribution"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "command"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "license"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "mode"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "permissions"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "tools"
                         ]
                       }
                     ]
@@ -1156,22 +924,7 @@
                     "anyOf": [
                       {
                         "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
                           "attribution"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "command"
                         ]
                       },
                       {
@@ -1220,22 +973,7 @@
                     "anyOf": [
                       {
                         "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
                           "attribution"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "command"
                         ]
                       },
                       {
@@ -1284,165 +1022,12 @@
                     "anyOf": [
                       {
                         "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "command"
-                        ]
-                      },
-                      {
-                        "required": [
                           "mode"
                         ]
                       },
                       {
                         "required": [
                           "permissions"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "tools"
-                        ]
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "mcp_server"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "properties": {
-              "variants": {
-                "items": {
-                  "not": {
-                    "anyOf": [
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "attribution"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "license"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "mode"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "origin"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "permissions"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "source"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "tools"
-                        ]
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "lifecycle"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "properties": {
-              "variants": {
-                "items": {
-                  "not": {
-                    "anyOf": [
-                      {
-                        "required": [
-                          "args"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "arguments"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "attribution"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "command"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "license"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "mode"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "origin"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "permissions"
-                        ]
-                      },
-                      {
-                        "required": [
-                          "source"
                         ]
                       },
                       {
@@ -1553,15 +1138,6 @@
             "type": "string"
           }
         },
-        "command": {
-          "type": "string"
-        },
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "mode": {
           "type": "string"
         },
@@ -1576,9 +1152,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "arguments": {
-          "$ref": "#/$defs/arguments"
         },
         "license": {
           "type": "string"

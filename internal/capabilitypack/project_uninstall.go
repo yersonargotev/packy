@@ -327,7 +327,7 @@ func coalesceProjectRemovalActions(actions []ProjectionAction) ([]ProjectionActi
 	groups := map[string]int{}
 	originals := map[string]string{}
 	for _, action := range actions {
-		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionClaudeProjectInstruction
 		if !composable {
 			result = append(result, action)
 			continue

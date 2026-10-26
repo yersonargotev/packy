@@ -22,7 +22,6 @@ packs/
     pack.json
     agents/
     assets/
-    commands/
     instructions/
     notices/
     skills/
@@ -121,8 +120,8 @@ To import a surface body for an existing file-backed logical resource, use
 `--resource-id`, and choose a separate Pack-relative `--destination`. This adds
 one reviewed variant without changing its bindings or the original tree; an
 existing variant is never overwritten. The same operation accepts existing
-agents, commands, and assets as well as skills, instructions, and notices.
-MCP and lifecycle resources have no file body to import. Review and adapt the
+agents and assets as well as skills, instructions, and notices. Direct MCP,
+hook, command, and lifecycle resources are rejected. Review and adapt the
 imported bytes in the Catalog Project; Packy does not execute adaptation code.
 
 Variant imports explicitly record provenance. Omitted dependency/conflict
@@ -536,3 +535,28 @@ Direct Agents MCP, command-degradation, global instruction, and unrelated client
 configuration paths are not supported. Ordinary Agents skills declare no client
 projection and do not write Codex settings. `--client` is rejected for all project
 selections and for global closures without a native Codex role.
+
+
+## Claude bindings and supported content
+
+Claude supports instructions, complete skill trees, and reviewed native
+custom-agent documents at global and project scope. An `agent` binding declares
+its concrete client and the scopes reviewed for that resource, for example:
+
+```json
+"client_projection": {"client": "claude", "scopes": ["global", "project"]}
+```
+
+Selecting the Claude surface selects its native client. A required agent's
+unsupported scope stops the entire operation before mutation. Keep required
+agents and their supporting/legal content in the declared dependency closure;
+do not replace them with a generic role or imply that a generated definition
+proves runtime authorization or delegation.
+
+The closed reviewed contract rejects direct `mcp_server`, `command`, and
+`lifecycle` resources, command-hook bindings, and their obsolete capabilities.
+`skill-template` and `claude-composite-skill` remain available only for supported
+skill content. Authors must review adaptations explicitly; Packy does not turn a
+retired command into a skill. These removals also apply to catalog import,
+validation, snapshots, project locks, and installed receipts. Use the previous
+binary to remove retired installations before adopting this contract.

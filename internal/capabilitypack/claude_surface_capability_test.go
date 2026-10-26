@@ -58,7 +58,7 @@ func validClaudeCapabilityPack() Pack {
 		Kind: "agent", ID: "reviewer", Source: "agents/reviewer.md", Description: "Reviewer", Mode: "subagent",
 		Tools: []string{}, Permissions: []string{}, Requires: []string{"skill:workflow"}, Conflicts: []string{}, SurfaceExclusions: []SurfaceExclusion{},
 		Bindings: []Binding{{
-			Surface: SurfaceClaude, Projection: "agent", Name: "reviewer", Invocation: "@reviewer", Mode: "native", Sharing: "exclusive",
+			Surface: SurfaceClaude, Projection: "agent", ClientProjection: &ClientProjection{Client: "claude", Scopes: []string{"global", "project"}}, Name: "reviewer", Invocation: "@reviewer", Mode: "native", Sharing: "exclusive",
 			Capabilities: []SurfaceCapability{{
 				Type: SurfaceCapabilityClaudeAgentDocument,
 				ClaudeAgentDocument: &ClaudeAgentDocumentCapability{

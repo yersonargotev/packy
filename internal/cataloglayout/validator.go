@@ -63,13 +63,10 @@ type Resource struct {
 	Kind              string                            `json:"kind"`
 	ID                string                            `json:"id"`
 	Source            string                            `json:"source,omitempty"`
-	Command           string                            `json:"command,omitempty"`
-	Args              []string                          `json:"args,omitempty"`
 	Description       string                            `json:"description,omitempty"`
 	Mode              string                            `json:"mode,omitempty"`
 	Tools             []string                          `json:"tools,omitempty"`
 	Permissions       []string                          `json:"permissions,omitempty"`
-	Arguments         capabilitypack.CommandArguments   `json:"arguments,omitempty"`
 	License           string                            `json:"license,omitempty"`
 	Attribution       string                            `json:"attribution,omitempty"`
 	Requires          []string                          `json:"requires"`
@@ -648,9 +645,9 @@ func validateManifest(manifest Manifest, projectRoot string) error {
 			OnDemand: resource.OnDemand,
 			Kind:     resource.Kind, ID: resource.ID, Source: resource.Source,
 			Variants: resource.Variants, Origin: resource.Origin,
-			Command: resource.Command, Args: resource.Args, Description: resource.Description,
-			Mode: resource.Mode, Tools: resource.Tools, Permissions: resource.Permissions,
-			Arguments: resource.Arguments, License: resource.License, Attribution: resource.Attribution,
+			Description: resource.Description,
+			Mode:        resource.Mode, Tools: resource.Tools, Permissions: resource.Permissions,
+			License: resource.License, Attribution: resource.Attribution,
 			Requires: resource.Requires, Conflicts: resource.Conflicts, Notices: resource.Notices,
 			Bindings: resource.Bindings, SurfaceExclusions: resource.SurfaceExclusions,
 			RequiresTools: []string{},
@@ -744,7 +741,7 @@ func validateCanonicalLayout(resource Resource) error {
 		}
 		want := map[string]string{
 			"skill": "skills", "instruction": "instructions", "agent": "agents",
-			"command": "commands", "asset": "assets", "notice": "notices",
+			"asset": "assets", "notice": "notices",
 		}[resource.Kind]
 		if want == "" {
 			return fmt.Errorf("resource kind %q does not own a source root", resource.Kind)

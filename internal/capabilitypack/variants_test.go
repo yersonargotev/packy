@@ -30,7 +30,6 @@ func TestSurfaceVariantsRejectInvalidDeclarationsAndEffectiveGraphs(t *testing.T
 		{"missing origin", func(p *Pack) { p.Resources[1].Variants[0].Origin = nil }, "explicit origin"},
 		{"empty source", func(p *Pack) { v := ""; p.Resources[1].Variants[0].Source = &v }, "relative path"},
 		{"empty description", func(p *Pack) { v := ""; p.Resources[1].Variants[0].Description = &v }, "description"},
-		{"forbidden command", func(p *Pack) { v := "sh"; p.Resources[1].Variants[0].Command = &v }, "command"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -42,7 +41,7 @@ func TestSurfaceVariantsRejectInvalidDeclarationsAndEffectiveGraphs(t *testing.T
 			}
 		})
 	}
-	for _, data := range []string{`{"surface":"agents","source":null}`, `{"surface":"agents","requires":null}`, `{"surface":"agents","args":[null]}`, `{"surface":"agents","id":"other"}`, `{"surface":"agents","bindings":[]}`, `{"surface":"agents","overrides":{}}`, `null`} {
+	for _, data := range []string{`{"surface":"agents","command":"sh"}`, `{"surface":"agents","source":null}`, `{"surface":"agents","requires":null}`, `{"surface":"agents","args":[null]}`, `{"surface":"agents","id":"other"}`, `{"surface":"agents","bindings":[]}`, `{"surface":"agents","overrides":{}}`, `null`} {
 		var variant ResourceVariant
 		if err := json.Unmarshal([]byte(data), &variant); err == nil {
 			t.Fatalf("accepted %s", data)
