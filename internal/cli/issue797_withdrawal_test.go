@@ -16,8 +16,8 @@ import (
 )
 
 func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
-	withdrawn := testsupport.PortableAllSurfaces("withdrawn-runtime")
-	blockedActivation := testsupport.PortableAllSurfaces("withdrawn-inactive-surface")
+	withdrawn := testsupport.SkillVariants("withdrawn-runtime")
+	blockedActivation := testsupport.SkillVariants("withdrawn-inactive-surface")
 	remaining := testsupport.PortableAllSurfaces("catalog-current")
 	retainedSnapshot := strings.Repeat("7", 40)
 	currentSnapshot := strings.Repeat("8", 40)
@@ -41,10 +41,10 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	if out, err := executeCommand(t, NewRootCommand(opts), "init"); err != nil {
 		t.Fatalf("initialize retained snapshot: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "agents"); err != nil {
 		t.Fatalf("install Pack in project before withdrawal: %v\n%s", err, out)
 	}
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		if out, err := executeCommand(t, NewRootCommand(opts), "activate", withdrawn.ID(), "--surface", surface); err != nil {
 			t.Fatalf("activate Pack on %s before withdrawal: %v\n%s", surface, err, out)
 		}
@@ -76,22 +76,22 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	if err := os.WriteFile(statePath, append(corruptClaudeState, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "status", withdrawn.ID(), "--surface", "codex", "--json"); err != nil {
-		t.Fatalf("unresolvable retained Claude receipt blocked Codex status: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "status", withdrawn.ID(), "--surface", "agents", "--json"); err != nil {
+		t.Fatalf("unresolvable retained Claude receipt blocked Agents status: %v\n%s", err, out)
 	}
 	if err := os.WriteFile(statePath, originalState, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	beforeRejectedActivation := snapshotTree(t, fixture.home)
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", blockedActivation.ID(), "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "current catalog") {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", blockedActivation.ID(), "--surface", "agents", "--dry-run"); err == nil || !strings.Contains(err.Error(), "current catalog") {
 		t.Fatalf("new activation from withdrawn Pack = %v\n%s", err, out)
 	}
 	if after := snapshotTree(t, fixture.home); after != beforeRejectedActivation {
 		t.Fatal("rejected activation mutated Packy Home or host projections")
 	}
 
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		statusOutput, err := executeCommand(t, NewRootCommand(opts), "status", withdrawn.ID(), "--surface", surface, "--json")
 		if err != nil {
 			t.Fatalf("inspect withdrawn Pack status on %s: %v\n%s", surface, err, statusOutput)
@@ -117,7 +117,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 		t.Fatalf("withdrawn show = %#v", show)
 	}
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "update", withdrawn.ID(), "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "current catalog") {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", withdrawn.ID(), "--surface", "agents", "--dry-run"); err == nil || !strings.Contains(err.Error(), "current catalog") {
 		t.Fatalf("withdrawn update = %v\n%s", err, out)
 	}
 
@@ -132,7 +132,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	}
 	var installedStatus *tui.SurfaceStatus
 	for index := range installed.SurfaceStatuses {
-		if installed.SurfaceStatuses[index].Name == "codex" {
+		if installed.SurfaceStatuses[index].Name == "agents" {
 			installedStatus = &installed.SurfaceStatuses[index]
 			break
 		}
@@ -144,12 +144,12 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 	if projectPack == nil || projectPack.CatalogState != "retained" {
 		t.Fatalf("TUI omitted retained project Pack: %#v", dashboard.Project.Packs)
 	}
-	projectStatus := slices.IndexFunc(projectPack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	projectStatus := slices.IndexFunc(projectPack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "agents" })
 	if projectStatus < 0 || projectPack.SurfaceStatuses[projectStatus].Installation != "installed" || projectPack.SurfaceStatuses[projectStatus].Supported {
 		t.Fatalf("TUI retained project status = %#v", projectPack.SurfaceStatuses)
 	}
 
-	for _, surface := range []string{"claude", "codex"} {
+	for _, surface := range []string{"agents", "claude"} {
 		preview, err := backend.Preview(context.Background(), tui.PreviewRequest{
 			Operation: "deactivate", PackID: withdrawn.ID(), Surface: surface, Scope: "global", Selection: tui.Selection{Mode: "all"},
 		})
@@ -165,7 +165,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 		t.Fatalf("retained Catalog Snapshot was removed after deactivation: %v", err)
 	}
 	projectPreview, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "uninstall", PackID: withdrawn.ID(), Surface: "codex", Scope: "project", ProjectRoot: project,
+		Operation: "uninstall", PackID: withdrawn.ID(), Surface: "agents", Scope: "project", ProjectRoot: project,
 	})
 	if err != nil {
 		t.Fatalf("preview retained project uninstall: %v", err)
@@ -210,8 +210,8 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "codex"); err != nil {
-		t.Fatalf("install Codex surface before personal activation: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "agents"); err != nil {
+		t.Fatalf("install Agents surface before personal activation: %v\n%s", err, out)
 	}
 	installation, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
@@ -220,16 +220,16 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	resource := installation.Lock.ResourceGraph.Resources[0].Resource
 	receiptIndex := -1
 	for index := range installation.Lock.Receipts {
-		if installation.Lock.Receipts[index].Surface == capabilitypack.SurfaceCodex {
+		if installation.Lock.Receipts[index].Surface == capabilitypack.SurfaceAgents {
 			receiptIndex = index
 			break
 		}
 	}
 	if receiptIndex < 0 {
-		t.Fatal("Codex project receipt is missing")
+		t.Fatal("Agents project receipt is missing")
 	}
 	installation.Lock.Receipts[receiptIndex].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{{
-		Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: resource, Detail: "project-trust",
+		Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceAgents, Resource: resource, Detail: "project-trust",
 	}}
 	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {
@@ -238,7 +238,7 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), append(lock, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", withdrawn.ID(), "--surface", "codex", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", withdrawn.ID(), "--surface", "agents", "--project"); err != nil {
 		t.Fatalf("activate project Pack before orphaning: %v\n%s", err, out)
 	}
 	if err := os.WriteFile(filepath.Join(project, "packy.json"), claudeManifest, 0o644); err != nil {
@@ -247,7 +247,7 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), claudeLock, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	blockedOutput, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "codex", "--dry-run", "--json")
+	blockedOutput, err := executeCommand(t, NewRootCommand(opts), "install", withdrawn.ID(), "--surface", "agents", "--dry-run", "--json")
 	if err == nil || !strings.Contains(err.Error(), "project install preview is not actionable: blocked") || !strings.Contains(blockedOutput, `"code":"orphaned_personal_activation"`) {
 		t.Fatalf("install while orphan remains was not blocked: %v\n%s", err, blockedOutput)
 	}
@@ -257,7 +257,7 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	}
 	for _, command := range [][]string{{"update", withdrawn.ID(), "--surface", "claude", "--project", "--dry-run", "--json"}, {"activate", withdrawn.ID(), "--surface", "claude", "--project", "--dry-run"}} {
 		out, commandErr := executeCommand(t, NewRootCommand(opts), command...)
-		if commandErr == nil || (!strings.Contains(commandErr.Error(), "blocked") && !strings.Contains(commandErr.Error(), "personal project activation on codex remains")) {
+		if commandErr == nil || (!strings.Contains(commandErr.Error(), "blocked") && !strings.Contains(commandErr.Error(), "personal project activation on agents remains")) {
 			t.Fatalf("%v bypassed orphan guard: %v\n%s", command, commandErr, out)
 		}
 	}
@@ -275,18 +275,18 @@ func TestIssue797WithdrawnOrphanedProjectActivationRemainsInTUI(t *testing.T) {
 	if pack == nil || pack.CatalogState != "retained" {
 		t.Fatalf("TUI omitted orphaned withdrawn project Pack: %#v", dashboard.Project.Packs)
 	}
-	statusIndex := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	statusIndex := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "agents" })
 	if statusIndex < 0 || pack.SurfaceStatuses[statusIndex].Runtime != "orphaned" || pack.SurfaceStatuses[statusIndex].Installation != "absent" || pack.SurfaceStatuses[statusIndex].Supported {
 		t.Fatalf("orphaned withdrawn project status = %#v", pack.SurfaceStatuses)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: withdrawn.ID(), Surface: "codex", Scope: "project", ProjectRoot: project})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: withdrawn.ID(), Surface: "agents", Scope: "project", ProjectRoot: project})
 	if err != nil || preview.Operation != "deactivate" || preview.Disposition != "previewable" {
 		t.Fatalf("orphaned withdrawn project deactivation preview = %#v, %v", preview, err)
 	}
 }
 
 func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T) {
-	v1 := testsupport.PortableAllSurfaces("withdrawn-multiversion")
+	v1 := testsupport.SkillVariants("withdrawn-multiversion")
 	v2 := v1.Candidate()
 	remaining := testsupport.PortableAllSurfaces("still-current")
 	firstSnapshot := strings.Repeat("1", 40)
@@ -312,8 +312,8 @@ func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T)
 	if out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh"); err != nil {
 		t.Fatalf("select v2 snapshot: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", v2.ID(), "--surface", "codex"); err != nil {
-		t.Fatalf("activate v2 on Codex: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", v2.ID(), "--surface", "agents"); err != nil {
+		t.Fatalf("activate v2 on Agents: %v\n%s", err, out)
 	}
 	currentOutput, err := executeCommand(t, NewRootCommand(opts), "show", v1.ID(), "--json")
 	if err != nil {
@@ -327,7 +327,7 @@ func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T)
 	for _, surface := range currentDocument.SurfaceContracts {
 		currentVersions[surface.Surface] = surface.CatalogIdentity.Version
 	}
-	if currentVersions[capabilitypack.SurfaceClaude] != v1.CurrentVersion() || currentVersions[capabilitypack.SurfaceCodex] != v2.CurrentVersion() {
+	if currentVersions[capabilitypack.SurfaceClaude] != v1.CurrentVersion() || currentVersions[capabilitypack.SurfaceAgents] != v2.CurrentVersion() {
 		t.Fatalf("current surface contract identities = %#v", currentVersions)
 	}
 	statusOutput, err := executeCommand(t, NewRootCommand(opts), "status", v1.ID(), "--surface", "claude", "--json")
@@ -358,7 +358,7 @@ func TestIssue797WithdrawnShowKeepsExactContractIdentityPerSurface(t *testing.T)
 	for _, surface := range document.SurfaceContracts {
 		versions[surface.Surface] = surface.CatalogIdentity.Version
 	}
-	if versions[capabilitypack.SurfaceClaude] != v1.CurrentVersion() || versions[capabilitypack.SurfaceCodex] != v2.CurrentVersion() {
+	if versions[capabilitypack.SurfaceClaude] != v1.CurrentVersion() || versions[capabilitypack.SurfaceAgents] != v2.CurrentVersion() {
 		t.Fatalf("retained surface contract identities = %#v", versions)
 	}
 }
@@ -384,7 +384,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	for _, command := range [][]string{{"init"}, {"install", pack.ID(), "--surface", "codex", "--resource", "skill:helper"}} {
+	for _, command := range [][]string{{"init"}, {"install", pack.ID(), "--surface", "claude", "--resource", "skill:helper"}} {
 		if out, err := executeCommand(t, NewRootCommand(opts), command...); err != nil {
 			t.Fatalf("%v: %v\n%s", command, err, out)
 		}
@@ -395,7 +395,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	}
 	resource := installation.Lock.ResourceGraph.Resources[0].Resource
 	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{{
-		Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: resource, Detail: "project-only-runtime-consent",
+		Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceClaude, Resource: resource, Detail: "project-only-runtime-consent",
 	}}
 	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {
@@ -404,14 +404,14 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), append(lock, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", "claude", "--resource", "skill:helper"); err != nil {
 		t.Fatalf("activate global Pack: %v\n%s", err, out)
 	}
 	source.release = catalogReleaseFixture(t, currentSnapshot, remaining)
 	if out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh"); err != nil {
 		t.Fatalf("withdraw Pack: %v\n%s", err, out)
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "status", pack.ID(), "--surface", "codex", "--project", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", pack.ID(), "--surface", "claude", "--project", "--json")
 	if err != nil {
 		t.Fatalf("compose retained global and project receipts: %v\n%s", err, out)
 	}
@@ -426,7 +426,7 @@ func TestIssue797ProjectStatusComposesRetainedGlobalSnapshot(t *testing.T) {
 
 func TestIssue797RemovedSurfaceKeepsEvidenceWithoutOfferingUpdate(t *testing.T) {
 	v1 := testsupport.PortableAllSurfaces("removed-surface-version")
-	v2 := v1.Candidate().WithSurfaces(testsupport.SurfaceCodex)
+	v2 := v1.Candidate().WithSurfaces(testsupport.SurfaceAgents)
 	firstSnapshot := strings.Repeat("6", 40)
 	secondSnapshot := strings.Repeat("a", 40)
 	source := &catalogSourceFixture{release: catalogReleaseFixture(t, firstSnapshot, v1)}
@@ -472,7 +472,7 @@ func TestIssue797RemovedSurfaceKeepsEvidenceWithoutOfferingUpdate(t *testing.T) 
 	if err := json.Unmarshal([]byte(showOutput), &document); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(document.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) {
+	if !slices.Equal(document.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceAgents}) {
 		t.Fatalf("current supported surfaces = %#v", document.Surfaces)
 	}
 	claudeContract := slices.IndexFunc(document.SurfaceContracts, func(contract packShowSurfaceJSON) bool { return contract.Surface == capabilitypack.SurfaceClaude })

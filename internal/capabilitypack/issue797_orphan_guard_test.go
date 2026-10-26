@@ -11,13 +11,13 @@ import (
 func TestIssue797ProjectInstallApplyRejectsOrphanCreatedAfterPreview(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 	pack := Pack{
-		ID: "orphan-race", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex, SurfaceClaude},
+		ID: "orphan-race", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents, SurfaceClaude},
 		ReadinessObligations: []ReadinessObligation{}, Requires: Requirements{Tools: []string{}}, Resources: []Resource{}, Contract: Contract{OptionalModes: []OptionalMode{}},
 	}
 	adapter := &fakeSurfaceAdapter{}
 	facade := NewFacade(Catalog{packs: []Pack{pack}})
 	preview, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{
-		PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll},
+		PackID: pack.ID, Surface: SurfaceAgents, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll},
 	}, adapter)
 	if err != nil || preview.Disposition != ProjectInstallPreviewable {
 		t.Fatalf("initial project install preview = %#v, %v", preview, err)
@@ -52,7 +52,7 @@ func TestIssue797ProjectInstallApplyRejectsOrphanCreatedAfterPreview(t *testing.
 func TestIssue797FocusedProjectStatusIgnoresUnrelatedOrphan(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 	installed := Pack{
-		ID: "installed", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "installed", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents},
 		ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, Requires: Requirements{Tools: []string{}},
 		Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
 		Contract:  Contract{OptionalModes: []OptionalMode{}},
@@ -60,7 +60,7 @@ func TestIssue797FocusedProjectStatusIgnoresUnrelatedOrphan(t *testing.T) {
 	adapter := &syntheticRequirementAdapter{target: filepath.Join(project, ".agents", "skills", "guide")}
 	facade := NewFacade(Catalog{packs: []Pack{installed}})
 	preview, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{
-		PackID: installed.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll},
+		PackID: installed.ID, Surface: SurfaceAgents, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll},
 	}, adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -85,25 +85,25 @@ func TestIssue797FocusedProjectStatusIgnoresUnrelatedOrphan(t *testing.T) {
 	adapter.applied = true
 
 	saveIssue797Orphan(t, packyHome, project, "unrelated", SurfaceClaude, []ProjectActivationEffectReceipt{{
-		Action: ActionCodexProjectTrust, Surface: SurfaceClaude, Target: filepath.Join(t.TempDir(), "config.toml"),
+		Action: ProjectionActionKind("retired-project-trust"), Surface: SurfaceClaude, Target: filepath.Join(t.TempDir(), "config.toml"),
 		ContributionIdentity: "unrelated-contribution", AdapterProvenance: "claude-project/v1/project-trust", StartMarker: "start", EndMarker: "end", PriorState: "absent",
 	}})
 
 	report, err := InspectProjectStatus(context.Background(), ProjectStatusRequest{
-		ProjectRoot: project, PackyHome: packyHome, PackID: installed.ID, Surface: SurfaceCodex,
-		Adapters: map[Surface]SurfaceAdapter{SurfaceCodex: adapter},
+		ProjectRoot: project, PackyHome: packyHome, PackID: installed.ID, Surface: SurfaceAgents,
+		Adapters: map[Surface]SurfaceAdapter{SurfaceAgents: adapter},
 	})
 	if err != nil {
 		t.Fatalf("focused status inspected an unrelated orphan: %v", err)
 	}
-	if len(report.Packs) != 1 || report.Packs[0].Pack.ID != installed.ID || report.Packs[0].Surface != SurfaceCodex {
+	if len(report.Packs) != 1 || report.Packs[0].Pack.ID != installed.ID || report.Packs[0].Surface != SurfaceAgents {
 		t.Fatalf("focused status = %#v", report.Packs)
 	}
 }
 
 func TestIssue797OrphanFailsProjectStatusRequirements(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
-	saveIssue797Orphan(t, packyHome, project, "orphan", SurfaceCodex, nil)
+	saveIssue797Orphan(t, packyHome, project, "orphan", SurfaceAgents, nil)
 
 	for _, test := range []struct {
 		name             string

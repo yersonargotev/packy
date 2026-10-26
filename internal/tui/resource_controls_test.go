@@ -25,7 +25,7 @@ func openResourceConfiguration(t *testing.T, backend *fakeBackend, project bool)
 
 func TestNewPackOpensResourceChecklistWithoutSelectionModeStep(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-		ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:review", Description: "Review proposed changes", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:review", Description: "Review proposed changes", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 	}}}}}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -49,7 +49,7 @@ func TestResourceConfigurationPreservesSelectionModeWithoutEdits(t *testing.T) {
 				if mode == "custom" {
 					selection.Roots = []string{"skill:a", "skill:b"}
 				}
-				pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Installation: "installed", Selection: selection}}}
+				pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Installation: "installed", Selection: selection}}}
 				scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
 				backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope}}
 				var model tea.Model = openResourceConfiguration(t, backend, project)
@@ -69,11 +69,11 @@ func TestResourceConfigurationPreservesSelectionModeWithoutEdits(t *testing.T) {
 
 func TestResourceConfigurationStagesChangesAndDeselectsConsumers(t *testing.T) {
 	pack := tui.Pack{ID: "resource-controls", Version: "1.0.0", Resources: []tui.Resource{
-		{Identity: "skill:writer", Role: "operational", SelectionClosures: map[string][]string{"codex": {"skill:writer", "skill:helper", "notice:mit"}}},
+		{Identity: "skill:writer", Role: "operational", SelectionClosures: map[string][]string{"agents": {"skill:writer", "skill:helper", "notice:mit"}}},
 		{Identity: "skill:helper", Role: "operational"},
 		{Identity: "mcp_server:search", Role: "operational"},
 		{Identity: "notice:mit", Role: "notice"},
-	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:writer"}}}}}
+	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:writer"}}}}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
 	model := openResourceConfiguration(t, backend, false)
 	view := ansi.Strip(model.View().Content)
@@ -105,7 +105,7 @@ func TestResourceConfigurationStagesChangesAndDeselectsConsumers(t *testing.T) {
 func TestResourceConfigurationAppliesOnlyAfterAllConsentAndReloads(t *testing.T) {
 	for _, scope := range []string{"global", "project"} {
 		t.Run(scope, func(t *testing.T) {
-			pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Installation: "installed", Selection: tui.Selection{Mode: "all"}}}}
+			pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Installation: "installed", Selection: tui.Selection{Mode: "all"}}}}
 			installed := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
 			disposition := "applicable"
 			if scope == "project" {
@@ -113,7 +113,7 @@ func TestResourceConfigurationAppliesOnlyAfterAllConsentAndReloads(t *testing.T)
 			}
 			backend := &fakeBackend{
 				dashboard: tui.Dashboard{Global: installed, Project: installed},
-				preview: tui.Preview{ID: "configure-1", Digest: "exact", Operation: "configure", Scope: scope, PackID: "resource-controls", Surface: "codex", Disposition: disposition, Phases: []tui.PreviewPhase{
+				preview: tui.Preview{ID: "configure-1", Digest: "exact", Operation: "configure", Scope: scope, PackID: "resource-controls", Surface: "agents", Disposition: disposition, Phases: []tui.PreviewPhase{
 					{Kind: "reversible-local", ApprovalRequired: true},
 					{Kind: "destructive-cleanup", ApprovalRequired: true},
 				}},
@@ -146,7 +146,7 @@ func TestResourceConfigurationAppliesOnlyAfterAllConsentAndReloads(t *testing.T)
 func TestClearingResourceConfigurationPreviewsWholeRemovalAndCanBeCancelled(t *testing.T) {
 	for _, project := range []bool{false, true} {
 		t.Run(fmt.Sprintf("project=%t", project), func(t *testing.T) {
-			pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "command:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Installation: "installed", Runtime: "active", Selection: tui.Selection{Mode: "all"}}}}
+			pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "command:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Installation: "installed", Runtime: "active", Selection: tui.Selection{Mode: "all"}}}}
 			scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
 			backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope}}
 			backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
@@ -176,7 +176,7 @@ func TestClearingResourceConfigurationPreviewsWholeRemovalAndCanBeCancelled(t *t
 
 func TestResourceConfigurationLoadsSelectionForChangedSurface(t *testing.T) {
 	pack := tui.Pack{ID: "resource-controls", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "skill:b", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{
-		{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:a"}}},
+		{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:a"}}},
 		{Name: "claude", Supported: true, Active: true, Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:b"}}},
 	}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
@@ -204,7 +204,7 @@ func TestResourceSearchPreservesHiddenSelectionsAndAcceptsQuitLetter(t *testing.
 	pack := tui.Pack{ID: "resource-list", Resources: []tui.Resource{
 		{Identity: "skill:query", Role: "operational", Description: "Query the project"},
 		{Identity: "command:report", Role: "operational", Description: "Write a report"},
-	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
+	}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
 	var model tea.Model = openResourceConfiguration(t, backend, false)
 	model = resourceListMessage(t, model, tea.KeyPressMsg(tea.Key{Code: '/', Text: "/"}))
@@ -249,7 +249,7 @@ func resourceListMessage(t *testing.T, model tea.Model, message tea.Msg) tea.Mod
 }
 
 func TestResourceListKeepsActionsVisibleAtMinimumTerminalSize(t *testing.T) {
-	pack := tui.Pack{ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "notice:license", Role: "notice"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
+	pack := tui.Pack{ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:a", Role: "operational"}, {Identity: "notice:license", Role: "notice"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
 	var model tea.Model = openResourceConfiguration(t, backend, false)
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
@@ -268,7 +268,7 @@ func TestResourceListKeepsActionsVisibleAtMinimumTerminalSize(t *testing.T) {
 }
 
 func TestResourceConfigurationKeepsFocusedResourceAndApplyVisible(t *testing.T) {
-	pack := tui.Pack{ID: "resource-controls", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
+	pack := tui.Pack{ID: "resource-controls", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}}}
 	for index := range 40 {
 		pack.Resources = append(pack.Resources, tui.Resource{Identity: fmt.Sprintf("skill:item-%02d", index), Role: "operational"})
 	}

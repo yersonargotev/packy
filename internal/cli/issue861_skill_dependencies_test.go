@@ -58,7 +58,7 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 		protected[relative] = snapshotTree(t, filepath.Join(workspace, relative))
 	}
 
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		args := []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", surface, "--json"}
 		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), environment, args...)
 		if err != nil {
@@ -152,18 +152,18 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 		project := dependencyAccessProject(t, "escaped", func(m map[string]any) {
 			for _, v := range accessResource(m, "shared")["variants"].([]any) {
 				variant := v.(map[string]any)
-				if variant["surface"] == "codex" {
-					variant["source"] = "skills/shared codex#(v1)"
+				if variant["surface"] == "agents" {
+					variant["source"] = "skills/shared agents#(v1)"
 				}
 			}
 		})
 		packRoot := filepath.Join(project, "packs/reviewed")
-		if err := os.Rename(filepath.Join(packRoot, "skills/shared-codex"), filepath.Join(packRoot, "skills/shared codex#(v1)")); err != nil {
+		if err := os.Rename(filepath.Join(packRoot, "skills/shared-agents"), filepath.Join(packRoot, "skills/shared agents#(v1)")); err != nil {
 			t.Fatal(err)
 		}
 		assets := dependencyAccessAssets(t, project, strings.Repeat("f", 40))
 		workspace := filepath.Join(t.TempDir(), "candidate")
-		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t, "PATH="+t.TempDir()), "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", "codex", "--json")
+		out, stderr, err := runSkillAccessCLI(t, binary, t.TempDir(), testprocess.Env(t, "PATH="+t.TempDir()), "catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--", "get", "skill", "reviewed:guide", "--surface", "agents", "--json")
 		if err != nil {
 			t.Fatalf("escaped source: %v %s %s", err, out, stderr)
 		}
@@ -172,9 +172,9 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 			t.Fatal(err)
 		}
 		grilling := followAccessLink(t, result.EntryDocument, "grilling")
-		assertAccessFile(t, grilling, []byte("codex grilling escaped\n"+accessSupportingLinks+"Read [shared](../shared%20codex%23%28v1%29/ACCESS.md).\n"), 0644)
+		assertAccessFile(t, grilling, []byte("agents grilling escaped\n"+accessSupportingLinks+"Read [shared](../shared%20agents%23%28v1%29/ACCESS.md).\n"), 0644)
 		shared := followAccessLink(t, grilling, "shared")
-		assertAccessFile(t, shared, []byte("codex shared escaped\n"+accessSupportingLinks), 0644)
+		assertAccessFile(t, shared, []byte("agents shared escaped\n"+accessSupportingLinks), 0644)
 	})
 
 	t.Run("retained nested dependency after refresh", func(t *testing.T) {
@@ -185,7 +185,7 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 		acquireSkillAccessCatalog(t, env, directory, assets, firstID, "init")
 		get := func(id, snapshot string) skillaccess.Result {
 			t.Helper()
-			args := []string{"get", "skill", "reviewed:" + id, "--surface", "codex", "--json"}
+			args := []string{"get", "skill", "reviewed:" + id, "--surface", "agents", "--json"}
 			if snapshot != "" {
 				args = append(args, "--snapshot", snapshot)
 			}
@@ -207,7 +207,7 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 		next := dependencyAccessAssets(t, dependencyAccessProject(t, "next", nil), nextID)
 		acquireSkillAccessCatalog(t, env, directory, next, nextID, "catalog", "refresh")
 		nested := get("grilling", first.SnapshotID)
-		assertAccessFile(t, nested.EntryDocument, []byte("codex grilling first\n"+accessSupportingLinks+"Read [shared](../shared-codex/ACCESS.md).\n"), 0644)
+		assertAccessFile(t, nested.EntryDocument, []byte("agents grilling first\n"+accessSupportingLinks+"Read [shared](../shared-agents/ACCESS.md).\n"), 0644)
 		for _, dependency := range nested.Dependencies {
 			if dependency.SnapshotID != firstID {
 				t.Fatal("nested snapshot substituted")
@@ -225,10 +225,10 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 			}
 		}
 		sourceRoot := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog/snapshots", firstID)
-		if err := os.Remove(filepath.Join(sourceRoot, "packs/reviewed/skills/shared-codex/ACCESS.md")); err != nil {
+		if err := os.Remove(filepath.Join(sourceRoot, "packs/reviewed/skills/shared-agents/ACCESS.md")); err != nil {
 			t.Fatal(err)
 		}
-		out, _, err := runSkillAccessCLI(t, binary, directory, envList, "get", "skill", "reviewed:grilling", "--surface", "codex", "--snapshot", firstID, "--json")
+		out, _, err := runSkillAccessCLI(t, binary, directory, envList, "get", "skill", "reviewed:grilling", "--surface", "agents", "--snapshot", firstID, "--json")
 		if err == nil || !bytes.Contains(out, []byte("snapshot_unavailable")) {
 			t.Fatalf("missing retained dependency substituted: %v %s", err, out)
 		}
@@ -269,12 +269,16 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 	}
 	guide["requires"] = []string{"asset:guide-data", "skill:domain-modeling", "skill:grilling"}
 	for _, value := range guide["bindings"].([]any) {
-		value.(map[string]any)["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
+		binding := value.(map[string]any)
+		binding["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
+		if binding["surface"] == "agents" {
+			binding["invocation"] = binding["name"]
+		}
 	}
 
 	guide["on_demand"].(map[string]any)["entry_document"] = "ACCESS.md"
 	guide["on_demand"].(map[string]any)["reference_files"] = []string{"ACCESS.md", "references/nested.md"}
-	for _, surface := range []string{"common", "codex", "claude"} {
+	for _, surface := range []string{"common", "agents", "claude"} {
 		nested := filepath.Join(packRoot, "skills", surface, "references/nested.md")
 		if err := os.WriteFile(nested, []byte("Read [grilling]({{packy.access:grilling}}).\n"), 0644); err != nil {
 			t.Fatal(err)
@@ -306,18 +310,18 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 			b := b.(map[string]any)
 			b["name"] = id
 			prefix := "/"
-			if b["surface"] == "codex" {
-				prefix = "$"
+			if b["surface"] == "agents" {
+				prefix = ""
 			}
 			b["invocation"] = prefix + id
 		}
 		variants := []any{}
-		for _, surface := range []string{"claude", "codex"} {
+		for _, surface := range []string{"agents", "claude"} {
 			source := "skills/" + id + "-" + surface
 			variants = append(variants, map[string]any{"surface": surface, "source": source})
 		}
 		skill["variants"] = variants
-		for _, surface := range []string{"common", "claude", "codex"} {
+		for _, surface := range []string{"common", "agents", "claude"} {
 			source := "skills/" + id
 			if surface != "common" {
 				source += "-" + surface
@@ -391,9 +395,9 @@ func checkIssue861InvalidDependencies(t *testing.T, binary string) {
 		{name: "cycle", diagnostic: "cycle", edit: func(m map[string]any) { accessResource(m, "shared")["requires"] = []string{"skill:guide"} }},
 		{name: "excluded", diagnostic: "excluded", edit: func(m map[string]any) {
 			s := accessResource(m, "grilling")
-			s["bindings"] = slices.DeleteFunc(s["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "codex" })
-			s["variants"] = slices.DeleteFunc(s["variants"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "codex" })
-			s["surface_exclusions"] = append(s["surface_exclusions"].([]any), map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed for Codex"})
+			s["bindings"] = slices.DeleteFunc(s["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "agents" })
+			s["variants"] = slices.DeleteFunc(s["variants"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "agents" })
+			s["surface_exclusions"] = append(s["surface_exclusions"].([]any), map[string]any{"surface": "agents", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed for Agents"})
 		}},
 		{name: "incompatible", diagnostic: "reviewed", edit: func(m map[string]any) { delete(accessResource(m, "grilling"), "on_demand") }},
 		{name: "undeclared", diagnostic: "direct requires", body: "Read {{packy.access:shared}}\n"},
@@ -411,7 +415,7 @@ func checkIssue861InvalidDependencies(t *testing.T, binary string) {
 		t.Run(test.name, func(t *testing.T) {
 			project := dependencyAccessProject(t, "first", test.edit)
 			if test.body != "" {
-				for _, host := range []string{"common", "claude", "codex"} {
+				for _, host := range []string{"common", "agents", "claude"} {
 					if err := os.WriteFile(filepath.Join(project, "packs/reviewed/skills", host, "ACCESS.md"), []byte(test.body), 0644); err != nil {
 						t.Fatal(err)
 					}

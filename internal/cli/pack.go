@@ -14,9 +14,9 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/yersonargotev/packy/internal/agents"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/claudecode"
-	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skilldiscovery"
@@ -111,7 +111,7 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "Remove only one installed CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&surface, "surface", "", "Remove only one installed CLI surface (claude or agents)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview every exact removal without mutation")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
@@ -209,7 +209,7 @@ func renderProjectUninstallPreview(cmd *cobra.Command, report capabilitypack.JSO
 }
 
 func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var surface string
+	var surface, client string
 	var dryRun bool
 	var jsonOutput bool
 	var aliasValues []string
@@ -230,7 +230,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil {
 				return err
 			}
-			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
+			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll, Client: client}
 			if len(resourceValues) > 0 {
 				selection.Mode = capabilitypack.SelectionCustom
 				for _, value := range resourceValues {
@@ -261,7 +261,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return err
 			}
 			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock), capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.tools, nil, nil))
-			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Selection: selection, Aliases: aliases}, adapter)
 			if err != nil {
 				return err
@@ -334,7 +334,8 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(cmd.Context(), opts, report.Surface, snapshot))
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&client, "client", "", "Explicit custom-agent client (codex; global scope only)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or agents)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the project contract and projections without mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a project surface alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one operational project resource (<kind>:<id>); repeatable")
@@ -521,7 +522,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 		}
 		return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 	}}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or agents)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove one operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
@@ -625,7 +626,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 			return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or agents)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
@@ -652,7 +653,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 		return err
 	}
 	facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock))
-	adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+	adapter := projectInstallAdapter(surface, composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Force: force}, adapter)
 	if err != nil {
 		return err
@@ -773,7 +774,7 @@ func applyPackPlan(cmd *cobra.Command, opts Options, facade capabilitypack.Facad
 }
 
 func newPackActivateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var surface string
+	var surface, client string
 	var dryRun bool
 	var project bool
 	var aliasValues []string
@@ -790,8 +791,8 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				}
 			}()
 			if project {
-				if len(aliasValues) > 0 || len(resourceValues) > 0 {
-					return errors.New("--alias and --resource are not accepted with --project; project activation consumes the exact installed lock")
+				if len(aliasValues) > 0 || len(resourceValues) > 0 || client != "" {
+					return errors.New("--alias, --resource, and --client are not accepted with --project; project activation consumes the exact installed lock")
 				}
 				snapshot, err := workstationResolver.Resolve(workstation.Options{})
 				if err != nil {
@@ -847,7 +848,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 			if err != nil {
 				return err
 			}
-			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
+			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll, Client: client}
 			if len(resourceValues) > 0 {
 				selection.Mode = capabilitypack.SelectionCustom
 				for _, value := range resourceValues {
@@ -872,7 +873,8 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 			return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&client, "client", "", "Explicit custom-agent client (codex; global scope only)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or agents)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().BoolVar(&project, "project", false, "Activate personal runtime effects from the current project installation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
@@ -894,9 +896,9 @@ func nativeProjectRuntimeAdapter(ctx context.Context, opts Options, surface capa
 		return adapter
 	}
 	home := snapshot.Home()
-	if surface == capabilitypack.SurfaceCodex && home != "" {
-		layout := codex.NewCanonicalLayout(home)
-		return withControlledCheckFacts(ctx, opts, surface, codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile()))
+	if surface == capabilitypack.SurfaceAgents && home != "" {
+		layout := agents.NewCanonicalLayout(home)
+		return withControlledCheckFacts(ctx, opts, surface, agents.NewSurfaceAdapter("", "", layout.RolesDir()))
 	}
 	if surface == capabilitypack.SurfaceClaude && home != "" {
 		executable, _ := opts.ClaudeLookPath("claude")
@@ -918,7 +920,7 @@ func nativeProjectRuntimeAdapter(ctx context.Context, opts Options, surface capa
 func projectStatusAdapters(ctx context.Context, opts Options, snapshot workstation.Snapshot) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
 	return map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 		capabilitypack.SurfaceClaude: projectRuntimeAdapter(ctx, opts, capabilitypack.SurfaceClaude, snapshot),
-		capabilitypack.SurfaceCodex:  projectRuntimeAdapter(ctx, opts, capabilitypack.SurfaceCodex, snapshot),
+		capabilitypack.SurfaceAgents: projectRuntimeAdapter(ctx, opts, capabilitypack.SurfaceAgents, snapshot),
 	}
 }
 
@@ -1064,7 +1066,7 @@ func surfaceName(surface capabilitypack.Surface) string {
 	if surface == capabilitypack.SurfaceClaude {
 		return "Claude Code"
 	}
-	return "Codex"
+	return "Agents"
 }
 
 func parseSurfaceAliases(values []string) ([]capabilitypack.SurfaceAlias, error) {
@@ -1095,7 +1097,7 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	if err != nil {
 		return capabilitypack.Facade{}, err
 	}
-	codexAdapter := codex.NewSurfaceAdapterWithConfig(composition.catalogRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+	agentsAdapter := agents.NewSurfaceAdapter(composition.catalogRoot, composition.skills.Root(), composition.agents.RolesDir())
 
 	store := capabilitypack.NewFileActivationStore(composition.state.File())
 	claudeLayout := composition.claude
@@ -1117,7 +1119,7 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 	adapters := opts.SurfaceAdapters
 	if adapters == nil {
 		adapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceCodex: withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceCodex, discoveryAdapter(capabilitypack.SurfaceCodex, codexAdapter, composition.claude.Home, cwd)),
+			capabilitypack.SurfaceAgents: withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceAgents, discoveryAdapter(capabilitypack.SurfaceAgents, agentsAdapter, composition.claude.Home, cwd)),
 
 			capabilitypack.SurfaceClaude: withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceClaude, discoveryAdapter(capabilitypack.SurfaceClaude, claudeAdapter, composition.claude.Home, cwd)),
 		}
@@ -1140,6 +1142,13 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 }
 
 func withControlledCheckFacts(ctx context.Context, opts Options, surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter) capabilitypack.SurfaceAdapter {
+	if surface == capabilitypack.SurfaceAgents {
+		return capabilitypack.WithControlledCheckDescriptor(adapter, capabilitypack.ControlledCheckDescriptor{
+			AdapterVersion: "packy/" + packyversion.Value + "/agents-surface/v1",
+			HostVersion:    "unobservable",
+			Instructions:   []string{"In your explicitly selected client, exercise the selected Pack behavior. Projected content alone does not establish authorization or runtime usability."},
+		})
+	}
 	return capabilitypack.WithControlledCheckDescriptor(adapter, capabilitypack.ControlledCheckDescriptor{
 		AdapterVersion: "packy/" + packyversion.Value + "/" + string(surface) + "-surface/v1",
 		HostVersion:    observableSurfaceVersion(ctx, opts.Runner, string(surface)),
@@ -1220,6 +1229,11 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		return err
 	}
 	selection := plan.Selection()
+	if selection.Client != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Custom-agent client: %s · scope: global\n", selection.Client); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection mode: %s\n", selection.Mode); err != nil {
 		return err
 	}
@@ -1397,7 +1411,7 @@ func (e runnerExternalExecutor) Execute(ctx context.Context, action capabilitypa
 }
 
 func newControlledCheckCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var surface, result string
+	var surface, result, client string
 	var project, dryRun bool
 	var resourceValues []string
 	cmd := &cobra.Command{
@@ -1407,7 +1421,7 @@ func newControlledCheckCommand(opts Options, workstationResolver *workstation.Re
 			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), false, false, "check")
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
+			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll, Client: client}
 			if len(resourceValues) > 0 {
 				if project {
 					return errors.New("--resource is not supported with --project; the installed project closure is checked exactly")
@@ -1481,7 +1495,8 @@ func newControlledCheckCommand(opts Options, workstationResolver *workstation.Re
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&client, "client", "", "Explicit custom-agent client (codex; global scope only)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or agents)")
 	cmd.Flags().StringVar(&result, "result", "", "Observed result to record (positive or negative)")
 	cmd.Flags().BoolVar(&project, "project", false, "Check the current project's installed Pack closure")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the exact controlled check without recording evidence")
@@ -1634,7 +1649,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or codex)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude or agents)")
 	cmd.Flags().StringVar(&resource, "resource", "", "Inspect one selected resource (<kind>:<id>)")
 	cmd.Flags().StringVar(&require, "require", "", "Require a readiness dimension (usable)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
@@ -1660,7 +1675,7 @@ func newProjectVerifyCommand(getwd func() (string, error)) *cobra.Command {
 			}
 			report := capabilitypack.VerifyProject(cmd.Context(), projectRoot, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 				capabilitypack.SurfaceClaude: projectOfflineAdapter(capabilitypack.SurfaceClaude),
-				capabilitypack.SurfaceCodex:  projectOfflineAdapter(capabilitypack.SurfaceCodex),
+				capabilitypack.SurfaceAgents: projectOfflineAdapter(capabilitypack.SurfaceAgents),
 			})
 			if jsonOutput {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
@@ -1706,29 +1721,29 @@ func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.Surfac
 		return discoveryAdapter(surface, nativeProjectOfflineAdapter(surface), "", "")
 	}
 	return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-		capabilitypack.SurfaceCodex:  projectOfflineAdapter(capabilitypack.SurfaceCodex),
+		capabilitypack.SurfaceAgents: projectOfflineAdapter(capabilitypack.SurfaceAgents),
 		capabilitypack.SurfaceClaude: projectOfflineAdapter(capabilitypack.SurfaceClaude),
-	}, capabilitypack.SurfaceCodex)
+	}, capabilitypack.SurfaceAgents)
 }
 
 func nativeProjectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
 	if surface == capabilitypack.SurfaceClaude {
 		return claudeProjectAdapter("")
 	}
-	return codex.NewSurfaceAdapterWithConfig("", "", "", "")
+	return agents.NewSurfaceAdapter("", "", "")
 }
 
-func projectInstallAdapter(surface capabilitypack.Surface, catalogRoot, skillsRoot, codexPrompt, codexConfig string) capabilitypack.SurfaceAdapter {
+func projectInstallAdapter(surface capabilitypack.Surface, catalogRoot, skillsRoot, rolesDir string) capabilitypack.SurfaceAdapter {
 	home := filepath.Dir(filepath.Dir(skillsRoot))
 	adapters := map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 		capabilitypack.SurfaceClaude: claudeProjectAdapter(catalogRoot),
-		capabilitypack.SurfaceCodex:  codex.NewSurfaceAdapterWithConfig(catalogRoot, skillsRoot, codexPrompt, codexConfig),
+		capabilitypack.SurfaceAgents: agents.NewSurfaceAdapter(catalogRoot, skillsRoot, rolesDir),
 	}
 	for host, adapter := range adapters {
 		adapters[host] = discoveryAdapter(host, adapter, home, "")
 	}
 	if surface == "" {
-		return capabilitypack.NewProjectSurfaceAdapterSet(adapters, capabilitypack.SurfaceCodex)
+		return capabilitypack.NewProjectSurfaceAdapterSet(adapters, capabilitypack.SurfaceAgents)
 	}
 	return adapters[surface]
 }
@@ -1736,7 +1751,7 @@ func projectInstallAdapter(surface capabilitypack.Surface, catalogRoot, skillsRo
 func discoveryAdapter(surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter, home, cwd string) capabilitypack.SurfaceAdapter {
 	roots := map[capabilitypack.Surface]string{}
 	if home != "" && home != "." {
-		roots[capabilitypack.SurfaceCodex] = skilllayout.NewGlobalLayout(home).Root()
+		roots[capabilitypack.SurfaceAgents] = skilllayout.NewGlobalLayout(home).Root()
 		roots[capabilitypack.SurfaceClaude] = claudecode.NewCanonicalLayout(home).SkillsDir
 	}
 	observer := skilldiscovery.Observer{Surface: surface, GlobalRoots: roots, WorkingDirectory: cwd}
@@ -2107,7 +2122,7 @@ func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	cmd.Flags().StringVar(&surface, "surface", "", "Discover current catalog skills for codex or claude without preparing resources")
+	cmd.Flags().StringVar(&surface, "surface", "", "Discover current catalog skills for agents or claude without preparing resources")
 	return cmd
 }
 
@@ -2116,7 +2131,7 @@ type packComposition struct {
 	state       capabilitypack.StateLayout
 	skills      skilllayout.GlobalLayout
 	catalogRoot string
-	codex       codex.CanonicalLayout
+	agents      agents.CanonicalLayout
 
 	claude claudecode.CanonicalLayout
 	tools  toolbin.PATHResolver
@@ -2146,7 +2161,7 @@ func resolvePackComposition(ctx context.Context, opts Options, workstationResolv
 		state:       capabilitypack.NewStateLayout(snapshot.PackyHome()),
 		skills:      skilllayout.NewGlobalLayout(snapshot.Home()),
 		catalogRoot: catalogRoot,
-		codex:       codex.NewCanonicalLayout(snapshot.Home()),
+		agents:      agents.NewCanonicalLayout(snapshot.Home()),
 
 		claude: claudecode.NewCanonicalLayout(snapshot.Home()),
 		tools:  toolbin.NewPATHResolver(opts.Runner.LookPath),

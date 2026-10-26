@@ -18,7 +18,7 @@ func TestIssue876RetiredSurfaceAndCapabilityAreRejected(t *testing.T) {
 	if err := validateV3Surfaces([]Surface{retired}); err == nil {
 		t.Error("catalog accepts retired surface")
 	}
-	binding := Binding{Surface: SurfaceCodex, Name: "guide", Invocation: "$guide", Projection: "skill", Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: "opencode-primary-prompt"}}}
+	binding := Binding{Surface: SurfaceAgents, Name: "guide", Invocation: "$guide", Projection: "skill", Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: "opencode-primary-prompt"}}}
 	if err := validateBindingV3(Resource{Kind: "skill"}, binding, nil); err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("retired capability: %v", err)
 	}
@@ -46,26 +46,26 @@ func TestIssue876RetiredPersonalStateBlocksProjectInstallAndApply(t *testing.T) 
 	for _, afterPreview := range []bool{false, true} {
 		t.Run(fmt.Sprint("after-preview=", afterPreview), func(t *testing.T) {
 			project, packyHome := t.TempDir(), t.TempDir()
-			pack := Pack{ID: "orphan-race", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, ReadinessObligations: []ReadinessObligation{}, Requires: Requirements{Tools: []string{}}, Resources: []Resource{}, Contract: Contract{OptionalModes: []OptionalMode{}}}
+			pack := Pack{ID: "orphan-race", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, ReadinessObligations: []ReadinessObligation{}, Requires: Requirements{Tools: []string{}}, Resources: []Resource{}, Contract: Contract{OptionalModes: []OptionalMode{}}}
 			adapter := &fakeSurfaceAdapter{}
 			facade := NewFacade(Catalog{packs: []Pack{pack}})
-			request := ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll}}
+			request := ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceAgents, ProjectRoot: project, PackyHome: packyHome, Selection: ResourceSelection{Mode: SelectionAll}}
 			preview, err := facade.PreviewProjectInstall(context.Background(), request, adapter)
 			if err != nil || preview.Disposition != ProjectInstallPreviewable {
 				t.Fatalf("initial preview: %v %+v", err, preview)
 			}
 			// Model an old binary's valid receipt without asking the current writer to accept it.
-			saveIssue797Orphan(t, packyHome, project, pack.ID, SurfaceCodex, nil)
+			saveIssue797Orphan(t, packyHome, project, pack.ID, SurfaceAgents, nil)
 			directory, err := projectActivationDirectory(packyHome, project)
 			if err != nil {
 				t.Fatal(err)
 			}
-			oldPath := filepath.Join(directory, projectActivationStateFile(pack.ID, SurfaceCodex))
+			oldPath := filepath.Join(directory, projectActivationStateFile(pack.ID, SurfaceAgents))
 			data, err := os.ReadFile(oldPath)
 			if err != nil {
 				t.Fatal(err)
 			}
-			data = []byte(strings.ReplaceAll(string(data), `"codex"`, `"opencode"`))
+			data = []byte(strings.ReplaceAll(string(data), `"agents"`, `"opencode"`))
 			retiredPath := filepath.Join(directory, projectActivationStateFile(pack.ID, Surface("opencode")))
 			if err := os.WriteFile(retiredPath, data, 0600); err != nil {
 				t.Fatal(err)

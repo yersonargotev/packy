@@ -10,13 +10,13 @@ import (
 )
 
 func TestSelectedDefinitionExplanationIsSharedAcrossPresentations(t *testing.T) {
-	variantSource := "skills/codex/guide"
-	pack := capabilitypack.Pack{ID: "definitions", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceClaude}, Resources: []capabilitypack.Resource{{
+	variantSource := "skills/agents/guide"
+	pack := capabilitypack.Pack{ID: "definitions", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceAgents, capabilitypack.SurfaceClaude}, Resources: []capabilitypack.Resource{{
 		Kind: "skill", ID: "guide", Description: "Reviewed guide", Source: "skills/common/guide",
 		Origin:   &capabilitypack.ResourceOrigin{ID: "upstream", Path: "guide", Relationship: "exact-copy"},
 		Notices:  []string{"notice:mit"},
-		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex}, {Surface: capabilitypack.SurfaceClaude}},
-		Variants: []capabilitypack.ResourceVariant{{Surface: capabilitypack.SurfaceCodex, Source: &variantSource, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "guide", Relationship: "adapted"}}},
+		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceAgents}, {Surface: capabilitypack.SurfaceClaude}},
+		Variants: []capabilitypack.ResourceVariant{{Surface: capabilitypack.SurfaceAgents, Source: &variantSource, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "guide", Relationship: "adapted"}}},
 	}}}
 	for _, surface := range pack.Surfaces {
 		contract := capabilitypack.LifecycleContractFor(pack, surface, nil)
@@ -25,7 +25,7 @@ func TestSelectedDefinitionExplanationIsSharedAcrossPresentations(t *testing.T) 
 		}
 		definition := contract.ResourceDefinitions[0]
 		wantKind, wantSource, wantRelationship := "common", "skills/common/guide", "exact-copy"
-		if surface == capabilitypack.SurfaceCodex {
+		if surface == capabilitypack.SurfaceAgents {
 			wantKind, wantSource, wantRelationship = "surface_variant", variantSource, "adapted"
 		}
 		if definition.Definition != wantKind || definition.Source != wantSource || definition.Origin.Relationship != wantRelationship || len(definition.Notices) != 1 {

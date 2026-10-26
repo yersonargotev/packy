@@ -13,10 +13,10 @@ import (
 )
 
 func issue452InstallArgs(packID string) []string {
-	return []string{"install", packID, "--surface", "codex", "--resource", "instruction:guidance", "--resource", "skill:helper"}
+	return []string{"install", packID, "--surface", "agents", "--resource", "instruction:guidance", "--resource", "skill:helper"}
 }
 
-func TestIssue452SyntheticCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *testing.T) {
+func TestIssue452SyntheticAgentsProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	pack := testsupport.CapabilityRich("project-install")
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
@@ -71,7 +71,7 @@ func TestIssue452SyntheticCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("decode manifest: %v\n%s", err, manifestData)
 	}
-	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != manifestPack.ID || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != pack.CurrentVersion() || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceCodex {
+	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != manifestPack.ID || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != pack.CurrentVersion() || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceAgents {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 

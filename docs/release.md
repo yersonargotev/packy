@@ -79,7 +79,7 @@ contents, checksums, and the native binary's version and source identity.
 <os_arch> --evidence <dir>` then extracts that target's staged binary and runs
 the same functional cases for identity, validation, construction, publication,
 candidate lifecycle/transition acceptance, and on-demand discovery/retrieval
-for Codex and Claude Code. Access cases verify versioned output, complete
+for Agents and Claude. Access cases verify versioned output, complete
 host-effective resources and dependencies, retained references across refresh,
 offline/non-Git use without content runtimes, and failure/state-preservation
 contracts. Both executable entry points invoke the same cases; the supplied

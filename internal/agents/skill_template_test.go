@@ -1,4 +1,4 @@
-package codex
+package agents
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 
 func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 	root := t.TempDir()
-	writeCodexTemplateSkill(t, root, "helper", "---\nname: helper\n---\nhelper\n")
-	writeCodexTemplateSkill(t, root, "consumer", "---\nname: consumer # keep\n---\nUse {{packy.skill:helper}}; keep $helper.\n")
-	pack := capabilitypack.ResolvePackForSurface(codexTemplatePack(root), capabilitypack.SurfaceCodex)
+	writeAgentsTemplateSkill(t, root, "helper", "---\nname: helper\n---\nhelper\n")
+	writeAgentsTemplateSkill(t, root, "consumer", "---\nname: consumer # keep\n---\nUse {{packy.skill:helper}}; keep $helper.\n")
+	pack := capabilitypack.ResolvePackForSurface(agentsTemplatePack(root), capabilitypack.SurfaceAgents)
 	skills := filepath.Join(root, "home", "skills")
 	adapter := NewSurfaceAdapter(root, skills, filepath.Join(root, "home", "AGENTS.md"))
 
@@ -22,8 +22,8 @@ func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	consumer := codexProjection(t, inspection, "skill:fixture-consumer")
-	assertCodexRenderedTree(t, consumer.Action, "fixture-consumer", "fixture-helper")
+	consumer := agentsProjection(t, inspection, "skill:fixture-consumer")
+	assertAgentsRenderedTree(t, consumer.Action, "fixture-consumer", "fixture-helper")
 	if consumer.Action.Kind != capabilitypack.ActionSkillTree || consumer.Action.Source != "" {
 		t.Fatalf("global template action = %+v", consumer.Action)
 	}
@@ -44,9 +44,9 @@ func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectConsumer := codexProjection(t, project, "skill:consumer")
-	assertCodexRenderedTree(t, projectConsumer.Action, "fixture-consumer", "fixture-helper")
-	if projectConsumer.Action.Kind != capabilitypack.ActionCodexProjectSkillTree || projectConsumer.Action.FileMode != 0o755 {
+	projectConsumer := agentsProjection(t, project, "skill:consumer")
+	assertAgentsRenderedTree(t, projectConsumer.Action, "fixture-consumer", "fixture-helper")
+	if projectConsumer.Action.Kind != capabilitypack.ActionAgentsProjectSkillTree || projectConsumer.Action.FileMode != 0o755 {
 		t.Fatalf("project template action = %+v", projectConsumer.Action)
 	}
 
@@ -54,21 +54,21 @@ func TestSkillTemplateRendersExactGlobalAndProjectTrees(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	removed := codexProjection(t, removal, "skill:fixture-consumer")
+	removed := agentsProjection(t, removal, "skill:fixture-consumer")
 	if removed.Action.Kind != capabilitypack.ActionSkillTree || removed.Action.Mode != capabilitypack.ProjectionDeleteTarget {
 		t.Fatalf("template removal = %+v", removed.Action)
 	}
 }
 
-func codexTemplatePack(root string) capabilitypack.Pack {
+func agentsTemplatePack(root string) capabilitypack.Pack {
 	capability := capabilitypack.SurfaceCapability{Type: capabilitypack.SurfaceCapabilitySkillTemplate, SkillTemplate: &capabilitypack.SkillTemplateCapability{Naming: capabilitypack.SkillTemplateNamingPack}}
 	return capabilitypack.Pack{ID: "fixture", Resources: []capabilitypack.Resource{
-		{Kind: "skill", ID: "helper", Source: "helper", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "skill", Name: "helper", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
-		{Kind: "skill", ID: "consumer", Source: "consumer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "skill", Name: "consumer", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
+		{Kind: "skill", ID: "helper", Source: "helper", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceAgents, Projection: "skill", Name: "helper", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
+		{Kind: "skill", ID: "consumer", Source: "consumer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceAgents, Projection: "skill", Name: "consumer", Capabilities: []capabilitypack.SurfaceCapability{capability}}}},
 	}}
 }
 
-func writeCodexTemplateSkill(t *testing.T, root, name, content string) {
+func writeAgentsTemplateSkill(t *testing.T, root, name, content string) {
 	t.Helper()
 	dir := filepath.Join(root, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -79,7 +79,7 @@ func writeCodexTemplateSkill(t *testing.T, root, name, content string) {
 	}
 }
 
-func codexProjection(t *testing.T, inspection capabilitypack.SurfaceInspection, id string) capabilitypack.ObservedProjection {
+func agentsProjection(t *testing.T, inspection capabilitypack.SurfaceInspection, id string) capabilitypack.ObservedProjection {
 	t.Helper()
 	for _, projection := range inspection.Projections {
 		if projection.ID == id {
@@ -90,7 +90,7 @@ func codexProjection(t *testing.T, inspection capabilitypack.SurfaceInspection, 
 	return capabilitypack.ObservedProjection{}
 }
 
-func assertCodexRenderedTree(t *testing.T, action capabilitypack.ProjectionAction, self, reference string) {
+func assertAgentsRenderedTree(t *testing.T, action capabilitypack.ProjectionAction, self, reference string) {
 	t.Helper()
 	for _, file := range action.TreeFiles {
 		if file.Path == "SKILL.md" {

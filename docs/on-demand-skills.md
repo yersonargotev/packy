@@ -4,15 +4,17 @@ Obtain a reviewed skill without installing or activating its Pack:
 
 ```sh
 packy init                          # explicit initial acquisition, requires network
-packy get skill example:guide --surface codex
+packy get skill example:guide --surface agents
 packy get skill example:guide --surface claude --json
 ```
 
 `example:guide` is illustrative. Use `packy list` and `packy show <pack>` to
 inspect your local catalog. The skill must explicitly declare reviewed on-demand
-compatibility; a native binding or an installed copy is insufficient. Host
-selection is mandatory. Supported surfaces are Codex and Claude Code, using
-their respective Effective Resources.
+compatibility; a native binding or an installed copy is insufficient. Surface
+selection is mandatory. Supported surfaces are Agents and Claude, using
+their respective Effective Resources. The retired `codex` surface is rejected
+without fallback. Agents is a shared convention; its access contract does not
+imply Codex runtime compatibility or register custom roles.
 
 Retrieval uses local retained data, works outside Git, and does not require the
 skill's script runtimes. It does not refresh, download, execute scripts, install
@@ -31,7 +33,7 @@ Catalog Refresh is explicit:
 
 ```sh
 packy catalog refresh
-packy get skill example:guide --surface codex --snapshot <returned-snapshot-id> --json
+packy get skill example:guide --surface agents --snapshot <returned-snapshot-id> --json
 ```
 
 A new independent request follows the selected local snapshot. `--snapshot`
@@ -45,7 +47,7 @@ reuse rather than being silently overwritten.
 
 ```sh
 packy list --json
-packy show example --surface codex --json
+packy show example --surface agents --json
 packy show example --surface claude
 ```
 
@@ -55,7 +57,7 @@ acquisition. It does not refresh, prepare resource trees, inspect installed
 copies, execute content, or change project/installation state. Omitting
 `--surface` keeps the existing Pack lifecycle inspection contract.
 
-Host-specific inspection emits `schema_version: 1`, `report: "skill-discovery"`;
+Surface-specific inspection emits `schema_version: 1`, `report: "skill-discovery"`;
 see [the discovery schema](../schemas/cli/v1/skill-discovery.schema.json).
 Every logical skill remains visible, including incompatible candidates. Each
 entry identifies its owning `pack_id`, `pack_version`, `qualified_skill`, native
@@ -66,13 +68,13 @@ reason, and combined known `prerequisites`. Native relationship identities belon
 to that entry's Pack; `on_demand.dependencies` are typed qualified access edges,
 not native installation requirements. Relationships are direct declarations;
 retrieval resolves their transitive closure. Descriptions and relationships use
-the requested host's Effective Resource. No instruction bodies or assets are
+the requested surface's Effective Resource. No instruction bodies or assets are
 included in discovery output.
 
 `prerequisites_verified` is always false. Empty declarations mean none are
 reported, not that unknown requirements were checked and found absent.
 Compatibility establishes reviewed resource access only. It does not establish
-runtime readiness or successful workflow execution. Choose `codex` or `claude`
+runtime readiness or successful workflow execution. Choose `agents` or `claude`
 for discovery.
 
 Keep qualified identities when matching a request. If several Packs share a
@@ -147,7 +149,7 @@ relative to those documents, including when the target has a host variant.
 
 Malformed or undeclared references, missing listed files, and missing entry
 documents fail during complete-catalog validation, construction, and consumption, including
-in unrelated Packs. A common `on_demand` declaration requires a Codex or Claude
+in unrelated Packs. A common `on_demand` declaration requires an Agents or Claude
 binding. Every surface, binding, exclusion, and variant must use the supported
 surface vocabulary; retired declarations invalidate the complete snapshot.
 Omitted optional fields keep dependency-free trees
@@ -183,7 +185,7 @@ stderr may also contain a readable diagnostic. Argument errors honor `--json`.
 | --- | --- |
 | `invalid_arguments` | Use one qualified skill and supported flags. |
 | `invalid_identity` | Use lowercase kebab-case `<pack>:<skill>`. |
-| `unsupported_surface` | Select `codex` or `claude` and a skill supporting it. |
+| `unsupported_surface` | Select `agents` or `claude` and a skill supporting it. |
 | `catalog_unavailable` | Explicitly acquire with `packy init` or `packy catalog refresh`; inspect invalid local content. |
 | `snapshot_unavailable` | Restore the exact retained revision; do not substitute a newer one. |
 | `unknown_skill` | Inspect `packy list` and `packy show <pack>`. |
@@ -194,7 +196,7 @@ Local authoring uses the existing candidate interface, retaining its explicit
 unauthenticated provenance diagnostic:
 
 ```sh
-packy catalog candidate --snapshot /absolute/assets --workspace /absolute/new-workspace -- get skill example:guide --surface codex --json
+packy catalog candidate --snapshot /absolute/assets --workspace /absolute/new-workspace -- get skill example:guide --surface agents --json
 ```
 
 Candidate workspaces own their disposable project and HOME. They never select an

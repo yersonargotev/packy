@@ -217,7 +217,7 @@ func writeMixedUpstreamRefreshFixture(t *testing.T, includeNewExactCopy bool) up
 		Kind: "instruction", ID: "guide", Source: "instructions/guide.md", Description: "Exact guidance",
 		Requires: []string{}, Conflicts: []string{}, Notices: []string{"notice:seed"},
 		Origin:            &cataloglayout.ResourceOrigin{ID: "upstream", Path: "guide.md", Relationship: cataloglayout.RelationshipExactCopy},
-		Bindings:          []capabilitypack.Binding{{Surface: "codex", Projection: "instruction", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "shared", Capabilities: []capabilitypack.SurfaceCapability{}}},
+		Bindings:          []capabilitypack.Binding{{Surface: "agents", Projection: "instruction", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "shared", Capabilities: []capabilitypack.SurfaceCapability{}}},
 		SurfaceExclusions: []capabilitypack.SurfaceExclusion{},
 	}}, manifest.Resources...)
 	data, err := json.MarshalIndent(manifest, "", "  ")

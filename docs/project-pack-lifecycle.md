@@ -10,8 +10,8 @@ authenticates an account, runs a hook, or mutates personal configuration.
 From a Git worktree, preview and install one Pack for one surface:
 
 ```sh
-packy install matty --surface codex --dry-run
-packy install matty --surface codex
+packy install matty --surface agents --dry-run
+packy install matty --surface agents
 ```
 
 The project root receives:
@@ -20,6 +20,14 @@ The project root receives:
 - `packy.lock.json`, one generated installed Pack receipt per Pack and surface;
 - `PACKY-NOTICES.md`, reviewed notices required by installed resources; and
 - the selected host-native projections.
+
+For Agents, skills are complete trees under `.agents/skills` and instruction
+contributions are merged into project `AGENTS.md`. There is no global Agents
+instruction destination. Required Codex custom roles currently support only
+global scope; every project client selection and any project closure requiring
+a Codex role fails before mutation.
+Ordinary Agents project installation does not write Codex settings or register a
+runtime.
 
 Packy never stages or commits these files. Review and commit them with the
 project change.
@@ -34,8 +42,8 @@ When an installed Pack has personal runtime effects, preview and activate them
 separately:
 
 ```sh
-packy activate matty --surface codex --project --dry-run
-packy activate matty --surface codex --project
+packy activate matty --surface agents --project --dry-run
+packy activate matty --surface agents --project
 ```
 
 Non-interactive installation does not activate personal effects. Global and
@@ -46,8 +54,8 @@ project activations remain explicit and independently inspectable.
 Update one project Pack to the version in the selected Catalog Snapshot:
 
 ```sh
-packy update matty --surface codex --project --dry-run
-packy update matty --surface codex --project
+packy update matty --surface agents --project --dry-run
+packy update matty --surface agents --project
 ```
 
 Each installed surface keeps its own exact Pack version. Updating one surface
@@ -58,15 +66,15 @@ Inspect shared installation and personal activation independently:
 
 ```sh
 packy status --project
-packy status matty --surface codex --project --json
+packy status matty --surface agents --project --json
 ```
 
 For runtime behavior Packy cannot observe, preview and record a personal check
 against the exact installed project closure:
 
 ```sh
-packy check orchestrate --surface codex --project --dry-run
-packy check orchestrate --surface codex --project --result positive
+packy check <pack> --surface claude --project --dry-run
+packy check <pack> --surface claude --project --result positive
 ```
 
 The result remains beneath Packy Home and is never written to `packy.json` or
@@ -82,15 +90,15 @@ Personal deactivation removes only unchanged runtime projections in the
 selected personal receipt:
 
 ```sh
-packy deactivate matty --surface codex --project --dry-run
-packy deactivate matty --surface codex --project
+packy deactivate matty --surface agents --project --dry-run
+packy deactivate matty --surface agents --project
 ```
 
 Uninstall changes shared project intent:
 
 ```sh
-packy uninstall matty --surface codex --dry-run
-packy uninstall matty --surface codex
+packy uninstall matty --surface agents --dry-run
+packy uninstall matty --surface agents
 ```
 
 Omitting `--surface` removes the complete Pack declaration. Removing one Pack

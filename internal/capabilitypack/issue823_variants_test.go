@@ -41,7 +41,7 @@ func TestIssue823AllKindVariantRestrictionsAndNonTargetGraphs(t *testing.T) {
 					test.mutate(&resource.Variants[0])
 				}
 			}
-			// Catalog admission checks Claude even when a caller would install Codex.
+			// Catalog admission checks Claude even when a caller would install Agents.
 			if err := validateCurrentPack(candidate); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("invalid Claude declaration accepted: %v", err)
 			}

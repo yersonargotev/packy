@@ -214,10 +214,11 @@ func TestValidateProjectReportsBoundedDeterministicExactCopyDifferences(t *testi
 	}
 }
 
-func TestValidateProjectChecksCapabilityLayoutWhenResourceHasNoSource(t *testing.T) {
+func TestValidateProjectChecksCapabilityLayoutIndependentlyOfSkillSource(t *testing.T) {
 	project := t.TempDir()
 	writeFile(t, filepath.Join(project, "prompts", "guide.md"), "guidance\n", 0o644)
-	writeFile(t, filepath.Join(project, "pack.json"), lifecycleManifest, 0o644)
+	writeFile(t, filepath.Join(project, "pack.json"), capabilityManifest, 0o644)
+	writeFile(t, filepath.Join(project, "skills", "guide", "SKILL.md"), "---\nname: guide\ndescription: Reviewed guide.\n---\n", 0644)
 
 	_, err := ValidateProject(context.Background(), project, nil)
 	if err == nil || !strings.Contains(err.Error(), "canonical instructions/ layout") {
@@ -228,12 +229,18 @@ func TestValidateProjectChecksCapabilityLayoutWhenResourceHasNoSource(t *testing
 func TestValidateProjectRejectsSourceOnDeclarationOnlyResource(t *testing.T) {
 	project := t.TempDir()
 	writeFile(t, filepath.Join(project, "instructions", "guide.md"), "guidance\n", 0o644)
-	writeFile(t, filepath.Join(project, "pack.json"), lifecycleManifest, 0o644)
+	writeFile(t, filepath.Join(project, "pack.json"), capabilityManifest, 0o644)
+	writeFile(t, filepath.Join(project, "skills", "guide", "SKILL.md"), "---\nname: guide\ndescription: Reviewed guide.\n---\n", 0644)
 	mutateManifest(t, project, func(manifest map[string]any) {
-		lifecycle := manifest["resources"].([]any)[0].(map[string]any)
-		lifecycle["source"] = "instructions/guide.md"
-		capability := lifecycle["bindings"].([]any)[0].(map[string]any)["capabilities"].([]any)[0].(map[string]any)
-		capability["project_instruction"].(map[string]any)["source"] = "instructions/guide.md"
+		manifest["surfaces"] = []any{"claude"}
+		resource := manifest["resources"].([]any)[0].(map[string]any)
+		resource["kind"] = "lifecycle"
+		resource["source"] = "instructions/guide.md"
+		binding := resource["bindings"].([]any)[0].(map[string]any)
+		binding["surface"] = "claude"
+		binding["projection"] = "command_hook"
+		binding["capabilities"] = []any{}
+		binding["hook"] = map[string]any{"type": "command", "event": "SessionStart", "command": "reviewed-hook", "args": []any{}, "timeout_seconds": 5, "failure": "warn", "authorities": []any{}}
 	})
 
 	_, err := ValidateProject(context.Background(), project, nil)
@@ -371,7 +378,7 @@ const validManifest = `{
   "version": "1.0.0",
   "description": "Example Managed Pack",
   "selectable": true,
-  "surfaces": ["claude", "codex"],
+  "surfaces": ["agents", "claude"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [
@@ -410,7 +417,7 @@ const validManifest = `{
       },
       "bindings": [
         {
-          "surface": "claude",
+          "surface": "agents",
           "projection": "skill",
           "name": "guide",
           "invocation": "guide",
@@ -419,7 +426,7 @@ const validManifest = `{
           "capabilities": []
         },
         {
-          "surface": "codex",
+          "surface": "claude",
           "projection": "skill",
           "name": "guide",
           "invocation": "guide",
@@ -434,27 +441,28 @@ const validManifest = `{
 }
 `
 
-const lifecycleManifest = `{
+const capabilityManifest = `{
   "schema_version": 3,
   "id": "example",
   "version": "1.0.0",
   "description": "Example Managed Pack",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "origins": [],
   "resources": [
     {
-      "kind": "lifecycle",
+      "kind": "skill",
+      "source": "skills/guide",
       "id": "guide",
       "description": "Contributes project guidance",
       "requires": [],
       "conflicts": [],
       "bindings": [
         {
-          "surface": "codex",
-          "projection": "lifecycle",
+          "surface": "agents",
+          "projection": "skill",
           "name": "guide",
           "invocation": "guide",
           "mode": "native",

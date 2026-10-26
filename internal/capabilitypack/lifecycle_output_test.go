@@ -75,8 +75,8 @@ func TestSensitiveEffectOriginsIncludeOnlySurfaceCapabilityDependencies(t *testi
 		!reflect.DeepEqual(claude[0].PromptAuthorities, []string{"network"}) {
 		t.Fatalf("Claude sensitive effects = %#v", claude)
 	}
-	if codex := sensitiveEffectOriginsForComposition([]Pack{pack}, activation, nil, pack.ID, selection, SurfaceCodex); len(codex) != 0 {
-		t.Fatalf("Codex sensitive effects = %#v", codex)
+	if agents := sensitiveEffectOriginsForComposition([]Pack{pack}, activation, nil, pack.ID, selection, SurfaceAgents); len(agents) != 0 {
+		t.Fatalf("Agents sensitive effects = %#v", agents)
 	}
 }
 
@@ -85,12 +85,12 @@ func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 		Resources: []Resource{
 			{Kind: "agent", ID: "reviewer", Permissions: []string{"network", "filesystem", "network"}, Bindings: []Binding{
 				{Surface: SurfaceClaude, Projection: "agent", Name: "fixture-reviewer", Invocation: "@fixture-reviewer", Mode: "native", Sharing: "exclusive"},
-				{Surface: SurfaceCodex, Projection: "agent", Name: "reviewer", Invocation: "delegate", Mode: "degraded", Degradation: "no nested delegation", Sharing: "exclusive"},
+				{Surface: SurfaceAgents, Projection: "agent", Name: "reviewer", Invocation: "delegate", Mode: "degraded", Degradation: "no nested delegation", Sharing: "exclusive"},
 			}},
-			{Kind: "skill", ID: "run", Permissions: []string{"process"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "run", Invocation: "$run", Mode: "native", Sharing: "shared"}}},
+			{Kind: "skill", ID: "run", Permissions: []string{"process"}, Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "run", Invocation: "$run", Mode: "native", Sharing: "shared"}}},
 		}, Contract: Contract{OptionalModes: []OptionalMode{{ID: "deploy", Authorities: []string{"write", "network"}, Fallback: "prompt"}}}}
 	aliases := []SurfaceAlias{{Kind: "skill", ID: "run", Name: "z"}, {Kind: "agent", ID: "reviewer", Name: "a"}}
-	got := LifecycleContractFor(pack, SurfaceCodex, aliases)
+	got := LifecycleContractFor(pack, SurfaceAgents, aliases)
 	if got.Counts != (ResourceCounts{Agents: 1, Skills: 1}) {
 		t.Fatalf("counts = %#v", got.Counts)
 	}
@@ -109,7 +109,7 @@ func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 }
 
 func TestLifecycleOutputsEncodeCollectionsAsArrays(t *testing.T) {
-	contract := LifecycleContractFor(Pack{}, SurfaceCodex, nil)
+	contract := LifecycleContractFor(Pack{}, SurfaceAgents, nil)
 	encoded, err := json.Marshal(contract)
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestLifecycleCompatibilityBlocksExcludedDependencyAndRendersSurfaceExclusio
 
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "lifecycle-report", Version: "1.0.0"}, operation: OperationActivate,
-		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}},
+		surface: SurfaceAgents, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}},
 		readiness: ReadinessStatus{Configured: ReadinessFalse, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}, conditions: []ReadinessCondition{{Type: ConditionRuntimeUsability, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed", Evidence: []string{}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "lifecycle-report/usable"}}}, pendingEvidence: []string{"z", "a"},
 		blockers:            []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
 		pendingHumanActions: []string{"z", "a"}, phases: []PlanPhase{{Kind: ConsentReversibleLocal, Digest: "phase", ApprovalRequired: true,

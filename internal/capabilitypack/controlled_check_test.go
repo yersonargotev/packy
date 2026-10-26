@@ -12,32 +12,32 @@ import (
 
 func TestProjectControlledCheckResourcesAreScopedToTheReceiptSurface(t *testing.T) {
 	lock := ProjectLockProposal{Receipts: []installedPackReceipt{
-		{Pack: installedPackIdentity{ID: "receipt-scope", Version: "2.0.3"}, Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "api"}}},
+		{Pack: installedPackIdentity{ID: "receipt-scope", Version: "2.0.3"}, Surface: SurfaceAgents, Resources: []ResourceIdentity{{Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "api"}}},
 		{Pack: installedPackIdentity{ID: "receipt-scope", Version: "2.0.3"}, Surface: SurfaceClaude, Resources: []ResourceIdentity{{Kind: "asset", ID: "guide"}, {Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "workflow"}}},
 	}}
 
 	want := []ResourceIdentity{{Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "api"}}
-	if got := projectReceiptResources(lock, "receipt-scope", SurfaceCodex); !reflect.DeepEqual(got, want) {
-		t.Fatalf("Codex controlled-check resources = %#v, want %#v", got, want)
+	if got := projectReceiptResources(lock, "receipt-scope", SurfaceAgents); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Agents controlled-check resources = %#v, want %#v", got, want)
 	}
 }
 
 func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.T) {
 	pack := controlledCheckTestPack("app")
-	state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
-	observation := controlledCheckTestObservation("codex-v1", "1.2.3")
+	state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}}}
+	observation := controlledCheckTestObservation("agents-v1", "1.2.3")
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
 	home := t.TempDir()
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithControlledCheckEvidence(NewFileControlledCheckStore(home)))
-	request := ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceCodex, PackyHome: home}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}), WithControlledCheckEvidence(NewFileControlledCheckStore(home)))
+	request := ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceAgents, PackyHome: home}
 	preview, err := facade.PreviewControlledCheck(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.CurrentEvidence.State != ControlledCheckUnknown || preview.AdapterVersion != "codex/v2" || preview.HostVersion != "1.2.3" || len(preview.Resources) != 1 || len(preview.Instructions) == 0 {
+	if preview.CurrentEvidence.State != ControlledCheckUnknown || preview.AdapterVersion != "agents/v2" || preview.HostVersion != "1.2.3" || len(preview.Resources) != 1 || len(preview.Instructions) == 0 {
 		t.Fatalf("preview = %#v", preview)
 	}
-	unknown, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	unknown, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, Resource: "skill:guide", RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if _, err := facade.RecordControlledCheck(context.Background(), preview, ReadinessTrue); err != nil {
 		t.Fatal(err)
 	}
-	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, RequireUsable: true})
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if entry.ControlledCheck.State != ControlledCheckCurrent || entry.ControlledCheck.Result != ReadinessTrue || !report.Requirement.Satisfied || entry.Readiness.Usable != ReadinessTrue || entry.ControlledCheckActionAvailable {
 		t.Fatalf("positive controlled check did not satisfy strict gate: %#v %#v", entry, report.Requirement)
 	}
-	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, Resource: "skill:guide", RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,14 +65,14 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if _, err := facade.RecordControlledCheck(context.Background(), preview, ReadinessFalse); err != nil {
 		t.Fatal(err)
 	}
-	report, err = facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, RequireUsable: true})
+	report, err = facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.Entries[0].Readiness.Usable != ReadinessFalse || report.Requirement.Satisfied || !report.Entries[0].ControlledCheckActionAvailable {
 		t.Fatalf("negative controlled check did not fail strict gate: %#v %#v", report.Entries[0], report.Requirement)
 	}
-	focused, err = facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	focused, err = facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, Resource: "skill:guide", RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,22 +88,22 @@ func TestFacadeControlledCheckPreviewNormalizesInstructionsForGlobalAndProject(t
 		want         string
 	}{
 		{name: "adapter instructions", instructions: []string{"  Run the named Pack behavior.  "}, want: "Run the named Pack behavior."},
-		{name: "fallback instructions", want: "Verify the selected Pack behavior in codex, then record whether it succeeded."},
+		{name: "fallback instructions", want: "Verify the selected Pack behavior in agents, then record whether it succeeded."},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pack := controlledCheckTestPack("app")
-			observation := controlledCheckTestObservation("codex-v1", "1.2.3")
+			observation := controlledCheckTestObservation("agents-v1", "1.2.3")
 			observation.ControlledCheck.Instructions = test.instructions
 
 			for _, scope := range []ControlledCheckScope{ControlledCheckGlobal, ControlledCheckProject} {
 				t.Run(string(scope), func(t *testing.T) {
 					home := t.TempDir()
 					adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
-					request := ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceCodex, PackyHome: home, Adapter: adapter}
+					request := ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceAgents, PackyHome: home, Adapter: adapter}
 					var facade Facade
 					if scope == ControlledCheckGlobal {
-						state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
-						facade = NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+						state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}}}
+						facade = NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}))
 					} else {
 						project := t.TempDir()
 						projectObservation := observation
@@ -116,7 +116,7 @@ func TestFacadeControlledCheckPreviewNormalizesInstructionsForGlobalAndProject(t
 						request.Adapter = adapter
 						request.ProjectRoot = project
 						facade = NewFacade(Catalog{packs: []Pack{pack}})
-						install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: home, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+						install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceAgents, ProjectRoot: project, PackyHome: home, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -127,7 +127,7 @@ func TestFacadeControlledCheckPreviewNormalizesInstructionsForGlobalAndProject(t
 					if err != nil {
 						t.Fatal(err)
 					}
-					if len(preview.Instructions) != 1 || preview.Instructions[0] != test.want || preview.AdapterVersion != "codex/v2" || preview.HostVersion != "1.2.3" {
+					if len(preview.Instructions) != 1 || preview.Instructions[0] != test.want || preview.AdapterVersion != "agents/v2" || preview.HostVersion != "1.2.3" {
 						t.Fatalf("preview = %#v", preview)
 					}
 					validity := preview.ValidityIdentity
@@ -147,11 +147,11 @@ func TestFacadeControlledCheckPreviewNormalizesInstructionsForGlobalAndProject(t
 
 func TestFacadeControlledCheckRejectsStalePreviewAndReportsStaleEvidence(t *testing.T) {
 	pack := controlledCheckTestPack("app")
-	state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
-	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{controlledCheckTestObservation("codex-v1", "1.2.3"), controlledCheckTestObservation("codex-v2", "1.2.3")}}
+	state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}}}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{controlledCheckTestObservation("agents-v1", "1.2.3"), controlledCheckTestObservation("agents-v2", "1.2.3")}}
 	home := t.TempDir()
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithControlledCheckEvidence(NewFileControlledCheckStore(home)))
-	preview, err := facade.PreviewControlledCheck(context.Background(), ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceCodex, PackyHome: home})
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}), WithControlledCheckEvidence(NewFileControlledCheckStore(home)))
+	preview, err := facade.PreviewControlledCheck(context.Background(), ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceAgents, PackyHome: home})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,23 +159,23 @@ func TestFacadeControlledCheckRejectsStalePreviewAndReportsStaleEvidence(t *test
 		t.Fatalf("stale preview error = %v", err)
 	}
 	// Record a current identity, then make only the host identity stale.
-	adapter.observations = []SurfaceInspection{controlledCheckTestObservation("codex-v2", "1.2.3")}
-	preview, err = facade.PreviewControlledCheck(context.Background(), ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceCodex, PackyHome: home})
+	adapter.observations = []SurfaceInspection{controlledCheckTestObservation("agents-v2", "1.2.3")}
+	preview, err = facade.PreviewControlledCheck(context.Background(), ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceAgents, PackyHome: home})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := facade.RecordControlledCheck(context.Background(), preview, ReadinessTrue); err != nil {
 		t.Fatal(err)
 	}
-	adapter.observations = []SurfaceInspection{controlledCheckTestObservation("codex-v2", "1.2.4")}
-	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, RequireUsable: true})
+	adapter.observations = []SurfaceInspection{controlledCheckTestObservation("agents-v2", "1.2.4")}
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.Entries[0].ControlledCheck.State != ControlledCheckStale || report.Entries[0].Readiness.Usable != ReadinessUnknown || report.Requirement.Satisfied || !report.Entries[0].ControlledCheckActionAvailable || !hasReadinessReason(report.Entries[0].Conditions, ReasonRuntimeCheckStale) {
 		t.Fatalf("stale controlled check = %#v", report.Entries[0])
 	}
-	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents, Resource: "skill:guide", RequireUsable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,14 +196,14 @@ func TestFacadeControlledCheckActionRequiresConfiguredRuntimeObligation(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			pack := controlledCheckTestPack("app")
 			pack.ReadinessObligations = test.obligations
-			state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
-			observation := controlledCheckTestObservation("codex-v1", "1.2.3")
+			state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceAgents, Fingerprint: "exact"}}}
+			observation := controlledCheckTestObservation("agents-v1", "1.2.3")
 			if !test.configured {
 				observation.Projections[0].Exists = false
 				observation.Projections[0].ObservedFingerprint = ""
 			}
-			facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}}))
-			report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex})
+			facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}}))
+			report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceAgents})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +216,7 @@ func TestFacadeControlledCheckActionRequiresConfiguredRuntimeObligation(t *testi
 
 func TestControlledCheckStoreStalesEveryIdentityDimensionAndIsNonPortable(t *testing.T) {
 	store := NewFileControlledCheckStore(t.TempDir())
-	base := ControlledCheckIdentity{Pack: "first", PackVersion: "1.0.0", Scope: ControlledCheckGlobal, Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}, ProjectionRevision: "projection-v1", AdapterVersion: "codex/v2", HostVersion: "1.2.3"}
+	base := ControlledCheckIdentity{Pack: "first", PackVersion: "1.0.0", Scope: ControlledCheckGlobal, Surface: SurfaceAgents, Resources: []ResourceIdentity{{Kind: "skill", ID: "guide"}}, ProjectionRevision: "projection-v1", AdapterVersion: "agents/v2", HostVersion: "1.2.3"}
 	if _, err := store.Record(context.Background(), base, ReadinessTrue, time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestControlledCheckStoreStalesEveryIdentityDimensionAndIsNonPortable(t *tes
 		"version":    {Pack: base.Pack, PackVersion: "2.0.0", Scope: base.Scope, Surface: base.Surface, Resources: base.Resources, ProjectionRevision: base.ProjectionRevision, AdapterVersion: base.AdapterVersion, HostVersion: base.HostVersion},
 		"resources":  {Pack: base.Pack, PackVersion: base.PackVersion, Scope: base.Scope, Surface: base.Surface, Resources: []ResourceIdentity{{Kind: "skill", ID: "other"}}, ProjectionRevision: base.ProjectionRevision, AdapterVersion: base.AdapterVersion, HostVersion: base.HostVersion},
 		"projection": {Pack: base.Pack, PackVersion: base.PackVersion, Scope: base.Scope, Surface: base.Surface, Resources: base.Resources, ProjectionRevision: "projection-v2", AdapterVersion: base.AdapterVersion, HostVersion: base.HostVersion},
-		"adapter":    {Pack: base.Pack, PackVersion: base.PackVersion, Scope: base.Scope, Surface: base.Surface, Resources: base.Resources, ProjectionRevision: base.ProjectionRevision, AdapterVersion: "codex/v3", HostVersion: base.HostVersion},
+		"adapter":    {Pack: base.Pack, PackVersion: base.PackVersion, Scope: base.Scope, Surface: base.Surface, Resources: base.Resources, ProjectionRevision: base.ProjectionRevision, AdapterVersion: "agents/v3", HostVersion: base.HostVersion},
 		"host":       {Pack: base.Pack, PackVersion: base.PackVersion, Scope: base.Scope, Surface: base.Surface, Resources: base.Resources, ProjectionRevision: base.ProjectionRevision, AdapterVersion: base.AdapterVersion, HostVersion: "1.2.4"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -253,18 +253,18 @@ func TestFileControlledCheckStoreRejectsUnknownJSONFields(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "controlled-checks.json"), []byte(`{"schema_version":1,"entries":[],"secret":"no"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := NewFileControlledCheckStore(home).Status(context.Background(), ControlledCheckIdentity{Pack: "app", PackVersion: "1.0.0", Scope: ControlledCheckGlobal, Surface: SurfaceCodex, Resources: []ResourceIdentity{}, ProjectionRevision: "v1", AdapterVersion: "a", HostVersion: "h"})
+	_, err := NewFileControlledCheckStore(home).Status(context.Background(), ControlledCheckIdentity{Pack: "app", PackVersion: "1.0.0", Scope: ControlledCheckGlobal, Surface: SurfaceAgents, Resources: []ResourceIdentity{}, ProjectionRevision: "v1", AdapterVersion: "a", HostVersion: "h"})
 	if err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func controlledCheckTestPack(id string) Pack {
-	return Pack{ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}}, Contract: Contract{OptionalModes: []OptionalMode{}}}
+	return Pack{ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}}, Contract: Contract{OptionalModes: []OptionalMode{}}}
 }
 
 func controlledCheckTestObservation(revision, host string) SurfaceInspection {
-	return SurfaceInspection{Revision: revision, ControlledCheck: ControlledCheckDescriptor{AdapterVersion: "codex/v2", HostVersion: host, Instructions: []string{"Run the named Pack behavior."}}, Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide", FileMode: 0o644}}}, Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: false}}
+	return SurfaceInspection{Revision: revision, ControlledCheck: ControlledCheckDescriptor{AdapterVersion: "agents/v2", HostVersion: host, Instructions: []string{"Run the named Pack behavior."}}, Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide", FileMode: 0o644}}}, Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: false}}
 }
 
 func writeControlledCheckProjectInstallation(t *testing.T, project string, preview JSONProjectInstallPreview) {

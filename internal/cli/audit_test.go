@@ -19,7 +19,7 @@ func TestAuditReportsUnknownRuntimeWithoutFailingAutomation(t *testing.T) {
 	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) {
 		return setuphealth.Report{Checks: []setuphealth.Check{
 			{Name: "packy-core", Scope: setuphealth.CheckScopeWorkstation, Severity: setuphealth.Pass, Detail: "Packy core is available"},
-			{Name: "pack-capability-rich-codex-usable", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Info, Detail: "runtime usability cannot be observed"},
+			{Name: "pack-capability-rich-agents-usable", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Info, Detail: "runtime usability cannot be observed"},
 		}}, nil
 	}
 
@@ -41,7 +41,7 @@ func TestAuditWarningsAreMachineReadableAndExitZero(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	opts.Getwd = func() (string, error) { return t.TempDir(), nil }
 	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) {
-		return setuphealth.Report{Checks: []setuphealth.Check{{Name: "pack-portable-alpha-codex", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Warn, Detail: "one projection finding"}}}, nil
+		return setuphealth.Report{Checks: []setuphealth.Check{{Name: "pack-portable-alpha-agents", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Warn, Detail: "one projection finding"}}}, nil
 	}
 
 	output, err := executeCommand(t, NewRootCommand(opts), "audit", "--json")
@@ -107,7 +107,7 @@ func TestAuditVerifiesProjectContractAndDetectsDriftWithoutMutation(t *testing.T
 	opts := fixture.options
 	opts.Getwd = func() (string, error) { return project, nil }
 	resource := syntheticResource(t, pack, "instruction", "guidance")
-	if output, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "codex", "--resource", resource.Kind+":"+resource.ID); err != nil {
+	if output, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "agents", "--resource", resource.Kind+":"+resource.ID); err != nil {
 		t.Fatalf("install: %v\n%s", err, output)
 	}
 

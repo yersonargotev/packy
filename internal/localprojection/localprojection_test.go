@@ -84,10 +84,10 @@ func TestExecutorKeepsStagesDistinctForOneLogicalIDAtDifferentTargets(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	executor := Executor{Host: "test", TreeKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true}}
+	executor := Executor{Host: "test", TreeKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionAgentsProjectSkillTree: true}}
 	err = executor.Apply([]capabilitypack.ProjectionAction{
-		{ID: "skill:tdd", Kind: capabilitypack.ActionCodexProjectSkillTree, Target: newTarget, TreeFiles: files, FileMode: 0o755, Version: fingerprint},
-		{ID: "skill:tdd", Kind: capabilitypack.ActionCodexProjectSkillTree, Target: oldTarget, Mode: capabilitypack.ProjectionDeleteTarget},
+		{ID: "skill:tdd", Kind: capabilitypack.ActionAgentsProjectSkillTree, Target: newTarget, TreeFiles: files, FileMode: 0o755, Version: fingerprint},
+		{ID: "skill:tdd", Kind: capabilitypack.ActionAgentsProjectSkillTree, Target: oldTarget, Mode: capabilitypack.ProjectionDeleteTarget},
 	})
 	if err != nil {
 		t.Fatal(err)

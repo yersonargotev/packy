@@ -40,7 +40,7 @@
       "items": {
         "enum": [
           "claude",
-          "codex"
+          "agents"
         ]
       }
     },
@@ -475,10 +475,32 @@
         "capabilities"
       ],
       "properties": {
+        "client_projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "client",
+            "scopes"
+          ],
+          "properties": {
+            "client": {
+              "const": "codex"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "const": "global"
+              },
+              "minItems": 1,
+              "maxItems": 1,
+              "uniqueItems": true
+            }
+          }
+        },
         "surface": {
           "enum": [
             "claude",
-            "codex"
+            "agents"
           ]
         },
         "projection": {
@@ -516,7 +538,55 @@
         "hook": {
           "$ref": "#/$defs/hook"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "surface": {
+                "const": "agents"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "projection": {
+                "enum": [
+                  "agent",
+                  "instruction",
+                  "skill"
+                ]
+              },
+              "mode": {
+                "const": "native"
+              },
+              "degradation": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "surface": {
+                "const": "agents"
+              },
+              "projection": {
+                "const": "agent"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "client_projection"
+            ]
+          },
+          "else": {
+            "properties": {
+              "client_projection": false
+            }
+          }
+        }
+      ]
     },
     "surfaceExclusion": {
       "type": "object",
@@ -531,7 +601,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex"
+            "agents"
           ]
         },
         "mode": {
@@ -1431,7 +1501,7 @@
                     "surface": {
                       "enum": [
                         "claude",
-                        "codex"
+                        "agents"
                       ]
                     }
                   }
@@ -1452,7 +1522,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex"
+            "agents"
           ]
         },
         "description": {

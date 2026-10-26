@@ -190,7 +190,7 @@ func writeUpstreamRefreshFixture(t *testing.T, relationship cataloglayout.Relati
   "version": "1.0.0",
   "description": "Seed Pack",
   "selectable": true,
-  "surfaces": ["codex"],
+  "surfaces": ["agents"],
   "readiness_obligations": [],
   "external_requirements": [],
   "origins": [{"id":"upstream","repository":"example/upstream","commit":"` + oldCommit + `"}],
@@ -215,7 +215,7 @@ func writeUpstreamRefreshFixture(t *testing.T, relationship cataloglayout.Relati
     "conflicts":[],
     "notices":["notice:seed"],
     "origin":{"id":"upstream","path":"skills/seed","relationship":"` + string(relationship) + `"},
-    "bindings":[{"surface":"codex","projection":"skill","name":"seed","invocation":"$seed","mode":"native","sharing":"exclusive","capabilities":[]}],
+    "bindings":[{"surface":"agents","projection":"skill","name":"seed","invocation":"$seed","mode":"native","sharing":"exclusive","capabilities":[]}],
     "surface_exclusions":[]
   }]
 }

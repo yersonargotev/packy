@@ -19,17 +19,17 @@ func TestOlderReceiptStatusPresentationsBeforeApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, surface := range []string{"codex", "claude"} {
+	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
-			pack := testsupport.PortableAllSurfaces("historical-status")
-			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack, testsupport.PortableAllSurfaces("unrelated-current"))
+			pack := testsupport.SkillVariants("historical-status")
+			fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack, testsupport.SkillVariants("unrelated-current"))
 			opts := fixture.options
 			outside := t.TempDir()
 			opts.Getwd = func() (string, error) { return outside, nil }
 			if out, err := executeCommand(t, NewRootCommand(opts), "activate", pack.ID(), "--surface", surface); err != nil {
 				t.Fatalf("activate: %v\n%s", err, out)
 			}
-			candidate := pack.Candidate().WithExactCopyBytes(pack.OperationalResource().String(), ".", []byte("# Updated guidance\n\nNew catalog content.\n"))
+			candidate := pack.Candidate()
 			if err := candidate.WriteCatalog(fixture.catalogRoot); err != nil {
 				t.Fatal(err)
 			}
@@ -149,7 +149,7 @@ func TestOlderReceiptStatusPresentationsBeforeApply(t *testing.T) {
 
 func TestTUICatalogPreservesReceiptWhenCurrentSurfaceIsRemoved(t *testing.T) {
 	observed := tui.SurfaceStatus{Name: "claude", Supported: true, Active: true, InstalledVersion: "1.0.0", UpdateAvailable: true, HistoricalEvidenceMessage: "Historical manifest unavailable", Ownership: 2, Drift: 1}
-	packs := catalogPacksForTUI([]capabilitypack.CatalogDetail{{Pack: capabilitypack.Pack{ID: "removed-surface", Version: "1.0.1", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceCodex}}}}, map[string]map[string]tui.SurfaceStatus{"removed-surface": {"claude": observed}}, nil)
+	packs := catalogPacksForTUI([]capabilitypack.CatalogDetail{{Pack: capabilitypack.Pack{ID: "removed-surface", Version: "1.0.1", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceAgents}}}}, map[string]map[string]tui.SurfaceStatus{"removed-surface": {"claude": observed}}, nil)
 	for _, status := range packs[0].SurfaceStatuses {
 		if status.Name != "claude" {
 			continue

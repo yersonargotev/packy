@@ -21,7 +21,7 @@ import (
 
 func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) {
 	hostBin := t.TempDir()
-	for _, name := range []string{"codex", "claude", "engram", "brew"} {
+	for _, name := range []string{"agents", "claude", "engram", "brew"} {
 		script := "#!/bin/sh\nprintf executed > '" + filepath.Join(hostBin, "executed") + "'\nexit 99\n"
 		if err := os.WriteFile(filepath.Join(hostBin, name), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
@@ -74,13 +74,13 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 			if scope == "global" {
 				install, remove, projectionRoot = "activate", "deactivate", filepath.Join(workspace, "home")
 			}
-			codex := filepath.Join(projectionRoot, ".agents", "skills")
+			agents := filepath.Join(projectionRoot, ".agents", "skills")
 			claude := filepath.Join(projectionRoot, ".claude", "skills")
 			unrelated := filepath.Join(projectionRoot, "unrelated.txt")
 			if err := os.WriteFile(unrelated, []byte("preserve unrelated\n"), 0o640); err != nil {
 				t.Fatal(err)
 			}
-			for _, surface := range []string{"codex", "claude"} {
+			for _, surface := range []string{"agents", "claude"} {
 				operation := []string{install, "transition", "--surface", surface, "--resource", "skill:guide"}
 				rejectUnchanged(append(append([]string{}, operation...), "--json")...)
 				before := catalogTreeState(t, []string{workspace})
@@ -89,11 +89,11 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 				}
 				apply(operation...)
 			}
-			if _, err := os.Stat(filepath.Join(codex, "helper", "SKILL.md")); err != nil {
-				t.Fatalf("Codex effective dependency: %v", err)
+			if _, err := os.Stat(filepath.Join(agents, "helper", "SKILL.md")); err != nil {
+				t.Fatalf("Agents effective dependency: %v", err)
 			}
 			if _, err := os.Lstat(filepath.Join(claude, "helper")); !os.IsNotExist(err) {
-				t.Fatalf("Claude inherited Codex-only dependency: %v", err)
+				t.Fatalf("Claude inherited Agents-only dependency: %v", err)
 			}
 			receiptPath := filepath.Join(workspace, "project", "packy.lock.json")
 			if scope == "global" {
@@ -116,11 +116,11 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 				t.Fatalf("transition changed installed baseline: %v %s %s", err, out, diagnostic)
 			}
 			rejectUnchanged("transition", "--expect-archive-sha256", baselineSHA, "--json")
-			for _, step := range []struct{ surface, other string }{{"codex", claude}, {"claude", codex}} {
+			for _, step := range []struct{ surface, other string }{{"agents", claude}, {"claude", agents}} {
 				otherBefore := candidateSkillState(t, step.other)
 				otherSurface := "claude"
 				if step.surface == "claude" {
-					otherSurface = "codex"
+					otherSurface = "agents"
 				}
 				otherReceipt := candidateReceipt(t, receiptPath, otherSurface)
 				operation := []string{"update", "transition", "--surface", step.surface}
@@ -129,7 +129,7 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 				}
 				rejectUnchanged(append(append([]string{}, operation...), "--json")...)
 				apply(operation...)
-				targetRoot := codex
+				targetRoot := agents
 				if step.surface == "claude" {
 					targetRoot = claude
 				}
@@ -158,30 +158,30 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 			rejectUnchanged(install, "transition", "--surface", "opencode", "--resource", "skill:guide", "--json")
 			// Both owned scopes retain standard helper drift rejection. A global link
 			// exposes retained-source drift; project copies expose projection drift.
-			helper := filepath.Join(codex, "helper", "references", "detail.md")
+			helper := filepath.Join(agents, "helper", "references", "detail.md")
 			original := readIssue798File(t, helper)
 			if err := os.WriteFile(helper, []byte("helper drift\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			rejectUnchanged(remove, "transition", "--surface", "codex", "--json")
+			rejectUnchanged(remove, "transition", "--surface", "agents", "--json")
 			if err := os.WriteFile(helper, original, 0o644); err != nil {
 				t.Fatal(err)
 			}
 			// JSON never grants removal consent.
-			operation := []string{remove, "transition", "--surface", "codex", "--json"}
+			operation := []string{remove, "transition", "--surface", "agents", "--json"}
 			rejectUnchanged(operation...)
 			retainedClaude := candidateSkillState(t, claude)
 			retainedReceipt := candidateReceipt(t, receiptPath, "claude")
-			apply(remove, "transition", "--surface", "codex")
+			apply(remove, "transition", "--surface", "agents")
 			if !bytes.Equal(retainedReceipt, candidateReceipt(t, receiptPath, "claude")) {
-				t.Fatal("Codex removal changed Claude receipt")
+				t.Fatal("Agents removal changed Claude receipt")
 			}
 			if !reflect.DeepEqual(retainedClaude, candidateSkillState(t, claude)) {
-				t.Fatal("Codex removal changed Claude bytes/modes")
+				t.Fatal("Agents removal changed Claude bytes/modes")
 			}
 			for _, name := range []string{"guide", "helper"} {
-				if _, err := os.Lstat(filepath.Join(codex, name)); !os.IsNotExist(err) {
-					t.Fatalf("retired Codex %s remains: %v", name, err)
+				if _, err := os.Lstat(filepath.Join(agents, name)); !os.IsNotExist(err) {
+					t.Fatalf("retired Agents %s remains: %v", name, err)
 				}
 			}
 			apply(remove, "transition", "--surface", "claude")
@@ -190,7 +190,7 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 			}
 			apply(install, "transition", "--surface", "claude", "--resource", "skill:guide")
 			if _, err := os.Lstat(filepath.Join(claude, "helper")); !os.IsNotExist(err) {
-				t.Fatalf("Claude reinstallation inherited Codex-only dependency: %v", err)
+				t.Fatalf("Claude reinstallation inherited Agents-only dependency: %v", err)
 			}
 			apply(remove, "transition", "--surface", "claude")
 			if _, err := os.Lstat(filepath.Join(claude, "guide")); !os.IsNotExist(err) {
@@ -208,8 +208,8 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 					t.Fatalf("retired project contract remains: %s %v", name, err)
 				}
 			}
-			rejectUnchanged("activate", "transition", "--surface", "codex", "--project", "--json")
-			rejectUnchanged("deactivate", "transition", "--surface", "codex", "--project", "--json")
+			rejectUnchanged("activate", "transition", "--surface", "agents", "--project", "--json")
+			rejectUnchanged("deactivate", "transition", "--surface", "agents", "--project", "--json")
 			rejectUnchanged("catalog", "refresh")
 		})
 	}
@@ -311,9 +311,6 @@ func buildTransitionCandidate(t *testing.T, executable string, environment []str
 				t.Fatal(err)
 			}
 			resource["variants"] = append(variantArray(resource), map[string]any{"surface": "claude", "source": "skills/claude", "requires": []string{}})
-			// Variant arrays are canonical surface order.
-			variants := resource["variants"].([]any)
-			resource["variants"] = []any{variants[1], variants[0]}
 		}
 	}
 	data, err := json.Marshal(manifest)
@@ -323,7 +320,7 @@ func buildTransitionCandidate(t *testing.T, executable string, environment []str
 	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(project, "packs", "transition", "skills", "codex", "references", "detail.md"), []byte("codex "+version+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(project, "packs", "transition", "skills", "agents", "references", "detail.md"), []byte("agents "+version+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(project, "packs", "transition", "skills", "claude", "references", "detail.md"), []byte("claude "+version+"\n"), 0o644); err != nil {
@@ -355,7 +352,7 @@ func testCandidateTransitionRejections(t *testing.T, executable string, environm
 			prefix := func(assets string) []string {
 				return []string{"catalog", "candidate", "--snapshot", assets, "--workspace", workspace, "--"}
 			}
-			if out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, append(prefix(baseline), "install", "transition", "--surface", "codex", "--dry-run", "--json")...); err != nil {
+			if out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, append(prefix(baseline), "install", "transition", "--surface", "agents", "--dry-run", "--json")...); err != nil {
 				t.Fatalf("prepare: %v %s %s", err, out, diagnostic)
 			}
 			targetAssets := candidate
@@ -449,7 +446,7 @@ func testCandidateStaleApply(t *testing.T, executable string, environment []stri
 	if global {
 		operation = "activate"
 	}
-	command := exec.CommandContext(ctx, executable, append(prefix, operation, "transition", "--surface", "codex", "--resource", "skill:guide")...)
+	command := exec.CommandContext(ctx, executable, append(prefix, operation, "transition", "--surface", "agents", "--resource", "skill:guide")...)
 	command.Env, command.Dir = environment, directory
 	master, slave, err := pty.Open()
 	if err != nil {

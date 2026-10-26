@@ -11,23 +11,23 @@ func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 	pack := Pack{
 		ID:       "app",
 		Version:  "1.0.0",
-		Surfaces: []Surface{SurfaceCodex},
+		Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{
 				Kind: "command", ID: "consumer",
 				Requires: []string{"skill:shared"}, Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "consumer", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "consumer", Mode: "native"}},
 			},
 			{
 				Kind: "skill", ID: "optional", Notices: []string{},
 				SurfaceExclusions: []SurfaceExclusion{{
-					Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not projected by this host",
+					Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "not projected by this host",
 				}},
 			},
 			{
 				Kind: "skill", ID: "shared", Notices: []string{},
 				SurfaceExclusions: []SurfaceExclusion{{
-					Surface: SurfaceCodex, Mode: "mandatory", Code: "unsupported", Reason: "required host support is missing",
+					Surface: SurfaceAgents, Mode: "mandatory", Code: "unsupported", Reason: "required host support is missing",
 				}},
 			},
 		},
@@ -70,30 +70,30 @@ func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 
 func TestExternalExecutableAcquisitionIsSelectedOnlyWithItsDeclaringResourceClosure(t *testing.T) {
 	pack := Pack{
-		ID: "portable", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Tools: []string{"engram"}},
+		ID: "portable", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, Requires: Requirements{Tools: []string{"engram"}},
 		Resources: []Resource{
-			{Kind: "mcp_server", ID: "memory", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}},
-			{Kind: "skill", ID: "plain", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex}}, SurfaceExclusions: []SurfaceExclusion{}},
+			{Kind: "mcp_server", ID: "memory", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceAgents, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}},
+			{Kind: "skill", ID: "plain", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceAgents}}, SurfaceExclusions: []SurfaceExclusion{}},
 		},
 	}
 	resolver := &recordingReadinessResolver{paths: map[string]string{}}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}), WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalExecutableAcquisition: &recordingAcquirer{}}, nil))
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}), WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalExecutableAcquisition: &recordingAcquirer{}}, nil))
 
-	plain, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "plain"}}}})
+	plain, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "plain"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if planHasAction(plain, "external:engram:acquire") {
 		t.Fatal("unselected acquisition entered the plan")
 	}
-	selected, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "mcp_server", ID: "memory"}}}})
+	selected, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "mcp_server", ID: "memory"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !planHasAction(selected, "external:engram:acquire") {
 		t.Fatal("selected capability omitted acquisition")
 	}
-	if planHasAction(selected, "external:engram:setup:codex") {
+	if planHasAction(selected, "external:engram:setup:agents") {
 		t.Fatal("acquisition planned host setup")
 	}
 }
@@ -113,20 +113,20 @@ func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 	pack := Pack{
 		ID:       "app",
 		Version:  "1.0.0",
-		Surfaces: []Surface{SurfaceCodex},
+		Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{
 				Kind: "command", ID: "consumer",
 				Requires: []string{"skill:derived"}, Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "consumer", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "consumer", Mode: "native"}},
 			},
 			{
 				Kind: "skill", ID: "derived", Conflicts: []string{"skill:other"}, Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "derived", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "derived", Mode: "native"}},
 			},
 			{
 				Kind: "skill", ID: "other", Conflicts: []string{"skill:derived"}, Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "other", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "other", Mode: "native"}},
 			},
 		},
 	}
@@ -134,10 +134,10 @@ func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 	adapter := &fakeSurfaceAdapter{}
 	facade := NewFacade(
 		Catalog{packs: []Pack{pack}},
-		WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}),
+		WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: adapter}),
 	)
 	plan, err := facade.Preview(context.Background(), ActivationRequest{
-		PackID: "app", Surface: SurfaceCodex,
+		PackID: "app", Surface: SurfaceAgents,
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{
 			{Kind: "command", ID: "consumer"}, {Kind: "skill", ID: "other"},
 		}},
@@ -176,32 +176,32 @@ func TestAddingConflictingRootPreservesActiveCustomIntent(t *testing.T) {
 	pack := Pack{
 		ID:       "app",
 		Version:  "1.0.0",
-		Surfaces: []Surface{SurfaceCodex},
+		Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{
 				Kind: "skill", ID: "left", Conflicts: []string{"skill:right"}, Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "left", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "left", Mode: "native"}},
 			},
 			{
 				Kind: "skill", ID: "right", Conflicts: []string{"skill:left"}, Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "right", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "right", Mode: "native"}},
 			},
 		},
 	}
 	before := ActivationState{
 		SchemaVersion: 1,
 		Intent: ActivationIntent{
-			PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 7, Selection: current,
+			PackID: "app", Surface: SurfaceAgents, Version: "1.0.0", Active: true, Revision: 7, Selection: current,
 		},
 	}
 	store := &fakeActivationStore{state: before}
 	facade := NewFacade(
 		Catalog{packs: []Pack{pack}},
-		WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}),
+		WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}),
 	)
 
 	plan, err := facade.Preview(context.Background(), ActivationRequest{
-		PackID: "app", Surface: SurfaceCodex,
+		PackID: "app", Surface: SurfaceAgents,
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "right"}}},
 	})
 	if err != nil {
@@ -219,16 +219,16 @@ func TestAllOmitsOptionalSurfaceExclusionsWhileCustomRootBlocks(t *testing.T) {
 	pack := Pack{
 		ID:       "app",
 		Version:  "1.0.0",
-		Surfaces: []Surface{SurfaceCodex},
+		Surfaces: []Surface{SurfaceAgents},
 		Resources: []Resource{
 			{
 				Kind: "skill", ID: "included", Notices: []string{},
-				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "included", Mode: "native"}},
+				Bindings: []Binding{{Surface: SurfaceAgents, Projection: "skill", Name: "included", Mode: "native"}},
 			},
 			{
 				Kind: "skill", ID: "optional", Notices: []string{},
 				SurfaceExclusions: []SurfaceExclusion{{
-					Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not projected by this host",
+					Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "not projected by this host",
 				}},
 			},
 		},
@@ -236,10 +236,10 @@ func TestAllOmitsOptionalSurfaceExclusionsWhileCustomRootBlocks(t *testing.T) {
 	allAdapter := &fakeSurfaceAdapter{}
 	allFacade := NewFacade(
 		Catalog{packs: []Pack{pack}},
-		WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: allAdapter}),
+		WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceAgents: allAdapter}),
 	)
 	allPlan, err := allFacade.Preview(context.Background(), ActivationRequest{
-		PackID: "app", Surface: SurfaceCodex,
+		PackID: "app", Surface: SurfaceAgents,
 		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}},
 	})
 	if err != nil {
@@ -261,10 +261,10 @@ func TestAllOmitsOptionalSurfaceExclusionsWhileCustomRootBlocks(t *testing.T) {
 	customStore := &fakeActivationStore{}
 	customFacade := NewFacade(
 		Catalog{packs: []Pack{pack}},
-		WithActivation(customStore, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}),
+		WithActivation(customStore, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}),
 	)
 	customPlan, err := customFacade.Preview(context.Background(), ActivationRequest{
-		PackID: "app", Surface: SurfaceCodex,
+		PackID: "app", Surface: SurfaceAgents,
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "optional"}}},
 	})
 	if err != nil {

@@ -32,7 +32,7 @@ func testCatalogOnDemandExecutable(t *testing.T, executable string) {
 	t.Run("missing catalog", func(t *testing.T) {
 		environment := testprocess.Env(t, "PATH="+t.TempDir())
 		directory := t.TempDir()
-		for _, host := range []string{"claude", "codex"} {
+		for _, host := range []string{"agents", "claude"} {
 			out, diagnostic, err := runCatalogCLI(t, environment, directory, executable, "get", "skill", "alpha:root", "--surface", host, "--json")
 			assertAccessFailure(t, out, diagnostic, err, "catalog_unavailable", "packy init")
 			out, diagnostic, err = runCatalogCLI(t, environment, directory, executable, "show", "alpha", "--surface", host, "--json")
@@ -49,7 +49,7 @@ func testCatalogOnDemandExecutable(t *testing.T, executable string) {
 	t.Run("non-Git boundary", func(t *testing.T) { testCandidateAccessWithoutGit(t, executable, assets) })
 	nextProject := writeAccessCatalog(t, "next", commit)
 	nextAssets, _ := buildAccessCatalog(t, executable, buildEnvironment, nextProject, nextID)
-	for _, host := range []string{"claude", "codex"} {
+	for _, host := range []string{"agents", "claude"} {
 		t.Run(host, func(t *testing.T) {
 			testAccessProcedure(t, executable, host, project, nextProject, assets, nextAssets, archive, firstID, nextID)
 		})
@@ -102,8 +102,8 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 		native = ".claude"
 	}
 	installed := filepath.Join(workspace, "home", native, "skills", alias)
-	// Replace the native link, preserving its immutable catalog target.
-	if err := os.Remove(installed); err != nil {
+	// Replace the installed projection, preserving immutable catalog content.
+	if err := os.RemoveAll(installed); err != nil {
 		t.Fatal(err)
 	}
 	writeAccessFile(t, filepath.Join(installed, "SKILL.md"), []byte("Modified installed procedure\n"), 0600)
@@ -122,7 +122,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 	if err := json.Unmarshal(list, &listed); err != nil {
 		t.Fatal(err)
 	}
-	wantList := `{"Packs":[{"ID":"alpha","Version":"1.0.0","Description":"Access contract alpha","Surfaces":["claude","codex"]},{"ID":"beta","Version":"2.0.0","Description":"Access contract beta","Surfaces":["claude","codex"]},{"ID":"zulu","Version":"2.0.0","Description":"Access contract zulu","Surfaces":["claude","codex"]}]}`
+	wantList := `{"Packs":[{"ID":"alpha","Version":"1.0.0","Description":"Access contract alpha","Surfaces":["agents","claude"]},{"ID":"beta","Version":"2.0.0","Description":"Access contract beta","Surfaces":["agents","claude"]},{"ID":"zulu","Version":"2.0.0","Description":"Access contract zulu","Surfaces":["agents","claude"]}]}`
 	var expectedList any
 	var gotList any
 	if err := json.Unmarshal([]byte(wantList), &expectedList); err != nil {
@@ -136,7 +136,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 		t.Fatalf("complete list: %s", list)
 	}
 	readableList := mustRun("list")
-	wantReadableList := "PACK VERSION DESCRIPTION AVAILABLE ON alpha 1.0.0 Access contract alpha claude, codex beta 2.0.0 Access contract beta claude, codex zulu 2.0.0 Access contract zulu claude, codex"
+	wantReadableList := "PACK VERSION DESCRIPTION AVAILABLE ON alpha 1.0.0 Access contract alpha agents, claude beta 2.0.0 Access contract beta agents, claude zulu 2.0.0 Access contract zulu agents, claude"
 	if strings.Join(strings.Fields(string(readableList)), " ") != wantReadableList {
 		t.Fatalf("complete readable list: %s", readableList)
 	}
@@ -179,7 +179,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 				DescriptiveResource: capabilitypack.DescriptiveResource{Resource: resource, Description: host + " " + id + " procedure", Role: "operational", Dependencies: deps, Notices: notice},
 				QualifiedSkill:      pack + ":" + id, PackID: pack, PackVersion: version,
 				Definition:        capabilitypack.ResourceDefinition{Resource: resource, Surface: capabilitypack.Surface(host), Definition: "surface_variant", Source: "skills/" + id + "-" + host, Origin: &capabilitypack.ResourceOrigin{ID: "upstream", Path: "skill", Relationship: "adapted"}, Notices: notice},
-				SupportedSurfaces: []capabilitypack.Surface{"claude", "codex"}, NativeName: id,
+				SupportedSurfaces: []capabilitypack.Surface{"agents", "claude"}, NativeName: id,
 				OnDemand: &capabilitypack.OnDemandSkill{Protocol: "skill-tree-v1", EntryDocument: "ACCESS.md", ReferenceFiles: []string{"ACCESS.md"}, Prerequisites: []string{"missing-content-runtime"}, Dependencies: foreign}, Compatible: true, Prerequisites: prerequisites,
 			}
 			if !reflect.DeepEqual(report.Skills[i], expected) {
@@ -454,7 +454,7 @@ func expectedAccessDiscovery(pack, host, version string) string {
 	text := fmt.Sprintf("%s %s — skill discovery on %s\nPrerequisites are known declarations, not verified; unknown requirements may exist. Compatibility describes resource access, not native registration, runtime readiness, or workflow success.\n", pack, version, host)
 	// Literal authored relationships keep this expectation independent of graph resolution.
 	for _, row := range []struct{ id, dependencies string }{{"leaf", "none"}, {"left", "asset:data -> skill:leaf"}, {"right", "asset:data -> skill:leaf"}, {"root", "asset:data -> skill:left -> skill:right"}} {
-		text += fmt.Sprintf("Skill: %s:%s (Pack %s) — %s %s procedure\nskill:%s on %s: surface variant; source=skills/%s-%s; origin=upstream:skill (adapted)\nNative name: %s; supported surfaces: claude, codex\nOn-demand compatible: yes; reason: \nNative dependencies (Pack %s): %s; notices: notice:mit\nKnown prerequisites (not verified): %s\nReviewed on-demand protocol: skill-tree-v1; entry document: ACCESS.md\n", pack, row.id, version, host, row.id, row.id, host, row.id, host, row.id, pack, row.dependencies, prerequisites)
+		text += fmt.Sprintf("Skill: %s:%s (Pack %s) — %s %s procedure\nskill:%s on %s: surface variant; source=skills/%s-%s; origin=upstream:skill (adapted)\nNative name: %s; supported surfaces: agents, claude\nOn-demand compatible: yes; reason: \nNative dependencies (Pack %s): %s; notices: notice:mit\nKnown prerequisites (not verified): %s\nReviewed on-demand protocol: skill-tree-v1; entry document: ACCESS.md\n", pack, row.id, version, host, row.id, row.id, host, row.id, host, row.id, pack, row.dependencies, prerequisites)
 		if pack == "alpha" && (row.id == "left" || row.id == "right") {
 			text += "On-demand dependency: skill beta:leaf\n"
 		}

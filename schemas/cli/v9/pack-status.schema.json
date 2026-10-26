@@ -66,7 +66,7 @@
       "required": ["type", "scope", "dimension", "value", "reason", "message", "evidence", "freshness"],
       "properties": {
         "type": { "enum": ["projection-integrity", "external-requirement", "surface-authorization", "runtime-usability"] },
-        "scope": { "type": "object", "required": ["kind", "pack", "surface"], "properties": { "kind": { "enum": ["global", "project"] }, "pack": { "type": "string" }, "surface": { "enum": ["claude", "codex", "opencode"] }, "resource": { "$ref": "#/$defs/resource_identity" } }, "additionalProperties": false },
+        "scope": { "type": "object", "required": ["kind", "pack", "surface"], "properties": { "kind": { "enum": ["global", "project"] }, "pack": { "type": "string" }, "surface": { "enum": ["claude", "agents", "opencode"] }, "resource": { "$ref": "#/$defs/resource_identity" } }, "additionalProperties": false },
         "dimension": { "enum": ["configured", "authorized", "usable"] },
         "value": { "enum": ["true", "false", "unknown"] },
         "reason": { "enum": ["projection-verified", "projection-missing", "projection-drifted", "projection-ambiguous", "projection-unmanaged", "requirement-available", "requirement-missing", "requirement-unobservable", "authorization-confirmed", "authorization-denied", "authorization-unobservable", "runtime-confirmed", "runtime-rejected", "runtime-unobservable"] },
@@ -136,7 +136,7 @@
         "surface": {
           "enum": [
             "claude",
-            "codex",
+            "agents",
             "opencode"
           ]
         },
@@ -401,6 +401,7 @@
         "roots"
       ],
       "properties": {
+        "client": { "const": "codex" },
         "mode": {
           "enum": [
             "all",

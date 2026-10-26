@@ -9,7 +9,7 @@ import (
 )
 
 func TestSurfaceVariantsRejectInvalidDeclarationsAndEffectiveGraphs(t *testing.T) {
-	fixture := testsupport.SkillVariants("variant-validation", testsupport.SurfaceCodex)
+	fixture := testsupport.SkillVariants("variant-validation", testsupport.SurfaceAgents)
 	root := t.TempDir()
 	if err := fixture.WriteCatalog(root); err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func TestSurfaceVariantsRejectInvalidDeclarationsAndEffectiveGraphs(t *testing.T
 			}
 		})
 	}
-	for _, data := range []string{`{"surface":"codex","source":null}`, `{"surface":"codex","requires":null}`, `{"surface":"codex","args":[null]}`, `{"surface":"codex","id":"other"}`, `{"surface":"codex","bindings":[]}`, `{"surface":"codex","overrides":{}}`, `null`} {
+	for _, data := range []string{`{"surface":"agents","source":null}`, `{"surface":"agents","requires":null}`, `{"surface":"agents","args":[null]}`, `{"surface":"agents","id":"other"}`, `{"surface":"agents","bindings":[]}`, `{"surface":"agents","overrides":{}}`, `null`} {
 		var variant ResourceVariant
 		if err := json.Unmarshal([]byte(data), &variant); err == nil {
 			t.Fatalf("accepted %s", data)
@@ -51,7 +51,7 @@ func TestSurfaceVariantsRejectInvalidDeclarationsAndEffectiveGraphs(t *testing.T
 }
 
 func TestSurfaceVariantDependenciesResolveBeforeSelectionAndRemainDetached(t *testing.T) {
-	fixture := testsupport.SkillVariants("variant-graph", testsupport.SurfaceCodex)
+	fixture := testsupport.SkillVariants("variant-graph", testsupport.SurfaceAgents)
 	root := t.TempDir()
 	if err := fixture.WriteCatalog(root); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestSurfaceVariantDependenciesResolveBeforeSelectionAndRemainDetached(t *te
 	pack.Resources = append(pack.Resources, helper)
 	requires := []string{"skill:helper"}
 	pack.Resources[1].Variants[0].Requires = &requires
-	selected, err := selectPackResourcesForSurface(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "guide"}}}, SurfaceCodex)
+	selected, err := selectPackResourcesForSurface(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "guide"}}}, SurfaceAgents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestSurfaceVariantDependenciesResolveBeforeSelectionAndRemainDetached(t *te
 		t.Fatal("resolution mutated common catalog")
 	}
 	pack.Resources[2].Bindings = pack.Resources[2].Bindings[:1]
-	pack.Resources[2].SurfaceExclusions = []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not available"}}
+	pack.Resources[2].SurfaceExclusions = []SurfaceExclusion{{Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "not available"}}
 	if err := validateVariants(pack); err == nil || !strings.Contains(err.Error(), "excluded") {
 		t.Fatalf("excluded effective dependency accepted: %v", err)
 	}

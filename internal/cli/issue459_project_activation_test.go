@@ -1,17 +1,12 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
-	"github.com/yersonargotev/packy/internal/workstation"
 )
 
 func TestIssue459ProjectActivationRequiresAnInstalledPack(t *testing.T) {
@@ -24,105 +19,12 @@ func TestIssue459ProjectActivationRequiresAnInstalledPack(t *testing.T) {
 	opts.Getwd = func() (string, error) { return project, nil }
 
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
-	_, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--project")
 	if err == nil || !strings.Contains(err.Error(), "project installation") {
 		t.Fatalf("activation without installation error = %v", err)
 	}
 	if snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome {
 		t.Fatal("failed project activation created an implicit installation or personal state")
-	}
-}
-
-func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	pack := testsupport.PortableAllSurfaces("project-activation")
-	fixture := newSyntheticCLIFixture(t, terminal, pack)
-	opts, home := fixture.options, fixture.home
-	packID := pack.Manifest().ID
-	resource := syntheticResource(t, pack, "instruction", "guidance")
-	resourceID := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-	project := t.TempDir()
-	writeTestGitWorktree(t, project)
-	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
-		t.Fatalf("install: %v\n%s", err, out)
-	}
-
-	installation, err := capabilitypack.LoadProjectInstallation(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
-		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: resourceID, Detail: "mcp_server"},
-		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: resourceID, Detail: "project-trust"},
-	}
-	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), append(lock, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	install := capabilitypack.JSONProjectInstallPreview{Pack: installation.Manifest.Packs[0], Surface: capabilitypack.SurfaceCodex, Lock: installation.Lock}
-	facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-	snapshot, err := workstation.Resolve(workstation.Inputs{Home: home}, workstation.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter := projectRuntimeAdapter(context.Background(), opts, capabilitypack.SurfaceCodex, snapshot)
-	command := &cobra.Command{}
-	var output strings.Builder
-	command.SetOut(&output)
-	command.SetIn(strings.NewReader(""))
-
-	terminal.approve = false
-	terminal.calls = 0
-	if err := offerProjectActivation(command, opts, facade, install, project, filepath.Join(home, ".packy"), adapter); err != nil {
-		t.Fatalf("decline activation offer: %v", err)
-	}
-	if terminal.calls != 1 || !strings.Contains(output.String(), "activate later") {
-		t.Fatalf("declined offer prompts=%d output=%q", terminal.calls, output.String())
-	}
-	if matches, _ := filepath.Glob(filepath.Join(home, ".packy", "projects", "*", "state-*-*.json")); len(matches) != 0 {
-		t.Fatalf("declined activation persisted personal state: %v", matches)
-	}
-
-	terminal.approve = true
-	terminal.calls = 0
-	output.Reset()
-	if err := offerProjectActivation(command, opts, facade, install, project, filepath.Join(home, ".packy"), adapter); err != nil {
-		t.Fatalf("accept activation offer: %v", err)
-	}
-	if terminal.calls != 3 || !strings.Contains(output.String(), "Verified personal project activation") {
-		t.Fatalf("accepted offer prompts=%d output=%q", terminal.calls, output.String())
-	}
-	trust, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
-	if err != nil || !strings.Contains(string(trust), "trust_level = \"trusted\"") || !strings.Contains(string(trust), project) {
-		t.Fatalf("personal Codex project trust = %q, %v", trust, err)
-	}
-	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{
-		ProjectRoot: project, PackID: packID, Surface: capabilitypack.SurfaceCodex, PackyHome: filepath.Join(home, ".packy"),
-		RequireUsable: true,
-		Adapters:      map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
-	})
-	if err != nil || len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied || status.Packs[0].Readiness.Authorized != capabilitypack.ReadinessTrue || status.Packs[0].Readiness.Usable != capabilitypack.ReadinessTrue {
-		t.Fatalf("personally trusted Codex project is not usable: %+v, %v", status, err)
-	}
-	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	terminal.calls = 0
-	driftPreview, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project", "--dry-run")
-	if err != nil || !strings.Contains(driftPreview, "Runtime activation: previewable") || !strings.Contains(driftPreview, "Personal effect: codex-project-trust") || terminal.calls != 0 {
-		t.Fatalf("drifted trust preview prompts=%d: %v\n%s", terminal.calls, err, driftPreview)
-	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project"); err != nil {
-		t.Fatalf("repair drifted trust: %v", err)
-	}
-	trust, err = os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
-	if err != nil || !strings.Contains(string(trust), "trust_level = \"trusted\"") {
-		t.Fatalf("repaired personal Codex project trust = %q, %v", trust, err)
 	}
 }
 
@@ -136,11 +38,11 @@ func TestIssue459DeclarativeProjectActivationIsNotRequired(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "agents", "--project")
 	if err != nil || !strings.Contains(out, "Runtime activation: not-required") {
 		t.Fatalf("declarative activation: %v\n%s", err, out)
 	}
@@ -160,11 +62,11 @@ func TestIssue459ProjectUsableEnforcementRequiresPersonalActivation(t *testing.T
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "agents"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "agents", "--project", "--require", "usable")
 	if err == nil || !strings.Contains(out, "configured=true, authorized=unknown, usable=unknown") {
 		t.Fatalf("declarative project usability must fail closed without runtime evidence: %v\n%s", err, out)
 	}

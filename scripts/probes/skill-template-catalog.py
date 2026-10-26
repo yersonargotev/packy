@@ -33,19 +33,19 @@ def adapt(source, destination):
             continue
         if resource["id"] in ("tdd", "teach"):
             for binding in resource["bindings"]:
-                binding["invocation"] = {"codex": "$", "claude": "/"}[binding["surface"]] + binding["name"]
+                binding["invocation"] = {"agents": "$", "claude": "/"}[binding["surface"]] + binding["name"]
                 binding["capabilities"].append({"type": "skill-template", "skill_template": {"naming": "pack"}})
                 binding["capabilities"].sort(key=lambda item: item["type"])
         elif resource["id"] == "poteto-help":
             for binding in resource["bindings"]:
-                if binding["surface"] == "codex":
+                if binding["surface"] == "agents":
                     binding["capabilities"].append({"type": "skill-template", "skill_template": {"naming": "native"}})
             for variant in resource["variants"]:
-                if variant["surface"] == "codex":
+                if variant["surface"] == "agents":
                     variant["requires"] = sorted(set(variant.get("requires", resource["requires"]) + ["skill:tdd", "skill:teach"]))
     path.write_text(json.dumps(manifest, indent=2) + "\n")
     changed = []
-    for path in (destination / "packs/pstack/skills/codex/poteto-help").rglob("*.md"):
+    for path in (destination / "packs/pstack/skills/agents/poteto-help").rglob("*.md"):
         original = path.read_text()
         rendered = original
         for name in ("tdd", "teach"):
@@ -101,7 +101,7 @@ def main():
         evidence.update(candidate)
         evidence["baseline_archive_sha256"] = baseline["archive_sha256"]
         original = module.Probe(executable, root / "baseline-dist", root, env, evidence, 60)
-        for surface in ("codex", "claude"):
+        for surface in ("agents", "claude"):
             for scope in ("project", "global"):
                 probe.set_context("skill-template-acceptance", surface=surface, scope=scope)
                 original.set_context("skill-template-negative-control", surface=surface, scope=scope)
@@ -125,7 +125,7 @@ def main():
                     body = (target / "SKILL.md").read_text()
                     module.require("name: pstack-" + name in body, "wrong native template identity")
                     module.require(module.tree(skills / name) == legacy[name], "Matty definition changed")
-                if surface == "codex":
+                if surface == "agents":
                     body = (skills / "poteto-help/SKILL.md").read_text()
                     for expected in ("$pstack-tdd", "$pstack-teach", "../pstack-tdd/SKILL.md", "../pstack-teach/SKILL.md"):
                         module.require(expected in body, "wrong same-Pack help route: " + expected)

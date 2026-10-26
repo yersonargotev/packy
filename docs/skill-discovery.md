@@ -1,14 +1,14 @@
 # Skill discovery and host coexistence
 
 Packy selects a reviewed resource definition from the requested CLI surface.
-One logical skill can have different bodies for Codex and Claude Code. Each
+One logical skill can have different bodies for Agents and Claude. Each
 surface discovers its own roots, so distinct surface bodies can coexist.
 
 ## Native targets
 
 | Surface | Global skills | Project skills |
 | --- | --- | --- |
-| Codex | `$HOME/.agents/skills/<name>` | `.agents/skills/<name>` |
+| Agents | `$HOME/.agents/skills/<name>` | `.agents/skills/<name>` |
 | Claude Code | `$HOME/.claude/skills/<name>` | `.claude/skills/<name>` |
 
 Names above are projected names; the logical resource ID remains the Pack
@@ -56,12 +56,12 @@ references to other skills. An explicit user alias overrides the default.
 
 For example, pstack's names are `pstack-tdd` and `pstack-teach` on every surface,
 without requiring aliases. Within one surface, identical verified same-name
-trees are allowed, while divergent or unverified trees still block. Codex and
+trees are allowed, while divergent or unverified trees still block. Agents and
 Claude use separate roots. The surface selects the body and native target
 directory, rather than becoming part of the default name.
 
 The renderer gives `SKILL.md` the effective native name and expands only authored
-`{{packy.skill:<logical-id>}}` tokens. For example, a pstack Codex template
+`{{packy.skill:<logical-id>}}` tokens. For example, a reviewed Agents template
 containing `` `${{packy.skill:tdd}}` `` and
 `../{{packy.skill:tdd}}/SKILL.md` resolves both to its own namespaced TDD skill.
 A consumer declares the target as a direct `requires` dependency. Ordinary text

@@ -23,7 +23,7 @@ type Surface string
 
 const (
 	SurfaceClaude Surface = "claude"
-	SurfaceCodex  Surface = "codex"
+	SurfaceAgents Surface = "agents"
 )
 
 type Relationship string
@@ -115,16 +115,22 @@ type Resource struct {
 	SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
 }
 
+type ClientProjection struct {
+	Client string   `json:"client"`
+	Scopes []string `json:"scopes"`
+}
+
 type Binding struct {
-	Degradation  string       `json:"degradation,omitempty"`
-	Hook         *CommandHook `json:"hook,omitempty"`
-	Surface      Surface      `json:"surface"`
-	Projection   string       `json:"projection"`
-	Name         string       `json:"name"`
-	Invocation   string       `json:"invocation"`
-	Mode         string       `json:"mode"`
-	Sharing      string       `json:"sharing"`
-	Capabilities []Capability `json:"capabilities"`
+	ClientProjection *ClientProjection `json:"client_projection,omitempty"`
+	Degradation      string            `json:"degradation,omitempty"`
+	Hook             *CommandHook      `json:"hook,omitempty"`
+	Surface          Surface           `json:"surface"`
+	Projection       string            `json:"projection"`
+	Name             string            `json:"name"`
+	Invocation       string            `json:"invocation"`
+	Mode             string            `json:"mode"`
+	Sharing          string            `json:"sharing"`
+	Capabilities     []Capability      `json:"capabilities"`
 }
 
 type Capability struct {
@@ -199,7 +205,7 @@ type Fixture struct {
 func PortableAllSurfaces(id string) Fixture {
 	source := "instructions/" + id + ".md"
 	bytes := []byte("# " + title(id) + " guidance\n\nSynthetic guidance for every supported surface.\n")
-	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
+	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceAgents})
 	fixture.manifest.Resources = []Resource{
 		derivedResource(id, "instruction", "guidance", source, "Portable synthetic guidance", portableBindings("guidance", source)),
 		noticeResource(id),
@@ -226,7 +232,7 @@ func CapabilityRich(id string) Fixture {
 	agentBytes := []byte("---\nname: reviewer\ndescription: Synthetic reviewer agent.\n---\n\nReview the supplied change.\n")
 	assetSource := "assets/" + id + "-reference.md"
 	assetBytes := []byte("# Workflow reference\n\nSynthetic reference asset.\n")
-	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
+	fixture := baseFixture(id, []Surface{SurfaceClaude, SurfaceAgents})
 	fixture.manifest.Resources = []Resource{
 		{
 			Kind: "agent", ID: "reviewer", Source: agentSource,
@@ -241,14 +247,14 @@ func CapabilityRich(id string) Fixture {
 						Authority: AgentAuthority{PermissionMode: "default", Authorities: []AuthorityRecord{}},
 					},
 				}}),
-				binding(SurfaceCodex, "agent", "reviewer", "$reviewer", "exclusive", nil),
+				binding(SurfaceAgents, "agent", "reviewer", "$reviewer", "exclusive", nil),
 			},
 			SurfaceExclusions: []SurfaceExclusion{},
 		},
 		derivedResource(id, "asset", "reference", assetSource, "Synthetic workflow reference", []Binding{}),
 		derivedResource(id, "instruction", "guidance", instructionSource, "Capability-rich synthetic guidance", []Binding{
 			binding(SurfaceClaude, "instruction", "guidance", "guidance", "shared", nil),
-			binding(SurfaceCodex, "instruction", "guidance", "guidance", "shared", []Capability{{
+			binding(SurfaceAgents, "instruction", "guidance", "guidance", "shared", []Capability{{
 				Type: "project-instruction", ProjectInstruction: &SourceCapability{ID: id + "-project", Source: instructionSource},
 			}}),
 		}),
@@ -257,9 +263,8 @@ func CapabilityRich(id string) Fixture {
 			Requires: []string{}, Conflicts: []string{},
 			Bindings: []Binding{
 				binding(SurfaceClaude, "command_hook", "session", "session", "exclusive", nil),
-				binding(SurfaceCodex, "lifecycle", "session", "session", "exclusive", nil),
 			},
-			SurfaceExclusions: []SurfaceExclusion{},
+			SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceAgents, Mode: "optional", Code: "unsupported", Reason: "Agents does not project runtime lifecycle configuration"}},
 		},
 		{
 			Kind: "notice", ID: "apache", Source: "notices/" + id + "-apache",
@@ -269,7 +274,7 @@ func CapabilityRich(id string) Fixture {
 		noticeResource(id),
 		derivedResource(id, "skill", "helper", helperSource, "Synthetic copied-tree helper skill", []Binding{
 			binding(SurfaceClaude, "skill", "helper", "/helper", "exclusive", nil),
-			binding(SurfaceCodex, "skill", "helper", "$helper", "exclusive", nil),
+			binding(SurfaceAgents, "skill", "helper", "$helper", "exclusive", nil),
 		}),
 		{
 			Kind: "skill", ID: "workflow", Source: workflowSource,
@@ -284,7 +289,7 @@ func CapabilityRich(id string) Fixture {
 						References:   []ResourceIdentity{{Kind: "asset", ID: "reference"}},
 					},
 				}}),
-				binding(SurfaceCodex, "skill", "workflow", "$workflow", "exclusive", nil),
+				binding(SurfaceAgents, "skill", "workflow", "$workflow", "exclusive", nil),
 			},
 			SurfaceExclusions: []SurfaceExclusion{},
 		},
@@ -307,17 +312,17 @@ func CapabilityRich(id string) Fixture {
 	return fixture
 }
 
-// ExternalTool returns a Codex skill with one declared external executable and
+// ExternalTool returns a Agents skill with one declared external executable and
 // its reviewed acquisition capability.
 func ExternalTool(id string) Fixture {
 	source := "skills/" + id + "-memory"
 	bytes := []byte("---\nname: " + id + "-memory\ndescription: Synthetic external-tool fixture.\n---\n\nUse fixture-tool for synthetic memory.\n")
-	fixture := baseFixture(id, []Surface{SurfaceCodex})
+	fixture := baseFixture(id, []Surface{SurfaceAgents})
 	fixture.manifest.ExternalRequirements = []string{"engram"}
 	fixture.manifest.Resources = []Resource{
 		noticeResource(id),
 		derivedResource(id, "skill", "memory", source, "Synthetic external-tool skill", []Binding{
-			binding(SurfaceCodex, "skill", "memory", "$memory", "exclusive", []Capability{{
+			binding(SurfaceAgents, "skill", "memory", "$memory", "exclusive", []Capability{{
 				Type: "external-executable-acquisition", ExternalExecutableAcquisition: &ExternalExecutableAcquisition{Tool: "engram"},
 			}}),
 		}),
@@ -346,7 +351,7 @@ func collisionFixture(id string) Fixture {
 		for j := range resource.Bindings[i].Capabilities {
 			capability := &resource.Bindings[i].Capabilities[j]
 			if capability.ProjectInstruction != nil {
-				capability.ProjectInstruction.ID = id + "-project"
+				capability.ProjectInstruction.ID = "shared-guidance"
 			}
 		}
 	}
@@ -363,6 +368,12 @@ func (f Fixture) Manifest() Manifest {
 	var result Manifest
 	if err := json.Unmarshal(data, &result); err != nil {
 		panic(fmt.Sprintf("clone synthetic Pack manifest: %v", err))
+	}
+	sort.Slice(result.Surfaces, func(i, j int) bool { return result.Surfaces[i] < result.Surfaces[j] })
+	for i := range result.Resources {
+		r := &result.Resources[i]
+		sort.Slice(r.Bindings, func(i, j int) bool { return r.Bindings[i].Surface < r.Bindings[j].Surface })
+		sort.Slice(r.Variants, func(i, j int) bool { return r.Variants[i].Surface < r.Variants[j].Surface })
 	}
 	return result
 }
@@ -545,7 +556,7 @@ func (f Fixture) WriteCatalog(root string) error {
 			}
 		}
 	}
-	data, err := json.MarshalIndent(f.manifest, "", "  ")
+	data, err := json.MarshalIndent(f.Manifest(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal Pack %q manifest: %w", f.manifest.ID, err)
 	}
@@ -567,7 +578,7 @@ func (f Fixture) WriteProject(projectRoot, originsRoot string) (map[string]strin
 			}
 		}
 	}
-	data, err := json.MarshalIndent(f.manifest, "", "  ")
+	data, err := json.MarshalIndent(f.Manifest(), "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal Pack %q manifest: %w", f.manifest.ID, err)
 	}
@@ -673,7 +684,7 @@ func noticeResource(id string) Resource {
 func portableBindings(id, source string) []Binding {
 	return []Binding{
 		binding(SurfaceClaude, "instruction", id, id, "shared", nil),
-		binding(SurfaceCodex, "instruction", id, id, "shared", []Capability{{
+		binding(SurfaceAgents, "instruction", id, id, "shared", []Capability{{
 			Type: "project-instruction", ProjectInstruction: &SourceCapability{ID: id, Source: source},
 		}}),
 	}
@@ -683,7 +694,11 @@ func binding(surface Surface, projection, name, invocation, sharing string, capa
 	if capabilities == nil {
 		capabilities = []Capability{}
 	}
-	return Binding{
+	var client *ClientProjection
+	if surface == SurfaceAgents && projection == "agent" {
+		client = &ClientProjection{Client: "codex", Scopes: []string{"global"}}
+	}
+	return Binding{ClientProjection: client,
 		Surface: surface, Projection: projection, Name: name, Invocation: invocation,
 		Mode: "native", Sharing: sharing, Capabilities: capabilities,
 	}
@@ -737,11 +752,11 @@ func writeFile(root, relative string, data []byte) error {
 // SkillVariants keeps one logical skill and its reviewed original, with complete
 // adapted trees for the requested surfaces. Other surfaces inherit the original.
 func SkillVariants(id string, surfaces ...Surface) Fixture {
-	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceCodex})
+	f := baseFixture(id, []Surface{SurfaceClaude, SurfaceAgents})
 	f.fileModes = map[string]os.FileMode{}
 	f.manifest.Resources = []Resource{noticeResource(id), derivedResource(id, "skill", "guide", "skills/common", "Reviewed variant guide", []Binding{
 		binding(SurfaceClaude, "skill", "guide", "/guide", "exclusive", nil),
-		binding(SurfaceCodex, "skill", "guide", "$guide", "exclusive", nil),
+		binding(SurfaceAgents, "skill", "guide", "$guide", "exclusive", nil),
 	})}
 	f.operational = ResourceIdentity{Kind: "skill", ID: "guide"}
 	f.files[noticePath(id)] = noticeBytes(id)
@@ -776,12 +791,12 @@ func (f Fixture) WithVariantBytes(surface Surface, relative string, data []byte)
 	return result
 }
 
-// SkillVariantDependencies makes only Codex's guide require the helper skill.
+// SkillVariantDependencies makes only Agents's guide require the helper skill.
 func SkillVariantDependencies(id string) Fixture {
-	f := SkillVariants(id, SurfaceCodex)
+	f := SkillVariants(id, SurfaceAgents)
 	helper := derivedResource(id, "skill", "helper", "skills/helper", "Surface dependency", []Binding{
 		binding(SurfaceClaude, "skill", "helper", "/helper", "exclusive", nil),
-		binding(SurfaceCodex, "skill", "helper", "$helper", "exclusive", nil),
+		binding(SurfaceAgents, "skill", "helper", "$helper", "exclusive", nil),
 	})
 	helper.Origin.Path = "guide"
 	helper.Origin.Relationship = RelationshipAdapted

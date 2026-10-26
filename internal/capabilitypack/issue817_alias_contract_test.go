@@ -30,7 +30,7 @@ func TestIssue817ApprovedActivationPreservesUnaliasedContract(t *testing.T) {
 					aliases = []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}}
 					expected = "renamed"
 				}
-				plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: selection, Aliases: aliases})
+				plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Selection: selection, Aliases: aliases})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -60,7 +60,7 @@ func TestIssue817AliasedActivationRejectsRealFreshnessChanges(t *testing.T) {
 	for _, change := range []string{"catalog", "state"} {
 		t.Run(change, func(t *testing.T) {
 			facade, adapter, store, pack := issue817ActivationFixture(t)
-			plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Aliases: []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}}})
+			plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceAgents, Aliases: []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,7 +84,7 @@ func TestIssue817AliasedActivationRejectsRealFreshnessChanges(t *testing.T) {
 func TestIssue817LifecycleContractAliasesDoNotMutatePack(t *testing.T) {
 	_, _, _, pack := issue817ActivationFixture(t)
 	original := clonePack(pack)
-	contract := LifecycleContractFor(pack, SurfaceCodex, []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}})
+	contract := LifecycleContractFor(pack, SurfaceAgents, []SurfaceAlias{{Kind: "skill", ID: "guide", Name: "renamed"}})
 	if len(contract.Bindings) != 1 || contract.Bindings[0].Name != "renamed" {
 		t.Fatalf("aliased contract = %#v", contract.Bindings)
 	}
@@ -96,7 +96,7 @@ func TestIssue817LifecycleContractAliasesDoNotMutatePack(t *testing.T) {
 func issue817ActivationFixture(t *testing.T) (Facade, *fakeSurfaceAdapter, *fakeActivationStore, Pack) {
 	t.Helper()
 	root := t.TempDir()
-	pack := Pack{ID: "contract-fixture", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "contract-fixture", Version: "1.0.0", Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
 	facade, adapter, store := updateFixture([]Pack{clonePack(pack)}, ActivationState{})
 	adapter.inspect = func(transition SurfaceTransition) SurfaceInspection {
 		target := filepath.Join(root, transition.Desired.Resources[0].Bindings[0].Name)

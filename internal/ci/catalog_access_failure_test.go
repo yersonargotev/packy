@@ -37,11 +37,11 @@ func testAccessCatalogFailures(t *testing.T, executable string, buildEnvironment
 		{name: "incompatible dependency", diagnostic: "reviewed", edit: func(m map[string]any) { delete(accessCatalogSkill(m, "leaf"), "on_demand") }},
 		{name: "excluded dependency", diagnostic: "excluded", edit: func(m map[string]any) {
 			r := accessCatalogSkill(m, "leaf")
-			r["bindings"] = slices.DeleteFunc(r["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "codex" })
-			r["variants"] = slices.DeleteFunc(r["variants"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "codex" })
-			r["surface_exclusions"] = []any{map[string]any{"surface": "codex", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed for Codex"}}
+			r["bindings"] = slices.DeleteFunc(r["bindings"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "agents" })
+			r["variants"] = slices.DeleteFunc(r["variants"].([]any), func(v any) bool { return v.(map[string]any)["surface"] == "agents" })
+			r["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "unreviewed", "reason": "Not reviewed for Agents"}}
 		}},
-		{name: "invalid access reference", diagnostic: "directive", file: "packs/beta/skills/leaf-codex/ACCESS.md", body: "{{packy.access:alpha::root}}\n"},
+		{name: "invalid access reference", diagnostic: "directive", file: "packs/beta/skills/leaf-agents/ACCESS.md", body: "{{packy.access:alpha::root}}\n"},
 		{name: "unsupported vocabulary in unrelated Pack", diagnostic: "unknown field", edit: func(m map[string]any) {
 			accessCatalogSkill(m, "root")["on_demand"].(map[string]any)["future_protocol"] = true
 		}},
@@ -73,7 +73,7 @@ func testAccessCatalogFailures(t *testing.T, executable string, buildEnvironment
 			}
 			if tc.name == "excluded dependency" {
 				for path := range files {
-					if strings.HasPrefix(path, "packs/beta/skills/leaf-codex/") {
+					if strings.HasPrefix(path, "packs/beta/skills/leaf-agents/") {
 						delete(files, path)
 					}
 				}
@@ -121,14 +121,14 @@ func testAccessCatalogFailures(t *testing.T, executable string, buildEnvironment
 			run := func(selected string, args ...string) ([]byte, []byte, error) {
 				return runCatalogCLI(t, environment, directory, executable, append([]string{"catalog", "candidate", "--snapshot", selected, "--workspace", workspace, "--"}, args...)...)
 			}
-			for _, host := range []string{"claude", "codex"} {
+			for _, host := range []string{"agents", "claude"} {
 				out, diagnostic, err := run(assets, "get", "skill", "alpha:root", "--surface", host, "--json")
 				if err != nil {
 					t.Fatalf("baseline: %v %s %s", err, out, diagnostic)
 				}
 			}
 			before := catalogTreeState(t, []string{workspace, project})
-			for _, operation := range [][]string{{"get", "skill", "alpha:root", "--surface", "codex", "--json"}, {"transition", "--expect-archive-sha256", archive, "--json"}} {
+			for _, operation := range [][]string{{"get", "skill", "alpha:root", "--surface", "agents", "--json"}, {"transition", "--expect-archive-sha256", archive, "--json"}} {
 				out, diagnostic, err := run(invalid, operation...)
 				if err == nil || bytes.Contains(out, []byte(`"prepared"`)) || !strings.Contains(strings.ToLower(string(out)+string(diagnostic)), tc.diagnostic) {
 					t.Fatalf("invalid complete candidate %v: %v %s %s", operation, err, out, diagnostic)
@@ -140,7 +140,7 @@ func testAccessCatalogFailures(t *testing.T, executable string, buildEnvironment
 					t.Fatal("failed candidate changed prior usable state")
 				}
 			}
-			for _, host := range []string{"claude", "codex"} {
+			for _, host := range []string{"agents", "claude"} {
 				out, diagnostic, err := run(assets, "get", "skill", "alpha:root", "--surface", host, "--json")
 				if err != nil {
 					t.Fatalf("prior selection unusable: %v %s %s", err, out, diagnostic)

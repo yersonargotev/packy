@@ -55,7 +55,7 @@ func TestRenderTreePreservesBytesModesAndRendersOnlyExplicitTokens(t *testing.T)
 	writeTemplateFile(t, root, "scripts/run.sh", "#!/bin/sh\nexec {{packy.skill:teach}} \"$@\"\n", 0o750)
 	writeTemplateFile(t, root, "assets/raw.bin", "\x00\x01unchanged", 0o644)
 
-	files, err := RenderTree(root, "help", map[string]string{"help": "pack-codex-help", "tdd": "pack-codex-tdd", "teach": "pack-codex-teach"})
+	files, err := RenderTree(root, "help", map[string]string{"help": "pack-agents-help", "tdd": "pack-agents-tdd", "teach": "pack-agents-teach"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestRenderTreePreservesBytesModesAndRendersOnlyExplicitTokens(t *testing.T)
 		t.Fatalf("paths = %#v", got)
 	}
 	skill := string(fileByPath(t, files, "SKILL.md").Content)
-	for _, want := range []string{"name: 'pack-codex-help' # retained too", "Calls /tdd and $teach", "Use pack-codex-tdd and `teach`."} {
+	for _, want := range []string{"name: 'pack-agents-help' # retained too", "Calls /tdd and $teach", "Use pack-agents-tdd and `teach`."} {
 		if !strings.Contains(skill, want) {
 			t.Fatalf("SKILL.md does not contain %q:\n%s", want, skill)
 		}

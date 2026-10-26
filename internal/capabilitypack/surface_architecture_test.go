@@ -74,10 +74,10 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 				t.Fatalf("%s reintroduced obsolete surface structure %q", source.path, forbidden)
 			}
 		}
-		supportedHost := strings.Contains(source.path, "/codex/") || strings.Contains(source.path, "/claudecode/")
+		supportedHost := strings.Contains(source.path, "/agents/") || strings.Contains(source.path, "/claudecode/")
 		adapterDefinitions := strings.Count(source.text, "type SurfaceAdapter struct")
 		if adapterDefinitions > 0 && !supportedHost {
-			t.Fatalf("%s introduced a concrete surface adapter outside Codex or Claude Code", source.path)
+			t.Fatalf("%s introduced a concrete surface adapter outside Agents or Claude Code", source.path)
 		}
 		if supportedHost {
 			dispatches, err := literalIdentityDispatches(source.path, source.text)
@@ -97,7 +97,7 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			}
 		}
 		if strings.Contains(source.path, "/capabilitypack/") {
-			for _, hostPolicy := range []string{"internal/codex", "internal/claudecode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
+			for _, hostPolicy := range []string{"internal/agents", "internal/claudecode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
 				if strings.Contains(source.text, hostPolicy) {
 					t.Fatalf("%s redistributed host policy through %q", source.path, hostPolicy)
 				}
@@ -121,7 +121,7 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 		}
 	}
 	if concreteAdapters != 2 {
-		t.Fatalf("found %d concrete production surface adapters, want Codex and Claude Code only", concreteAdapters)
+		t.Fatalf("found %d concrete production surface adapters, want Agents and Claude Code only", concreteAdapters)
 	}
 	if inspectionImplementations != 2 || applicationImplementations != 2 {
 		t.Fatalf("found %d inspection and %d application implementations, want one complete implementation per host", inspectionImplementations, applicationImplementations)

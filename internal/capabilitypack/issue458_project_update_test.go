@@ -30,12 +30,12 @@ func TestProjectUpdateAvailabilityRequiresAnIntactOlderInstallation(t *testing.T
 }
 
 func TestIssue458ClassifiesSensitiveVersionChangesForFreshPersonalActivation(t *testing.T) {
-	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationHooks, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
+	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationHooks, Surface: SurfaceAgents, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
 	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationMCP, Surface: SurfaceClaude, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp:memory"}
-	prior := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "1.0.0"}, Surface: SurfaceCodex}}, Sensitive: []ProjectSensitiveDisclosure{oldHook}}
-	desired := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "2.0.0"}, Surface: SurfaceCodex}}, Sensitive: []ProjectSensitiveDisclosure{oldHook, newMCP}}
+	prior := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "1.0.0"}, Surface: SurfaceAgents}}, Sensitive: []ProjectSensitiveDisclosure{oldHook}}
+	desired := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "2.0.0"}, Surface: SurfaceAgents}}, Sensitive: []ProjectSensitiveDisclosure{oldHook, newMCP}}
 
-	changes := projectSensitiveChanges(prior, desired, SurfaceCodex)
+	changes := projectSensitiveChanges(prior, desired, SurfaceAgents)
 	if len(changes) != 1 || changes[0].Change != "changed" || changes[0].Resource != oldHook.Resource {
 		t.Fatalf("sensitive changes = %#v", changes)
 	}
@@ -60,7 +60,7 @@ func TestIssue458RetirementRequiresSeparateDestructiveCleanupApproval(t *testing
 
 func TestIssue626DerivedProjectPackUsesSemanticVersionPrecedence(t *testing.T) {
 	pack := deriveProjectManifestPack(ProjectManifestPack{ID: "app", SurfaceIntents: []ProjectSurfaceIntent{
-		{Surface: SurfaceCodex, Version: "1.0.0-alpha.2", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
+		{Surface: SurfaceAgents, Version: "1.0.0-alpha.2", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
 		{Surface: SurfaceClaude, Version: "1.0.0-alpha.10", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
 	}})
 	if pack.Version != "1.0.0-alpha.10" {

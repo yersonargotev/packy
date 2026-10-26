@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/agents"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
-	"github.com/yersonargotev/packy/internal/codex"
 )
 
 func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
-	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex} {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceAgents} {
 		t.Run(string(surface), func(t *testing.T) {
 			bundle := t.TempDir()
 			for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
@@ -205,8 +205,8 @@ func writeProjectInstructionPack(t *testing.T, bundle, packID string, surface ca
 func projectInstructionAdapter(t *testing.T, bundle string, surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
 	t.Helper()
 	switch surface {
-	case capabilitypack.SurfaceCodex:
-		return codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(t.TempDir(), "skills"), filepath.Join(t.TempDir(), "AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
+	case capabilitypack.SurfaceAgents:
+		return agents.NewSurfaceAdapter(bundle, filepath.Join(t.TempDir(), "skills"), filepath.Join(t.TempDir(), "roles"))
 	default:
 		t.Fatalf("unsupported test surface %s", surface)
 		return nil

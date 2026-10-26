@@ -75,7 +75,7 @@ func (a Observer) Observe(_ context.Context, transition capabilitypack.SurfaceTr
 		cwd = a.WorkingDirectory
 	}
 	for cwd != "" && cwd != "." {
-		for surface, dir := range map[capabilitypack.Surface]string{capabilitypack.SurfaceCodex: ".agents", capabilitypack.SurfaceClaude: ".claude"} {
+		for surface, dir := range map[capabilitypack.Surface]string{capabilitypack.SurfaceAgents: ".agents", capabilitypack.SurfaceClaude: ".claude"} {
 			roots = append(roots, tree{surface: surface, path: filepath.Join(cwd, dir, "skills")})
 		}
 		if _, err := os.Stat(filepath.Join(cwd, ".git")); err == nil {

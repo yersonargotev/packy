@@ -33,7 +33,7 @@
     "surface": {
       "enum": [
         "claude",
-        "codex"
+        "agents"
       ]
     },
     "snapshot_id": {
@@ -108,7 +108,7 @@
           "surface": {
             "enum": [
               "claude",
-              "codex"
+              "agents"
             ]
           },
           "snapshot_id": {

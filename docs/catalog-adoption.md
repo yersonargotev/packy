@@ -1,12 +1,12 @@
 # Adopt a new catalog generation
 
 Packy does not convert installations created by an incompatible generation.
-This includes retired OpenCode contracts, the legacy Installed Source model,
+This includes retired `codex` and OpenCode surface contracts, the legacy Installed Source model,
 and Catalog Snapshot schema v1/v2. Adopt the current catalog with a clean,
 explicit handoff. Keep the previous Packy binary and every source directory or
 retained snapshot it references until the handoff is complete.
 
-The current engine accepts only `codex` and `claude` surfaces. OpenCode surface
+The current engine accepts only `agents` and `claude` surfaces. Retired surface
 values, bindings, capabilities, project intent, receipts, and locks are rejected
 rather than translated. A complete catalog containing retired declarations is
 invalid; Packy does not silently load only its compatible Packs.
@@ -15,9 +15,9 @@ This procedure changes only Packy-owned installations and receipts. It does
 not convert or delete source directories, personal files, credentials, Engram Memory, or
 configuration owned by Codex, Claude Code, OpenCode, or another tool.
 
-## Retired OpenCode installations
+## Retired Codex and OpenCode surface installations
 
-Before replacing an OpenCode-capable binary, use that binary to inventory and
+Before replacing a binary using `codex` or `opencode` surfaces, use it to inventory and
 preview removal of its global installations, personal project activations, and
 shared project installations in every affected worktree. Preserve the old
 binary and its referenced content until all affected receipts are removed.
@@ -31,7 +31,7 @@ decide which paths can be removed. Retained snapshots and unrelated host
 configuration remain untouched.
 
 Only then upgrade and explicitly reinstall desired Packs on the remaining
-supported surfaces. No OpenCode reinstall, alias, automatic state converter,
+supported surfaces. No retired-surface reinstall, alias, automatic state converter,
 or old-root cleanup is provided.
 
 The coordinated rollout is engine-first, then complete catalog validation and

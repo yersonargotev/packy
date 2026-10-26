@@ -55,11 +55,11 @@ func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testi
 	initial := tui.Dashboard{
 		Health:  tui.Health{Status: "healthy"},
 		Catalog: tui.Catalog{SnapshotID: strings.Repeat("a", 40), Repository: "yersonargotev/packy-catalog", Digest: strings.Repeat("b", 64), Packs: 1, RefreshAvailable: true},
-		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"codex"}}}},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"agents"}}}},
 	}
 	refreshed := initial
 	refreshed.Catalog.SnapshotID = strings.Repeat("c", 40)
-	refreshed.Global.Packs = []tui.Pack{{ID: "argote", Version: "2.0.0", Surfaces: []string{"codex"}}}
+	refreshed.Global.Packs = []tui.Pack{{ID: "argote", Version: "2.0.0", Surfaces: []string{"agents"}}}
 	backend := &fakeBackend{dashboard: initial}
 	backend.refresh = func(progress func(string)) error {
 		progress("selected official Catalog Snapshot " + refreshed.Catalog.SnapshotID)
@@ -103,7 +103,7 @@ func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testin
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health:  tui.Health{Status: "healthy"},
 		Catalog: tui.Catalog{SnapshotID: snapshotID, Repository: "yersonargotev/packy-catalog", Packs: 1, RefreshAvailable: true},
-		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"codex"}}}},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"agents"}}}},
 	}}
 	backend.refresh = func(func(string)) error {
 		return errors.New("Catalog Snapshot requires Packy engine 2; update Packy and retry catalog refresh")
@@ -147,15 +147,15 @@ func (b *fakeBackend) Apply(_ context.Context, request tui.ApplyRequest, progres
 func TestProjectInstallResultSeparatesAndOffersPersonalActivation(t *testing.T) {
 	project := tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 		ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}},
-		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 	}}}
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: project}}
 	backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
 		switch request.Operation {
 		case "install":
-			return tui.Preview{ID: "install-1", Digest: "install-1", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}}, nil
+			return tui.Preview{ID: "install-1", Digest: "install-1", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "agents", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}}, nil
 		case "activate":
-			return tui.Preview{ID: "activation-1", Digest: "activation-1", Operation: "activate", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "trust", ApprovalRequired: true}}}, nil
+			return tui.Preview{ID: "activation-1", Digest: "activation-1", Operation: "activate", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "agents", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "trust", ApprovalRequired: true}}}, nil
 		default:
 			return tui.Preview{}, errors.New("unexpected operation")
 		}
@@ -211,7 +211,7 @@ func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstal
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "engram", Version: "1.0.1", SurfaceStatuses: []tui.SurfaceStatus{
-				{Name: "codex", Supported: true},
+				{Name: "agents", Supported: true},
 				{Name: "claude", Supported: true, Installation: "installed", Runtime: "pending"},
 			},
 		}}}},
@@ -243,7 +243,7 @@ func TestProjectStatusOffersOnlyApplicableUpdatePersonalDeactivationAndUninstall
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{
-				Name: "codex", Supported: true, Installation: "installed", Runtime: "active", UpdateAvailable: true,
+				Name: "agents", Supported: true, Installation: "installed", Runtime: "active", UpdateAvailable: true,
 			}},
 		}}}},
 		preview: tui.Preview{ID: "project-update", Digest: "project-update", Operation: "update", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-update", ApprovalRequired: true}}},
@@ -269,7 +269,7 @@ func TestProjectStatusOffersOnlyApplicableUpdatePersonalDeactivationAndUninstall
 		t.Fatalf("project update preview requests = %d, want 1", len(backend.previewRequests))
 	}
 	request := backend.previewRequests[0]
-	if request.Operation != "update" || request.Surface != "codex" || request.Scope != "project" || request.ProjectRoot != "/workspace/project" || request.Selection.Mode != "" {
+	if request.Operation != "update" || request.Surface != "agents" || request.Scope != "project" || request.ProjectRoot != "/workspace/project" || request.Selection.Mode != "" {
 		t.Fatalf("project update preview request = %#v", request)
 	}
 }
@@ -277,7 +277,7 @@ func TestProjectStatusOffersOnlyApplicableUpdatePersonalDeactivationAndUninstall
 func TestProjectStatusNeverOffersUninstallForAnAbsentPack(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "2.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "absent"}},
+			ID: "argote", Version: "2.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "absent"}},
 		}}}},
 	}
 	model := loadModel(t, backend)
@@ -292,10 +292,10 @@ func TestProjectStatusNeverOffersUninstallForAnAbsentPack(t *testing.T) {
 func TestProjectUninstallRequiresFocusedDestructiveApprovalAndCancellationIsSafe(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "pending"}},
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "installed", Runtime: "pending"}},
 		}}}},
 		preview: tui.Preview{
-			ID: "uninstall-exact", Digest: "uninstall-exact", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project",
+			ID: "uninstall-exact", Digest: "uninstall-exact", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "agents", Scope: "project", ProjectRoot: "/workspace/project",
 			Effects: []tui.PreviewEffect{{Kind: "owned-projection", Target: ".agents/skills/review/SKILL.md", Description: "remove exact owned projection"}, {Kind: "project-manifest", Target: "packy.json", Description: "remove Pack intent"}, {Kind: "project-lock", Target: "packy.lock.json", Description: "remove installed receipt"}},
 			Diff:    tui.PreviewDiff{Removed: []string{".agents/skills/review/SKILL.md", "packy.json", "packy.lock.json"}},
 			Phases:  []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove .agents/skills/review/SKILL.md", "remove packy.json", "remove packy.lock.json"}}},
@@ -354,9 +354,9 @@ func TestProjectUninstallRequiresFocusedDestructiveApprovalAndCancellationIsSafe
 func TestProjectUninstallPartialFailureReportsDriftPendingEffectsAndOnlyVerifiedRollback(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "pending", Drift: 1}},
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "installed", Runtime: "pending", Drift: 1}},
 		}}}},
-		preview:     tui.Preview{ID: "uninstall-partial", Digest: "uninstall-partial", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove packy.lock.json"}}}},
+		preview:     tui.Preview{ID: "uninstall-partial", Digest: "uninstall-partial", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "agents", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove packy.lock.json"}}}},
 		applyResult: tui.ApplyResult{Stage: "verification", Summary: "Project Pack uninstalled with pending personal effects", PendingActions: []string{"Personal runtime still requires deactivation"}, RollbackVerified: true},
 		applyErr:    errors.New("remaining owned projection drift requires recovery"),
 	}
@@ -392,11 +392,11 @@ func TestProjectUninstallPartialFailureReportsDriftPendingEffectsAndOnlyVerified
 func TestProjectStatusOmitsNoOpUpdateAndRequiresDestructiveConsentForPersonalDeactivation(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "engram", Version: "1.0.1", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "active"}},
+			ID: "engram", Version: "1.0.1", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "installed", Runtime: "active"}},
 		}}}},
 		preview: tui.Preview{
-			ID: "personal-deactivation", Digest: "personal-deactivation", Operation: "deactivate", Disposition: "previewable", PackID: "engram", PackVersion: "1.0.1", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project",
-			Effects: []tui.PreviewEffect{{Kind: "personal-runtime", Target: "<codex-home>/config.toml", Description: "remove project trust"}}, Diff: tui.PreviewDiff{Removed: []string{"<codex-home>/config.toml"}},
+			ID: "personal-deactivation", Digest: "personal-deactivation", Operation: "deactivate", Disposition: "previewable", PackID: "engram", PackVersion: "1.0.1", Surface: "agents", Scope: "project", ProjectRoot: "/workspace/project",
+			Effects: []tui.PreviewEffect{{Kind: "personal-runtime", Target: "<agents-home>/config.toml", Description: "remove project trust"}}, Diff: tui.PreviewDiff{Removed: []string{"<agents-home>/config.toml"}},
 			Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove exact personal project trust contribution"}}},
 		},
 		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Personally deactivated engram for the current project"},
@@ -437,9 +437,9 @@ func TestProjectStatusOmitsNoOpUpdateAndRequiresDestructiveConsentForPersonalDea
 func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview: tui.Preview{ID: "install-cancel", Digest: "install-cancel", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
+		preview: tui.Preview{ID: "install-cancel", Digest: "install-cancel", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "agents", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
@@ -461,9 +461,9 @@ func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testin
 func TestFailedProjectApplyReloadsStatusWithoutClaimingRollback(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview:     tui.Preview{ID: "install-fail", Digest: "install-fail", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
+		preview:     tui.Preview{ID: "install-fail", Digest: "install-fail", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "agents", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
 		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Project installation stopped before verification"},
 		applyErr:    errors.New("projection write failed"),
 	}
@@ -489,7 +489,7 @@ func TestFailedProjectApplyReloadsStatusWithoutClaimingRollback(t *testing.T) {
 func TestFailedProjectUpdateReloadsStatusAndRequiresANewPreview(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
-			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "active", UpdateAvailable: true}},
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "installed", Runtime: "active", UpdateAvailable: true}},
 		}}}},
 		preview:     tui.Preview{ID: "project-update-fail", Digest: "project-update-fail", Operation: "update", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-update", ApprovalRequired: true}}},
 		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Project update stopped before verification"},
@@ -526,9 +526,9 @@ func TestGlobalLifecycleOffersOnlyApplicableActionsAndRequestsTheChosenOperation
 			ID: "argote", Version: "2.0.0", Resources: []tui.Resource{
 				{Identity: "skill:review", Role: "root"},
 				{Identity: "skill:tdd", Role: "root"},
-			}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+			}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, UpdateAvailable: true}},
 		}}}},
-		preview: tui.Preview{ID: "update-1", Digest: "digest-1", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		preview: tui.Preview{ID: "update-1", Digest: "digest-1", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -569,14 +569,14 @@ func TestGlobalLifecycleOffersOnlyApplicableActionsAndRequestsTheChosenOperation
 func TestChangingFromAnInactiveToActiveSurfaceRevealsItsLifecycleActions(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 		ID: "argote", Version: "2.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{
-			{Name: "codex", Supported: true},
+			{Name: "agents", Supported: true},
 			{Name: "claude", Supported: true, Active: true, UpdateAvailable: true},
 		},
 	}}}}}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Select Pack resources") || !strings.Contains(view, "codex") {
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Select Pack resources") || !strings.Contains(view, "agents") {
 		t.Fatalf("inactive default surface did not offer activation selection:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
@@ -594,9 +594,9 @@ func TestGlobalStatusOmitsNoOpUpdateAndConfigurationRequestsDesiredRoots(t *test
 			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{
 				{Identity: "skill:review", Role: "root"},
 				{Identity: "skill:tdd", Role: "root"},
-			}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}},
+			}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, Selection: tui.Selection{Mode: "all"}}},
 		}}}},
-		preview: tui.Preview{ID: "configure-1", Digest: "digest-1", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:tdd"}}, Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true}}},
+		preview: tui.Preview{ID: "configure-1", Digest: "digest-1", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "1.0.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:tdd"}}, Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true}}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -621,17 +621,17 @@ func TestGlobalStatusOmitsNoOpUpdateAndConfigurationRequestsDesiredRoots(t *test
 func TestUpdateUsesSharedConsentApplyResultAndFreshReloadFlow(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, UpdateAvailable: true}},
 		}}}},
-		preview:     tui.Preview{ID: "update-2", Digest: "digest-2", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"replace owned projection"}}}, Diff: tui.PreviewDiff{Changed: []string{"$HOME/.codex/AGENTS.md"}}},
-		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Updated argote on codex"},
+		preview:     tui.Preview{ID: "update-2", Digest: "digest-2", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "agents", Scope: "global", Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"replace owned projection"}}}, Diff: tui.PreviewDiff{Changed: []string{"$HOME/.agents/AGENTS.md"}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Updated argote on agents"},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Changed: $HOME/.codex/AGENTS.md") || !strings.Contains(view, "Enter continue to consent") {
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Changed: $HOME/.agents/AGENTS.md") || !strings.Contains(view, "Enter continue to consent") {
 		t.Fatalf("update preview did not expose changed projections or continuation:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -641,7 +641,7 @@ func TestUpdateUsesSharedConsentApplyResultAndFreshReloadFlow(t *testing.T) {
 	}
 	model = runModelCommand(t, model, command)
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Update succeeded", "Verification: verified", "Updated argote on codex", "Fresh Pack status reloaded"} {
+	for _, want := range []string{"Update succeeded", "Verification: verified", "Updated argote on agents", "Fresh Pack status reloaded"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("shared update result missing %q:\n%s", want, view)
 		}
@@ -654,9 +654,9 @@ func TestUpdateUsesSharedConsentApplyResultAndFreshReloadFlow(t *testing.T) {
 func TestDeactivationRefusalHasNoEffectsAndFailedUpdateRequiresFreshPreview(t *testing.T) {
 	deactivate := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true}},
+			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true}},
 		}}}},
-		preview: tui.Preview{ID: "deactivate-refused", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove owned projection"}}}},
+		preview: tui.Preview{ID: "deactivate-refused", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "argote", PackVersion: "1.0.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove owned projection"}}}},
 	}
 	model := loadModel(t, deactivate)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -671,9 +671,9 @@ func TestDeactivationRefusalHasNoEffectsAndFailedUpdateRequiresFreshPreview(t *t
 
 	update := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, UpdateAvailable: true}},
 		}}}},
-		preview:  tui.Preview{ID: "update-failed", Digest: "digest", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		preview:  tui.Preview{ID: "update-failed", Digest: "digest", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "agents", Scope: "global", Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
 		applyErr: errors.New("write failed"), applyResult: tui.ApplyResult{Stage: "apply", Verified: false},
 	}
 	model = loadModel(t, update)
@@ -696,11 +696,11 @@ func TestDeactivationRefusalHasNoEffectsAndFailedUpdateRequiresFreshPreview(t *t
 func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview: tui.Preview{ID: "plan-1", Digest: "digest-1", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{
+		preview: tui.Preview{ID: "plan-1", Digest: "digest-1", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{
 			{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"write AGENTS.md"}},
-			{Kind: "host-follow-up", ApprovalRequired: false, Actions: []string{"restart Codex"}},
+			{Kind: "host-follow-up", ApprovalRequired: false, Actions: []string{"restart Agents"}},
 			{Kind: "executable-external", ApprovalRequired: true, Actions: []string{"install Engram"}},
 		}},
 	}
@@ -741,11 +741,11 @@ func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t
 func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombination(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview: tui.Preview{ID: "plan-2", Digest: "digest-2", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{
-			{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"write $HOME/.codex/AGENTS.md"}},
-			{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove $HOME/.codex/skills/retired"}},
+		preview: tui.Preview{ID: "plan-2", Digest: "digest-2", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{
+			{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"write $HOME/.agents/AGENTS.md"}},
+			{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove $HOME/.agents/skills/retired"}},
 		}},
 	}
 	model := loadModel(t, backend)
@@ -757,7 +757,7 @@ func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombinatio
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Destructive cleanup confirmation", "Consent 2 of 2", "destructive-cleanup", "Exact paths and effects", "Removal cannot be interrupted after Apply starts", "remove $HOME/.codex/skills/retired", "Cancel", "selected"} {
+	for _, want := range []string{"Destructive cleanup confirmation", "Consent 2 of 2", "destructive-cleanup", "Exact paths and effects", "Removal cannot be interrupted after Apply starts", "remove $HOME/.agents/skills/retired", "Cancel", "selected"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("destructive consent missing %q:\n%s", want, view)
 		}
@@ -783,14 +783,14 @@ func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombinatio
 func TestApplyShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview: tui.Preview{ID: "plan-3", Digest: "digest-3", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		preview: tui.Preview{ID: "plan-3", Digest: "digest-3", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
 	}
 	backend.apply = func(progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
 		progress(tui.ApplyProgress{Phase: "reversible-local"})
 		backend.dashboard.Global.Packs[0].SurfaceStatuses[0].Configured = "yes"
-		return tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Activated argote on Codex", Details: []string{"3 projections owned"}}, nil
+		return tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Activated argote on Agents", Details: []string{"3 projections owned"}}, nil
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -810,7 +810,7 @@ func TestApplyShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T)
 	}
 	model = runModelCommand(t, model, applyCommand)
 	view = ansi.Strip(model.View().Content)
-	for _, want := range []string{"Activation succeeded", "Stage: verification", "Verification: verified", "Activated argote on Codex", "Details collapsed · ? expand", "Fresh Pack status reloaded"} {
+	for _, want := range []string{"Activation succeeded", "Stage: verification", "Verification: verified", "Activated argote on Agents", "Details collapsed · ? expand", "Fresh Pack status reloaded"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("activation result missing %q:\n%s", want, view)
 		}
@@ -830,9 +830,9 @@ func TestApplyShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T)
 func TestQuitDuringApplyIsVisibleThenCompletesAfterApplyAndFreshStatusReload(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview:     tui.Preview{ID: "plan-exit", Digest: "digest-exit", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		preview:     tui.Preview{ID: "plan-exit", Digest: "digest-exit", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
 		applyResult: tui.ApplyResult{Stage: "verification", Verified: true},
 	}
 	model := loadModel(t, backend)
@@ -855,9 +855,9 @@ func TestQuitDuringApplyIsVisibleThenCompletesAfterApplyAndFreshStatusReload(t *
 func TestApplyFailureReloadsStatusAndRetryCreatesANewPreview(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview:     tui.Preview{ID: "plan-failed", Digest: "digest-failed", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		preview:     tui.Preview{ID: "plan-failed", Digest: "digest-failed", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
 		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Activation stopped before verification", Details: []string{"projection write rejected"}},
 		applyErr:    errors.New("permission denied"),
 	}
@@ -887,10 +887,10 @@ func TestApplyFailureReloadsStatusAndRetryCreatesANewPreview(t *testing.T) {
 func TestActivationResultRemainsVisibleWhenFreshStatusReloadFails(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview:     tui.Preview{ID: "plan-4", Digest: "digest-4", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
-		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Activated argote on Codex"},
+		preview:     tui.Preview{ID: "plan-4", Digest: "digest-4", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Activated argote on Agents"},
 	}
 	backend.apply = func(func(tui.ApplyProgress)) (tui.ApplyResult, error) {
 		backend.err = errors.New("status unavailable")
@@ -904,7 +904,7 @@ func TestActivationResultRemainsVisibleWhenFreshStatusReloadFails(t *testing.T) 
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Activation succeeded", "Activated argote on Codex", "Fresh Pack status reload failed: status unavailable"} {
+	for _, want := range []string{"Activation succeeded", "Activated argote on Agents", "Fresh Pack status reload failed: status unavailable"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("result with reload failure missing %q:\n%s", want, view)
 		}
@@ -931,7 +931,7 @@ func TestRunEntersAndRestoresAlternateScreen(t *testing.T) {
 func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 		ID: "orchestrate", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
-		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Configured: "false", Usable: "true", ControlledCheckActionAvailable: true}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Configured: "false", Usable: "true", ControlledCheckActionAvailable: true}},
 	}}}}}
 	backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
 		if request.Operation != "check" || request.Scope != "global" || request.Selection.Mode != "all" {
@@ -939,8 +939,8 @@ func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *
 		}
 		return tui.Preview{
 			ID: "runtime-check-global", Digest: "runtime-check-global", Operation: "check", Disposition: "applicable",
-			PackID: "orchestrate", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: request.Selection,
-			ValidityIdentity: "projection-revision=7; adapter=codex-1; host=codex-2", ProjectionRevision: "revision-7", Instructions: []string{"Run the reviewed delegation workflow in Codex."},
+			PackID: "orchestrate", PackVersion: "1.0.0", Surface: "agents", Scope: "global", Selection: request.Selection,
+			ValidityIdentity: "projection-revision=7; adapter=agents-1; host=agents-2", ProjectionRevision: "revision-7", Instructions: []string{"Run the reviewed delegation workflow in Agents."},
 			Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}},
 		}, nil
 	}
@@ -977,9 +977,9 @@ func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *
 func TestProjectControlledRuntimeCheckRecordsNegativeResultAndCanBeCancelled(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 		ID: "orchestrate", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
-		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Configured: "false", Usable: "true", ControlledCheckActionAvailable: true}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Installation: "installed", Configured: "false", Usable: "true", ControlledCheckActionAvailable: true}},
 	}}}}}
-	backend.preview = tui.Preview{ID: "runtime-check-project", Digest: "runtime-check-project", Operation: "check", Disposition: "previewable", PackID: "orchestrate", PackVersion: "1.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Selection: tui.Selection{Mode: "all"}, Instructions: []string{"Confirm the runtime behavior."}, Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}}}
+	backend.preview = tui.Preview{ID: "runtime-check-project", Digest: "runtime-check-project", Operation: "check", Disposition: "previewable", PackID: "orchestrate", PackVersion: "1.0.0", Surface: "agents", Scope: "project", ProjectRoot: "/workspace/project", Selection: tui.Selection{Mode: "all"}, Instructions: []string{"Confirm the runtime behavior."}, Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}}}
 	backend.applyResult = tui.ApplyResult{Stage: "verification", Verified: true}
 
 	model := loadModel(t, backend)
@@ -1278,11 +1278,11 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 				Resources:    []tui.Resource{{Identity: "skill:orchestrate", Description: "Coordinate agents", Role: "operational", Requirements: []string{"notice:mit"}, Conflicts: []string{"skill:legacy"}}},
 				Exclusions: []tui.Exclusion{
 					{ID: "windows", Reason: "POSIX shell required"},
-					{ID: "skill:orchestrate", Surface: "claude", Mode: "unsupported", Code: "surface-unsupported", Reason: "Codex only"},
+					{ID: "skill:orchestrate", Surface: "claude", Mode: "unsupported", Code: "surface-unsupported", Reason: "Agents only"},
 				},
 				SurfaceStatuses: []tui.SurfaceStatus{
 					{Name: "claude", Supported: false},
-					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", ControlledCheckState: "stale", ControlledCheckResult: "true", ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
+					{Name: "agents", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", ControlledCheckState: "stale", ControlledCheckResult: "true", ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
 				},
 			},
 		}},
@@ -1320,8 +1320,8 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Pack details · Workstation · global", "orchestrate 1.0.0", "Coordination workflow",
 		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
 		"Requirements: git", "windows — POSIX shell required",
-		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported)", "Codex only",
-		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
+		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported)", "Agents only",
+		"claude: unsupported", "agents: supported", "configured=yes authorized=yes usable=no",
 		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
 		"install helper", "projection verified",
@@ -1408,12 +1408,12 @@ func TestPackLifecycleSelectionDefaultsToAllResourcesAndExplainsResourceRoles(t 
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 			ID: "argote", Version: "1.2.0", Description: "Agent guidance",
 			Resources: []tui.Resource{
-				{Identity: "skill:review", Role: "root", Description: "Review changes", SelectionClosures: map[string][]string{"codex": {"asset:template", "notice:mit"}}},
+				{Identity: "skill:review", Role: "root", Description: "Review changes", SelectionClosures: map[string][]string{"agents": {"asset:template", "notice:mit"}}},
 				{Identity: "instruction:guidance", Role: "dependency", Description: "Shared guidance"},
 				{Identity: "asset:template", Role: "asset", Description: "Report template"},
 				{Identity: "notice:mit", Role: "notice", Description: "MIT notice"},
 			},
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}},
 	}}
 	model := loadModel(t, backend)
@@ -1422,7 +1422,7 @@ func TestPackLifecycleSelectionDefaultsToAllResourcesAndExplainsResourceRoles(t 
 
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{
-		"Select Pack resources", "argote · codex · Workstation · global",
+		"Select Pack resources", "argote · agents · Workstation · global",
 		"[x] skill:review", "[x] instruction:guidance",
 		"asset:template", "notice:mit", "auto · on", "Included automatically",
 	} {
@@ -1442,23 +1442,23 @@ func TestFullPackSelectionCreatesAndRendersCompleteImmutablePreview(t *testing.T
 			Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 				ID: "argote", Version: "1.2.0",
 				Resources:       []tui.Resource{{Identity: "skill:review", Role: "root"}},
-				SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+				SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 			}}},
 		},
 		preview: tui.Preview{
 			ID: "plan-42", Digest: "sha256:exact", Operation: "activate", Disposition: "applicable",
-			PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+			PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global",
 			Selection: tui.Selection{Mode: "all"},
 			Resources: []tui.PreviewResource{
 				{Identity: "skill:review", Role: "root", DependencyChain: []string{"skill:review"}},
 				{Identity: "instruction:guidance", Role: "dependency", DependencyChain: []string{"skill:review", "instruction:guidance"}},
 			},
 			Authorities:    []tui.PreviewAuthority{{Resource: "skill:review", Detail: "read project files"}},
-			Effects:        []tui.PreviewEffect{{Kind: "skill-link", Target: "$HOME/.codex/skills/review", Description: "create reviewed skill link"}},
+			Effects:        []tui.PreviewEffect{{Kind: "skill-link", Target: "$HOME/.agents/skills/review", Description: "create reviewed skill link"}},
 			Diff:           tui.PreviewDiff{Added: []string{"skill:review"}, Retained: []string{"instruction:guidance"}},
 			Blockers:       []tui.PreviewBlocker{},
-			Phases:         []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"skill-link $HOME/.codex/skills/review"}}},
-			PendingActions: []string{"restart Codex"},
+			Phases:         []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"skill-link $HOME/.agents/skills/review"}}},
+			PendingActions: []string{"restart Agents"},
 		},
 	}
 	model := loadModel(t, backend)
@@ -1471,16 +1471,16 @@ func TestFullPackSelectionCreatesAndRendersCompleteImmutablePreview(t *testing.T
 		t.Fatalf("preview requests = %d, want 1", len(backend.previewRequests))
 	}
 	request := backend.previewRequests[0]
-	if request.PackID != "argote" || request.Surface != "codex" || request.Scope != "global" || request.Selection.Mode != "all" || len(request.Selection.Roots) != 0 {
+	if request.PackID != "argote" || request.Surface != "agents" || request.Scope != "global" || request.Selection.Mode != "all" || len(request.Selection.Roots) != 0 {
 		t.Fatalf("preview target or default selection is not exact: %#v", request)
 	}
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{
-		"Immutable lifecycle preview", "activate argote 1.2.0 · codex · global", "plan-42 · sha256:exact",
+		"Immutable lifecycle preview", "activate argote 1.2.0 · agents · global", "plan-42 · sha256:exact",
 		"Selection: Full Pack", "skill:review [root]", "skill:review → instruction:guidance",
-		"Authorities", "skill:review — read project files", "Effects", "skill-link — $HOME/.codex/skills/review",
+		"Authorities", "skill:review — read project files", "Effects", "skill-link — $HOME/.agents/skills/review",
 		"Diff", "Added: skill:review", "Retained: instruction:guidance", "Blockers: none",
-		"Phases", "reversible-local · approval required", "Pending actions: restart Codex", "Enter continue to consent",
+		"Phases", "reversible-local · approval required", "Pending actions: restart Agents", "Enter continue to consent",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("preview screen missing %q:\n%s", want, view)
@@ -1495,16 +1495,16 @@ func TestResourceChecklistExposesOperationalResourcesAndSendsExactCustomSelectio
 			Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 				ID: "argote", Version: "1.2.0",
 				Resources: []tui.Resource{
-					{Identity: "skill:review", Role: "root", SelectionClosures: map[string][]string{"codex": {"asset:template", "notice:mit"}}},
+					{Identity: "skill:review", Role: "root", SelectionClosures: map[string][]string{"agents": {"asset:template", "notice:mit"}}},
 					{Identity: "agent:critic", Role: "root"},
 					{Identity: "instruction:guidance", Role: "dependency"},
 					{Identity: "asset:template", Role: "asset"},
 					{Identity: "notice:mit", Role: "notice"},
 				},
-				SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+				SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 			}}},
 		},
-		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"agent:critic", "instruction:guidance"}}},
+		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"agent:critic", "instruction:guidance"}}},
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -1544,19 +1544,19 @@ func TestBlockedNoOpAndStalePreviewsNeverOfferConsent(t *testing.T) {
 	}{
 		{
 			name: "blocked",
-			preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+			preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global",
 				Selection: tui.Selection{Mode: "all"}, Blockers: []tui.PreviewBlocker{{Kind: "ownership", Subject: "AGENTS.md", Detail: "owned by another Pack"}}},
 			wants: []string{"Disposition: blocked", "Blockers: ownership AGENTS.md — owned by another Pack", "Continue unavailable"},
 		},
 		{
 			name: "no-op",
-			preview: tui.Preview{Operation: "activate", Disposition: "converged", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+			preview: tui.Preview{Operation: "activate", Disposition: "converged", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global",
 				Selection: tui.Selection{Mode: "all"}},
 			wants: []string{"Disposition: converged", "Blockers: none", "Continue unavailable"},
 		},
 		{
 			name: "stale",
-			preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+			preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global",
 				Selection: tui.Selection{Mode: "all"}, Stale: true, StaleReason: "catalog changed after preview"},
 			wants: []string{"Stale preview — catalog changed after preview", "Create a fresh preview before continuing", "Continue unavailable"},
 		},
@@ -1564,7 +1564,7 @@ func TestBlockedNoOpAndStalePreviewsNeverOfferConsent(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-				ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+				ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 			}}}}, preview: test.preview}
 			model := loadModel(t, backend)
 			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -1588,9 +1588,9 @@ func TestBlockedNoOpAndStalePreviewsNeverOfferConsent(t *testing.T) {
 func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 		}}}},
-		preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "all"},
 			Blockers:       []tui.PreviewBlocker{{Kind: "ownership", Subject: "a-very-long-projection-target", Detail: "the complete blocker detail remains visible instead of being shortened"}},
 			PendingActions: []string{"a long pending action whose complete meaning must remain visible"}},
 	}
@@ -1636,7 +1636,7 @@ func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}},
-			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}, {Name: "claude", Supported: true}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}, {Name: "claude", Supported: true}},
 		}}}},
 		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "claude", Scope: "global", Selection: tui.Selection{Mode: "all"}},
 	}
@@ -1644,12 +1644,12 @@ func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "CLI surface: codex · selected") || !strings.Contains(view, "←/→ change surface") {
+	if !strings.Contains(view, "CLI surface: agents · selected") || !strings.Contains(view, "←/→ change surface") {
 		t.Fatalf("default exact surface is not reviewable:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	view = ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "CLI surface: claude · selected") || strings.Contains(view, "CLI surface: codex · selected") {
+	if !strings.Contains(view, "CLI surface: claude · selected") || strings.Contains(view, "CLI surface: agents · selected") {
 		t.Fatalf("surface navigation did not choose the next supported surface:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
@@ -2075,9 +2075,9 @@ func TestUpdatePreviewDisplaysContractBaselineAvailability(t *testing.T) {
 			}
 			backend := &fakeBackend{
 				dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
-					ID: "contract-fixture", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+					ID: "contract-fixture", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, UpdateAvailable: true}},
 				}}}},
-				preview: tui.Preview{ID: "update", Digest: "exact", Operation: "update", Disposition: "applicable", PackID: "contract-fixture", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Diff: diff},
+				preview: tui.Preview{ID: "update", Digest: "exact", Operation: "update", Disposition: "applicable", PackID: "contract-fixture", PackVersion: "2.0.0", Surface: "agents", Scope: "global", Diff: diff},
 			}
 			model := loadModel(t, backend)
 			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))

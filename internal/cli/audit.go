@@ -87,7 +87,7 @@ func observeAuditProject(ctx context.Context, resolver *workstation.Resolver) au
 	}
 	verification := capabilitypack.VerifyProject(ctx, projectRoot, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 		capabilitypack.SurfaceClaude: projectOfflineAdapter(capabilitypack.SurfaceClaude),
-		capabilitypack.SurfaceCodex:  projectOfflineAdapter(capabilitypack.SurfaceCodex),
+		capabilitypack.SurfaceAgents: projectOfflineAdapter(capabilitypack.SurfaceAgents),
 	})
 	observation := audit.ProjectObservation{Summary: audit.VerificationSummary{
 		Packs: verification.Summary.Packs, Surfaces: verification.Summary.Surfaces,

@@ -76,7 +76,7 @@
       "items": {
         "enum": [
           "claude",
-          "codex"
+          "agents"
         ]
       },
       "minItems": 1,
@@ -125,7 +125,7 @@
           "surface": {
             "enum": [
               "claude",
-              "codex"
+              "agents"
             ]
           },
           "catalog_identity": {
@@ -176,7 +176,7 @@
                     },
                     "surface": {
                       "enum": [
-                        "codex",
+                        "agents",
                         "claude"
                       ]
                     },

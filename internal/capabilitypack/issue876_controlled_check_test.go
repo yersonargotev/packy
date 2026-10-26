@@ -47,7 +47,7 @@ func TestIssue876ControlledCheckRejectsRetiredPersistedEvidence(t *testing.T) {
 	if _, err := store.Load(context.Background()); err == nil || !strings.Contains(err.Error(), "unsupported CLI surface") {
 		t.Fatalf("retired persisted evidence: %v", err)
 	}
-	identity.Surface = SurfaceCodex
+	identity.Surface = SurfaceAgents
 	if _, err := store.Status(context.Background(), identity); err == nil || !strings.Contains(err.Error(), "unsupported CLI surface") {
 		t.Fatalf("current surface silently ignored retired evidence: %v", err)
 	}
