@@ -534,4 +534,5 @@ closure requiring these roles. Dependencies are retained rather than silently
 reduced. A valid role definition does not prove delegation or authorization.
 Direct Agents MCP, command-degradation, global instruction, and unrelated client
 configuration paths are not supported. Ordinary Agents skills declare no client
-projection and do not write Codex settings.
+projection and do not write Codex settings. `--client` is rejected for all project
+selections and for global closures without a native Codex role.

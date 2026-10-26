@@ -381,11 +381,6 @@ func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilityp
 }
 
 func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview, dryRun bool) error {
-	if report.Selection.Client != "" {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Custom-agent client: %s · scope: project\n", report.Selection.Client); err != nil {
-			return err
-		}
-	}
 	if err := renderResourceDefinitions(cmd.OutOrStdout(), report.ResourceDefinitions); err != nil {
 		return err
 	}

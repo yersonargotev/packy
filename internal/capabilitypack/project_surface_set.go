@@ -35,9 +35,7 @@ func (a projectSurfaceAdapterSet) InspectSurface(ctx context.Context, transition
 		if adapter == nil {
 			return SurfaceInspection{}, errors.New("mixed project surface inspection is missing an installed surface adapter")
 		}
-		scoped := cloneSurfaceTransition(transition)
-		scoped.Client = projectSelectedClient(transition.ProjectInstallation.Manifest.Packs[0], surface)
-		inspection, err := inspectSurface(ctx, adapter, scoped)
+		inspection, err := inspectSurface(ctx, adapter, transition)
 		if err != nil {
 			return SurfaceInspection{}, err
 		}

@@ -131,6 +131,7 @@ type Pack struct {
 }
 
 type Resource struct {
+	ClientProjections   []ClientProjection
 	Definitions         []string
 	Identity            string
 	Description         string
@@ -140,6 +141,12 @@ type Resource struct {
 	SurfaceCapabilities []SurfaceCapability
 	// SelectionClosures contains domain-resolved resources by CLI surface.
 	SelectionClosures map[string][]string
+}
+
+type ClientProjection struct {
+	Surface string
+	Client  string
+	Scopes  []string
 }
 
 type SurfaceCapability struct {

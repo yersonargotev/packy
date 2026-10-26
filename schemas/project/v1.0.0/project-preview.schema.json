@@ -16,7 +16,6 @@
       "type": "object",
       "required": ["mode", "resources"],
       "properties": {
-        "client": { "const": "codex" },
         "mode": { "enum": ["all", "custom"] },
         "resources": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/resource_fact" } }
       },

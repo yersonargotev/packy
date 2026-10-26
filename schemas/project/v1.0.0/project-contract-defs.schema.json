@@ -14,7 +14,6 @@
       "type": "object",
       "required": ["mode", "roots"],
       "properties": {
-        "client": { "const": "codex" },
         "mode": { "enum": ["all", "custom"] },
         "roots": { "type": "array", "items": { "$ref": "#/$defs/resource" } }
       },

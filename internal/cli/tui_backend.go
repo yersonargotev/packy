@@ -741,7 +741,7 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, proje
 		ID:                  report.Observation, Digest: report.Observation, Operation: operation, Disposition: string(report.Disposition),
 		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: surface, Scope: "project",
 		ProjectRoot:    projectRoot,
-		Selection:      tui.Selection{Client: report.Selection.Client, Mode: string(report.Selection.Mode)},
+		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
 		PendingActions: append([]string(nil), report.Requirements...),
 	}
 	coreEffects := []tui.PreviewEffect{
@@ -1067,9 +1067,11 @@ func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
 				}
 			}
 		}
+		var clients []tui.ClientProjection
 		requirements = append(requirements, manifestResource.RequiresTools...)
 		for _, binding := range manifestResource.Bindings {
 			if projection := binding.ClientProjection; projection != nil {
+				clients = append(clients, tui.ClientProjection{Surface: string(binding.Surface), Client: projection.Client, Scopes: slices.Clone(projection.Scopes)})
 				requirements = append(requirements, fmt.Sprintf("%s custom-agent client: %s; scope: %s", binding.Surface, projection.Client, strings.Join(projection.Scopes, ", ")))
 			}
 		}
@@ -1077,6 +1079,7 @@ func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
 			Identity: identity, Description: resource.Description, Role: string(resource.Role), Definitions: definitions[identity],
 			Requirements: requirements, Conflicts: append([]string(nil), manifestResource.Conflicts...),
 			SurfaceCapabilities: surfaceCapabilitiesForTUI(manifestResource),
+			ClientProjections:   clients,
 			SelectionClosures:   closures,
 		})
 	}

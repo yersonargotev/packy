@@ -174,6 +174,9 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 		return ControlledCheckIdentity{}, nil, errors.New("controlled check requires Pack, surface, and Packy Home")
 	}
 	if request.ProjectRoot != "" {
+		if request.Selection.Client != "" {
+			return ControlledCheckIdentity{}, nil, errors.New("project client selection is unsupported")
+		}
 		return f.projectControlledCheckIdentity(ctx, request)
 	}
 	if f.activation == nil || f.activation.store == nil {
@@ -189,6 +192,9 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 	}
 	selection := request.Selection
 	if intent, ok := intentForPack(state, request.PackID, request.Surface); ok {
+		if request.Selection.Client != "" && request.Selection.Client != intent.Selection.Client {
+			return ControlledCheckIdentity{}, nil, errors.New("requested client does not match the installed native role selection")
+		}
 		selection = intent.Selection
 		pack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
 		if err != nil {
@@ -250,7 +256,7 @@ func (f Facade) projectControlledCheckIdentity(ctx context.Context, request Cont
 		return ControlledCheckIdentity{}, nil, fmt.Errorf("project controlled check does not support CLI surface %q", request.Surface)
 	}
 	scoped := projectInstallationForPack(installation, request.PackID)
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: projectSelectedClient(projectPack, request.Surface), ProjectRoot: request.ProjectRoot, ProjectInstallation: &scoped, ProjectGoal: ProjectionPresent})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ProjectRoot: request.ProjectRoot, ProjectInstallation: &scoped, ProjectGoal: ProjectionPresent})
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}

@@ -770,7 +770,7 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 		if intent.PackID != manifest.ID {
 			continue
 		}
-		if intent.Selection.Client != "codex" || !slices.Equal(intent.Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "helper"}}) {
+		if intent.Selection.Client != "" || !slices.Equal(intent.Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "helper"}}) {
 			t.Fatalf("partial removal changed retained selection: %#v", intent)
 		}
 		if slices.ContainsFunc(intent.Resources, func(resource capabilitypack.ResourceIdentity) bool {
@@ -778,6 +778,20 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 		}) {
 			t.Fatalf("partial removal broadened retained resources: %#v", intent.Resources)
 		}
+	}
+
+	beforeReaddition := snapshotTree(t, fixture.home)
+	readd := tui.PreviewRequest{Operation: "activate", PackID: manifest.ID, Surface: "agents", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"agent:reviewer"}}}
+	if _, err := backend.Preview(context.Background(), readd); err == nil || snapshotTree(t, fixture.home) != beforeReaddition {
+		t.Fatalf("role readdition reused removed client authority or mutated state: %v", err)
+	}
+	readd.Selection.Client = "codex"
+	readded, err := backend.Preview(context.Background(), readd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: readded, ApprovedPhases: requiredTUIPhases(readded)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
 	}
 
 	complete, err := backend.Preview(context.Background(), tui.PreviewRequest{

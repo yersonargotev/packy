@@ -24,7 +24,8 @@ The project root receives:
 For Agents, skills are complete trees under `.agents/skills` and instruction
 contributions are merged into project `AGENTS.md`. There is no global Agents
 instruction destination. Required Codex custom roles currently support only
-global scope; a project selection requiring one fails before any mutation.
+global scope; every project client selection and any project closure requiring
+a Codex role fails before mutation.
 Ordinary Agents project installation does not write Codex settings or register a
 runtime.
 

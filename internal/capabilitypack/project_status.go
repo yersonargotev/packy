@@ -385,7 +385,6 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			readinessPack := projectReadinessPack(packLock, surface, surfacePack)
 			resolutions, unobservedRequirements := observeProjectRequirements(ctx, readinessPack.Requires.Tools, request.Resolver)
 			observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
-				Client:      projectSelectedClient(pack, surface),
 				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ProjectInspectionScope: request.InspectionScope, ResolvedExecutables: resolutions,
 			})
 			if inspectErr != nil {

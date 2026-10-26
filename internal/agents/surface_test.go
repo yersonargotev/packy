@@ -113,11 +113,3 @@ func TestCodexResidualInspectionReportsDriftBeforeOwnedRemoval(t *testing.T) {
 		t.Fatalf("drift was hidden: %+v", projection)
 	}
 }
-
-func projectionActions(projections []capabilitypack.ObservedProjection) []capabilitypack.ProjectionAction {
-	actions := make([]capabilitypack.ProjectionAction, len(projections))
-	for i := range projections {
-		actions[i] = projections[i].Action
-	}
-	return actions
-}

@@ -118,7 +118,6 @@ type ProjectNoticeContribution struct {
 }
 
 type ProjectSelectionPreview struct {
-	Client    string                `json:"client,omitempty"`
 	Mode      SelectionMode         `json:"mode"`
 	Resources []ResourceClosureFact `json:"resources"`
 }
@@ -305,7 +304,7 @@ func (f Facade) addProjectUpdateRetirements(ctx context.Context, prior ProjectIn
 	var removals []ProjectionAction
 	seenRetirement := map[string]bool{}
 	surface := combined.Surface
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: projectSelectedClient(prior.Manifest.Packs[0], surface), ProjectRoot: combined.projectRoot, ProjectInstallation: &prior, ProjectGoal: ProjectionAbsent})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ProjectRoot: combined.projectRoot, ProjectInstallation: &prior, ProjectGoal: ProjectionAbsent})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -560,7 +559,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	selectedPack = composition.combinedPack()
 	compositionBlockers := projectCompositionBlockers(composition.blockers)
 	graph := mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, ResourceGraphForSurface(pack, selection, request.Surface, false))
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Client: selection.Client, Desired: selectedPack, ProjectRoot: request.ProjectRoot})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: selectedPack, ProjectRoot: request.ProjectRoot})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -742,7 +741,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		ResourceDefinitions: ResourceDefinitionsFor(selectedPack, request.Surface),
 		SchemaVersion:       ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
-		Selection:   ProjectSelectionPreview{Client: selection.Client, Mode: selection.Mode, Resources: graph.Resources},
+		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV1, Packs: manifestPacks},
 		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV1, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
@@ -951,15 +950,6 @@ func sortedProjectSurfaces(values []Surface) []Surface {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
 	return result
-}
-
-func projectSelectedClient(pack ProjectManifestPack, surface Surface) string {
-	for _, intent := range projectSurfaceIntents(pack) {
-		if intent.Surface == surface {
-			return intent.Selection.Client
-		}
-	}
-	return ""
 }
 
 func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {

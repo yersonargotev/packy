@@ -8,6 +8,12 @@ func validateSelectedClient(pack Pack, selection ResourceSelection, surface Surf
 	if selection.Client != "" && surface != SurfaceAgents {
 		return fmt.Errorf("client selection %q is unsupported on %s", selection.Client, surface)
 	}
+	if selection.Client != "" && scope != "global" {
+		return fmt.Errorf("client selection is supported only for reviewed native roles at global scope")
+	}
+	if selection.Client != "" && !hasSelectedRole(pack, surface) {
+		return fmt.Errorf("client selection requires a selected reviewed native role; shared skills do not target a runtime client")
+	}
 	for _, resource := range pack.Resources {
 		for _, binding := range resource.Bindings {
 			if binding.Surface != surface {
@@ -34,6 +40,18 @@ func validateSelectedClient(pack Pack, selection ResourceSelection, surface Surf
 	return nil
 }
 
+func hasSelectedRole(pack Pack, surface Surface) bool {
+	if surface != SurfaceAgents {
+		return false
+	}
+	for _, resource := range pack.Resources {
+		if resource.Kind == "agent" && resourceHasSurfaceBinding(resource, surface) {
+			return true
+		}
+	}
+	return false
+}
+
 func cloneClientProjection(projection *ClientProjection) *ClientProjection {
 	if projection == nil {
 		return nil
@@ -45,12 +63,17 @@ func validateReceiptClient(receipt installedPackReceipt, scope string) error {
 	if receipt.Selection.Client != "" && receipt.Surface != SurfaceAgents {
 		return fmt.Errorf("receipt client selection is unsupported on %s", receipt.Surface)
 	}
+	if receipt.Selection.Client != "" && scope != "global" {
+		return fmt.Errorf("project receipt client selection is unsupported")
+	}
+	roleSelected := false
 	for _, resource := range receipt.Resources {
 		if receipt.Surface != SurfaceAgents {
 			continue
 		}
 		switch resource.Kind {
 		case "agent":
+			roleSelected = true
 			if scope != "global" || receipt.Selection.Client != "codex" {
 				return fmt.Errorf("Agents role receipt requires explicit codex client at global scope")
 			}
@@ -61,6 +84,9 @@ func validateReceiptClient(receipt installedPackReceipt, scope string) error {
 		case "mcp_server", "command", "lifecycle":
 			return fmt.Errorf("Agents %s receipt is unsupported", resource.Kind)
 		}
+	}
+	if receipt.Selection.Client != "" && !roleSelected {
+		return fmt.Errorf("receipt client selection requires an installed native role")
 	}
 	return nil
 }

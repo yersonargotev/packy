@@ -71,8 +71,10 @@ retained for update and removal. Roles participate in normal ownership,
 collision, and drift protection; Packy does not configure unrelated Codex
 settings, MCP servers, global instructions, or command degradations.
 
-Ordinary Agents skills need no client selection and do not create `.codex`
-content. Complete skill trees retain scripts, executable modes, references,
+A client selection is valid only for a global Agents closure containing a
+required native Codex role. Project selections and ordinary skill-only global
+selections reject `--client` before mutation. Ordinary Agents skills do not
+create `.codex` content. Complete skill trees retain scripts, executable modes, references,
 legal/supporting content, and optional `agents/openai.yaml` metadata. That
 metadata is part of a skill, not a custom-agent registration. A generated role
 file establishes configured content only; it does not prove authorization or

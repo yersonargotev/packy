@@ -621,9 +621,17 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 		return ReconciliationPlan{}, err
 	}
 	selection := intent.Selection
+	explicitClient := request.Selection != nil && request.Selection.Client != ""
 	if request.Selection != nil {
 		selection = *request.Selection
-		if selection.Client == "" {
+	}
+	selected, err := selectPackResourcesForSurface(current, selection, request.Surface)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	if !explicitClient {
+		selection.Client = ""
+		if hasSelectedRole(selected, request.Surface) {
 			selection.Client = intent.Selection.Client
 		}
 	}
@@ -796,6 +804,9 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
+	if !hasSelectedRole(targetPack, request.Surface) {
+		selection.Client = ""
+	}
 	previousAliases := intentAliases(state, request.PackID, request.Surface)
 	aliases := aliasesForPack(targetPack, request.Surface, previousAliases)
 	before, err := f.compose(previousPack, state, request.Surface, true)
@@ -814,7 +825,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		return ReconciliationPlan{}, err
 	}
 	adapter := f.activation.adapters[request.Surface]
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, selection.Client, OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, previousSelection.Client, OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect partial deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
@@ -1261,7 +1272,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	destructiveActions := phaseActions(request.Plan.phases, ConsentDestructiveCleanup)
 	prior := priorCombinedPack(request.Plan, pack)
-	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.selection.Client, request.Plan.operation, prior, combined, state.Ownership, resolutions))
+	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.transitionClient(), request.Plan.operation, prior, combined, state.Ownership, resolutions))
 	if err != nil {
 		return ApplyResult{}, ReportSafeError(err, &request.Plan)
 	}
@@ -1306,7 +1317,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 	}
 	if len(externalActions) > 0 || len(destructiveActions) > 0 {
-		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.selection.Client, request.Plan.operation, prior, combined, state.Ownership, resolutions))
+		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.transitionClient(), request.Plan.operation, prior, combined, state.Ownership, resolutions))
 		if err != nil {
 			return ApplyResult{}, ReportSafeError(err, &request.Plan)
 		}
@@ -1638,7 +1649,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("executable resolution changed after Preview; rerun %s to preview a fresh plan", plan.operation)}
 	}
 	before := priorCombinedPack(plan, pack)
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(plan.surface, plan.selection.Client, plan.operation, before, combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(plan.surface, plan.transitionClient(), plan.operation, before, combined, state.Ownership, resolutions))
 	if err != nil {
 		return planPreflight{}, err
 	}
@@ -2480,6 +2491,15 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 
 func validatePersonalProjectAction(_ ProjectionAction) error {
 	return errors.New("surface adapter returned an unsupported personal project action")
+}
+
+// Deactivation still needs the prior explicit client to inspect and retire its
+// role, even when the retained selection no longer contains a native role.
+func (p ReconciliationPlan) transitionClient() string {
+	if p.operation == OperationDeactivate {
+		return p.previousSelection.Client
+	}
+	return p.selection.Client
 }
 
 func surfaceTransitionFacts(surface Surface, client string, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {

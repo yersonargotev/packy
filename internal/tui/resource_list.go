@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -161,11 +162,11 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if pack == nil {
 		return m, nil
 	}
-	if message.String() == "c" && !m.project && selectedSurface(*pack, m.surfaceIndex) == "agents" {
-		if m.selectedClient == "codex" {
+	if client := m.selectedRoleClient(); message.String() == "c" && client != "" {
+		if m.selectedClient == client {
 			m.selectedClient = ""
 		} else {
-			m.selectedClient = "codex"
+			m.selectedClient = client
 		}
 		return m, nil
 	}
@@ -232,6 +233,9 @@ func (m Model) updateResourceList(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) syncResourceList() {
+	if m.selectedRoleClient() == "" {
+		m.selectedClient = ""
+	}
 	selected := make(map[string]bool)
 	if pack := m.selectedPack(); pack != nil {
 		for _, resource := range pack.Resources {
@@ -302,7 +306,7 @@ func (m Model) resourceSelectionFrame(width int) (string, string) {
 		resourceSurfaceStyle.Render(surfaceLine),
 		counts,
 	}, "\n")
-	if surface == "agents" && !m.project {
+	if m.selectedRoleClient() != "" {
 		client := "none"
 		if m.selectedClient != "" {
 			client = m.selectedClient
@@ -349,4 +353,24 @@ func (m Model) renderSelection() string {
 	header, footer := m.resourceSelectionFrame(width)
 	body := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(mochaBlue).Padding(0, 1).Background(mochaMantle).Render(m.resourceList.View())
 	return m.renderBody(lipgloss.NewStyle().Padding(0, 2).Render(header + "\n" + body + "\n" + footer))
+}
+
+// selectedRoleClient exposes only the reviewed client of a selected role closure.
+func (m Model) selectedRoleClient() string {
+	pack := m.selectedPack()
+	if m.project || pack == nil {
+		return ""
+	}
+	surface := selectedSurface(*pack, m.surfaceIndex)
+	for _, resource := range pack.Resources {
+		if !m.resourceSelected(resource.Identity) {
+			continue
+		}
+		for _, projection := range resource.ClientProjections {
+			if projection.Surface == surface && slices.Contains(projection.Scopes, "global") {
+				return projection.Client
+			}
+		}
+	}
+	return ""
 }

@@ -121,7 +121,6 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	}
 	scopedInstallation := projectInstallationForPack(installation, pack.ID)
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{
-		Client:      projectSelectedClient(pack, surface),
 		ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionAbsent,
 	})
 	if err != nil {
