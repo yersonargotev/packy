@@ -36,7 +36,9 @@ supported surfaces. No retired-surface reinstall, alias, automatic state convert
 or old-root cleanup is provided.
 
 The coordinated rollout is engine-first, then complete catalog validation and
-publication against the released immutable engine revision. These instructions
+publication against the released immutable engine revision. Never publish a
+mixed-generation snapshot. Catalog Refresh is explicit and does not update
+existing installations; their receipts retain their referenced snapshots. These instructions
 do not assert that either release or catalog publication has already happened.
 Do not perform the handoff until that compatible engine/catalog pair is
 available.
