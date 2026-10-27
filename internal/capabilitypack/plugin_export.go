@@ -465,6 +465,15 @@ func validatePluginSkill(data []byte, name, format string) error {
 		}
 	}
 	if format == ClaudePluginFormat {
+		if value, ok := header["context"]; ok && fmt.Sprint(value) != "fork" {
+			return fmt.Errorf("Claude skill context must be fork")
+		}
+		if _, ok := header["background"]; ok && fmt.Sprint(header["context"]) != "fork" {
+			return fmt.Errorf("Claude skill background requires context: fork")
+		}
+		if value, ok := header["effort"]; ok && !slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, fmt.Sprint(value)) {
+			return fmt.Errorf("invalid Claude skill effort")
+		}
 		for _, field := range []string{"when_to_use", "argument-hint", "model", "effort", "context", "agent"} {
 			if value, exists := header[field]; exists {
 				if _, ok := value.(string); !ok {
