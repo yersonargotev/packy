@@ -92,10 +92,16 @@
       "minLength": 1
     },
     "surface": {
-      "const": "agents"
+      "enum": [
+        "agents",
+        "claude"
+      ]
     },
     "format": {
-      "const": "agent-plugins"
+      "enum": [
+        "agent-plugins",
+        "claude-plugin"
+      ]
     },
     "selected_skills": {
       "type": "array",
@@ -308,6 +314,32 @@
           "output_directory": false,
           "content_sha256": false,
           "prerequisites": false
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "surface"
+        ],
+        "properties": {
+          "surface": {
+            "const": "claude"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "format": {
+            "const": "claude-plugin"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "format": {
+            "const": "agent-plugins"
+          }
         }
       }
     }

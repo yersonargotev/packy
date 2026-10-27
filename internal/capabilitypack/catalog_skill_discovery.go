@@ -19,6 +19,7 @@ type SkillDiscovery struct {
 	SupportedSurfaces []Surface          `json:"supported_surfaces"`
 	NativeName        string             `json:"native_name"`
 	Exclusion         *SurfaceExclusion  `json:"exclusion"`
+	PluginExports     PluginExports      `json:"plugin_exports,omitempty"`
 	OnDemand          *OnDemandSkill     `json:"on_demand"`
 	Compatible        bool               `json:"compatible"`
 	Reason            string             `json:"reason"`
@@ -64,7 +65,7 @@ func (c Catalog) DiscoverSkills(ctx context.Context, id string, surface Surface)
 			}
 			candidate := SkillDiscovery{DescriptiveResource: description, QualifiedSkill: pack.ID + ":" + resource.ID, PackID: pack.ID, PackVersion: pack.Version,
 				Definition:        ResourceDefinition{Resource: description.Resource, Surface: surface, Definition: definition, Source: resource.Source, Origin: resource.Origin, Notices: description.Notices},
-				SupportedSurfaces: []Surface{}, OnDemand: cloneOnDemand(resource.OnDemand), Prerequisites: DeclaredSkillPrerequisites(pack, resource)}
+				SupportedSurfaces: []Surface{}, PluginExports: clonePluginExports(resource.PluginExports), OnDemand: cloneOnDemand(resource.OnDemand), Prerequisites: DeclaredSkillPrerequisites(pack, resource)}
 			for _, binding := range resource.Bindings {
 				candidate.SupportedSurfaces = append(candidate.SupportedSurfaces, binding.Surface)
 				if binding.Surface == surface {

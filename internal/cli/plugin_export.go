@@ -36,9 +36,9 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 		}
 		return err
 	}
-	command := &cobra.Command{Use: "export <pack>", Short: "Export reviewed skills as a standalone local plugin", Long: "Export one reviewed Pack as an Agent Plugins package with --surface agents. Defaults to all format-eligible skills; --skill selects logical skill IDs and their complete native dependency closure. Uses the selected or explicitly retained local Catalog Snapshot without acquisition, installation, registration, or content execution. The output must be a new or empty directory whose parent already exists. Native clients own plugin installation and enablement; declared prerequisites are not verified.", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if surface != "agents" || output == "" {
-			return failure(cmd, "invalid_arguments", fmt.Errorf("export requires --surface agents and --output <new-or-empty-directory>"))
+	command := &cobra.Command{Use: "export <pack>", Short: "Export reviewed skills as a standalone local plugin", Long: "Export one reviewed Pack as an Agent Plugins package with --surface agents or a Claude plugin with --surface claude. Defaults to all format-eligible skills; --skill selects logical skill IDs and their complete native dependency closure. Uses the selected or explicitly retained local Catalog Snapshot without acquisition, installation, registration, or content execution. The output must be a new or empty directory whose parent already exists. Native clients own plugin installation and enablement; declared prerequisites are not verified.", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if (surface != "agents" && surface != "claude") || output == "" {
+			return failure(cmd, "invalid_arguments", fmt.Errorf("export requires --surface agents or claude and --output <new-or-empty-directory>"))
 		}
 		for _, skill := range skills {
 			if skill == "" {
@@ -108,7 +108,7 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Exported %s@%s as %s (%s)\nCatalog Snapshot: %s\nOutput directory: %s\nSelected skills: %v\nContent SHA256: %s\nDeclared prerequisites (not verified): %v\nPackage generated; installation and enablement belong to the consuming client.\n", result.PackID, result.PackVersion, result.PluginName, result.Format, result.SnapshotID, result.OutputDirectory, result.SelectedSkills, result.ContentSHA256, result.Prerequisites)
 		return err
 	}}
-	command.Flags().StringVar(&surface, "surface", "", "explicit projection convention: agents (Agent Plugins)")
+	command.Flags().StringVar(&surface, "surface", "", "explicit projection convention: agents (Agent Plugins) or claude (Claude plugin)")
 	command.Flags().StringVar(&snapshotID, "snapshot", "", "reuse this exact retained Catalog Snapshot")
 	command.Flags().StringVar(&output, "output", "", "caller-selected new or empty output directory")
 	command.Flags().StringSliceVar(&skills, "skill", nil, "logical skill IDs to export (repeat or comma-separate; default: all eligible)")

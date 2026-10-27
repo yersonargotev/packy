@@ -16,7 +16,7 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy show PACK --surface HOST --json` | `schemas/cli/v1/skill-discovery.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `schemas/cli/v1/skill-access.schema.json` |
-| `packy export PACK --surface agents --output DIR --json` | `schemas/cli/v1/plugin-export.schema.json` |
+| `packy export PACK --surface agents|claude --output DIR --json` | `schemas/cli/v1/plugin-export.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v7/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v13/pack-status.schema.json` |
@@ -39,7 +39,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 | `packy list --json` | `pack-list` |
 | `packy show PACK --surface HOST --json` | `skill-discovery` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `skill-access` |
-| `packy export PACK --surface agents --output DIR --json` | `plugin-export` |
+| `packy export PACK --surface agents|claude --output DIR --json` | `plugin-export` |
 | `packy doctor --json` | `doctor` |
 | `packy show PACK --json` | `pack-show` |
 | global Pack preview | `pack-lifecycle-preview` |

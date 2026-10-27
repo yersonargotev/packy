@@ -1249,7 +1249,7 @@
         ],
         "properties": {
           "format": {
-            "const": "agent-plugins"
+            "enum": ["agent-plugins", "claude-plugin"]
           },
           "name": {
             "type": "string",

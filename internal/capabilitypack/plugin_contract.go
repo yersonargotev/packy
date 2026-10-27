@@ -11,6 +11,7 @@ import (
 )
 
 const AgentPluginsFormat = "agent-plugins"
+const ClaudePluginFormat = "claude-plugin"
 
 // PluginExports is independent of native bindings and on-demand compatibility.
 // An empty set deliberately declares no eligible formats.
@@ -92,7 +93,7 @@ func validatePluginExports(resource Resource) error {
 		if contract.Origin != nil && contract.Source == "" {
 			return fmt.Errorf("plugin export origin requires an explicit source")
 		}
-		if contract.Format != AgentPluginsFormat {
+		if contract.Format != AgentPluginsFormat && contract.Format != ClaudePluginFormat {
 			return fmt.Errorf("unsupported plugin export format %q", contract.Format)
 		}
 		if i > 0 && resource.PluginExports[i-1].Format >= contract.Format {

@@ -172,8 +172,8 @@ Packy preserves unrelated files, credentials, Engram memory, and host-owned
 configuration. Tests and manual verification must sandbox `HOME` and
 `XDG_CONFIG_HOME`.
 
-Use [local plugin export](docs/plugin-export.md) to generate a standalone Agent
-Plugins package from one reviewed Pack or selected skills. Export stays separate
+Use [local plugin export](docs/plugin-export.md) to generate a standalone
+Agent Plugins or Claude plugin package from one reviewed Pack or selected skills. Export stays separate
 from installation and requires explicit per-format reviewed compatibility.
 
 ## Pack authoring

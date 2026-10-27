@@ -64,8 +64,8 @@ func ExportPlugin(ctx context.Context, snapshotRoot, snapshotID, packID string, 
 	if !idPattern.MatchString(packID) || !retainedPluginSnapshot.MatchString(snapshotID) {
 		return PluginExportResult{}, fmt.Errorf("export requires a Pack ID and retained immutable Catalog Snapshot identity")
 	}
-	if surface != SurfaceAgents {
-		return PluginExportResult{}, fmt.Errorf("plugin export supports --surface agents (Agent Plugins); received %q", surface)
+	if surface != SurfaceAgents && surface != SurfaceClaude {
+		return PluginExportResult{}, fmt.Errorf("plugin export supports agents and claude; received %q", surface)
 	}
 	pack, err := ValidatePackContent(snapshotRoot, packID)
 	if err != nil {
@@ -87,11 +87,15 @@ func ExportPlugin(ctx context.Context, snapshotRoot, snapshotID, packID string, 
 }
 
 func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface Surface, skills []string) (pluginPlan, error) {
+	format := AgentPluginsFormat
+	if surface == SurfaceClaude {
+		format = ClaudePluginFormat
+	}
 	pack = withSurfaceCapabilityDependencies(ResolvePackForSurface(pack, surface), surface)
 	roots := []ResourceIdentity{}
 	if len(skills) == 0 {
 		for _, resource := range pack.Resources {
-			if resource.Kind == "skill" && bindingForSurface(resource, surface) != nil && pluginContract(resource, AgentPluginsFormat) != nil {
+			if resource.Kind == "skill" && bindingForSurface(resource, surface) != nil && pluginContract(resource, format) != nil {
 				roots = append(roots, ResourceIdentity{Kind: "skill", ID: resource.ID})
 			}
 		}
@@ -104,7 +108,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 		}
 	}
 	if len(roots) == 0 {
-		return pluginPlan{}, fmt.Errorf("Pack %s has no reviewed Agent Plugins eligible skills", pack.ID)
+		return pluginPlan{}, fmt.Errorf("Pack %s has no reviewed %s eligible skills", pack.ID, format)
 	}
 	selection, err := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: roots})
 	if err != nil {
@@ -142,7 +146,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 	sort.Slice(resources, func(i, j int) bool {
 		return resources[i].Kind+":"+resources[i].ID < resources[j].Kind+":"+resources[j].ID
 	})
-	result := PluginExportResult{SnapshotID: snapshotID, PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Format: AgentPluginsFormat, PluginName: pack.ID, SelectedSkills: []string{}, Resources: []ExportedResource{}, Prerequisites: slices.Clone(pack.Requires.Tools)}
+	result := PluginExportResult{SnapshotID: snapshotID, PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Format: format, PluginName: pack.ID, SelectedSkills: []string{}, Resources: []ExportedResource{}, Prerequisites: slices.Clone(pack.Requires.Tools)}
 	for _, root := range selection.Roots {
 		result.SelectedSkills = append(result.SelectedSkills, root.ID)
 	}
@@ -156,9 +160,9 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 		identity := resource.Kind + ":" + resource.ID
 		switch resource.Kind {
 		case "skill":
-			contract := pluginContract(resource, AgentPluginsFormat)
+			contract := pluginContract(resource, format)
 			if bindingForSurface(resource, surface) == nil || contract == nil {
-				return pluginPlan{}, fmt.Errorf("required skill %s is not reviewed for Agent Plugins on %s", identity, surface)
+				return pluginPlan{}, fmt.Errorf("required skill %s is not reviewed for %s on %s", identity, format, surface)
 			}
 			for _, existing := range names {
 				if existing == contract.Name {
@@ -211,7 +215,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 		origin := resource.Origin
 		var roles []PluginRole
 		if resource.Kind == "skill" {
-			contract := pluginContract(resource, AgentPluginsFormat)
+			contract := pluginContract(resource, format)
 			roles = contract.Roles
 			if contract.Source != "" {
 				source = contract.Source
@@ -232,7 +236,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 			return pluginPlan{}, fmt.Errorf("export %s: %w", identity, err)
 		}
 		if resource.Kind == "skill" {
-			contract := pluginContract(resource, AgentPluginsFormat)
+			contract := pluginContract(resource, format)
 			if err := renderPluginReferences(resource, contract, copied, targets, names); err != nil {
 				return pluginPlan{}, fmt.Errorf("export %s: %w", identity, err)
 			}
@@ -245,7 +249,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 			if err != nil {
 				return pluginPlan{}, err
 			}
-			if err := validatePluginSkill(file.data, contract.Name); err != nil {
+			if err := validatePluginSkill(file.data, contract.Name, format); err != nil {
 				return pluginPlan{}, fmt.Errorf("skill %s: %w", identity, err)
 			}
 			copied[entry] = file
@@ -271,14 +275,25 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 	if len(pack.ID) > 64 {
 		return pluginPlan{}, fmt.Errorf("plugin Pack name exceeds 64 characters")
 	}
-	if _, exists := files["plugin.json"]; exists {
-		return pluginPlan{}, fmt.Errorf("plugin output path collision at plugin.json")
+	manifestPath := "plugin.json"
+	var data []byte
+	if format == ClaudePluginFormat {
+		manifestPath = ".claude-plugin/plugin.json"
+		data, _ = json.MarshalIndent(struct {
+			Name        string `json:"name"`
+			Version     string `json:"version"`
+			Description string `json:"description"`
+		}{pack.ID, pack.Version, pack.Description}, "", "  ")
+	} else {
+		data, _ = json.MarshalIndent(manifest, "", "  ")
+	}
+	if _, exists := files[manifestPath]; exists {
+		return pluginPlan{}, fmt.Errorf("plugin output path collision at %s", manifestPath)
 	}
 	if _, exists := files["packy-provenance.json"]; exists {
 		return pluginPlan{}, fmt.Errorf("plugin output path collision at packy-provenance.json")
 	}
-	data, _ := json.MarshalIndent(manifest, "", "  ")
-	files["plugin.json"] = pluginFile{append(data, '\n'), 0644}
+	files[manifestPath] = pluginFile{append(data, '\n'), 0644}
 	origins, err := selectedPluginOrigins(pack, result.Resources)
 	if err != nil {
 		return pluginPlan{}, err
@@ -295,6 +310,15 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 		return pluginPlan{}, err
 	}
 	files["packy-provenance.json"] = pluginFile{append(data, '\n'), 0644}
+	if format == ClaudePluginFormat {
+		for file := range files {
+			for _, reserved := range []string{"agents/", "commands/", "hooks/", ".mcp.json", ".lsp.json", "settings.json"} {
+				if file == reserved || strings.HasPrefix(file, reserved) {
+					return pluginPlan{}, fmt.Errorf("Claude plugin contains unsupported runtime component %s", file)
+				}
+			}
+		}
+	}
 	if err := validatePluginFiles(files); err != nil {
 		return pluginPlan{}, err
 	}
@@ -398,7 +422,7 @@ func renderPluginReferences(resource Resource, contract *PluginExport, files map
 	return nil
 }
 
-func validatePluginSkill(data []byte, name string) error {
+func validatePluginSkill(data []byte, name, format string) error {
 	if !utf8.Valid(data) {
 		return fmt.Errorf("SKILL.md must be UTF-8")
 	}
@@ -417,6 +441,10 @@ func validatePluginSkill(data []byte, name string) error {
 	for field := range header {
 		switch field {
 		case "name", "description", "license", "compatibility", "metadata", "allowed-tools":
+		case "when_to_use", "argument-hint", "arguments", "disable-model-invocation", "user-invocable", "disallowed-tools", "model", "effort", "context", "agent", "background", "paths":
+			if format != ClaudePluginFormat {
+				return fmt.Errorf("unsupported Agent Skills frontmatter field %q; declare a reviewed plugin adaptation", field)
+			}
 		default:
 			return fmt.Errorf("unsupported Agent Skills frontmatter field %q; declare a reviewed plugin adaptation", field)
 		}
@@ -431,8 +459,31 @@ func validatePluginSkill(data []byte, name string) error {
 	for _, field := range []string{"license", "compatibility", "allowed-tools"} {
 		if value, exists := header[field]; exists {
 			text, ok := value.(string)
-			if !ok || field == "compatibility" && (text == "" || utf8.RuneCountInString(text) > 500) {
+			if !ok && !(field == "allowed-tools" && format == ClaudePluginFormat && pluginStringList(value)) || field == "compatibility" && (text == "" || utf8.RuneCountInString(text) > 500) {
 				return fmt.Errorf("invalid skill %s metadata", field)
+			}
+		}
+	}
+	if format == ClaudePluginFormat {
+		for _, field := range []string{"when_to_use", "argument-hint", "model", "effort", "context", "agent"} {
+			if value, exists := header[field]; exists {
+				if _, ok := value.(string); !ok {
+					return fmt.Errorf("invalid skill %s metadata", field)
+				}
+			}
+		}
+		for _, field := range []string{"disable-model-invocation", "user-invocable", "background"} {
+			if value, exists := header[field]; exists {
+				if _, ok := value.(bool); !ok {
+					return fmt.Errorf("invalid skill %s metadata", field)
+				}
+			}
+		}
+		for _, field := range []string{"arguments", "disallowed-tools", "paths"} {
+			if value, exists := header[field]; exists {
+				if _, ok := value.(string); !ok && !pluginStringList(value) {
+					return fmt.Errorf("invalid skill %s metadata", field)
+				}
 			}
 		}
 	}
@@ -448,6 +499,19 @@ func validatePluginSkill(data []byte, name string) error {
 		}
 	}
 	return nil
+}
+
+func pluginStringList(value any) bool {
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if _, ok := item.(string); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func validatePluginFiles(files map[string]pluginFile) error {
