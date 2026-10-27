@@ -4,16 +4,17 @@ Export one reviewed Pack from a local retained Catalog Snapshot:
 
 ```sh
 packy export example --surface agents --output ./example-plugin --json
-packy export example --surface agents --skill guide --output ./guide-plugin
+packy export example --surface claude --skill guide --output ./guide-plugin
 packy export example --surface agents --skill guide,helper \
   --snapshot <retained-snapshot-id> --output ./retained-plugin
 ```
 
 Agents maps to [Agent Plugins 1.0.0](https://agent-plugins.org/specification).
-This operation currently supports `agents` only; Claude plugin export is a
-separate delivery. The Pack ID becomes the plugin name, and each selected
-skill appears under `skills/<reviewed-name>/SKILL.md`. `plugin.json` declares
-the canonical format schema, Pack name, version, and description.
+Claude maps to the [Claude plugin format](https://code.claude.com/docs/en/plugins-reference),
+with `.claude-plugin/plugin.json` as its manifest. The Pack ID becomes the
+plugin name, and each selected skill appears under
+`skills/<reviewed-name>/SKILL.md`. The manifest declares the Pack name, version,
+and description; Agent Plugins also declares its format schema.
 
 Default selection includes all skills with an explicit reviewed compatibility
 contract for this format and surface. `--skill` selects logical IDs within the
@@ -71,9 +72,10 @@ Every object is closed and has required `format`, `name`, `prerequisites`,
 64 characters. Packy changes only the frontmatter name scalar, preserving other
 reviewed metadata bytes and the complete skill tree, including optional
 `agents/openai.yaml`, scripts, references, assets, and executable modes.
-The entry must satisfy the Agent Skills metadata contract, including its closed
-frontmatter field set. Custom fields belong under `metadata`; incompatible native
-frontmatter requires an explicit reviewed source adaptation.
+Agent Plugins entries must satisfy the Agent Skills metadata contract. Claude
+entries also preserve supported Claude skill frontmatter, including invocation
+controls and argument hints. Unsupported frontmatter requires an explicit
+reviewed source adaptation.
 
 Optional `source` names an explicitly reviewed Pack-relative skill tree for the
 format. Omission uses the effective native skill source. A format adaptation
@@ -89,7 +91,8 @@ Packy replaces only the exact authored `{{packy.export:<id>}}` marker:
 - `kind: "path"` resolves a relative path from that file to a selected skill
   directory or a bundled asset/notice file.
 - `kind: "invocation"` requires an explicit reviewed `value` string. Agent
-  Plugins defines no universal client invocation syntax; Packy never invents one.
+  Plugins defines no universal client invocation syntax; Claude references may use
+  explicitly reviewed `/plugin:skill` values. Packy never invents invocation syntax.
 
 A target must be self, a direct native dependency, or a declared notice.
 References to missing files, absent markers, unavailable targets, and unresolved

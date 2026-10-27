@@ -23,6 +23,11 @@ func renderSkillDiscovery(w io.Writer, report capabilitypack.SkillDiscoveryRepor
 		if _, err := fmt.Fprintf(w, "Skill: %s (Pack %s) — %s\n%s\nNative name: %s; supported surfaces: %s\nOn-demand compatible: %s; reason: %s\nNative dependencies (Pack %s): %s; notices: %s\nKnown prerequisites (not verified): %s\n", skill.QualifiedSkill, skill.PackVersion, skill.Description, skill.Definition.Summary(), skill.NativeName, joinSurfaces(skill.SupportedSurfaces), yesNo(skill.Compatible), skill.Reason, skill.PackID, renderIdentityChain(skill.Dependencies), renderIdentityChain(skill.Notices), joinOrNoneReported(skill.Prerequisites)); err != nil {
 			return err
 		}
+		for _, contract := range skill.PluginExports {
+			if _, err := fmt.Fprintf(w, "Reviewed plugin export: %s; skill name: %s\n", contract.Format, contract.Name); err != nil {
+				return err
+			}
+		}
 		if skill.OnDemand != nil {
 			if _, err := fmt.Fprintf(w, "Reviewed on-demand protocol: %s; entry document: %s\n", skill.OnDemand.Protocol, skill.OnDemand.AccessEntry()); err != nil {
 				return err

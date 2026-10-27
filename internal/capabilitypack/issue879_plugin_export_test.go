@@ -18,7 +18,8 @@ func TestIssue879ClosedExportContract(t *testing.T) {
 	}{
 		{"reviewed", valid, true},
 		{"null", "null", false},
-		{"unknown format", strings.Replace(valid, "agent-plugins", "claude-plugin", 1), false},
+		{"Claude format", strings.Replace(valid, "agent-plugins", "claude-plugin", 1), true},
+		{"unknown format", strings.Replace(valid, "agent-plugins", "unknown", 1), false},
 		{"unknown field", strings.Replace(valid, `"roles":[]`, `"roles":[],"execute":true`, 1), false},
 		{"null field", strings.Replace(valid, `"roles":[]`, `"roles":null`, 1), false},
 		{"missing prerequisites", strings.Replace(valid, `"prerequisites":[],`, "", 1), false},
