@@ -10,8 +10,8 @@ The two projection conventions and explicit custom-agent client targets are
 recorded in [ADR 0045](docs/adr/0045-focus-surfaces-on-agents-and-claude.md).
 
 The engine supports the Agents (`agents`) and Claude (`claude`) projection
-conventions. Plugin concepts below describe the accepted target design; plugin
-implementation and catalog adoption remain separate delivery work. Antigravity
+conventions. Plugin export is available for reviewed compatible skills; catalog
+adoption remains separate delivery work. Antigravity
 and GitHub Copilot CLI remain outside its supported client integrations.
 
 ## Glossary
