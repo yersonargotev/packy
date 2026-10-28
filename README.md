@@ -29,11 +29,16 @@ and activate one Pack:
 brew install yersonargotev/tap/packy
 packy init
 packy list
-packy show engram
-packy activate engram --surface agents --dry-run
-packy activate engram --surface agents
-packy status engram --surface agents
+packy show packy
+packy activate packy --surface agents --resource skill:packy-cli --dry-run
+packy activate packy --surface agents --resource skill:packy-cli
+packy status packy --surface agents
 ```
+
+This global Agents example selects only the `packy-cli` skill and its legal
+notice. It requires no concrete `--client` and includes no project-only
+instructions. Activation configures the skill; it does not prove that a runtime
+client has loaded, authorized, or executed it.
 
 Running `packy` without arguments opens the full-screen interactive interface
 when both standard input and standard output are terminals. Redirected,

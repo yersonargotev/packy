@@ -18,15 +18,21 @@ release does not publish a Catalog Snapshot or change installed Packs.
 
 ## Initialization and explicit activation
 
-Initialize the catalog and choose an available Pack with `packy list`. The
-existing preview-and-activate syntax is illustrated below; replace `engram`
-with a Pack ID available in the selected catalog:
+Initialize the catalog, inspect the available `packy` Pack, then preview and
+activate only its `packy-cli` skill at global Agents scope:
 
 ```sh
 packy init
-packy activate engram --surface agents --dry-run
-packy activate engram --surface agents
+packy list
+packy show packy
+packy activate packy --surface agents --resource skill:packy-cli --dry-run
+packy activate packy --surface agents --resource skill:packy-cli
+packy status packy --surface agents
 ```
+
+The explicit selection includes the skill and its legal notice, without
+project-only instructions or a concrete `--client`. Configured projections do
+not prove runtime authorization or execution.
 
 For upgrades from the earlier incompatible surface generation, follow the
 [clean adoption procedure](https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md).
