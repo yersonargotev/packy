@@ -171,7 +171,10 @@ func ValidateProjectPack(pack Pack, projectRoot string) error {
 	if err := validateCurrentPack(pack); err != nil {
 		return err
 	}
-	return validatePackResourceSources(pack, projectRoot)
+	if err := validatePackResourceSources(pack, projectRoot); err != nil {
+		return err
+	}
+	return ValidateClaudeSkillAssetClosures(pack, projectRoot)
 }
 
 func validateCurrentPack(pack Pack) error {

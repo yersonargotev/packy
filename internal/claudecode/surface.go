@@ -90,6 +90,9 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		id := r.Kind + ":" + b.Name
 		switch b.Projection {
 		case "skill":
+			if err := capabilitypack.ValidateClaudeSkillAssetClosure(pack, r, a.catalogRoot); err != nil {
+				return result, err
+			}
 			if r.RequestsSurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilitySkillTemplate) {
 				source := filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source))
 				files, desired, err := localprojection.RenderSkillTemplate(source, r.ID, templateNames, 0o700)
@@ -131,9 +134,6 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				continue
 			}
 			source := filepath.Join(r.CatalogRootOr(a.catalogRoot), filepath.Clean(r.Source))
-			if err := a.validateSkillAssetClosure(pack, r, source); err != nil {
-				return result, err
-			}
 			expectedSource, err := canonicalPath(source)
 			if err != nil {
 				return result, err
@@ -989,24 +989,6 @@ func optionalAuthorityReadiness(pack capabilitypack.Pack, auth AuthorizationObse
 		return result[i].Authority < result[j].Authority
 	})
 	return result, nil
-}
-
-func (a *SurfaceAdapter) validateSkillAssetClosure(pack capabilitypack.Pack, consumer capabilitypack.Resource, source string) error {
-	root, err := canonicalPath(source)
-	if err != nil {
-		return err
-	}
-	for _, asset := range dependencyAssets(pack, consumer) {
-		path, err := canonicalPath(filepath.Join(asset.CatalogRootOr(a.catalogRoot), filepath.Clean(asset.Source)))
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("Claude skill %s dependency asset %s is outside its complete source tree", consumer.ID, asset.ID)
-		}
-	}
-	return nil
 }
 
 func (a *SurfaceAdapter) embedConsumerAssets(pack capabilitypack.Pack, consumer capabilitypack.Resource, prompt []byte) ([]byte, error) {

@@ -22,6 +22,9 @@ func TestCurrentPackRejectsMalformedClaudeCompositionBeforeUse(t *testing.T) {
 		{"unsupported authority", func(pack *Pack) {
 			pack.Resources[0].Bindings[0].Capabilities[0].ClaudeAgentDocument.Authority.PermissionMode = "bypass"
 		}, "permission_mode must be default"},
+		{"competing skill renderers", func(pack *Pack) {
+			pack.Resources[2].Bindings[0].Capabilities = append(pack.Resources[2].Bindings[0].Capabilities, SurfaceCapability{Type: SurfaceCapabilitySkillTemplate, SkillTemplate: &SkillTemplateCapability{Naming: SkillTemplateNamingNative}})
+		}, "skill-template cannot be combined with claude-composite-skill"},
 		{"conflicting payload", func(pack *Pack) {
 			pack.Resources[0].Bindings[0].Capabilities[0].ClaudeCompositeSkill = &ClaudeCompositeSkillCapability{Dependencies: []ResourceIdentity{}, References: []ResourceIdentity{}}
 		}, "does not accept other capability data"},

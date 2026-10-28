@@ -278,7 +278,7 @@ func checkCrossPackProcedure(t *testing.T, binary string) {
 
 			expectedRoot := "Read [other](../../../other/skills/grilling-" + host + "/ACCESS.md), [third](../../../third/skills/grilling-" + host + "/ACCESS.md), [local](../grilling-" + host + "/ACCESS.md), [again](../../../other/skills/grilling-" + host + "/ACCESS.md).\n"
 			assertAccessFile(t, first.EntryDocument, []byte(expectedRoot), 0644)
-			assertAccessFile(t, filepath.Join(first.ResourceRoot, "SKILL.md"), []byte("---\nname: guide\ndescription: Native wrapper.\n---\nNative /{{packy.skill:grilling}} call.\n"), 0644)
+			assertAccessFile(t, filepath.Join(first.ResourceRoot, "SKILL.md"), []byte(dependencyNativeGuide(host)), 0644)
 			for _, label := range []string{"other", "third"} {
 				linked := followAccessLink(t, first.EntryDocument, label)
 				// Compare complete effective bodies, including both qualified and local links.
@@ -568,11 +568,23 @@ func TestIssue862NativeLifecycleKeepsPackLocalOwnership(t *testing.T) {
 								if binding["surface"] == "agents" {
 									binding["invocation"] = binding["name"]
 								}
+								if binding["surface"] == "claude" {
+									binding["capabilities"] = []any{}
+									if r["id"] == "guide" {
+										binding["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
+									}
+								}
 							}
 							r["requires"] = slices.DeleteFunc(r["requires"].([]any), func(v any) bool { return v == "asset:guide-data" })
 						}
 					}
 				})
+				// This asset-free native case keeps template and alias rendering
+				// covered on Claude separately from the composite access fixture.
+				path := filepath.Join(project, "packs", id, "skills", "claude", "SKILL.md")
+				if err := os.WriteFile(path, []byte(dependencyNativeGuide("agents")), 0644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			id := strings.Repeat("d", 40)
 			assets := dependencyAccessAssets(t, project, id)

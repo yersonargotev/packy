@@ -1068,6 +1068,9 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 				return fmt.Errorf("surface capability %q skills is a required non-null array", capability.Type)
 			}
 		case SurfaceCapabilitySkillTemplate:
+			if resource.RequestsSurfaceCapability(binding.Surface, SurfaceCapabilityClaudeCompositeSkill) {
+				return fmt.Errorf("skill-template cannot be combined with claude-composite-skill")
+			}
 			if resource.Kind != "skill" || binding.Projection != "skill" {
 				return fmt.Errorf("surface capability %q requires a skill binding projected as skill", capability.Type)
 			}

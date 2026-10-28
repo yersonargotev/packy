@@ -83,6 +83,9 @@ func BuildCatalogSnapshot(ctx context.Context, projectRoot string, validation Ca
 		if err != nil {
 			return CatalogSnapshotResult{}, err
 		}
+		if err := capabilitypack.ValidateClaudeSkillAssetClosures(pack, filepath.Join(projectRoot, "packs", pack.ID)); err != nil {
+			return CatalogSnapshotResult{}, err
+		}
 		packs = append(packs, pack)
 	}
 	if err := capabilitypack.ValidateOnDemandCatalog(packs); err != nil {

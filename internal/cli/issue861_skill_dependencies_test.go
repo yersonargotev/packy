@@ -74,7 +74,7 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 		}
 		expected := "Read [grilling](../grilling-" + surface + "/ACCESS.md) then [domain](../domain-modeling-" + surface + "/ACCESS.md). Again [grilling](../grilling-" + surface + "/ACCESS.md).\n[Nested](references/nested.md)\n"
 		assertAccessFile(t, result.EntryDocument, []byte(expected), 0644)
-		assertAccessFile(t, filepath.Join(result.ResourceRoot, "SKILL.md"), []byte("---\nname: guide\ndescription: Native wrapper.\n---\nNative /{{packy.skill:grilling}} call.\n"), 0644)
+		assertAccessFile(t, filepath.Join(result.ResourceRoot, "SKILL.md"), []byte(dependencyNativeGuide(surface)), 0644)
 
 		nested := followAccessLink(t, result.EntryDocument, "Nested")
 		assertAccessFile(t, nested, []byte("Read [grilling](../../grilling-"+surface+"/ACCESS.md).\n"), 0644)
@@ -271,6 +271,9 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 	for _, value := range guide["bindings"].([]any) {
 		binding := value.(map[string]any)
 		binding["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
+		if binding["surface"] == "claude" {
+			binding["capabilities"] = skillAccessClaudeComposite()
+		}
 		if binding["surface"] == "agents" {
 			binding["invocation"] = binding["name"]
 		}
@@ -278,12 +281,15 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 
 	guide["on_demand"].(map[string]any)["entry_document"] = "ACCESS.md"
 	guide["on_demand"].(map[string]any)["reference_files"] = []string{"ACCESS.md", "references/nested.md"}
+	for _, value := range guide["variants"].([]any) {
+		delete(value.(map[string]any), "on_demand")
+	}
 	for _, surface := range []string{"common", "agents", "claude"} {
 		nested := filepath.Join(packRoot, "skills", surface, "references/nested.md")
 		if err := os.WriteFile(nested, []byte("Read [grilling]({{packy.access:grilling}}).\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(packRoot, "skills", surface, "SKILL.md"), []byte("---\nname: guide\ndescription: Native wrapper.\n---\nNative /{{packy.skill:grilling}} call.\n"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(packRoot, "skills", surface, "SKILL.md"), []byte(dependencyNativeGuide(surface)), 0644); err != nil {
 			t.Fatal(err)
 		}
 		path := filepath.Join(packRoot, "skills", surface, "ACCESS.md")
@@ -299,7 +305,11 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 		}
 		skill["id"] = id
 		for _, value := range skill["bindings"].([]any) {
-			value.(map[string]any)["capabilities"] = []any{}
+			binding := value.(map[string]any)
+			binding["capabilities"] = []any{}
+			if binding["surface"] == "claude" {
+				binding["capabilities"] = skillAccessClaudeComposite()
+			}
 		}
 		skill["source"] = "skills/" + id
 		skill["requires"] = []string{"asset:guide-data"}
@@ -361,6 +371,14 @@ func dependencyAccessProject(t *testing.T, revision string, edit func(map[string
 		t.Fatal(err)
 	}
 	return project
+}
+
+func dependencyNativeGuide(surface string) string {
+	name := "{{packy.skill:grilling}}"
+	if surface == "claude" {
+		name = "grilling"
+	}
+	return "---\nname: guide\ndescription: Native wrapper.\n---\nNative /" + name + " call.\n"
 }
 
 func sortDependencyResources(m map[string]any) {

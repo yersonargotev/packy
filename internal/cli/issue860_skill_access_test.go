@@ -114,7 +114,11 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 			if err != nil || !strings.Contains(string(body), surface+" first") {
 				t.Fatalf("entry document: %q, %v", body, err)
 			}
-			if result.EntryDocument != filepath.Join(result.ResourceRoot, "SKILL.md") {
+			entry := "SKILL.md"
+			if surface == "claude" {
+				entry = "ACCESS.md"
+			}
+			if result.EntryDocument != filepath.Join(result.ResourceRoot, entry) {
 				t.Fatal("entry document does not belong to returned resource root")
 			}
 			for _, relative := range []string{"references/detail.md", "agents/openai.yaml", "scripts/run.sh", "asset.bin", "../../assets/data.bin", "../../notices/reviewed-mit"} {
@@ -255,7 +259,9 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				skill["surface_exclusions"] = []any{map[string]any{"surface": "agents", "mode": "optional", "code": "review-needed", "reason": "Agents is not reviewed"}}
 			}},
 			{"native template", "incompatible_resource", func(manifest map[string]any) {
-				for _, value := range manifest["resources"].([]any)[1].(map[string]any)["bindings"].([]any) {
+				skill := manifest["resources"].([]any)[1].(map[string]any)
+				skill["requires"] = []string{}
+				for _, value := range skill["bindings"].([]any) {
 					value.(map[string]any)["capabilities"] = []any{map[string]any{"type": "skill-template", "skill_template": map[string]any{"naming": "native"}}}
 				}
 			}},
@@ -546,6 +552,18 @@ func skillAccessProject(t *testing.T, revision string, edit func(map[string]any)
 	resources := manifest["resources"].([]any)
 	skill := resources[1].(map[string]any)
 	skill["requires"] = []string{"asset:guide-data"}
+	for _, value := range skill["bindings"].([]any) {
+		binding := value.(map[string]any)
+		if binding["surface"] == "claude" {
+			binding["capabilities"] = skillAccessClaudeComposite()
+		}
+	}
+	for _, value := range skill["variants"].([]any) {
+		variant := value.(map[string]any)
+		if variant["surface"] == "claude" {
+			variant["on_demand"] = map[string]any{"protocol": "skill-tree-v1", "entry_document": "ACCESS.md", "prerequisites": []string{"missing-fixture-runtime"}}
+		}
+	}
 	resources = append(resources, map[string]any{"kind": "asset", "id": "guide-data", "source": "assets/data.bin", "description": "Supporting binary data", "requires": []string{}, "conflicts": []string{}, "bindings": []any{}, "surface_exclusions": []any{}})
 	manifest["resources"] = resources
 	if edit != nil {
@@ -603,6 +621,9 @@ func skillAccessProject(t *testing.T, revision string, edit func(map[string]any)
 		if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte(body), 0644); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(root, "ACCESS.md"), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(root, "scripts/run.sh"), []byte("#!/bin/sh\nprintf executed > \"$HOME/sentinel-executed\"\n"), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -614,6 +635,13 @@ func skillAccessProject(t *testing.T, revision string, edit func(map[string]any)
 		}
 	}
 	return project
+}
+
+func skillAccessClaudeComposite() []any {
+	return []any{map[string]any{"type": "claude-composite-skill", "claude_composite_skill": map[string]any{
+		"dependencies": []any{},
+		"references":   []any{map[string]any{"kind": "asset", "id": "guide-data"}},
+	}}}
 }
 
 func skillAccessAssets(t *testing.T, commit, revision string, edit func(map[string]any)) string {

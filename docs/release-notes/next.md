@@ -1,17 +1,21 @@
-# {{TAG}} — Exact Catalog origin acquisition
+# {{TAG}} — Claude skill asset closure
 
 ## Changes since the previous release
 
-The previous stable release is `v0.2.32`.
+The previous stable release is `v0.2.33`.
 
-- Fetch the exact pinned commit for each public Catalog origin at depth one,
-  without downloading unrelated branches, tags or ancestor history. This avoids
-  cold Catalog validation and build timeouts when an upstream repository has
-  accumulated many refs or extensive history.
-- Preserve the complete requested source tree, including executable modes and
-  symbolic links. TLS verification, exact-copy provenance checks, sealed-cache
-  integrity, private consumer copies, cancellation and the existing acquisition
-  deadline remain enforced.
+- Reject unsupported Claude skill asset layouts during Catalog qualification,
+  before they can pass validation and later interrupt general or targeted
+  status. External required assets need explicit reviewed composite references;
+  missing references and destination collisions fail before lifecycle mutation
+  at both global and project scope.
+- Preserve the complete skill tree, required supporting assets, legal closure,
+  modes and metadata through the existing reviewed composite-skill contract.
+  The Addy Catalog correction is published independently with its own Pack
+  version and immutable snapshot.
+- Correct the adoption quickstart to use an available Catalog skill and the
+  installed Codex controlled-check guide to distinguish the two local calls
+  required for runtime evidence.
 
 Catalog content and Pack versions are published independently. This engine
 release does not publish a Catalog Snapshot or change installed Packs.

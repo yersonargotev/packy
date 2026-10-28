@@ -74,6 +74,9 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if !bound || binding.Projection != "skill" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
+		if err := capabilitypack.ValidateClaudeSkillAssetClosure(pack, resource, a.catalogRoot); err != nil {
+			return capabilitypack.ObservedProjection{}, false, err
+		}
 		if _, composite := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); composite {
 			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
 		}
