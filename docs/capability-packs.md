@@ -93,22 +93,80 @@ for skill content; no retired command is silently converted into a skill.
 
 ## Controlled runtime checks
 
-For an explicitly selected Codex role closure whose client behavior Packy cannot
-observe, preview and perform the
-reviewed instructions separately from activation, then explicitly record the
-observed result:
+Use an installed, explicitly selected native-role closure when checking Codex
+behavior Packy cannot observe. The example below uses Thermos with root
+`skill:thermos` on the global Agents surface; it is not a project installation.
+Ordinary shared skills such as Orchestrate reject `--client codex` because they
+do not select a reviewed native role.
+
+First ensure a compatible official Catalog Snapshot is available. On a new
+Packy installation, run `packy init`; with an existing compatible snapshot,
+inspect it directly. `packy catalog refresh` explicitly selects newer available
+content without updating active Packs. Discover the current Pack version and
+skill dependencies before selecting the example:
 
 ```sh
-packy check orchestrate --surface agents --client codex --dry-run
-packy check orchestrate --surface agents --client codex --result positive
-packy status orchestrate --surface agents --require usable
+packy list
+packy show thermos --surface agents --json
+packy activate thermos --surface agents --client codex \
+  --resource skill:thermos --dry-run
 ```
 
-The preview identifies the exact Pack version, CLI surface, selected resource
-closure, projection revision, adapter version, observable host version, and
-instructions. A positive current result can satisfy strict usability; a
-negative result fails it, and an identity change makes the prior result stale.
-Evidence has no time-to-live while its identity is unchanged.
+Confirm that the activation preview includes the required native roles with
+`client=codex` and `scopes=global`, together with their skill and notice closure.
+If the selected Catalog no longer supports this example, stop and choose a
+reviewed selection that does. Review the exact actions, then activate the same
+selection and explicitly approve its local projection phase in the terminal:
+
+```sh
+packy activate thermos --surface agents --client codex \
+  --resource skill:thermos
+packy check thermos --surface agents --client codex --dry-run
+packy status thermos --surface agents
+```
+
+The installed activation intent retains the selected roots, client, Pack
+version, and Catalog Snapshot. The check uses that installed closure even
+without repeating `--resource`; status inspects the same installation. Keep it
+installed and unchanged throughout preview, runtime exercise, recording, and
+status. Catalog discovery alone does not establish this installed identity.
+
+The check preview identifies the exact Pack version, CLI surface, scope,
+selected resource closure, projection revision, adapter version, observable host
+version, validity identity, and instructions. Activation and generated role files
+establish configured content only. A successful preview neither runs the
+workflow nor proves client authorization or runtime usability. Before a real
+check, evidence can remain `unknown`, with `authorized=unknown` and
+`usable=unknown` even when `configured=true`.
+
+Separately, with the user's runtime approval, perform the previewed instructions
+in Codex against this installed selection and observe the actual behavior.
+Only after that exercise, record **one** matching outcome and explicitly consent
+to recording the displayed exact identity. If the runtime behavior succeeded:
+
+```sh
+packy check thermos --surface agents --client codex --result positive
+```
+
+If the separately performed runtime check instead observed failure:
+
+```sh
+packy check thermos --surface agents --client codex --result negative
+```
+
+If no runtime check was performed or its outcome is unknown, record neither
+result. Inspect the strict usability gate against the same installation:
+
+```sh
+packy status thermos --surface agents --require usable
+```
+
+This exits non-zero for unknown or negative usability; a positive current result
+can satisfy strict usability. Recording usability does not establish unrelated
+host authorization. If the previewed validity identity changes, repeat the
+preview and runtime exercise before recording a result for the new identity.
+An identity change makes prior evidence stale; evidence has no time-to-live
+while its identity is unchanged.
 
 Controlled-check evidence lives only in `~/.packy/controlled-checks.json`. It
 is personal workstation state and never enters a Pack manifest, project
