@@ -52,11 +52,15 @@ Initialization and catalog inspection do not activate Claude resources:
 
 ```sh
 packy init
-packy show engram
-packy activate engram --surface claude --dry-run
-packy activate engram --surface claude
-packy status engram --surface claude
+packy list
+packy show packy
+packy activate packy --surface claude --resource skill:packy-cli --dry-run
+packy activate packy --surface claude --resource skill:packy-cli
+packy status packy --surface claude
 ```
+
+The explicit resource selection installs only the `packy-cli` skill and its
+legal notice at global scope. It does not authorize or execute the skill.
 
 Application writes an installed Pack receipt before reporting success. Later
 operations use the receipt to check exact ownership, drift, and collisions.
