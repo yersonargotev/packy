@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,30 +16,34 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
-	"github.com/go-git/go-git/v5/plumbing/transport/server"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
+	"github.com/yersonargotev/packy/internal/testprocess"
 	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 )
 
 type originLoader struct {
+	transport.Transport
 	repo      *git.Repository
 	root      string
+	endpoint  *transport.Endpoint
 	origins   map[string]storer.Storer
 	downloads atomic.Int32
 }
 
-func (l *originLoader) Load(ep *transport.Endpoint) (storer.Storer, error) {
+func (l *originLoader) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
 	l.downloads.Add(1)
-	if s := l.origins[ep.String()]; s != nil {
-		return s, nil
+	if l.origins[ep.String()] == nil {
+		return nil, transport.ErrRepositoryNotFound
 	}
-	return nil, transport.ErrRepositoryNotFound
+	return l.Transport.NewUploadPackSession(l.endpoint, auth)
 }
 func originFixture(t *testing.T) (*originLoader, cataloglayout.Origin) {
 	t.Helper()
@@ -64,10 +71,133 @@ func originFixture(t *testing.T) (*originLoader, cataloglayout.Origin) {
 		t.Fatal(err)
 	}
 	loader := &originLoader{repo: repo, root: root, origins: map[string]storer.Storer{"https://github.com/example/origin.git": repo.Storer}}
+	configuration, err := repo.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.Raw.Section("uploadpack").SetOption("allowReachableSHA1InWant", "true")
+	if err := repo.SetConfig(configuration); err != nil {
+		t.Fatal(err)
+	}
+	environment := testprocess.Env(t)
+	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		args := []string{"upload-pack", "--stateless-rpc"}
+		switch request.URL.Path {
+		case "/origin.git/info/refs":
+			args = append(args, "--advertise-refs")
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		case "/origin.git/git-upload-pack":
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		default:
+			http.NotFound(w, request)
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, "git", append(args, root)...)
+		command.Env = environment
+		command.Stdin = request.Body
+		output, err := command.Output()
+		if err != nil {
+			http.Error(w, "controlled Git origin rejected request", http.StatusInternalServerError)
+			return
+		}
+		if request.URL.Path == "/origin.git/info/refs" {
+			_, _ = fmt.Fprint(w, "001e# service=git-upload-pack\n0000")
+		}
+		_, _ = w.Write(output)
+	}))
+	t.Cleanup(service.Close)
+	loader.endpoint, err = transport.NewEndpoint(service.URL + "/origin.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loader.Transport = githttp.NewClient(service.Client())
 	previous := client.Protocols["https"]
-	client.InstallProtocol("https", server.NewClient(loader))
+	client.InstallProtocol("https", loader)
 	t.Cleanup(func() { client.InstallProtocol("https", previous) })
 	return loader, cataloglayout.Origin{Repository: "example/origin", Commit: hash.String()}
+}
+
+func TestResolveAcquiresOnlyTheRequestedHistoricalCommitAndCompleteTree(t *testing.T) {
+	loader, origin := originFixture(t)
+	parent := plumbing.NewHash(origin.Commit)
+	if err := os.Mkdir(filepath.Join(loader.root, "support"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(loader.root, "support", "tool"), []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("guide", filepath.Join(loader.root, "guide-link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(loader.root, "guide"), []byte("selected revision\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := loader.repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := worktree.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := worktree.Commit("selected", &git.CommitOptions{Author: &object.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Unix(2, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(loader.root, "guide"), []byte("unselected tip\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worktree.Add("guide"); err != nil {
+		t.Fatal(err)
+	}
+	tip, err := worktree.Commit("unselected", &git.CommitOptions{Author: &object.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Unix(3, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loader.repo.CreateTag("unrelated-release", tip, &git.CreateTagOptions{
+		Tagger:  &object.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Unix(3, 0)},
+		Message: "Unselected release",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for index := range 100 {
+		if err := loader.repo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(fmt.Sprintf("unrelated-%d", index)), tip)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	origin.Commit = selected.String()
+	root, _ := resolve(t, origin)
+	data, err := os.ReadFile(filepath.Join(root, "guide"))
+	if err != nil || string(data) != "selected revision\n" {
+		t.Fatalf("requested source=%q error=%v", data, err)
+	}
+	acquired, err := git.PlainOpen(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := acquired.Head()
+	if err != nil || head.Hash() != selected {
+		t.Fatalf("requested HEAD=%v error=%v", head, err)
+	}
+	for _, excluded := range []plumbing.Hash{parent, tip} {
+		if _, err := acquired.CommitObject(excluded); !errors.Is(err, plumbing.ErrObjectNotFound) {
+			t.Fatalf("unrequested history %s remains available: %v", excluded, err)
+		}
+	}
+	tool := filepath.Join(root, "support", "tool")
+	info, err := os.Stat(tool)
+	if err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("executable mode not preserved: %v %v", info, err)
+	}
+	data, err = os.ReadFile(tool)
+	if err != nil || string(data) != "#!/bin/sh\nexit 0\n" {
+		t.Fatalf("supporting content=%q error=%v", data, err)
+	}
+	link, err := os.Readlink(filepath.Join(root, "guide-link"))
+	if err != nil || link != "guide" {
+		t.Fatalf("symbolic link=%q error=%v", link, err)
+	}
 }
 func resolve(t *testing.T, origin cataloglayout.Origin) (string, *catalogorigin.Resolver) {
 	t.Helper()

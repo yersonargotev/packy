@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
@@ -123,11 +124,20 @@ func (r *Resolver) acquire(ctx context.Context, origin cataloglayout.Origin, roo
 		}
 	}()
 	checkout := filepath.Join(stage, "checkout")
-	repository, err := git.PlainCloneContext(ctx, checkout, false, &git.CloneOptions{
-		URL: "https://github.com/" + origin.Repository + ".git", Tags: git.AllTags, CABundle: r.caBundle, Progress: io.Discard,
-	})
+	repository, err := git.PlainInit(checkout, false)
 	if err != nil {
-		return "", fmt.Errorf("clone public origin %s: %w", origin.Repository, err)
+		return "", fmt.Errorf("initialize origin checkout: %w", err)
+	}
+	if _, err := repository.CreateRemote(&config.RemoteConfig{
+		Name: "origin", URLs: []string{"https://github.com/" + origin.Repository + ".git"},
+	}); err != nil {
+		return "", fmt.Errorf("configure public origin %s: %w", origin.Repository, err)
+	}
+	if err := repository.FetchContext(ctx, &git.FetchOptions{
+		RefSpecs: []config.RefSpec{config.RefSpec(origin.Commit + ":refs/packy/origin")},
+		Depth:    1, Tags: git.NoTags, CABundle: r.caBundle, Progress: io.Discard,
+	}); err != nil {
+		return "", fmt.Errorf("fetch public origin %s at %s: %w", origin.Repository, origin.Commit, err)
 	}
 	worktree, err := repository.Worktree()
 	if err != nil {

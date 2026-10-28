@@ -12,8 +12,12 @@ Snapshots and host configuration. The approved issue #828 delegates the location
 retention, concurrency, and integrity choices to this implementation.
 
 An entry is keyed by the SHA-256 of the exact repository name, a NUL separator,
-and full commit. Acquisition still clones the authoritative public GitHub origin
-with history and tags and checks out that exact commit. No branch substitution,
+and full commit. Acquisition fetches the requested commit directly from the
+authoritative public GitHub origin with depth one and no tags, then checks out
+that exact commit. The complete source tree is retained; unrelated branches,
+tags and ancestor history are not needed for source provenance. This bounds cold
+acquisition when upstream repositories accumulate extensive history or refs,
+as observed in issue #893. No branch substitution,
 validation verdict caching, or automatic transport downgrade is allowed.
 
 A single advisory directory lock serializes acquisition, copying, and eviction.
@@ -42,7 +46,7 @@ all authoring commands are idle; the next resolution reconstructs it.
 
 ## Consequences
 
-Warm invocations avoid another full upstream download but still copy and verify
+Warm invocations avoid another exact-revision download but still copy and verify
 source evidence locally and fully validate the current candidate and baseline.
 Cold-download transport failures remain possible. Retention is bounded by entry
 count and age, not a byte quota; one upstream repository may be large. This does
