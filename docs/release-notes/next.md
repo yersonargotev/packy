@@ -1,50 +1,26 @@
-# {{TAG}} — Agents and Claude conventions and plugin export
+# {{TAG}} — Exact Catalog origin acquisition
 
 ## Changes since the previous release
 
-The previous stable release is `v0.2.31`.
+The previous stable release is `v0.2.32`.
 
-- Replace the `codex` surface with the shared `agents` convention and retire
-  OpenCode. Agents supports global and project skills and project instructions;
-  Claude supports its native instructions, skills, and reviewed agent documents.
-  Retired surface values and direct MCP, hook, and command projections are
-  rejected rather than translated. There are no aliases or automatic migrations.
-- Preserve complete skill trees, including optional `agents/openai.yaml` metadata.
-  Required custom agents have explicitly reviewed client and scope projections:
-  Codex roles require `--client codex` and supported global scope; Claude roles
-  use reviewed native documents. Unsupported required roles fail before mutation.
-  Ordinary Agents skills do not configure Codex. Projected role files do not
-  prove that a client loaded or executed them.
-- Export one Pack as an Agent Plugins package (`--surface agents`) or a Claude
-  plugin (`--surface claude`) with `packy export`. Reviewed format compatibility
-  controls selection; explicit subsets include required same-Pack dependencies,
-  supporting resources, attribution and notices. Incompatible selections fail
-  as a whole. Claude invocation references are explicitly reviewed; Agent Plugins
-  does not imply a universal invocation syntax. Packages contain skills, not
-  native role registration or instructions, and report external role
-  prerequisites without asserting they are satisfied. Export is offline, does not
-  activate a Pack or change client settings, and produces deterministic content.
-  See the [plugin export guide](https://github.com/yersonargotev/packy/blob/main/docs/plugin-export.md).
-- The Packy repository's own project configuration now selects the reviewed
-  `packy-cli` discovery skill instead of the full Matty installation.
+- Fetch the exact pinned commit for each public Catalog origin at depth one,
+  without downloading unrelated branches, tags or ancestor history. This avoids
+  cold Catalog validation and build timeouts when an upstream repository has
+  accumulated many refs or extensive history.
+- Preserve the complete requested source tree, including executable modes and
+  symbolic links. TLS verification, exact-copy provenance checks, sealed-cache
+  integrity, private consumer copies, cancellation and the existing acquisition
+  deadline remain enforced.
 
-## Adoption and catalog rollout
+Catalog content and Pack versions are published independently. This engine
+release does not publish a Catalog Snapshot or change installed Packs.
 
-Before replacing the previous binary, use it to inventory, preview and remove
-all affected Packy-owned global and project installations. Keep referenced
-sources and snapshots and preserve unrelated files, credentials, and host
-configuration. Follow the [clean adoption procedure](https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md).
-Do not perform the handoff until both a compatible released engine and complete
-compatible catalog are available.
+## Initialization and explicit activation
 
-Release the engine first, then validate the entire compatible catalog against
-that immutable engine before catalog publication. Do not publish a mixed-generation
-snapshot. Catalog Refresh remains explicit and does not update existing
-installations; retained receipts continue to reference their snapshots. The
-engine release does not publish the catalog or modify its sources.
-
-After the compatible catalog is available and the handoff is complete, initialize
-and explicitly preview activation:
+Initialize the catalog and choose an available Pack with `packy list`. The
+existing preview-and-activate syntax is illustrated below; replace `engram`
+with a Pack ID available in the selected catalog:
 
 ```sh
 packy init
@@ -52,6 +28,8 @@ packy activate engram --surface agents --dry-run
 packy activate engram --surface agents
 ```
 
+For upgrades from the earlier incompatible surface generation, follow the
+[clean adoption procedure](https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md).
 Claude Code **2.1.203 or newer** remains the supported floor. Plugin generation
 proves package content, not client installation, authorization, or runtime execution.
 
