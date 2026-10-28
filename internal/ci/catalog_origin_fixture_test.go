@@ -1,6 +1,7 @@
 package ci_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -23,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
@@ -49,6 +52,18 @@ func catalogGitOrigin(t *testing.T, downloads ...*atomic.Int32) (commit, proxyUR
 		t.Fatalf("origin identity: %v %s", err, stderr)
 	}
 	commit = string(head[:len(head)-1])
+	if err := os.WriteFile(filepath.Join(origin, "skill", "SKILL.md"), []byte("unselected later revision\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "."},
+		{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Unselected later revision"},
+		{"config", "uploadpack.allowReachableSHA1InWant", "true"},
+	} {
+		if _, stderr, err := runCatalogCLI(t, environment, origin, "git", args...); err != nil {
+			t.Fatalf("historical origin setup: %v %s", err, stderr)
+		}
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +88,22 @@ func catalogGitOrigin(t *testing.T, downloads ...*atomic.Int32) (commit, proxyUR
 				downloads[0].Add(1)
 			}
 			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			request := packp.NewUploadPackRequest()
+			if err := request.Decode(bytes.NewReader(body)); err != nil {
+				t.Errorf("decode requested origin revision: %v", err)
+				return
+			}
+			if len(request.Wants) != 1 || request.Wants[0] != plumbing.NewHash(commit) || request.Depth != packp.DepthCommits(1) {
+				t.Errorf("origin acquisition must request only pinned commit %s at depth one; wants=%v depth=%v", commit, request.Wants, request.Depth)
+				http.Error(w, "origin acquisition exceeded requested revision", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
 		default:
 			http.NotFound(w, r)
 			return
