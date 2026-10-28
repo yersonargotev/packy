@@ -444,6 +444,7 @@ func pluginExportProject(t *testing.T, edit func(map[string]any)) string {
 			if r["kind"] == "skill" {
 				for _, v := range r["variants"].([]any) {
 					variant := v.(map[string]any)
+					delete(variant, "on_demand")
 					if variant["surface"] == "claude" {
 						variant["requires"] = []string{}
 						variant["plugin_exports"] = []any{}

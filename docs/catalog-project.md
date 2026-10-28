@@ -564,3 +564,13 @@ skill content. Authors must review adaptations explicitly; Packy does not turn a
 retired command into a skill. These removals also apply to catalog import,
 validation, snapshots, project locks, and installed receipts. Use the previous
 binary to remove retired installations before adopting this contract.
+
+A Claude skill's required asset closure must be contained in its complete native
+tree. For assets outside the skill source, declare explicit
+`claude-composite-skill.references`; the composer copies those assets to
+`references/<source-basename>`. Include transitive required assets and keep those
+destinations unique and absent from the source tree. A plain skill or
+`skill-template` does not implicitly copy external assets and cannot be combined
+with the composite renderer. Catalog qualification
+checks this contract for the effective Claude definitions before publication,
+and both global and project lifecycle inspection enforce the same rule.

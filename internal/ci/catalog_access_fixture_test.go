@@ -51,10 +51,17 @@ func writeAccessCatalog(t *testing.T, revision, originCommit string) string {
 			bindings := []any{}
 			for _, host := range []string{"agents", "claude"} {
 				invocation := "$" + id
+				capabilities := []any{}
 				if host == "claude" {
 					invocation = "/" + id
+					if id != "leaf" {
+						capabilities = []any{map[string]any{"type": "claude-composite-skill", "claude_composite_skill": map[string]any{
+							"dependencies": []any{},
+							"references":   []any{map[string]any{"kind": "asset", "id": "data"}},
+						}}}
+					}
 				}
-				bindings = append(bindings, map[string]any{"surface": host, "projection": "skill", "name": id, "invocation": invocation, "mode": "native", "sharing": "exclusive", "capabilities": []any{}})
+				bindings = append(bindings, map[string]any{"surface": host, "projection": "skill", "name": id, "invocation": invocation, "mode": "native", "sharing": "exclusive", "capabilities": capabilities})
 			}
 			contract := map[string]any{"protocol": "skill-tree-v1", "entry_document": "ACCESS.md", "reference_files": []string{"ACCESS.md"}, "prerequisites": []string{"missing-content-runtime"}, "dependencies": dependencies}
 			provenance := map[string]any{"id": "upstream", "path": "skill", "relationship": "adapted"}

@@ -97,6 +97,9 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 				variant["description"] = host + " discovery procedure"
 				variant["requires"] = []any{"asset:guide-data", "skill:" + dependency}
 				native := "---\nname: guide\ndescription: Native wrapper.\n---\nNative /{{packy.skill:" + dependency + "}} call.\n"
+				if host == "claude" {
+					native = "---\nname: guide\ndescription: Native wrapper.\n---\nNative /" + dependency + " call.\n"
+				}
 				if err := os.WriteFile(filepath.Join(project, "packs", owner, "skills", host, "SKILL.md"), []byte(native), 0644); err != nil {
 					t.Fatal(err)
 				}
