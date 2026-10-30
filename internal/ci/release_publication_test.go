@@ -1,13 +1,17 @@
 package ci_test
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestReleasePublicationRequiresFourPlatformCatalogContracts(t *testing.T) {
@@ -231,5 +235,72 @@ func TestCustomReleaseDomainIsRemoved(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, path)); !os.IsNotExist(err) {
 			t.Errorf("retired custom release path still exists: %s", path)
 		}
+	}
+}
+
+func TestReleaseBundleDownloadsUseCurrentRunAndReportFailures(t *testing.T) {
+	type step struct {
+		Name string            `yaml:"name"`
+		Run  string            `yaml:"run"`
+		Env  map[string]string `yaml:"env"`
+	}
+	tests := []struct {
+		workflow, job, name, bundle, destination string
+	}{
+		{"release.yml", "publish", "Download validated release bundle", "packy-release-${{ needs.prepare.outputs.tag }}", "."},
+		{"release.yml", "homebrew", "Download validated release bundle", "packy-release-${{ needs.prepare.outputs.tag }}", "bundle"},
+		{"release.yml", "package-smoke", "Download validated release bundle", "packy-release-${{ needs.prepare.outputs.tag }}", "bundle"},
+		{"release-contracts.yml", "contracts", "Download the staged artifacts", "${{ inputs.bundle }}", "."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.workflow+"/"+tc.job, func(t *testing.T) {
+			var workflow struct {
+				Jobs map[string]struct {
+					Steps []step `yaml:"steps"`
+				} `yaml:"jobs"`
+			}
+			content := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", tc.workflow))
+			if err := yaml.Unmarshal([]byte(content), &workflow); err != nil {
+				t.Fatal(err)
+			}
+			var downloads []step
+			for _, candidate := range workflow.Jobs[tc.job].Steps {
+				if candidate.Name == tc.name {
+					downloads = append(downloads, candidate)
+				}
+			}
+			if len(downloads) != 1 {
+				t.Fatalf("found %d bundle download steps, want one", len(downloads))
+			}
+			download := downloads[0]
+			if download.Env["GH_TOKEN"] != "${{ github.token }}" || download.Env["RELEASE_BUNDLE"] != tc.bundle {
+				t.Fatalf("unexpected download environment: %v", download.Env)
+			}
+			dir := t.TempDir()
+			fake := filepath.Join(dir, "gh")
+			if err := os.WriteFile(fake, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ARGUMENTS_FILE\"\nif [ \"$FAIL_DOWNLOAD\" = 1 ]; then\n  echo 'underlying download error' >&2\n  exit 37\nfi\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			argsFile := filepath.Join(dir, "args")
+			for _, fail := range []string{"0", "1"} {
+				command := exec.Command("bash", "-e", "-c", download.Run)
+				command.Env = testprocess.Env(t, "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_TOKEN=token", "GITHUB_RUN_ID=123456", "GITHUB_REPOSITORY=owner/repo", "RELEASE_BUNDLE=packy-release-v1.2.3", "ARGUMENTS_FILE="+argsFile, "FAIL_DOWNLOAD="+fail)
+				output, err := command.CombinedOutput()
+				if fail == "0" && err != nil {
+					t.Fatalf("download failed: %v: %s", err, output)
+				}
+				if fail == "1" {
+					var exit *exec.ExitError
+					if !errors.As(err, &exit) || exit.ExitCode() != 37 || !strings.Contains(string(output), "underlying download error") {
+						t.Fatalf("download failure was not propagated: %v: %s", err, output)
+					}
+				}
+				args := readFile(t, argsFile)
+				want := "run\ndownload\n123456\n--repo\nowner/repo\n--name\npacky-release-v1.2.3\n--dir\n" + tc.destination + "\n"
+				if args != want {
+					t.Errorf("download arguments = %q, want %q", args, want)
+				}
+			}
+		})
 	}
 }
