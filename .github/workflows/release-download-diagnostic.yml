@@ -56,3 +56,25 @@ jobs:
           set -euo pipefail
           cd original/dist
           sha256sum --check SHA256SUMS
+      - name: Download the same bundle with GitHub CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh --version
+          gh run download 41099104580 --repo "$GITHUB_REPOSITORY" --name packy-release-v0.2.35 --dir cli
+          diff --recursive original cli
+          (cd cli/dist && sha256sum --check SHA256SUMS)
+      - name: Verify GitHub CLI exposes extraction destination failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf 'occupied destination\n' > blocked
+          if gh run download 41099104580 --repo "$GITHUB_REPOSITORY" --name packy-release-v0.2.35 --dir blocked > failure.log 2>&1; then
+            echo 'download unexpectedly accepted a file as its directory' >&2
+            exit 1
+          fi
+          cat failure.log
+          grep -E 'not a directory|file exists' failure.log
+          [[ "$(cat blocked)" == 'occupied destination' ]]
