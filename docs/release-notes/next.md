@@ -1,21 +1,23 @@
-# {{TAG}} — Claude skill asset closure
+# {{TAG}} Direct Pack management in the TUI
 
 ## Changes since the previous release
 
-The previous stable release is `v0.2.33`.
+The previous stable release is `v0.2.34`.
 
-- Reject unsupported Claude skill asset layouts during Catalog qualification,
-  before they can pass validation and later interrupt general or targeted
-  status. External required assets need explicit reviewed composite references;
-  missing references and destination collisions fail before lifecycle mutation
-  at both global and project scope.
-- Preserve the complete skill tree, required supporting assets, legal closure,
-  modes and metadata through the existing reviewed composite-skill contract.
-  The Addy Catalog correction is published independently with its own Pack
-  version and immutable snapshot.
-- Correct the adoption quickstart to use an available Catalog skill and the
-  installed Codex controlled-check guide to distinguish the two local calls
-  required for runtime evidence.
+- Open resource selection or applicable lifecycle actions with Enter, without
+  a required Pack overview step. Press `i` for full Pack details and Esc to
+  return to the dashboard.
+- Prioritize Pack controls and the selected Pack's description over catalog
+  metadata. Keep the catalog summary compact and use `?` to inspect its
+  repository, snapshot, and digest.
+- Keep primary controls and catalog paging usable at the minimum terminal size
+  of 48 columns and 14 rows.
+- Show diagnostics and blockers when a project Pack has no applicable action,
+  including blocked or drifted installations.
+- Preserve preview, phase consent, application, and fresh status inspection for
+  global and project operations.
+- For repository contributors, add project-scoped agent skills and bounded
+  projection-batch regression verification.
 
 Catalog content and Pack versions are published independently. This engine
 release does not publish a Catalog Snapshot or change installed Packs.
