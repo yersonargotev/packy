@@ -31,10 +31,14 @@ Status: confirmed for implementation.
 
 ## Interaction
 
-Open a Pack with Enter, then open its lifecycle actions. Choose Configure
-resources for an active global Pack or Configure project resources for an
-installed project Pack. Activations and installations open the resource
-checklist directly, initially selecting the full Pack.
+Select a Pack and press Enter to manage it. For an active global Pack or an
+installed project Pack, choose Configure resources or Configure project resources.
+Activations and installations open the resource checklist directly, initially
+selecting the full Pack. Press `i` on the dashboard to inspect Pack details.
+Press Enter in details to manage the Pack, or Esc to return to the dashboard.
+If no lifecycle action is available, Enter shows Pack diagnostics and blockers.
+The dashboard shows a compact catalog summary. Press `?` for the full repository,
+snapshot, and digest, and press `c` to refresh the catalog.
 
 Use the arrow keys to focus a resource and Space or Enter to toggle it. Tab
 focuses Apply changes, which creates a preview; the existing consent flow must
