@@ -2,6 +2,69 @@
   "schema_version": 1,
   "packs": [
     {
+      "id": "matty",
+      "surface_intents": [
+        {
+          "surface": "agents",
+          "version": "4.4.0",
+          "selection": {
+            "mode": "custom",
+            "roots": [
+              {
+                "kind": "skill",
+                "id": "codebase-design"
+              },
+              {
+                "kind": "skill",
+                "id": "domain-modeling"
+              },
+              {
+                "kind": "skill",
+                "id": "grill-me"
+              },
+              {
+                "kind": "skill",
+                "id": "grill-with-docs"
+              },
+              {
+                "kind": "skill",
+                "id": "grilling"
+              },
+              {
+                "kind": "skill",
+                "id": "handoff"
+              },
+              {
+                "kind": "skill",
+                "id": "research"
+              },
+              {
+                "kind": "skill",
+                "id": "setup-matt-pocock-skills"
+              },
+              {
+                "kind": "skill",
+                "id": "to-spec"
+              },
+              {
+                "kind": "skill",
+                "id": "to-tickets"
+              },
+              {
+                "kind": "skill",
+                "id": "triage"
+              },
+              {
+                "kind": "skill",
+                "id": "writing-for-agents"
+              }
+            ]
+          },
+          "aliases": []
+        }
+      ]
+    },
+    {
       "id": "packy",
       "surface_intents": [
         {
@@ -15,6 +78,20 @@
                 "id": "packy-cli"
               }
             ]
+          },
+          "aliases": []
+        }
+      ]
+    },
+    {
+      "id": "pstack",
+      "surface_intents": [
+        {
+          "surface": "agents",
+          "version": "6.1.0",
+          "selection": {
+            "mode": "all",
+            "roots": []
           },
           "aliases": []
         }
