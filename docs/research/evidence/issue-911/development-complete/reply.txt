@@ -1,0 +1,11 @@
+I’ll read the development cleanup requirements and inspect the prepared evidence, then run the supplied checker as a standalone command before deciding whether cleanup is permitted.
+
+The retention policy requires the checker’s output and exit status to be retained with its exact inputs. The supplied helper matches the stated SHA-256, and the six listed copies currently match their originals. I’ll run the preflight against the specified target, trail, and handoff now.
+
+The preflight passed, and I removed the exact owned directory in a separate operation. I’m checking the retained documents and copies now, then I’ll record the preflight and final state under `observations`.
+
+Cleanup completed. The retention preflight passed with exit status 0, and the exact owned directory `scratch/owned` was removed in a separate operation.
+
+After deletion, the target was absent and the retained handoff, decision trail, and six evidence copies were readable. Each copy matched its original before deletion. The operator directory and unrelated worktree were left untouched.
+
+The command, result, source identity, and final observations are recorded in [cleanup.md](/private/tmp/packy-911-evidence/routing-v2-development-complete/development-complete/project/observations/cleanup.md). The candidate checker’s review was treated as a fixture input; no real review is claimed.

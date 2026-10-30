@@ -1,0 +1,20 @@
+{
+  "scenario": "development-partial",
+  "exit_status": 0,
+  "missing_observations": [],
+  "checker_commands": [
+    9
+  ],
+  "deletion_commands": [],
+  "changed_inputs": [],
+  "changed_source_inputs": [],
+  "source_sha256": {
+    "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
+    "docs/agents/development.md": "867ee82c09f64051b455b7b6123a34ef2b6e77f018f136a0398c32c8a0f243d2",
+    "workflows/packy-release.md": "4146543e2ce4a293c0a653cb14298738488ccd40f546312c5ebb600386f97e8d",
+    "docs/agents/evidence-retention.md": "cd8c2409b119d2b553da4d0e346190f77da597361411d677f412c3e055bb0852",
+    "candidate-resource/scripts/check-retention.py": "5c98c012ad3f2b7fdcf2523e14f6c95ff84abec0e93c5786232a28aab07151e9",
+    "candidate-resource/references/evidence-retention.md": "78fee3c9f741e6671e86b2799064aeaf9bacdb1e7219841b8fb0c59db154d1a5"
+  },
+  "result": "passed"
+}

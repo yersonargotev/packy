@@ -1,0 +1,22 @@
+{
+  "owned_target_exists": false,
+  "originals": null,
+  "retained_proof": {
+    "decisions.tsv": "4a78a63ed0f03e7bdcd96cbf53039e47856e0d0a9d3b95443b29c8e45652581a",
+    "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82",
+    "copies/probe-v8.log": "22adb9931897e76ba16fab126e1b25f7e959e2640390609f4ea8f4e8b6f69f1d",
+    "copies/review.txt": "292939b7a07c667b41e697985749327b7dc5042e5f450b2734d43b0f0cb9d7f3",
+    "copies/artifact-validation.log": "bc48399b4efcab735ed5c3a1e93154a8afb832d8461d866c3abf406fff8777f3",
+    "copies/later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3",
+    "copies/formula.rb": "59c6407caa4b8ab2dec19399b3f70e4f09333fe4f69b5d969af0629525fc292a",
+    "copies/probe-v4.log": "f645b0dbeead4f7dc335cdd0bf517e5d7b91125f7cba5616315762b910ccd903"
+  },
+  "operator": {
+    "sentinel.txt": "2500ee4f6c1f264292124ceec0b89399c58514bbf518190c7c7b84a512cdc950"
+  },
+  "unrelated": {
+    "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6",
+    "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
+    ".git": "39c3db9854c732a9bc542afbd6d48c7fc09da9e099cbbbbe390b5da83d8b6a8a"
+  }
+}

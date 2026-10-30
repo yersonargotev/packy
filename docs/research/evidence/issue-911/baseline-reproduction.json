@@ -1,0 +1,14 @@
+{
+  "root": "/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/packy-911-repro.pq1jx4ka",
+  "cleanup_target": "/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/packy-911-repro.pq1jx4ka/disposable",
+  "all_six_original_pointers_resolve": true,
+  "unretained_originals": [
+    "probe-v4.log",
+    "probe-v8.log",
+    "artifact-validation.log",
+    "formula.rb",
+    "review.txt"
+  ],
+  "identical_retained_copy": true,
+  "deletion_performed": false
+}

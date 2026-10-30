@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/usr/bin/python3",
+    "-B",
+    "/private/tmp/packy-catalog-911/packs/pstack/skills/agents/show-me-your-work/scripts/check-retention.py",
+    "--base",
+    "/private/tmp/packy-911-checked-g3o5zkfe",
+    "--trail",
+    "/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv",
+    "--no-handoff",
+    "--target",
+    "/private/tmp/packy-911-checked-g3o5zkfe/disposable"
+  ],
+  "checker_sha256": "5c98c012ad3f2b7fdcf2523e14f6c95ff84abec0e93c5786232a28aab07151e9",
+  "exit_status": 0,
+  "stdout": "Evidence retention check passed; cleanup requires separate authorization.\n",
+  "stderr": "",
+  "all_files_unchanged_by_checker": true,
+  "history_preserved": true,
+  "all_six_originals_remain": true
+}

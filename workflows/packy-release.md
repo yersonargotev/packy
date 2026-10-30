@@ -112,6 +112,20 @@ four archives, `SHA256SUMS`, tap formula, and installed Homebrew binary. All
 versions, URLs, and checksums must agree. Remove temporary state and confirm the
 operator checkout retains its original branch, HEAD, and pre-existing changes.
 
+Before removal, require the successful read-only
+[evidence-retention preflight](../docs/agents/evidence-retention.md) against all
+exact cleanup targets, the release decision trail, and every retained handoff.
+An unavailable checker, failed result, or unevaluated reference stops cleanup
+with the originals preserved. Retain identical copies and append relocation
+records before retrying. Later acceptance proof cannot reconstruct an omitted
+original.
+
+Make the deletion decision separately after preflight. Validate exact-path
+ownership, preserve pending corrections and unrelated worktrees, and use an
+operation compatible with the active execution policy. Confirm that each owned
+target is absent and retained evidence remains readable. A passing preflight
+grants no integration, publication, or deletion authority.
+
 **Complete when:** the workflow and every read-back agree and temporary state
 is removed without changing pre-existing operator state.
 

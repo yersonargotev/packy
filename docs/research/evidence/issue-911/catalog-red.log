@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 84, in <module>
+    main()
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 23, in main
+    assert all(p.is_file() for p in HELPERS), "missing retention helper"
+AssertionError: missing retention helper

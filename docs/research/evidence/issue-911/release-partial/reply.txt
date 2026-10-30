@@ -1,0 +1,14 @@
+I’ll inspect the release workflow and the prepared evidence, then run the supplied checker as a standalone command if the workflow calls for it. I’ll keep any continuation records under `observations` and preserve the other fixture directories.
+
+The checker’s hash matches the supplied candidate identity. The trail cites six files inside the owned directory, but records a retained copy for only one; I’ll run the preflight against the full supplied inventory to establish the exact blockers.
+
+Cleanup is blocked: the retention preflight exited with status 1 because five files cited in the decision trail have no verified relocation:
+
+- `probe-v4.log` and `probe-v8.log`
+- `artifact-validation.log`
+- `formula.rb`
+- `review.txt`
+
+The owned directory and its originals remain in place. I did not change the existing copies or references, and did not modify the operator directory or unrelated worktree.
+
+The checker identity, command, output, and result are recorded in [retention-preflight.md](/private/tmp/packy-911-evidence/routing-v2-release-partial/release-partial/project/observations/retention-preflight.md). The candidate was treated as a fixture input; no real review is claimed.

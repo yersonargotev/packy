@@ -85,3 +85,17 @@ owned development branches and worktrees only after observing integration and
 checking that they contain no unexpected operator changes. Confirm issue
 closure and the integrated candidate. Never reset the operator's checkout.
 Release publication follows its own exact-version and commit approval.
+
+Before any temporary-state or worktree deletion, run the read-only
+[evidence-retention preflight](evidence-retention.md) for every exact cleanup
+target and all of the run's decision trails and retained handoffs. Require a
+successful result immediately before the separate cleanup decision. Failure,
+an unavailable checker, or an unevaluated reference stops cleanup. Preserve the
+originals while correcting retention and appending relocation records.
+
+Preflight establishes no path ownership or deletion authority. Resolve each
+exact owned target and reject empty, broad, unresolved, or non-owned paths.
+Keep pending work and unrelated worktrees. Use a separate operation compatible
+with the active execution policy, such as `find <owned-path> -depth -delete`,
+only after every applicable gate passes. Verify each target is absent and the
+retained evidence remains readable afterward.
