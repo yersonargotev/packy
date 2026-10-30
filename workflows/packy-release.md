@@ -29,15 +29,30 @@ state are all known and checkable.
 
 ## Prove
 
-Run focused checks and `./scripts/validate-packy.sh` with sandboxed `HOME` and
-`XDG_CONFIG_HOME`. Build disposable artifacts with
+Run focused checks with sandboxed `HOME` and `XDG_CONFIG_HOME`. Acquire the
+exact-commit main CI proof with `go run ./internal/tools/ciproof --sha <frozen-commit>`
+and retain its JSON outside the checkout. Build disposable artifacts with
 `scripts/build-release-artifacts.sh`, validate them with
 `scripts/validate-release-artifacts.sh`, and generate the formula from the same
 `SHA256SUMS`. Confirm required CI is green for the commit.
 
-**Complete when:** focused checks, canonical validation, disposable artifacts,
-artifact validation, formula generation, and required CI all pass for the
-frozen commit and selected version.
+**Complete when:** focused checks, disposable artifacts, artifact validation,
+formula generation, trusted CI proof, and required CI all pass for the frozen
+commit and selected version.
+
+The proof pins `yersonargotev/packy` repository ID `1290275684` and active
+`.github/workflows/ci.yml` workflow ID `307623507`. Changing either identity
+requires a reviewed authority change. The proof selects the main push run for
+the exact commit with the newest creation time, breaking ties by numeric run ID.
+It checks that run's latest attempt. The whole run and source validator must
+succeed. A selective rerun without the validator in its latest attempt is
+rejected. Rerun all jobs and wait for success. API errors or missing evidence
+block the release. The proof is a snapshot acquired during Prove or tag
+preparation, not a lock on future reruns.
+Acquire fresh proof for each decision and for each tag workflow run. A new
+commit, workflow authority, or validator invocation invalidates earlier proof.
+The [historical evidence](../docs/research/evidence/ci-release-proof-reuse-2026-10-30.md)
+records the earlier validation work.
 
 The tag-triggered workflow additionally executes the same complete Catalog CLI
 contract against all four staged release archives in native compatible

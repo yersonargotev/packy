@@ -12,6 +12,7 @@ jobs:
     name: Build and validate release
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -35,8 +36,10 @@ jobs:
           git fetch --no-tags origin main:refs/remotes/origin/main
           [[ "$GITHUB_SHA" == "$(git rev-parse origin/main)" ]]
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
-      - name: Validate tagged source
-        run: ./scripts/validate-packy.sh --ci
+      - name: Verify exact-commit main CI proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./internal/tools/ciproof --sha "$GITHUB_SHA" > "$RUNNER_TEMP/source-ci-proof.json"
       - name: Build four release archives and SHA256SUMS
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
@@ -51,6 +54,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir release-metadata
+          cp "$RUNNER_TEMP/source-ci-proof.json" release-metadata/source-ci-proof.json
+          {
+            echo "### Source CI proof"
+            echo "\`\`\`json"
+            cat release-metadata/source-ci-proof.json
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
           ./scripts/generate-homebrew-formula.sh \
             --version "$RELEASE_TAG" \
             --checksums dist/SHA256SUMS \
