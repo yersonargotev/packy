@@ -1,0 +1,41 @@
+Candidate: 9528fe0fdec1d4fbd0ec2f969d399669ee6ce8a6
+Candidate status:
+?? .agents/skills/verify-packy/
+?? docs/research/evidence/issue-910/
+Tracked diff SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+New skill files SHA-256:
+1ceeb84e67dc58bfbdddf6e4374088fd16cb519ca3b6ba68527d8c8ea732c25c  .agents/skills/verify-packy/SKILL.md
+d548a86e0018c1f9413d4fa60a62edfe7c13e39408a94ae20ba2aaeb1ba5b872  .agents/skills/verify-packy/features/README.md
+5cc6288c6e9b10dec25d62500b9786792a9faebe0cffc440596ca54c4b31f8d9  .agents/skills/verify-packy/features/inspection.md
+ad44725554eaf7c90d0b4a5610f51a0526111f1fdabf537870bc80db9b7d1f8c  .agents/skills/verify-packy/features/lifecycle-preview.md
+665941750a51e8c1f6c892616bce32c548ebfd020e4e7cb99b89fb26e6ff5f9a  .agents/skills/verify-packy/features/project-verification.md
+52fd22bd20b1fae0ce3a2cbffc973e93235429d5341c17cf0b8a72eebc15e0e0  .agents/skills/verify-packy/features/tui-dashboard.md
+1086bfd507fe953d5a6c812ccedc6fadcd8e7cabed1770d6f32902799e4bc9c0  .agents/skills/verify-packy/scripts/pty-drive.py
+Launch: go build -o <scratch>/packy ./cmd/packy
+Doctor: packy version
+packy version dev
+Doctor: go version -m <scratch>/packy (identity fields)
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/packy: go1.27.3
+	mod	github.com/yersonargotev/packy	v0.2.37-0.20261030214953-9528fe0fdec1+dirty
+	build	vcs.revision=9528fe0fdec1d4fbd0ec2f969d399669ee6ce8a6
+	build	vcs.time=2026-10-30T21:49:53Z
+	build	vcs.modified=true
+Before:        6
+Drive: pty-drive.py <scratch>/packy <evidence>/tui.raw --step Workstation ? --step hide q
+observed 'Workstation'; sent '?'
+observed 'hide'; sent 'q'
+Packy exited 0
+Drive exit: 0
+After sandbox files:
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/home/Library/Application Support/go/telemetry/local/compile@go1.27.3-go1.27.3-darwin-arm64-2026-10-30.v1.count
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/home/Library/Application Support/go/telemetry/local/upload.token
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/home/Library/Application Support/go/telemetry/local/asm@go1.27.3-go1.27.3-darwin-arm64-2026-10-30.v1.count
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/home/Library/Application Support/go/telemetry/local/go@go1.27.3-go1.27.3-darwin-arm64-2026-10-30.v1.count
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/home/Library/Application Support/go/telemetry/local/weekends
+/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T//packy-verify.Od0TBR/home/Library/Application Support/go/telemetry/local/link@go1.27.3-go1.27.3-darwin-arm64-2026-10-30.v1.count
+No Packy home, catalog state, project files, or XDG files created
+Cleanup: removed private scratch with rm -r -- <scratch>
+Scratch absent after cleanup
+Evidence survives cleanup: tui.raw 4922 bytes
+For retention after cleanup, tui.raw was base64 encoded byte-for-byte as tui.raw.b64.
+Raw transcript SHA-256: 652307bf1ee4213c79f3fb7997e1585c8d29e223022fb4dc88b6d6741d3aa7af

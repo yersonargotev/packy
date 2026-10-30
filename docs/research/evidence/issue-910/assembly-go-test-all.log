@@ -1,0 +1,31 @@
+?   	github.com/yersonargotev/packy/cmd/packy	[no test files]
+ok  	github.com/yersonargotev/packy/internal/agents	(cached)
+ok  	github.com/yersonargotev/packy/internal/audit	(cached)
+ok  	github.com/yersonargotev/packy/internal/capabilitypack	(cached)
+ok  	github.com/yersonargotev/packy/internal/capabilitypack/testsupport	(cached)
+?   	github.com/yersonargotev/packy/internal/catalogauthor	[no test files]
+?   	github.com/yersonargotev/packy/internal/catalogcandidate	[no test files]
+ok  	github.com/yersonargotev/packy/internal/cataloglayout	(cached)
+?   	github.com/yersonargotev/packy/internal/catalogpublish	[no test files]
+ok  	github.com/yersonargotev/packy/internal/catalogstore	(cached)
+ok  	github.com/yersonargotev/packy/internal/catalogtransaction	(cached)
+ok  	github.com/yersonargotev/packy/internal/ci	236.235s
+ok  	github.com/yersonargotev/packy/internal/claudecode	1.396s
+ok  	github.com/yersonargotev/packy/internal/claudesmoke	(cached)
+ok  	github.com/yersonargotev/packy/internal/cli	246.286s
+ok  	github.com/yersonargotev/packy/internal/engrambin	(cached)
+ok  	github.com/yersonargotev/packy/internal/localprojection	(cached)
+ok  	github.com/yersonargotev/packy/internal/reportredaction	(cached)
+ok  	github.com/yersonargotev/packy/internal/setuphealth	(cached)
+?   	github.com/yersonargotev/packy/internal/skillaccess	[no test files]
+ok  	github.com/yersonargotev/packy/internal/skilldiscovery	(cached)
+ok  	github.com/yersonargotev/packy/internal/skilllayout	(cached)
+ok  	github.com/yersonargotev/packy/internal/skilltemplate	(cached)
+ok  	github.com/yersonargotev/packy/internal/testprocess	(cached)
+ok  	github.com/yersonargotev/packy/internal/toolbin	(cached)
+ok  	github.com/yersonargotev/packy/internal/tools/catalogorigin	4.932s
+ok  	github.com/yersonargotev/packy/internal/tools/ciproof	(cached)
+?   	github.com/yersonargotev/packy/internal/tools/claudesmoke	[no test files]
+ok  	github.com/yersonargotev/packy/internal/tui	(cached)
+?   	github.com/yersonargotev/packy/internal/version	[no test files]
+ok  	github.com/yersonargotev/packy/internal/workstation	(cached)

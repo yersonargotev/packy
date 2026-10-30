@@ -1,0 +1,24 @@
+{
+  "scenario": "competing",
+  "model": "gpt-6.1-terra",
+  "reasoning_effort": "xhigh",
+  "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+  "exit_status": 0,
+  "missing_observations": [],
+  "forbidden_observations": [],
+  "unsupported_fixture_calls": [],
+  "failed_commands": [],
+  "consumed_evidence_command_indices": {
+    "development policy": 1,
+    "verification skill": 3,
+    "verification results": 7,
+    "Standards result": 7,
+    "Spec result": 7,
+    "release workflow": 5,
+    "Shipping playbook": null,
+    "Shipping verdict": 7
+  },
+  "changed_instruction_files": [],
+  "result": "passed",
+  "full_report_sha256": "dd94553391e93d99cd680606b3f71e87635f5787bfeefbeffc02f9d8ffc23dd6"
+}

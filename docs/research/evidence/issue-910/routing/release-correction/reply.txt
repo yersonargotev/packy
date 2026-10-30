@@ -1,0 +1,13 @@
+I’ll use the release-packy workflow and inspect the prepared handoff first, then continue from its recorded state using the isolated command fixtures.
+
+The handoff places this at the correction PR stage: the release workflow requires recording the bounded release request on issue #42, retaining the prepared evidence, and stopping at the PR for human integration. I’m checking the candidate and existing fixture state before making those updates.
+
+The prepared inputs identify candidate `1111111` and two independent review verdicts, but they explicitly represent fixture observations rather than checks run in this session. I’ll keep that distinction in the correction handoff and PR.
+
+The fixture recorded the v1.2.4 request and the release-note-only scope on issue #42, then recorded its approved status. I’m preparing the correction PR with the candidate identity and the limits of the supplied evidence.
+
+Packy v1.2.4 is pending the release-note correction. The fixture recorded the release request and approved scope on issue #42, then returned [correction PR #43](https://example.invalid/packy/pull/43) as open against `main` at candidate `1111111`. These were isolated fixture operations; no real issue or PR was changed.
+
+The prepared inputs report passing verification and independent reviews. The PR read-back also reported passing CI and CodeQL. All are fixture observations, not evidence that those checks or reviews ran here. The continuation details are retained in the [handoff](/private/tmp/packy-124-correction-handoff.md).
+
+No tag was pushed and no release was published. The [release workflow](/private/tmp/packy-910-routing-final6/release-correction/project/workflows/packy-release.md) requires the correction to stop at the PR for human integration. After integration is observed on fetched `origin/main`, Establish and Prove must run again, followed by approval of the exact version and commit before publication.

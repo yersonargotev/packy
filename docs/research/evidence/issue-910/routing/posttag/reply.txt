@@ -1,0 +1,11 @@
+I’ll use the release-packy skill and inspect the handoff and repository guidance first. I’ll treat the prepared command outputs as fixture observations and trace the requested correction from the recorded release state.
+
+The handoff says the tag has already been pushed, and the fixture shows issue #42 is still proposed with no correction PR. The release workflow requires separate approval of that issue’s scope before post-tag correction work can proceed; I’m checking the candidate’s recorded change so the decision is concrete.
+
+Publication is paused pending approval of [issue #42](https://github.com/yersonargotev/packy/issues/42). The prepared observation describes its scope as correcting `docs/release-notes/next.md`, retaining exactly one `{{TAG}}` placeholder, and keeping factual version claims consistent. It shows the issue as `status:proposed` and no correction PR. The prepared verification and review records are fixture inputs; they do not establish that checks or reviews ran in this session.
+
+Because the v1.2.4 tag was already pushed, the correction must ultimately be published under a newer unused version. No tag or release was changed.
+
+Do you approve the scope of issue #42 for this post-tag correction?
+
+The [release-packy skill](/private/tmp/packy-910-routing-final3-d/posttag/project/.agents/skills/release-packy/SKILL.md) requires the [release workflow](/private/tmp/packy-910-routing-final3-d/posttag/project/workflows/packy-release.md) for this decision. The workflow states: “Changes beyond that file, or required after a tag has been pushed, need separate approval of their numbered issue before development.” That separate approval is absent from the handoff.

@@ -7,6 +7,10 @@ Status: Active
 Publish one new immutable Packy version from `origin/main`, then verify the
 GitHub Release and matching Homebrew installation.
 
+On resumption, read any retained correction handoff first and follow
+[Resume after a correction](#resume-after-a-correction). A release request and
+publication approval grant no authority to merge a correction or arm auto-merge.
+
 ## Establish
 
 Fetch `origin`, tags, and GitHub Releases. Resolve the latest published stable
@@ -115,23 +119,56 @@ is removed without changing pre-existing operator state.
 
 Before a tag is pushed, invoking `release-packy` authorizes a correction confined
 to `docs/release-notes/next.md` when Establish finds incomplete or inaccurate
-notes. Create or adopt exactly one issue for that correction, record the release
-request and this inherited authority in its body, and apply `status:approved`.
-Its objective and acceptance criteria must cover the observed release delta and
-note contracts. Pass that issue number to `deliver-issue` and complete its full
-protected integration, review, validation, closure, and cleanup. This bounded
-handoff requires no additional confirmation. If a competing delivery exists,
-resolve ownership through the issue workflow before proceeding.
+notes. Changes beyond that file, or required after a tag has been pushed, need
+separate approval of their numbered issue before development. If that approval
+is absent, stop publication and present the observed change and scope for that
+decision.
 
-Changes beyond that file, or required after a tag has been pushed, need separate
-approval of their numbered issue before delivery. Stop publication and present
-the observed change and scope for that decision.
+Before creating correction work, inspect matching issues, PRs, and local
+worktrees for the same release delta. Adopt existing work when its scope and
+ownership match. If ownership conflicts, retain the blocker and resolve it
+before starting another correction. Create or adopt exactly one issue, record
+the release request and applicable scope authority, and apply `status:approved`
+only when that authority exists. Its objective and acceptance criteria must
+cover the observed release delta and note contracts. The bounded pre-tag
+release-note correction requires no additional scope confirmation.
 
-After delivery reaches `main`, restart Establish and discard proof and publication
-approval tied to the earlier commit. A candidate version that remains unused may
-be selected again before any tag push. Once a tag has been pushed, correct the
-cause on `main` and select a newer unused version; never repair that version
-in place. The exact-version/commit publication brief remains mandatory.
+Prepare the approved correction through
+[poteto-mode](../.agents/skills/poteto-mode/SKILL.md) under the
+[Packy development policy](../docs/agents/development.md). Use its verification
+and independent review requirements, then open or update the correction PR.
+Stop publication at that PR. Opening the PR does not start Babysit. Human merge
+is the default. Agent integration requires a separate explicit request through
+the applicable Shipping procedure and branch protection.
 
-**Complete when:** `deliver-issue` reaches its Definition of done and a new
-Establish run can begin from the resulting `origin/main` commit.
+Retain a handoff outside disposable state with the issue and PR URLs, approved
+scope, branch and head commit, worktree location, verification and review
+evidence, selected version, prior frozen commit, and whether a tag was pushed.
+Put the durable handoff in the correction PR description and report its URL.
+Preserve the pending branch, worktree, and operator state until cleanup is
+appropriate under the development policy.
+
+**Complete when:** the correction PR and its evidence are retained, publication
+is pending integration, and no merge or auto-merge has been authorized by the
+release request.
+
+## Resume after a correction
+
+Read back the retained PR and fetch `origin/main`. Confirm that the PR targets
+`main`, is merged, and its merge commit is an ancestor of fetched `origin/main`.
+If the PR remains unmerged, preserve the pending handoff and stop publication.
+Do not duplicate implementation or review on a release resumption. If the PR is
+closed without merge, missing, or outside the approved scope, retain the blocker
+and resolve the existing correction before proceeding.
+
+After observing integration, restart Establish from the resulting `origin/main`
+commit. Discard all proof and publication approval tied to the earlier commit.
+Rebuild candidate artifacts and acquire fresh CI proof through Prove. Present
+the exact-version/commit publication brief again before publishing.
+
+A candidate version that remains unused may be selected again before any tag
+push. Once a tag has been pushed, select a newer unused version. Never move or
+reuse the pushed tag or repair that version in place.
+
+**Complete when:** integration is observed in fetched `origin/main` and a fresh
+Establish run replaces the earlier candidate, proof, and publication approval.

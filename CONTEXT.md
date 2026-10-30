@@ -285,12 +285,14 @@ identity changes.
 
 ### Issue delivery
 
-The end-to-end integration of one approved issue through qualification, proof, protected review and merge, closure, and cleanup.
+The integration of one approved issue through development, verification,
+independent review, protected merge, closure, and cleanup. Development ends
+with a PR. Agent integration requires separate explicit authorization.
 
 ### Issue delivery policy
 
-The repository-owned contract that adapts issue delivery to local approval,
-validation, review, merge, and cleanup rules.
+The repository-owned approval, verification, independent review, integration
+authority, and cleanup obligations consumed by the existing development flow.
 
 ### Packy release
 

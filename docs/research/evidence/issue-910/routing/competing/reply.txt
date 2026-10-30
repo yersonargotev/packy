@@ -1,0 +1,9 @@
+I’ll use the release-packy workflow and inspect the handoff first, then prepare the release-note correction using the provided fixture state.
+
+The handoff identifies two competing correction PRs, so I’m checking their scope and ownership before choosing any existing work. The supplied review and verification records are fixture inputs, not checks performed in this session.
+
+The v1.2.4 release-note correction is blocked by competing work. The fixture observations show two open PRs, [#43](https://example.invalid/packy/pull/43) and [#44](https://example.invalid/packy/pull/44), both referencing issue #42 and the same candidate commit. They do not establish which PR owns the correction.
+
+Please identify the PR and branch that should own the correction, and resolve the competing work. I have not created another PR, merged either one, or pushed a tag. The handoff says no tag had been pushed. Its verification and review records are prepared fixture inputs, not evidence of real checks or reviews in this session.
+
+The [release-packy skill](/private/tmp/packy-910-routing-final3-d/competing/project/.agents/skills/release-packy/SKILL.md) requires its workflow, which says to "retain the blocker and resolve it before starting another correction" when ownership conflicts. The [development policy](/private/tmp/packy-910-routing-final3-d/competing/project/docs/agents/development.md) also says to report competing work without overwriting it or creating a duplicate PR.
