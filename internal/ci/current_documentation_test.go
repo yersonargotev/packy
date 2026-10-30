@@ -96,7 +96,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	requireDocumentationText(t, root, "CONTEXT.md", []string{
 		"Readiness obligation", "Readiness condition", "Readiness dimensions", "Controlled runtime check",
 		"configured, authorized, or usable", "true, false, or unknown", "Issue delivery policy",
-		"qualification, proof, protected review and merge, closure, and cleanup",
+		"Agent integration requires separate explicit authorization",
 		"Catalog Project", "Catalog Snapshot", "Catalog Publication", "Catalog Refresh",
 		"Pack Import", "Upstream Refresh", "External Source Project", "Declared Pack Closure",
 	})

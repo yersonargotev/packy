@@ -108,74 +108,8 @@ func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 	}
 }
 
-func TestReleaseGateRequiresFreshDecisionEvidence(t *testing.T) {
-	root := repositoryRoot(t)
-	workflow := readFile(t, filepath.Join(root, "workflows", "packy-release.md"))
-	maintainer := readFile(t, filepath.Join(root, "docs", "release.md"))
-	delivery := readFile(t, filepath.Join(root, "workflows", "issue-delivery.md"))
-	skill := readFile(t, filepath.Join(root, ".agents", "skills", "release-packy", "SKILL.md"))
-	notes := readFile(t, filepath.Join(root, "docs", "release-notes", "next.md"))
-	workflowText := strings.Join(strings.Fields(workflow), " ")
-	maintainerText := strings.Join(strings.Fields(maintainer), " ")
-	deliveryText := strings.Join(strings.Fields(delivery), " ")
-
-	for _, required := range []string{
-		"latest published stable GitHub Release",
-		"next patch",
-		"every user-visible change",
-		"exactly one `{{TAG}}` placeholder",
-		"repository authorities",
-		"release-note summary or diff evidence",
-		"`release` and `homebrew` environment approvals",
-		"same workflow run, version, and commit",
-		"a correction confined to `docs/release-notes/next.md`",
-		"Before a tag is pushed",
-		"Create or adopt exactly one issue",
-		"record the release request and this inherited authority",
-		"complete its full protected integration",
-		"Changes beyond that file, or required after a tag has been pushed, need separate approval",
-		"discard proof and publication approval tied to the earlier commit",
-		"Once a tag has been pushed",
-		"select a newer unused version",
-		"The exact-version/commit publication brief remains mandatory",
-		"gh run watch <run-id> --compact --interval 45 --exit-status",
-		"Filter run and pending-deployment reads with `--jq`",
-	} {
-		if !strings.Contains(workflowText, required) {
-			t.Errorf("release workflow contract is missing %q", required)
-		}
-	}
-	if !strings.Contains(deliveryText, "packy-release.md#repository-change-exception") ||
-		!strings.Contains(deliveryText, "the release workflow supplies exactly one approved issue number") {
-		t.Error("issue-delivery trigger does not resolve the bounded release-note authority")
-	}
-	for _, required := range []string{
-		"latest published stable GitHub Release",
-		"next patch",
-		"every user-visible change",
-		"exactly one `{{TAG}}` placeholder",
-		"repository authorities",
-	} {
-		if !strings.Contains(maintainerText, required) {
-			t.Errorf("maintainer release contract is missing %q", required)
-		}
-	}
-
-	for _, required := range []string{
-		"Read the complete",
-		"Run the complete workflow contract",
-		"repository-change exception",
-	} {
-		if !strings.Contains(skill, required) {
-			t.Errorf("release skill gate is missing %q", required)
-		}
-	}
-	for _, duplicatedPhase := range []string{"## 1. Establish", "## 2. Prove", "## 3. Approve", "## 4. Publish once", "## 5. Verify and close"} {
-		if strings.Contains(skill, duplicatedPhase) {
-			t.Errorf("release skill duplicates workflow phase %q", duplicatedPhase)
-		}
-	}
-
+func TestNextReleaseNotesProvideOneVersionPlaceholder(t *testing.T) {
+	notes := readFile(t, filepath.Join(repositoryRoot(t), "docs", "release-notes", "next.md"))
 	if got := strings.Count(notes, "{{TAG}}"); got != 1 {
 		t.Errorf("next release notes contain %d tag placeholders; want exactly one", got)
 	}

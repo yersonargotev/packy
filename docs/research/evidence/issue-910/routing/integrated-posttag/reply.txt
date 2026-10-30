@@ -1,0 +1,19 @@
+I’ll use the release-packy skill and the prepared handoff to identify the authorized next release step. I’ll treat command-double output as fixture observations, as requested.
+
+The prepared PR and issue observations show the approved correction as merged into `main`. The prior approval and proof were tied to an earlier commit, so the release contract requires a fresh candidate and publication brief.
+
+The fixture identifies `v1.2.4` as the latest published stable release and `v1.2.5` as unused, with the correction at `2222222` on fetched `main`. I’ll consume the fresh proof and artifact observations for that candidate; they will remain fixture results, not claims of real builds or checks.
+
+The prepared observations identify **v1.2.5 at commit `2222222222222222222222222222222222222222`** as the next release candidate. PR #43 is reported merged into `main`, and its merge commit is reported present in fetched `origin/main`. The previous stable release, v1.2.4, is already published and immutable.
+
+For the new candidate, the fixture observations report:
+
+- v1.2.5 is absent from local tags, remote tags, and GitHub Releases.
+- The delta from v1.2.4 corrects `docs/release-notes/next.md`; the prepared notes contain one `{{TAG}}` placeholder.
+- Focused checks, exact-commit CI proof, required CI, artifact validation, and formula generation pass. The reported CI run is 700, attempt 1.
+
+**These are prepared fixture results.** No real tests, CI queries, release artifacts, or formula were produced here. The prepared CI proof response is retained at [source-ci-proof.json](/private/tmp/packy-release-fixture.76I4yX/source-ci-proof.json).
+
+Publication would push the new v1.2.5 tag, trigger creation of a GitHub Release, and update `yersonargotev/homebrew-tap`. The [release workflow contract](/private/tmp/packy-910-routing-final4-b/integrated-posttag/project/workflows/packy-release.md) requires: “Publication requires the user's approval of that exact version and commit.” The earlier approval applied to a different commit.
+
+Do you approve publication of **v1.2.5 at `2222222222222222222222222222222222222222`** under this fixture continuation? No tag has been pushed in this turn.

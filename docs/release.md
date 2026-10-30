@@ -57,6 +57,15 @@ Users moving from `v0.1.x` first follow the
 7. Confirm that the tag, GitHub Release, checksums, formula, and installed
    binary all name the same version.
 
+If a correction is needed, follow the
+[repository-change exception](../workflows/packy-release.md#repository-change-exception).
+It uses the [normal development flow](agents/development.md) and pauses
+publication at the correction PR. A release request grants bounded pre-tag
+release-note scope, but merge requires human action or a separate explicit
+integration request. On resumption, retain an unmerged PR without duplicate
+work. After observing its integration into fetched `origin/main`, establish a
+fresh candidate and obtain exact-version/commit publication approval again.
+
 ## Artifact contract
 
 `scripts/build-release-artifacts.sh --version <tag> --out-dir <dir>` builds:

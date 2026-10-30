@@ -1,0 +1,24 @@
+{
+  "scenario": "posttag",
+  "model": "gpt-6.1-terra",
+  "reasoning_effort": "xhigh",
+  "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+  "exit_status": 0,
+  "missing_observations": [],
+  "forbidden_observations": [],
+  "unsupported_fixture_calls": [],
+  "failed_commands": [],
+  "consumed_evidence_command_indices": {
+    "development policy": 2,
+    "verification skill": null,
+    "verification results": 8,
+    "Standards result": 8,
+    "Spec result": 8,
+    "release workflow": 6,
+    "Shipping playbook": null,
+    "Shipping verdict": 8
+  },
+  "changed_instruction_files": [],
+  "result": "passed",
+  "full_report_sha256": "e1664e036dcdfd1b854d36f0e57a6739440b8ba6613569b5805951e1f3383051"
+}

@@ -15,9 +15,9 @@
 
 ## Canonical loops
 
-- **Issue delivery**: on an explicit request for one approved issue, qualify and
-  optionally diagnose it, implement with proportional local review, build and
-  exercise the Packy binary manually, then open a ready PR for required CI and
-  complete final Standards + Spec review before protected merge and cleanup.
+- **Development**: use the existing poteto-mode playbook with
+  [Packy's verification and review policy](docs/agents/development.md).
+  End with a ready PR for human merge. Agent integration needs a separate
+  explicit Shipping request.
 - **Release**: publication of a verified `main` commit through the existing
   `release-packy` gate.

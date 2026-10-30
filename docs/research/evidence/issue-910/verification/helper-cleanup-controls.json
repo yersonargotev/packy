@@ -1,0 +1,18 @@
+[
+  {
+    "leader_exit": 0,
+    "helper_exit": 0,
+    "descendant_state": "absent",
+    "transcript_retained": "/tmp/packy-910-run/pty-control-0.raw",
+    "stdout": "observed 'READY'; sent 'ENTER'\nPacky exited 0\n",
+    "stderr": ""
+  },
+  {
+    "leader_exit": 7,
+    "helper_exit": 1,
+    "descendant_state": "absent",
+    "transcript_retained": "/tmp/packy-910-run/pty-control-7.raw",
+    "stdout": "observed 'READY'; sent 'ENTER'\n",
+    "stderr": "Traceback (most recent call last):\n  File \"/Users/argote/Documents/dev/yersonargotev/packy-project/packy-910/.agents/skills/verify-packy/scripts/pty-drive.py\", line 52, in <module>\n    raise RuntimeError(f\"Packy exited {process.returncode}\")\nRuntimeError: Packy exited 7\n"
+  }
+]

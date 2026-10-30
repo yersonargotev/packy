@@ -229,6 +229,10 @@ Run the focused dead-code and ineffectual-assignment check directly with:
 
 The general repository check includes this focused static analysis.
 
+For real CLI and TUI journeys with isolated state and retained evidence, use
+the project-local [verify-packy skill](.agents/skills/verify-packy/SKILL.md).
+Its feature map records the routes and prerequisites to exercise.
+
 `./scripts/validate-changed.sh [base]` selects focused Go packages when safe
 and falls back to the general validation path for cross-cutting changes.
 

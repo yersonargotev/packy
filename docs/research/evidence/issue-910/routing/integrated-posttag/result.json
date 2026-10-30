@@ -1,0 +1,29 @@
+{
+  "scenario": "integrated-posttag",
+  "model": "gpt-6.1-terra",
+  "reasoning_effort": "xhigh",
+  "probe_sha256": "e087aa1d60eebfc47153fba0957bd23d6e928afb1cfe7e34528725d770dc799a",
+  "exit_status": 0,
+  "missing_observations": [],
+  "forbidden_observations": [],
+  "unsupported_fixture_calls": [],
+  "failed_commands": [
+    {
+      "command": "/bin/zsh -lc 'gh release view v1.2.5 --json tagName'",
+      "exit_code": 1
+    }
+  ],
+  "consumed_evidence_command_indices": {
+    "development policy": 0,
+    "verification skill": null,
+    "verification results": 9,
+    "Standards result": 9,
+    "Spec result": 9,
+    "release workflow": 4,
+    "Shipping playbook": null,
+    "Shipping verdict": 9
+  },
+  "changed_instruction_files": [],
+  "result": "passed",
+  "full_report_sha256": "cf216e8d8022972d9b64942ca85e5dc3b092a2491bf76f50c21a0f642416d275"
+}

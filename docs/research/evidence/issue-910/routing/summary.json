@@ -1,0 +1,65 @@
+[
+  {
+    "scenario": "development",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "f8ffbc36d06770020fbedd5a4deb2f14711f0303ec5ef796de5b49b8a56760d1",
+    "full_report_sha256": "c31a1ce956967b08037fc9204700fb2395d9f89e105962667accefcb46450c9a"
+  },
+  {
+    "scenario": "release-correction",
+    "result": "passed",
+    "probe_sha256": "137666d704213b50025d2d2dc93699437b9682cb855d6391cd3ae1def618deec",
+    "events_sha256": "c231ba00e5a1f62b1c3556064b801418434f704a2f06168206c212b187288b0c",
+    "full_report_sha256": "a7d5c88e5b6f7e2b0af650a12a1976cec42b65fa03ded90d9073e94fa681c30e"
+  },
+  {
+    "scenario": "pending",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "71a78d28bb0291d789d4adb93cfb8e13929d26e2f906268aff14f5fd6baada32",
+    "full_report_sha256": "c0e91b4ca880f8662f1daff7880859141fd8406ee41533e7fa3b56772e7bde05"
+  },
+  {
+    "scenario": "integrated",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "36ecd3cee731e3b537e57869cbb9c3c218ad88004cead5d96491c9b3413f5263",
+    "full_report_sha256": "966728d95404b7195b714af11314c38b073777464f8a4e95b502d610703ad6f1"
+  },
+  {
+    "scenario": "integrated-posttag",
+    "result": "passed",
+    "probe_sha256": "e087aa1d60eebfc47153fba0957bd23d6e928afb1cfe7e34528725d770dc799a",
+    "events_sha256": "9ab94593d575ce8bda591bd51e258506a10ecc9fa69403046589b7021ba3ae11",
+    "full_report_sha256": "cf216e8d8022972d9b64942ca85e5dc3b092a2491bf76f50c21a0f642416d275"
+  },
+  {
+    "scenario": "shipping",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "61705dc26e1d55108049ef2ff7cefb744b9d72256d8090f981928653e9dd30c3",
+    "full_report_sha256": "c6bf56cd775bd2c4236393d70413a70c35f13b68e2a9d8f88a1fd10defeba245"
+  },
+  {
+    "scenario": "broader",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "7c7854b620d421b42bf6e6318ec9640edb831feb51938ca14035dc5429c4a5ef",
+    "full_report_sha256": "2065300336fa36a13b3354213afc8f05a382770714a73ccc46f8f5fc975b9a3f"
+  },
+  {
+    "scenario": "posttag",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "61256ca00608705921f5459304b38cdb6129d9f03d5c50c46fc925167a1f6f67",
+    "full_report_sha256": "e1664e036dcdfd1b854d36f0e57a6739440b8ba6613569b5805951e1f3383051"
+  },
+  {
+    "scenario": "competing",
+    "result": "passed",
+    "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+    "events_sha256": "63bfb73f1c67965dcd0e050a74392189d587af5d160d832c7b22bafe54933240",
+    "full_report_sha256": "dd94553391e93d99cd680606b3f71e87635f5787bfeefbeffc02f9d8ffc23dd6"
+  }
+]

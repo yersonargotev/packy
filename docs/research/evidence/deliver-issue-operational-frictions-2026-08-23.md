@@ -27,7 +27,7 @@ The workflow requires the smallest relevant checks to run with user paths
 sandboxed and later repeats that `HOME` and `XDG_CONFIG_HOME` must be sandboxed
 when a check resolves or writes user paths. It does not specify when Go's
 ambient cache locations must be resolved
-([local implementation loop](../../../workflows/issue-delivery.md#local-implementation-loop)).
+([local implementation loop](https://github.com/yersonargotev/packy/blob/9528fe0fdec1d4fbd0ec2f969d399669ee6ce8a6/workflows/issue-delivery.md#local-implementation-loop)).
 
 Both repository wrappers already encode the missing ordering. They resolve
 `GOCACHE`, `GOMODCACHE`, and `GOPATH` before exporting sandboxed user roots:
@@ -60,7 +60,7 @@ cache inputs before exporting a sandboxed `HOME`/`XDG_CONFIG_HOME`; prefer
 `./scripts/validate-changed.sh` or `./scripts/validate-packy.sh` whenever its
 scope fits. Do not change Packy code, tests, or helpers. The thin skill must not
 copy this operational detail: the workflow is explicitly the orchestration
-source of truth, while [the skill](../../../.agents/skills/deliver-issue/SKILL.md)
+source of truth, while [the skill](https://github.com/yersonargotev/packy/blob/9528fe0fdec1d4fbd0ec2f969d399669ee6ce8a6/.agents/skills/deliver-issue/SKILL.md)
 only bootstraps and gates its phases.
 
 ## 2. Cleanup friction: built-in Codex execpolicy, not Packy or the OS sandbox
@@ -101,7 +101,7 @@ model but does not enumerate this embedded default rule.
 Clarify workflow cleanup to use a validated, workflow-owned exact path and a
 policy-compatible operation such as `find <owned-path> -depth -delete`. Keep
 the ownership and post-merge verification gates already required by
-[`Verify and clean up`](../../../workflows/issue-delivery.md#verify-and-clean-up).
+[`Verify and clean up`](https://github.com/yersonargotev/packy/blob/9528fe0fdec1d4fbd0ec2f969d399669ee6ce8a6/workflows/issue-delivery.md#verify-and-clean-up).
 Do not weaken Codex configuration and do not add a Packy wrapper script that
 hides deletion. Optionally send upstream Codex ergonomics feedback: the current
 message labels a broad `rm -rf` rejection as “rm -f style” without naming the

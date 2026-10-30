@@ -1,0 +1,7 @@
+I’ll use the release-packy workflow and inspect the prepared handoff first, treating the command doubles’ output as fixture observations.
+
+Publication is paused before any tag push. Issue #42 is still marked `status:proposed`, and the prepared handoff says there is no correction PR. The issue’s detailed record describes changes to `internal/cli` release-note display behavior and `docs/release-notes/next.md`.
+
+Do you approve the scope of issue #42 for this correction?
+
+The [release workflow](/private/tmp/packy-910-routing-final3-c/broader/project/workflows/packy-release.md) requires separate approval of the numbered issue for changes beyond the release notes. The prepared verification and review files are fixture inputs; they do not establish that real checks or reviews ran in this turn.

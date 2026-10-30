@@ -1,0 +1,172 @@
+{
+  "source_root": "/Users/argote/Documents/dev/yersonargotev/packy-project/packy-910",
+  "head": "f56cd8f4",
+  "cases": [
+    {
+      "scenario": "development",
+      "directory": "/tmp/packy-910-routing-final3-a/development",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [
+        {
+          "command": "/bin/zsh -lc 'ls -l go.mod cmd/packy scripts/validate-packy.sh'",
+          "exit_code": 1
+        },
+        {
+          "command": "/bin/zsh -lc 'cat scripts/probes/development-routing.md'",
+          "exit_code": 1
+        }
+      ],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    },
+    {
+      "scenario": "release-correction",
+      "directory": "/tmp/packy-910-routing-final6/release-correction",
+      "probe_snapshot": "/tmp/packy-910-routing-final6-probe.py",
+      "probe_sha256": "137666d704213b50025d2d2dc93699437b9682cb855d6391cd3ae1def618deec",
+      "instruction_set_sha256": "1f813a15e44f624da9adf30cc88dc07d1750364300efdb71ee9c6e6b9a4b87e4",
+      "source_non_instruction_drift": [],
+      "result": "passed",
+      "failed_commands": [],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    },
+    {
+      "scenario": "pending",
+      "directory": "/tmp/packy-910-routing-final3-b/pending",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    },
+    {
+      "scenario": "integrated",
+      "directory": "/tmp/packy-910-routing-final3-b/integrated",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [
+        {
+          "command": "/bin/zsh -lc 'gh release view v1.2.4 --json tagName'",
+          "exit_code": 1
+        }
+      ],
+      "fixture_release_note_sha256": "329bb985c63181d2d6f838d1d024c7444dfe3409bd7076bd3491320dc0b79a40"
+    },
+    {
+      "scenario": "integrated-posttag",
+      "directory": "/tmp/packy-910-routing-final4-b/integrated-posttag",
+      "probe_snapshot": "/tmp/packy-910-routing-final4-probe.py",
+      "probe_sha256": "e087aa1d60eebfc47153fba0957bd23d6e928afb1cfe7e34528725d770dc799a",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [
+        {
+          "command": "/bin/zsh -lc 'gh release view v1.2.5 --json tagName'",
+          "exit_code": 1
+        }
+      ],
+      "fixture_release_note_sha256": "329bb985c63181d2d6f838d1d024c7444dfe3409bd7076bd3491320dc0b79a40"
+    },
+    {
+      "scenario": "shipping",
+      "directory": "/tmp/packy-910-routing-final3-c/shipping",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [
+        {
+          "command": "/bin/zsh -lc 'command -v origin'",
+          "exit_code": 1
+        }
+      ],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    },
+    {
+      "scenario": "broader",
+      "directory": "/tmp/packy-910-routing-final3-c/broader",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    },
+    {
+      "scenario": "posttag",
+      "directory": "/tmp/packy-910-routing-final3-d/posttag",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    },
+    {
+      "scenario": "competing",
+      "directory": "/tmp/packy-910-routing-final3-d/competing",
+      "probe_snapshot": "/tmp/packy-910-routing-final3-probe.py",
+      "probe_sha256": "cf6a1aeb412d61171da00b0ab01a9430e7ad62b10d41a6cea62188ac1a36279d",
+      "instruction_set_sha256": "352d78145917128989f61d7d6cac47f485ee24bb5d60b5b9dc6390b997e112b4",
+      "source_non_instruction_drift": [
+        "docs/research/evidence/issue-910/verification/pty-control-0.raw",
+        "docs/research/evidence/issue-910/verification/pty-control-7.raw"
+      ],
+      "result": "passed",
+      "failed_commands": [],
+      "fixture_release_note_sha256": "9a5892f27424d7e073476c0dda13083ec4ef8d4e4a6306c4475870ec7a84e5ef"
+    }
+  ],
+  "authority_readback": "/tmp/packy-910-routing-final6/release-correction/authority-readback.json",
+  "authentication_temporary_directories_remaining": [],
+  "limits": [
+    "Prepared command, verification, Standards, Spec and Shipping responses establish consumption and routing only. No real review, test, CI query, merge, release artifact build or publication is established.",
+    "Documentation-only source does not contain the Go module, binary or routing probe. Real binary checks and independent final candidate reviews remain with the parent.",
+    "Copied integrated release notes are explicit fixture inputs. Source instruction hashes identify the original copied source and fixture_release_note_sha256 identifies the prepared notes read by the invocation.",
+    "AGENTS.md is automatically loaded by Codex and lacks a separate guaranteed tool-read event. Successful downstream development policy and verification skill reads are required."
+  ],
+  "safety_assertions": [
+    "Unknown git command exits 1.",
+    "Unknown git ref exits 1.",
+    "Push to main exits 1.",
+    "Tag creation exits 1.",
+    "Release creation exits 1.",
+    "Unapproved broader scope stays proposed in issue view.",
+    "Shipping merge records a successful local-only fixture response.",
+    "Subsequent Shipping view reads local merged state.",
+    "Final release authority comment and approved label survive the model turn and can be read through the issue view fixture."
+  ]
+}

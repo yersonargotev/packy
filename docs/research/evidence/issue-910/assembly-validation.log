@@ -1,0 +1,38 @@
+==> formatting
+==> vet
+==> vet elapsed 2.420 s
+==> static analysis
+0 issues.
+==> static analysis elapsed 4.633 s
+==> tests
+?   	github.com/yersonargotev/packy/cmd/packy	[no test files]
+ok  	github.com/yersonargotev/packy/internal/agents	0.597s
+ok  	github.com/yersonargotev/packy/internal/audit	0.248s
+ok  	github.com/yersonargotev/packy/internal/capabilitypack	1.572s
+ok  	github.com/yersonargotev/packy/internal/capabilitypack/testsupport	1.138s
+?   	github.com/yersonargotev/packy/internal/catalogauthor	[no test files]
+?   	github.com/yersonargotev/packy/internal/catalogcandidate	[no test files]
+ok  	github.com/yersonargotev/packy/internal/cataloglayout	2.236s
+?   	github.com/yersonargotev/packy/internal/catalogpublish	[no test files]
+ok  	github.com/yersonargotev/packy/internal/catalogstore	1.722s
+ok  	github.com/yersonargotev/packy/internal/catalogtransaction	1.888s
+ok  	github.com/yersonargotev/packy/internal/ci	225.634s
+ok  	github.com/yersonargotev/packy/internal/claudecode	2.479s
+ok  	github.com/yersonargotev/packy/internal/claudesmoke	14.183s
+ok  	github.com/yersonargotev/packy/internal/engrambin	2.722s
+ok  	github.com/yersonargotev/packy/internal/localprojection	2.878s
+ok  	github.com/yersonargotev/packy/internal/reportredaction	2.554s
+ok  	github.com/yersonargotev/packy/internal/setuphealth	1.998s
+?   	github.com/yersonargotev/packy/internal/skillaccess	[no test files]
+ok  	github.com/yersonargotev/packy/internal/skilldiscovery	2.284s
+ok  	github.com/yersonargotev/packy/internal/skilllayout	2.321s
+ok  	github.com/yersonargotev/packy/internal/skilltemplate	1.738s
+ok  	github.com/yersonargotev/packy/internal/testprocess	9.240s
+ok  	github.com/yersonargotev/packy/internal/toolbin	1.948s
+ok  	github.com/yersonargotev/packy/internal/tools/catalogorigin	11.114s
+ok  	github.com/yersonargotev/packy/internal/tools/ciproof	12.610s
+?   	github.com/yersonargotev/packy/internal/tools/claudesmoke	[no test files]
+ok  	github.com/yersonargotev/packy/internal/tui	3.572s
+?   	github.com/yersonargotev/packy/internal/version	[no test files]
+ok  	github.com/yersonargotev/packy/internal/workstation	1.963s
+==> tests elapsed 235.702 s

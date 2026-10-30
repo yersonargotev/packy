@@ -1,0 +1,11 @@
+I’ll inspect the handoff and repository’s integration instructions, then use the provided fixture commands to verify the PR’s state and carry out the requested merge. I’ll distinguish prepared observations from checks actually run in this turn.
+
+The repository requires the Shipping playbook for this explicit integration request, including a fresh observation of the PR and independent user-path verification. I’m reading that playbook and the prepared handoff before deciding whether its merge conditions are met.
+
+The prepared observations show PR #43 targets `main`, and its HEAD matches the handed-off Shipping, Standards, and Spec verdicts. The fixture also reports approval, no review threads, and passing required checks and CodeQL. I’ll request the protected squash merge with the observed HEAD pinned, then read back the result.
+
+The protected squash merge request for PR #43 completed in the fixture. Its readback reports the PR merged into `main` at `2222222222222222222222222222222222222222`.
+
+The prepared Shipping verdict from Shipping-V was PASS for the observed HEAD. The fixture also reported passing checks and approval. These are prepared observations; no real checks or reviews ran in this turn.
+
+**No real repository was changed.** The fixture still reports issue #42 as open, so issue closure remains unconfirmed.
