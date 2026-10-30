@@ -303,6 +303,9 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 }
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
+	".github/workflows/release-download-diagnostic.yml": {
+		"diagnostic": {"actions": "read", "contents": "read"},
+	},
 	".github/workflows/ci.yml": {
 		"validate":          {"contents": "read"},
 		"release-artifacts": {"contents": "read"},
