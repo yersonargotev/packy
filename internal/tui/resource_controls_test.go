@@ -17,7 +17,7 @@ func openResourceConfiguration(t *testing.T, backend *fakeBackend, project bool)
 	if project {
 		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	}
-	for range 3 {
+	for range 2 {
 		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	}
 	return model.(tui.Model)
@@ -28,7 +28,6 @@ func TestNewPackOpensResourceChecklistWithoutSelectionModeStep(t *testing.T) {
 		ID: "resource-list", Resources: []tui.Resource{{Identity: "skill:review", Description: "Review proposed changes", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}},
 	}}}}}
 	model := loadModel(t, backend)
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{"[x] skill:review", "Review proposed changes", "Apply changes", "1 of 1 selected"} {
@@ -284,5 +283,105 @@ func TestResourceConfigurationKeepsFocusedResourceAndApplyVisible(t *testing.T) 
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "› [ Apply changes") {
 		t.Fatalf("Apply control is off screen:\n%s", view)
+	}
+}
+
+func TestDashboardDirectEntryAndCancellation(t *testing.T) {
+	for _, project := range []bool{false, true} {
+		for _, active := range []bool{false, true} {
+			t.Run(fmt.Sprintf("project=%t/active=%t", project, active), func(t *testing.T) {
+				status := tui.SurfaceStatus{Name: "agents", Supported: true}
+				if active {
+					status.Active = true
+					status.Installation = "installed"
+					status.Runtime = "active"
+				}
+				pack := tui.Pack{ID: "direct", Description: "Direct management", Resources: []tui.Resource{{Identity: "skill:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{status}}
+				scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
+				backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope}}
+				model := loadModel(t, backend)
+				if project {
+					model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+				}
+				model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+				view := ansi.Strip(model.View().Content)
+				want := "Select Pack resources"
+				if active && project {
+					want = "Choose project lifecycle action"
+				} else if active {
+					want = "Choose lifecycle action"
+				}
+				if !strings.Contains(view, want) || strings.Contains(view, "Pack details") {
+					t.Fatalf("first Enter did not open %q:\n%s", want, view)
+				}
+				if len(backend.previewRequests) != 0 || len(backend.applyRequests) != 0 {
+					t.Fatal("opening a Pack caused a preview or apply")
+				}
+				model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+				view = ansi.Strip(model.View().Content)
+				if !strings.Contains(view, "Enter manage") || strings.Contains(view, "Pack details") {
+					t.Fatalf("Esc did not return to dashboard:\n%s", view)
+				}
+			})
+		}
+	}
+}
+
+func TestDashboardMinimumSizeKeepsSelectedPackAndControlsVisible(t *testing.T) {
+	pack := tui.Pack{ID: "focused", Description: "Context for this Pack", Resources: []tui.Resource{{Identity: "skill:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}}}
+	scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope, Catalog: tui.Catalog{SnapshotID: "snapshot", Repository: "repository", Digest: "digest", Packs: 1}}}
+	for _, size := range []tea.WindowSizeMsg{{Width: 48, Height: 14}, {Width: 80, Height: 24}} {
+		model := loadModel(t, backend)
+		model, _ = model.Update(size)
+		for _, project := range []bool{false, true} {
+			if project {
+				model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+			}
+			view := ansi.Strip(model.View().Content)
+			for _, want := range []string{"› focused", "Enter manage", "i details"} {
+				if !strings.Contains(view, want) {
+					t.Fatalf("%dx%d project=%t missing %q:\n%s", size.Width, size.Height, project, want, view)
+				}
+			}
+			if lines := strings.Split(model.View().Content, "\n"); len(lines) > size.Height {
+				t.Fatalf("%dx%d rendered %d lines", size.Width, size.Height, len(lines))
+			} else {
+				for _, line := range lines {
+					if ansi.StringWidth(line) > size.Width {
+						t.Fatalf("%dx%d rendered a line too wide: %q", size.Width, size.Height, ansi.Strip(line))
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestOptionalDetailsReturnAndManage(t *testing.T) {
+	pack := tui.Pack{ID: "details", Description: "Selected context", Requirements: []string{"git"}, Resources: []tui.Resource{{Identity: "skill:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Evidence: []string{"receipt verified"}}}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{pack}}}}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 'i', Text: "i"}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Pack details", "About this Pack", "Selected context", "Requirements: git", "receipt verified"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("optional details missing %q:\n%s", want, view)
+		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Enter manage") || strings.Contains(view, "Pack details") {
+		t.Fatalf("details Esc did not return to dashboard:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 'i', Text: "i"}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Select Pack resources") {
+		t.Fatalf("details Enter did not open management:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Enter manage") || strings.Contains(view, "Pack details") {
+		t.Fatalf("management Esc returned to hidden details:\n%s", view)
+	}
+	if len(backend.previewRequests) != 0 || len(backend.applyRequests) != 0 {
+		t.Fatal("details navigation caused effects")
 	}
 }

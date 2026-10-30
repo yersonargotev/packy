@@ -129,7 +129,7 @@ func (m Model) dashboardViewportLayout(content, footer string) dashboardViewport
 	visible := max(m.height-len(footerLines)-1, 1)
 	maxOffset := max(len(bodyLines)-visible, 0)
 	if maxOffset > 0 {
-		footerBlock = m.renderDashboardFooter("Scroll for more  ·  " + footer)
+		footerBlock = m.renderDashboardFooter(footer + "  ·  Scroll for more")
 		footerLines = strings.Split(footerBlock, "\n")
 		visible = max(m.height-len(footerLines)-1, 1)
 		maxOffset = max(len(bodyLines)-visible, 0)
@@ -226,20 +226,6 @@ func severityMarker(severity string) string {
 
 func metric(value int, label string, foreground color.Color) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(foreground).Render(fmt.Sprintf("%d", value)) + " " + mutedStyle.Render(label)
-}
-
-func dashboardHelpBindings() []key.Binding {
-	return []key.Binding{
-		dashboardKeys.Up,
-		dashboardKeys.NextScope,
-		dashboardKeys.Inspect,
-		dashboardKeys.Filter,
-		dashboardKeys.Health,
-		dashboardKeys.Help,
-		dashboardKeys.Reload,
-		dashboardKeys.CatalogRefresh,
-		dashboardKeys.Quit,
-	}
 }
 
 func setupHelpBindings() []key.Binding {

@@ -19,7 +19,6 @@ func TestIssue797WithdrawnPackOffersOnlyDeactivation(t *testing.T) {
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Choose lifecycle action") || !strings.Contains(view, "Deactivate") || strings.Contains(view, "Configure") || strings.Contains(view, "Update") || strings.Contains(view, "Activate") {
 		t.Fatalf("withdrawn Pack actions are not deactivation-only:\n%s", view)
@@ -39,7 +38,6 @@ func TestIssue797WithdrawnProjectPackOffersOnlyPersonalDeactivationAndUninstall(
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{"Choose project lifecycle action", "Deactivate for me", "Uninstall"} {
@@ -66,7 +64,6 @@ func TestIssue797RemovedSurfaceOfCurrentPackOffersOnlyDeactivation(t *testing.T)
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Choose lifecycle action") || !strings.Contains(view, "Deactivate") {
 		t.Fatalf("removed Claude surface did not offer deactivation:\n%s", view)
@@ -89,7 +86,6 @@ func TestIssue797RemovedSurfaceAfterCurrentSurfaceOffersOnlyDeactivation(t *test
 		}}}},
 	}
 	model := loadModel(t, backend)
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "CLI surface: agents") || !strings.Contains(view, "Deactivate") {
@@ -115,7 +111,6 @@ func TestIssue797InactiveRemovedProjectSurfaceUninstallsDirectly(t *testing.T) {
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "uninstall" || backend.previewRequests[0].Surface != "claude" {
 		t.Fatalf("inactive removed project surface preview request = %#v", backend.previewRequests)
@@ -132,7 +127,6 @@ func TestIssue797OrphanedWithdrawnProjectSurfaceDeactivatesDirectly(t *testing.T
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Choose project lifecycle action") || !strings.Contains(view, "Deactivate for me") {
@@ -154,7 +148,6 @@ func TestIssue797OrphanedCurrentProjectSurfaceOffersDeactivationNotInstall(t *te
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Deactivate for me") || strings.Contains(view, "Install") {
 		t.Fatalf("current orphan did not offer deactivation-only:\n%s", view)
@@ -173,7 +166,6 @@ func TestIssue797CurrentPackPrioritizesOrphanAndBlocksOtherSurfaceInstall(t *tes
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "CLI surface: agents") || !strings.Contains(view, "Deactivate for me") || strings.Contains(view, "Install") {
@@ -199,7 +191,6 @@ func TestIssue797MultipleOrphanedWithdrawnSurfacesRemainSelectable(t *testing.T)
 	}
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	view := ansi.Strip(model.View().Content)

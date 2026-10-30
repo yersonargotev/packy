@@ -732,45 +732,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.dashboard.Setup.InitializationAvailable {
 				return m.startInitialization()
 			}
-			if m.selecting && m.selectedPack() != nil {
-				return m.startPreview()
-			} else if m.inspecting && m.selectedPack() != nil {
+			return m.openSelectedPack()
+		case key.Matches(message, dashboardKeys.Details):
+			if !m.inspecting && m.selectedPack() != nil {
+				m.inspecting = true
 				m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
-				if len(supportedSurfaces(*m.selectedPack())) == 0 && hasInstalledSurface(*m.selectedPack()) {
-					break
-				}
-				if m.project {
-					actions := m.lifecycleActions()
-					m.operation = ""
-					if len(actions) > 0 {
-						m.operation = actions[0]
-					}
-					if len(actions) > 1 || projectOrphanedExit(m.selectedSurfaceStatus()) {
-						m.choosingAction = true
-						m.actionChoice = 0
-						m.pagedScreenScroll = 0
-						break
-					}
-					if m.operation == "install" {
-						m.beginSelection()
-					} else if m.operation != "" {
-						return m.startPreview()
-					}
-				} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || status.ControlledCheckActionAvailable) {
-					m.choosingAction = true
-					m.actionChoice = 0
-					m.pagedScreenScroll = 0
-					m.operation = firstLifecycleAction(*status)
-				} else {
-					m.operation = "activate"
-					m.beginSelection()
-				}
-			} else {
-				m.inspecting = m.selectedPack() != nil
-				if m.inspecting {
-					m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
-					m.detailScroll = 0
-				}
+				m.detailScroll = 0
 			}
 		case key.Matches(message, dashboardKeys.Down):
 			if m.inspecting {
@@ -800,6 +767,45 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.selecting && !m.previewing && m.preview == nil && m.previewErr == nil && !m.applying && !m.showingApplyResult {
 		return m.updateResourceList(message)
+	}
+	return m, nil
+}
+
+func (m Model) openSelectedPack() (tea.Model, tea.Cmd) {
+	pack := m.selectedPack()
+	if pack == nil {
+		return m, nil
+	}
+	m.surfaceIndex = preferredSurfaceIndex(*pack, m.project)
+	if len(m.lifecycleActions()) == 0 {
+		m.inspecting = true
+		m.detailScroll = 0
+		return m, nil
+	}
+	m.inspecting = false
+	if m.project {
+		actions := m.lifecycleActions()
+		m.operation = ""
+		if len(actions) > 0 {
+			m.operation = actions[0]
+		}
+		if len(actions) > 1 || projectOrphanedExit(m.selectedSurfaceStatus()) {
+			m.choosingAction = true
+			m.actionChoice = 0
+			m.pagedScreenScroll = 0
+		} else if m.operation == "install" {
+			m.beginSelection()
+		} else if m.operation != "" {
+			return m.startPreview()
+		}
+	} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || status.ControlledCheckActionAvailable) {
+		m.choosingAction = true
+		m.actionChoice = 0
+		m.pagedScreenScroll = 0
+		m.operation = firstLifecycleAction(*status)
+	} else {
+		m.operation = "activate"
+		m.beginSelection()
 	}
 	return m, nil
 }
@@ -1191,7 +1197,7 @@ func nextRow(row, length, direction int) int {
 }
 
 type keyMap struct {
-	Up, Down, NextScope, PreviousScope, Inspect, Back, Filter, Health, Help, Reload, CatalogRefresh, Quit key.Binding
+	Up, Down, NextScope, PreviousScope, Inspect, Details, Back, Filter, Health, Help, Reload, CatalogRefresh, Quit key.Binding
 }
 
 var dashboardKeys = keyMap{
@@ -1199,7 +1205,8 @@ var dashboardKeys = keyMap{
 	Down:           key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 	NextScope:      key.NewBinding(key.WithKeys("tab", "right"), key.WithHelp("tab/→", "next scope")),
 	PreviousScope:  key.NewBinding(key.WithKeys("shift+tab", "left"), key.WithHelp("shift+tab/←", "previous scope")),
-	Inspect:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "inspect")),
+	Inspect:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "manage")),
+	Details:        key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "details")),
 	Back:           key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 	Filter:         key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	Health:         key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "health")),
@@ -1322,18 +1329,18 @@ func (m Model) dashboardContent() (string, string) {
 			filter += lipgloss.NewStyle().Foreground(mochaMauve).Render("▌") + "  " + dimStyle.Render("Esc clear")
 		}
 	}
-	help := m.help.ShortHelpView(dashboardHelpBindings())
+	help := "Enter manage · i details · ↑/↓ select\nTab scope · / filter · ? help · q quit"
 	if m.dashboard.Setup.InitializationAvailable {
 		help = m.help.ShortHelpView(setupHelpBindings())
 	}
 	if m.showHelp {
-		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter inspect · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · c refresh catalog · q/Ctrl+C quit"
+		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter manage · i details · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · c refresh catalog · q/Ctrl+C quit"
 	}
 	catalog := ""
 	if m.dashboard.Catalog.SnapshotID != "" {
-		catalog = "\n" + panel(m.renderCatalog(), contentWidth, false)
+		catalog = "\n" + lipgloss.NewStyle().Width(contentWidth).Render(m.renderCatalog())
 	}
-	content := strings.Join([]string{header, "", health + setup + catalog, "", scopes + filter}, "\n")
+	content := strings.Join([]string{header, "", health + setup, "", scopes + filter + catalog}, "\n")
 	return content, help
 }
 
@@ -1342,6 +1349,9 @@ func (m Model) renderCatalog() string {
 	packLabel := "Packs"
 	if catalog.Packs == 1 {
 		packLabel = "Pack"
+	}
+	if !m.showHelp {
+		return dimStyle.Render(fmt.Sprintf("Reviewed Pack catalog: %d %s · c refresh · ? details", catalog.Packs, packLabel))
 	}
 	lines := []string{
 		sectionTitleStyle.Render("◇ Reviewed Pack catalog") + "  " + dimStyle.Render("· c refresh"),
@@ -1534,6 +1544,9 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 			rowText = selectedRowStyle.Padding(0, 1).Render("› "+pack.ID+"  "+pack.Version) + " · selected"
 		}
 		lines = append(lines, rowText)
+		if selected && actualIndex == row && pack.Description != "" {
+			lines = append(lines, "  "+mutedStyle.Render(pack.Description))
+		}
 	}
 	if hidden := len(packs) - len(visible); hidden > 0 {
 		lines = append(lines, dimStyle.Render(fmt.Sprintf("… %d more · ↑/↓ navigate", hidden)))
@@ -1574,7 +1587,7 @@ func (m Model) renderDetail() string {
 
 func (m Model) renderDetailContent(pack Pack) string {
 	lines := []string{
-		sectionHeading("Overview", 0),
+		sectionHeading("About this Pack", 0),
 		pack.Description,
 		"Requirements: " + joinOrNone(pack.Requirements),
 		"",

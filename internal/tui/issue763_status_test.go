@@ -13,7 +13,7 @@ func TestOlderReceiptDetailDisplaysUpdateAndUnavailableEvidence(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "older", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true, Active: true, UpdateAvailable: true, InstalledVersion: "1.0.0", HistoricalEvidenceMessage: "Historical resource and contract evidence is unavailable"}}}}}}}
 	model := tui.NewModel(backend)
 	current, _ := model.Update(model.Init()())
-	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: 'i', Text: "i"}))
 	view := ansi.Strip(current.View().Content)
 	for _, want := range []string{"2.0.0", "Installed version: 1.0.0", "Update available", "Historical evidence: unavailable"} {
 		if !strings.Contains(view, want) {
@@ -26,7 +26,7 @@ func TestRemovedSurfaceRetainsVisibleReceiptWithDeactivationOnly(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "older", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "claude", Active: true, CatalogUpdateAvailable: true, InstalledVersion: "1.0.0", Ownership: 2, Drift: 1, HistoricalEvidenceMessage: "Historical manifest is unavailable"}}}}}}}
 	model := tui.NewModel(backend)
 	current, _ := model.Update(model.Init()())
-	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: 'i', Text: "i"}))
 	view := ansi.Strip(current.View().Content)
 	for _, want := range []string{"claude: unsupported", "Update available", "Current catalog does not support this surface", "Installed version: 1.0.0", "Historical evidence: unavailable", "Ownership: 2 projected paths", "Drift: 1 projections", "Enter choose lifecycle action"} {
 		if !strings.Contains(view, want) {
