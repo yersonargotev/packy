@@ -40,11 +40,10 @@ Users moving from `v0.1.x` first follow the
    `docs/release-notes/next.md` on `main` so it accounts for every user-visible
    change, retains exactly one `{{TAG}}` placeholder, and keeps factual version
    claims consistent with their repository authorities.
-3. Run focused checks, then the general local validation:
-
-   ```sh
-   ./scripts/validate-packy.sh
-   ```
+3. Run focused checks with sandboxed user paths. Acquire exact-commit main CI
+   proof with `go run ./internal/tools/ciproof --sha <frozen-commit>`. Build and
+   validate disposable selected-version archives and generate their formula.
+   The full `./scripts/validate-packy.sh` runs in trusted main CI.
 
 4. Present the exact version, commit, validation, release-note evidence as a
    summary or diff, and publication effects for approval.
@@ -106,10 +105,10 @@ published Homebrew installation.
 ## Publication boundaries
 
 The workflow starts only on a version-tag push and requires that the tagged
-commit is the current `main` commit. Read-only build steps have `contents:
-read`; GitHub publication alone has `contents: write`; the tap credential is
-available only to the protected Homebrew job. External actions are pinned to
-immutable commits.
+commit is the current `main` commit. Preparation has `contents: read` and
+`actions: read`. GitHub publication alone has `contents: write`. The tap
+credential is available only to the protected Homebrew job. External actions
+are pinned to immutable commits.
 
 The workflow creates each version once. The final package smoke runs only after
 the GitHub Release and Homebrew formula are published and verified.
@@ -123,3 +122,9 @@ platform binary embeds that commit and the selected version. `packy version
 artifact validation checks each native binary's identity against the build source,
 and the published release notes identify that same source commit. The four
 archive names and checksum manifest remain unchanged.
+
+Source proof follows the [release proof contract](../workflows/packy-release.md#prove).
+Every operator decision and tag preparation acquires fresh evidence. The release
+bundle retains the accepted record without publishing it as an asset.
+The [historical evidence](research/evidence/ci-release-proof-reuse-2026-10-30.md)
+records the earlier validation work.

@@ -312,7 +312,7 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"contracts": {"actions": "read", "contents": "read"},
 	},
 	".github/workflows/release.yml": {
-		"prepare":       {"contents": "read"},
+		"prepare":       {"actions": "read", "contents": "read"},
 		"contracts":     {"actions": "read", "contents": "read"},
 		"publish":       {"actions": "read", "contents": "write"},
 		"homebrew":      {"actions": "read", "contents": "read"},
