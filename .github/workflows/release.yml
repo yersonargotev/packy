@@ -87,9 +87,10 @@ jobs:
       contents: write
     steps:
       - name: Download validated release bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: packy-release-${{ needs.prepare.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BUNDLE: packy-release-${{ needs.prepare.outputs.tag }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$RELEASE_BUNDLE" --dir .
       - name: Create GitHub Release once
         env:
           GH_TOKEN: ${{ github.token }}
@@ -131,10 +132,10 @@ jobs:
       contents: read
     steps:
       - name: Download validated release bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: packy-release-${{ needs.prepare.outputs.tag }}
-          path: bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BUNDLE: packy-release-${{ needs.prepare.outputs.tag }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$RELEASE_BUNDLE" --dir bundle
       - name: Check out Homebrew tap
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -169,10 +170,10 @@ jobs:
       contents: read
     steps:
       - name: Download validated release bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: packy-release-${{ needs.prepare.outputs.tag }}
-          path: bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BUNDLE: packy-release-${{ needs.prepare.outputs.tag }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$RELEASE_BUNDLE" --dir bundle
       - name: Install formula and verify installed binary
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}

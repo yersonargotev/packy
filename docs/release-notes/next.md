@@ -16,6 +16,7 @@ The previous stable release is `v0.2.34`.
   including blocked or drifted installations.
 - Preserve preview, phase consent, application, and fresh status inspection for
   global and project operations.
+- Show underlying release bundle download errors in workflow logs.
 - For repository contributors, add project-scoped agent skills and bounded
   projection-batch regression verification.
 
