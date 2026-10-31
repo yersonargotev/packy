@@ -1,0 +1,12 @@
+{
+  "source_sha256": {
+    "workflows/packy-release.md": "a91d77187c9b6e3a46090f6aa9b4ca0635e98437108559b4602996435f1f1248",
+    "scripts/observe-release.py": "4c0482539a381d6bfb8905dc6a22027fc7c58f08e9ffccde120bc89ad50a812c"
+  },
+  "scenario": "both",
+  "exit_status": 0,
+  "gh_calls": 12,
+  "approval_calls": 2,
+  "missing_observations": [],
+  "result": "passed"
+}

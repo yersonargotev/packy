@@ -1,0 +1,8 @@
+{
+  "scenario": "refusal",
+  "exit_status": 0,
+  "gh_calls": 11,
+  "approval_calls": 1,
+  "missing_observations": [],
+  "result": "passed"
+}

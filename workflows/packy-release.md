@@ -69,14 +69,17 @@ of contract proof.
 ## Approve
 
 Before the tag push, present the prior release, version, commit, validation
-results, release-note evidence as a summary or diff, and the external effects:
+results, release-note evidence as a summary or diff, the numeric IDs of the
+configured `release` and `homebrew` environments, and the external effects:
 pushing one new tag, creating one GitHub Release, and updating
 `yersonargotev/homebrew-tap`. Publication requires the user's approval of that
 exact version and commit.
 
-That approval also authorizes the `release` and `homebrew` environment
-approvals only when each pending deployment belongs to the same workflow run,
-version, and commit. Any mismatch requires stopping publication.
+Read each environment ID with `gh api repos/yersonargotev/packy/environments/NAME --jq .id`.
+Include both IDs in the brief before the user approves it. Unavailable IDs stop
+publication. The approval also authorizes each environment approval only when
+the pending deployment matches that environment's authorized name and ID, the
+same workflow run, version, and commit. Any mismatch stops publication.
 
 **Complete when:** the user has approved the exact publication brief.
 
@@ -86,17 +89,37 @@ Re-fetch immediately before mutation. Require the selected commit still equals
 `origin/main` and the version remains unused. Create the tag at that commit
 and push only that tag. The tag-triggered Release workflow owns all publication.
 
-When the workflow requests a protected environment approval, read back the
-pending deployment before approving it and apply the publication approval only
-to the matching environment, workflow run, version, and commit.
+Identify the exact tag-triggered run. Start one foreground observer and retain
+its process handle for this run:
 
-Use `gh run watch <run-id> --compact --interval 45 --exit-status` for progress.
-Keep the watcher resumable while checking protected-environment waits. Filter
-run and pending-deployment reads with `--jq` to the run ID, version, commit,
-job status, environment name/ID, and approval eligibility needed by the current
-gate; inspect additional deployment fields only to establish that same identity.
-Report stage changes, failures, and decisions. During an unchanged wait, use
-a brief heartbeat when the host requires updates.
+```sh
+python3 -B scripts/observe-release.py watch --run "$RUN_ID" --tag "$TAG" --sha "$SHA"
+```
+
+The observer reads progress every 45 seconds and reports changes and brief
+heartbeats. It reads pending deployments only when the run or a job is waiting.
+Detection takes at most one interval plus read and GitHub propagation latency for
+a persistent wait. Do not start `gh run watch` or a parallel progress loop.
+A diagnostic log read is a separate action. Filter sensitive logs before
+retaining them. If observation stops or is interrupted, stop the owned process
+and observe its exit before starting the same command for the same run, tag,
+and SHA. An interruption does not establish success. Monitoring lasts only
+while this session is active.
+
+For each `release` or `homebrew` wait, the primary agent independently runs
+this check with the corresponding ID from the approved brief:
+
+```sh
+python3 -B scripts/observe-release.py check-approval --run "$RUN_ID" --tag "$TAG" --sha "$SHA" --environment "$ENVIRONMENT" --environment-id "$AUTHORIZED_ENVIRONMENT_ID"
+```
+
+A successful check establishes current run, workflow, tag, commit, environment,
+and reviewer eligibility evidence. The observer never approves a deployment.
+Immediately after the check, and with no intervening work, the primary agent may
+perform the separately authorized approval for that exact environment ID. A
+failed or unavailable check stops approval. Repeat the whole check independently
+for `homebrew`; the `release` check grants no evidence for it. Stop publication
+on any failed run, identity mismatch, or unavailable evidence.
 
 Never move, delete, or reuse a published tag. Never edit, replace, clobber, or
 recover a published release or its assets. Any fault is corrected on `main` and
