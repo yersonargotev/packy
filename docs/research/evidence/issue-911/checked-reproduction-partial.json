@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/usr/bin/python3",
+    "-B",
+    "/private/tmp/packy-catalog-911/packs/pstack/skills/agents/show-me-your-work/scripts/check-retention.py",
+    "--base",
+    "/private/tmp/packy-911-checked-g3o5zkfe",
+    "--trail",
+    "/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv",
+    "--no-handoff",
+    "--target",
+    "/private/tmp/packy-911-checked-g3o5zkfe/disposable"
+  ],
+  "checker_sha256": "5c98c012ad3f2b7fdcf2523e14f6c95ff84abec0e93c5786232a28aab07151e9",
+  "exit_status": 1,
+  "stdout": "",
+  "stderr": "/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv:2: no verified relocation for cleanup target reference: /private/tmp/packy-911-checked-g3o5zkfe/disposable/probe-v4.log\n/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv:3: no verified relocation for cleanup target reference: /private/tmp/packy-911-checked-g3o5zkfe/disposable/probe-v8.log\n/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv:4: no verified relocation for cleanup target reference: /private/tmp/packy-911-checked-g3o5zkfe/disposable/artifact-validation.log\n/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv:5: no verified relocation for cleanup target reference: /private/tmp/packy-911-checked-g3o5zkfe/disposable/formula.rb\n/private/tmp/packy-911-checked-g3o5zkfe/decisions.tsv:6: no verified relocation for cleanup target reference: /private/tmp/packy-911-checked-g3o5zkfe/disposable/review.txt\n",
+  "all_files_unchanged_by_checker": true,
+  "history_preserved": true,
+  "all_six_originals_remain": true
+}

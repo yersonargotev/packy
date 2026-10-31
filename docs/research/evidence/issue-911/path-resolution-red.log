@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 187, in <module>
+    main()
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 116, in main
+    check(False, targets=(root / "absent",))
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 52, in check
+    assert (status == 0) == expect, (args, status, out, err)
+AssertionError: (['/Library/Developer/CommandLineTools/usr/bin/python3', '-B', '/private/tmp/packy-catalog-911/packs/pstack/skills/agents/show-me-your-work/scripts/check-retention.py', '--base', '/private/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/retention-probe-q3k2rckj', '--trail', '/private/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/retention-probe-q3k2rckj/retained/decisions.tsv', '--target', '/private/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/retention-probe-q3k2rckj/absent', '--no-handoff'], 0, 'Evidence retention check passed; cleanup requires separate authorization.\n', '')

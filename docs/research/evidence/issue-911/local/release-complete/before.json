@@ -1,0 +1,38 @@
+{
+  "originals": {
+    "artifact-validation.log": "bc48399b4efcab735ed5c3a1e93154a8afb832d8461d866c3abf406fff8777f3",
+    "formula.rb": "59c6407caa4b8ab2dec19399b3f70e4f09333fe4f69b5d969af0629525fc292a",
+    "later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3",
+    "probe-v4.log": "f645b0dbeead4f7dc335cdd0bf517e5d7b91125f7cba5616315762b910ccd903",
+    "probe-v8.log": "22adb9931897e76ba16fab126e1b25f7e959e2640390609f4ea8f4e8b6f69f1d",
+    "review.txt": "292939b7a07c667b41e697985749327b7dc5042e5f450b2734d43b0f0cb9d7f3"
+  },
+  "proof": {
+    "copies/artifact-validation.log": "bc48399b4efcab735ed5c3a1e93154a8afb832d8461d866c3abf406fff8777f3",
+    "copies/formula.rb": "59c6407caa4b8ab2dec19399b3f70e4f09333fe4f69b5d969af0629525fc292a",
+    "copies/later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3",
+    "copies/probe-v4.log": "f645b0dbeead4f7dc335cdd0bf517e5d7b91125f7cba5616315762b910ccd903",
+    "copies/probe-v8.log": "22adb9931897e76ba16fab126e1b25f7e959e2640390609f4ea8f4e8b6f69f1d",
+    "copies/review.txt": "292939b7a07c667b41e697985749327b7dc5042e5f450b2734d43b0f0cb9d7f3",
+    "decisions.tsv": "102861948392f873186fa7773b1a4e109ef950123fd6c9c3aa048a0dfc61bb19",
+    "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82"
+  },
+  "operator": {
+    "sentinel.txt": "2500ee4f6c1f264292124ceec0b89399c58514bbf518190c7c7b84a512cdc950"
+  },
+  "unrelated": {
+    ".git": "487da589f102f81f10ec36aa1b67ec0cb35507b7e6d879cb2a77eff7bee9b75c",
+    "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
+    "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6"
+  },
+  "refs": {
+    "exit_status": 0,
+    "stdout": "8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a refs/heads/main\n8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a refs/heads/unrelated\n",
+    "stderr": ""
+  },
+  "worktrees": {
+    "exit_status": 0,
+    "stdout": "worktree /private/tmp/packy-911-local-evidence/rechecked-release-complete/release-complete/project\nHEAD 8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-local-evidence/rechecked-release-complete/release-complete/unrelated-worktree\nHEAD 8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a\nbranch refs/heads/unrelated\n\n",
+    "stderr": ""
+  }
+}
