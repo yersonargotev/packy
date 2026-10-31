@@ -9,25 +9,25 @@
   },
   "proof": {
     "copies/later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3",
-    "decisions.tsv": "6840e40b7ccdea4b748f5c7fa64b373c43ae44800458975930af1e1799d214c6",
+    "decisions.tsv": "e6bd6c8c9c3f69f871dac86fefab2e0c3675d139522a4f9fb4625b4d3033f568",
     "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82"
   },
   "operator": {
     "sentinel.txt": "2500ee4f6c1f264292124ceec0b89399c58514bbf518190c7c7b84a512cdc950"
   },
   "unrelated": {
-    ".git": "c06b05bf2a60b531c78c0d45944cc9d704cdeb9d3718124389900ff7d99802e6",
+    ".git": "253c9f1dbbfbeb932dad8122b4c40d7a2779319d6e74ec4598d6f3d55e6185d6",
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
     "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6"
   },
   "refs": {
     "exit_status": 0,
-    "stdout": "609f9f1f9641194b9eeafdeb14a180418b778318 refs/heads/main\n609f9f1f9641194b9eeafdeb14a180418b778318 refs/heads/unrelated\n",
+    "stdout": "8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a refs/heads/main\n8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a refs/heads/unrelated\n",
     "stderr": ""
   },
   "worktrees": {
     "exit_status": 0,
-    "stdout": "worktree /private/tmp/packy-911-local-evidence/final-release-partial/release-partial/project\nHEAD 609f9f1f9641194b9eeafdeb14a180418b778318\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-local-evidence/final-release-partial/release-partial/unrelated-worktree\nHEAD 609f9f1f9641194b9eeafdeb14a180418b778318\nbranch refs/heads/unrelated\n\n",
+    "stdout": "worktree /private/tmp/packy-911-local-evidence/rechecked-release-partial/release-partial/project\nHEAD 8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-local-evidence/rechecked-release-partial/release-partial/unrelated-worktree\nHEAD 8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a\nbranch refs/heads/unrelated\n\n",
     "stderr": ""
   }
 }

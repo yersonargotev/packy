@@ -50,7 +50,8 @@ commands beside its report.
 
 Full raw events and validation logs remain outside disposable fixture state at
 `/private/tmp/packy-911-local-evidence`. The earlier `routing-*` runs passed too;
-the retained `final-*` runs include the complete local relocation instructions.
+the retained `rechecked-*` runs use the final relocation wording, which also
+passes the local-link validator. The checker bytes remain unchanged.
 Fixture integration and release statements remain synthetic inputs. These
 journeys do not claim real integration, release, or recovery of historical files.
 

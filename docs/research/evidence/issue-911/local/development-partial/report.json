@@ -3,7 +3,7 @@
   "exit_status": 0,
   "missing_observations": [],
   "checker_commands": [
-    9
+    12
   ],
   "deletion_commands": [],
   "changed_inputs": [],
@@ -12,7 +12,7 @@
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
     "docs/agents/development.md": "867ee82c09f64051b455b7b6123a34ef2b6e77f018f136a0398c32c8a0f243d2",
     "workflows/packy-release.md": "4146543e2ce4a293c0a653cb14298738488ccd40f546312c5ebb600386f97e8d",
-    "docs/agents/evidence-retention.md": "ab02d6520a89224e5bd004c71597ba51114c09e2ca8cfa5b9163cd0d83cc0390",
+    "docs/agents/evidence-retention.md": "7ffd691cf38c86061cb77cbfe34c6fe085e511771715361b6934d063d553b76f",
     "scripts/check-evidence-retention.py": "10e439dfecd02d11ac8217c1aedf6ed4dc20ae19e2010f3eff4f7301262b6386"
   },
   "result": "passed"

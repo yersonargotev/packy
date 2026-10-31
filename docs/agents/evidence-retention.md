@@ -23,8 +23,9 @@ Use the existing six-column TSV and Markdown documents. Preserve historical
 rows and append explicit relocation records after copying affected originals.
 Copies must match available originals byte for byte and survive every target.
 Append a six-column TSV row with phase `relocation` for each copy. Its evidence
-cell must be exactly `[/old/absolute/path](/new/absolute/path)`. Keep the original
-rows and files. Conflicting or chained mappings block the check.
+cell must be one inline Markdown link: the label is the original absolute path,
+and the destination is the retained absolute path. Keep the original rows and
+files. Conflicting or chained mappings block the check.
 
 Run the helper with explicit absolute document and target paths. Repeat each
 flag for every corresponding input.

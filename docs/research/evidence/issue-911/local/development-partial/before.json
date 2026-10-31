@@ -9,25 +9,25 @@
   },
   "proof": {
     "copies/later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3",
-    "decisions.tsv": "d718e9b537911bdbd497648e45c36d54d2157d1c0e9fc8ee732da476beaa4556",
+    "decisions.tsv": "468b17073ad59dd2edd3a8489ea50ffb6bc978612f653d638ed5c7c2c9da1d41",
     "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82"
   },
   "operator": {
     "sentinel.txt": "2500ee4f6c1f264292124ceec0b89399c58514bbf518190c7c7b84a512cdc950"
   },
   "unrelated": {
-    ".git": "61ce1562689a316428088cb76d64903064ce2c7630c3de3eedae2361894c35fa",
+    ".git": "ed0a0a94af72bc381d85a399a8340ad79b3f66b36a008a2448745ffa6fd00257",
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
     "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6"
   },
   "refs": {
     "exit_status": 0,
-    "stdout": "02063ca9a78d8c416f87dd159a5271024ad6f34d refs/heads/main\n02063ca9a78d8c416f87dd159a5271024ad6f34d refs/heads/unrelated\n",
+    "stdout": "8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a refs/heads/main\n8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a refs/heads/unrelated\n",
     "stderr": ""
   },
   "worktrees": {
     "exit_status": 0,
-    "stdout": "worktree /private/tmp/packy-911-local-evidence/final-development-partial/development-partial/project\nHEAD 02063ca9a78d8c416f87dd159a5271024ad6f34d\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-local-evidence/final-development-partial/development-partial/unrelated-worktree\nHEAD 02063ca9a78d8c416f87dd159a5271024ad6f34d\nbranch refs/heads/unrelated\n\n",
+    "stdout": "worktree /private/tmp/packy-911-local-evidence/rechecked-development-partial/development-partial/project\nHEAD 8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-local-evidence/rechecked-development-partial/development-partial/unrelated-worktree\nHEAD 8d9c0f7bfea703ec890e2660f338a6b6ab6ee60a\nbranch refs/heads/unrelated\n\n",
     "stderr": ""
   }
 }
