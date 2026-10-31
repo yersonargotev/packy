@@ -1,24 +1,21 @@
-# {{TAG}} Direct Pack management in the TUI
+# {{TAG}} Projection rollback and release maintenance
 
 ## Changes since the previous release
 
-The previous stable release is `v0.2.34`.
+The previous stable release is `v0.2.36`.
 
-- Open resource selection or applicable lifecycle actions with Enter, without
-  a required Pack overview step. Press `i` for full Pack details and Esc to
-  return to the dashboard.
-- Prioritize Pack controls and the selected Pack's description over catalog
-  metadata. Keep the catalog summary compact and use `?` to inspect its
-  repository, snapshot, and digest.
-- Keep primary controls and catalog paging usable at the minimum terminal size
-  of 48 columns and 14 rows.
-- Show diagnostics and blockers when a project Pack has no applicable action,
-  including blocked or drifted installations.
-- Preserve preview, phase consent, application, and fresh status inspection for
-  global and project operations.
-- Show underlying release bundle download errors in workflow logs.
-- For repository contributors, add project-scoped agent skills and bounded
-  projection-batch regression verification.
+- When a later projection target fails its fingerprint check or the fingerprint
+  cannot be read, Packy rolls back earlier changes in the same batch. If a
+  filesystem operation prevents restoration, Packy reports the rollback failure
+  and full restoration is not guaranteed.
+- Release preparation verifies trusted CI evidence for the exact source commit.
+  The tag workflow retains the evidence and continues to test the staged archives.
+- Repository contributors have a Packy verification skill and an updated
+  development flow. Release corrections follow that flow and pause at a PR for
+  human integration unless separately authorized.
+- Repository cleanup checks evidence retention before removing temporary state.
+  Release operators have a progress observer and a separate identity check before
+  each protected environment approval.
 
 Catalog content and Pack versions are published independently. This engine
 release does not publish a Catalog Snapshot or change installed Packs.
