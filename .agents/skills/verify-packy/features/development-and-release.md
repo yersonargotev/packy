@@ -10,6 +10,7 @@ Development produces a PR. Integration and publication have separate authority.
 - Release resumption observes integration before fresh candidate proof and approval.
 - An explicit integration request uses Shipping under branch protection.
 - Development and release cleanup refuse unretained evidence before deletion.
+- Release observation detects both environment waits and separately checks approval identity.
 
 ## How to get to it (user POV)
 
@@ -26,6 +27,11 @@ pending integration causes no duplicate development, review, or publication.
 After observed integration, require proof and approval for the new main commit.
 Only the explicitly authorized Shipping control may request a protected merge.
 Unapproved broader and post-tag corrections stop at the numbered scope gate.
+
+For release progress changes, run `go test ./internal/ci -run '^TestReleaseObserver$'`
+and follow the [release progress routing probe](../../../../scripts/probes/release-progress-routing.md).
+Inspect actual tool traces for both approval checks, a refusal, and stop-before-resume.
+The fake forge cannot establish real approval or publication.
 
 For cleanup changes, first run `python3 -B scripts/probes/evidence-retention.py`
 to check the real repository script. Then follow the
