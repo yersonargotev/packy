@@ -1,0 +1,2 @@
+["run", "view", "123", "--repo", "yersonargotev/packy", "--json", "databaseId,attempt,event,headBranch,headSha,status,conclusion,jobs"]
+["api", "repos/yersonargotev/packy/actions/runs/123/pending_deployments"]

@@ -118,7 +118,6 @@ def pending(target):
         env_id = integer(env.get("id"))
         eligible = entry.get("current_user_can_approve")
         require(isinstance(name, str) and type(eligible) is bool, "invalid pending deployment")
-        # Unknown names are never printed and cannot authorize either known gate.
         if name in ("release", "homebrew"):
             gates.append((name, env_id, eligible))
     return tuple(sorted(gates))
@@ -174,7 +173,6 @@ def check_approval(target, name, env_id):
             "run identity mismatch")
     status = state(data.get("status"), STATUSES)
     require(status in ("waiting", "in_progress"), "run is not waiting")
-    # A waiting job can coexist with an in-progress run. Read fresh jobs in that case.
     if status != "waiting":
         pages = gh("api", "--paginate", "--slurp", f"{BASE}/actions/runs/{target.run}/attempts/1/jobs")
         require(isinstance(pages, list) and pages, "jobs unavailable")

@@ -1,0 +1,12 @@
+{
+  "scenario": "refusal",
+  "exit_status": 0,
+  "gh_calls": 2,
+  "approval_calls": 0,
+  "missing_observations": [
+    "successful release check",
+    "independent homebrew check",
+    "expected inert approvals"
+  ],
+  "result": "incomplete"
+}

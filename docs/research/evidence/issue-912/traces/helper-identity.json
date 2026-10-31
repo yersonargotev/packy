@@ -1,0 +1,8 @@
+{
+  "trace_candidate_commit": "fed861e67442d2498e3bc4a432e2e4f6b86740e8",
+  "trace_helper_sha256": "4c0482539a381d6bfb8905dc6a22027fc7c58f08e9ffccde120bc89ad50a812c",
+  "final_helper_sha256": "81932721d2e9d1048c892a75fa5a19a318171a47f1dcc4be174081f2a33ed724",
+  "identical_python_ast": true,
+  "ast_sha256": "7acf4b7ab55af5cd71fb50f89872d442b9c2a49fbc05968a386119d0b0680dfc",
+  "change": "Remove two ordinary comments. No executable or workflow instruction changed."
+}
