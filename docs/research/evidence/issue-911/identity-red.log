@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 133, in <module>
+    main()
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 62, in main
+    assert proof(originals[-1]) in out, out
+AssertionError

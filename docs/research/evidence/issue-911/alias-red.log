@@ -1,0 +1,9 @@
+case alias supported by filesystem
+Traceback (most recent call last):
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 151, in <module>
+    main()
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 136, in main
+    check(False)
+  File "/private/tmp/packy-catalog-911/scripts/probes/evidence-retention.py", line 52, in check
+    assert (status == 0) == expect, (args, status, out, err)
+AssertionError: (['/Library/Developer/CommandLineTools/usr/bin/python3', '-B', '/private/tmp/packy-catalog-911/packs/pstack/skills/agents/show-me-your-work/scripts/check-retention.py', '--base', '/private/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/retention-probe-97zquwa_', '--trail', '/private/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/retention-probe-97zquwa_/retained/decisions.tsv', '--target', '/private/var/folders/4b/hlh_7n9n4wbfcqx7ppdrbqn80000gn/T/retention-probe-97zquwa_/owned', '--no-handoff'], 0, 'Evidence retention check passed; cleanup requires separate authorization.\n', '')

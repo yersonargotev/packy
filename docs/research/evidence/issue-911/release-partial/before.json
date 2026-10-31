@@ -9,25 +9,25 @@
   },
   "proof": {
     "copies/later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3",
-    "decisions.tsv": "98dc9002c7db9d00356d4317bf8c4a8258c51027bc0de3c25f4530bb72418be8",
+    "decisions.tsv": "eba845341ccb32a2030717540bcb3111538b725599debd9d7f00f7809ccf0d8e",
     "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82"
   },
   "operator": {
     "sentinel.txt": "2500ee4f6c1f264292124ceec0b89399c58514bbf518190c7c7b84a512cdc950"
   },
   "unrelated": {
-    ".git": "4c744961137cdc2889af2fcec7ef6b6efdcd88aa9bfa610b6676844266b8d237",
+    ".git": "474ba4ff7acf12cd838a015a92a989c310ad52274c445e69ecf35c052263a7c4",
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
     "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6"
   },
   "refs": {
     "exit_status": 0,
-    "stdout": "de5db9df1be1cd7d279c5c9cb0152c52eaaa8da1 refs/heads/main\nde5db9df1be1cd7d279c5c9cb0152c52eaaa8da1 refs/heads/unrelated\n",
+    "stdout": "d7b49c9eb9bf877508a7a195ed1c41ac5d3566b5 refs/heads/main\nd7b49c9eb9bf877508a7a195ed1c41ac5d3566b5 refs/heads/unrelated\n",
     "stderr": ""
   },
   "worktrees": {
     "exit_status": 0,
-    "stdout": "worktree /private/tmp/packy-911-evidence/routing-v2-release-partial/release-partial/project\nHEAD de5db9df1be1cd7d279c5c9cb0152c52eaaa8da1\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-evidence/routing-v2-release-partial/release-partial/unrelated-worktree\nHEAD de5db9df1be1cd7d279c5c9cb0152c52eaaa8da1\nbranch refs/heads/unrelated\n\n",
+    "stdout": "worktree /private/tmp/packy-911-evidence/routing-v3-release-partial/release-partial/project\nHEAD d7b49c9eb9bf877508a7a195ed1c41ac5d3566b5\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-evidence/routing-v3-release-partial/release-partial/unrelated-worktree\nHEAD d7b49c9eb9bf877508a7a195ed1c41ac5d3566b5\nbranch refs/heads/unrelated\n\n",
     "stderr": ""
   }
 }

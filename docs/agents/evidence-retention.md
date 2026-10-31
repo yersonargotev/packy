@@ -45,7 +45,10 @@ python3 -B "$PACKY_EVIDENCE_CHECKER" \
 If a document kind does not exist for the run, declare `--no-trail` or
 `--no-handoff` instead of omitting its inventory. Keep stdout, stderr, exit
 status, exact inputs, source identity, and final-state observations outside the
-cleanup targets. The checker only reads. It performs no copy, reference update,
+cleanup targets. Preserve the checker's per-copy source, destination, and matched
+SHA-256 output. After cleanup, compare those recorded hashes with the retained
+files. This checks the earlier observation without claiming a new comparison
+against the deleted original. The checker only reads. It performs no copy, reference update,
 or deletion.
 
 A nonzero result stops cleanup before any destructive action. Missing originals,

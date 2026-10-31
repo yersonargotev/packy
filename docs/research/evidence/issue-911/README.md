@@ -12,9 +12,9 @@ an opt-in routing probe. The reusable checker and procedure are authored in
 The Packy PR does not publish that dependency or change installed resources.
 
 The exercised helper SHA-256 is
-`5c98c012ad3f2b7fdcf2523e14f6c95ff84abec0e93c5786232a28aab07151e9`.
+`1d234f7c45aefe91d711feae9fb216e9ed0a11bcb4d500ce2c7e32f0707b8773`.
 The supporting reference SHA-256 is
-`78fee3c9f741e6671e86b2799064aeaf9bacdb1e7219841b8fb0c59db154d1a5`.
+`3744bd234772c4e7638f1fcbd2e2511396c3d7900667f99454388b6979f80e8d`.
 The reports bind every copied Packy instruction by SHA-256. The final PR records
 the exact reviewed candidate commits and validation results.
 
@@ -27,10 +27,20 @@ covers complete retention, missing originals and destinations, wrong bytes,
 destinations in other cleanup targets, absent targets, unsupported citations,
 symlinks, and unchanged unrelated state.
 
-The lead's [partial reproduction](checked-reproduction-partial.json) observes
+The lead's initial [partial reproduction](checked-reproduction-partial.json) observes
 exit 1 and names all five unretained originals. The [completed reproduction](checked-reproduction-complete.json)
 observes exit 0 after identical copies and relocation rows are added. Both
-checks leave files unchanged and preserve the original trail prefix.
+checks leave files unchanged and preserve the original trail prefix. They record
+the initial helper identity. The final four routing runs below bind the repaired
+helper bytes and preserve its per-artifact digest output.
+
+Independent review found missing durable identity output and false success for
+filesystem aliases. The [identity regression](identity-red.log) fails before
+per-copy hashes are logged and [passes afterward](identity-green.log). The
+[alias regression](alias-red.log) reproduces the false success and
+[passes after repair](alias-green.log). Both adaptations now verify containment
+by filesystem identity and print original, retained path, and matched SHA-256.
+The retained digest remains checkable after the fixture original is removed.
 
 ## Actual controlled tool traces
 
@@ -56,7 +66,7 @@ The checked-in traces contain the checker, deletion, and applicable state-read
 tool events extracted from the raw command records. Prompts, before and after
 state, replies, and source hashes remain beside each report. Full raw JSONL and
 all commands are retained outside disposable state under
-`/private/tmp/packy-911-evidence/routing-v2-*`.
+`/private/tmp/packy-911-evidence/routing-v3-*`.
 
 The first routing attempt produced observer failures for nested or redirected
 checker commands, shell quoting, and newly written continuation records. Its
