@@ -5,6 +5,7 @@ Start with [verify-packy](../SKILL.md). Each listed entry point needs its own pr
 - [CLI inspection](inspection.md) covers version, catalog list, and Pack details.
 - [Project verification](project-verification.md) covers the portable project contract check.
 - [Lifecycle preview](lifecycle-preview.md) covers project installation and global activation previews.
+- [Projection lifecycle and rollback](projection-lifecycle.md) covers project and global Apply, rejection, and restoration.
 - [TUI dashboard](tui-dashboard.md) covers the interactive dashboard and help.
 - [Development and release guidance](development-and-release.md) covers agent routing and authorization boundaries with controlled tool traces.
 

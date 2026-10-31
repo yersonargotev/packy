@@ -33,11 +33,10 @@ FingerprintMatches ==
     /\ phase' = "backup"
     /\ UNCHANGED <<inputs, target, backup, i, undo, reason>>
 
-\* The actual early return bypasses rollbackFilesystemChanges.
 FingerprintChanged ==
     /\ phase = "check" /\ i \notin fresh
-    /\ phase' = "failed" /\ reason' = "fingerprint"
-    /\ UNCHANGED <<inputs, target, backup, i, undo>>
+    /\ phase' = "undo-remove" /\ undo' = i - 1 /\ reason' = "fingerprint"
+    /\ UNCHANGED <<inputs, target, backup, i>>
 
 \* One successful os.Rename(target, backup) is one indivisible action.
 BackupTarget ==

@@ -17,7 +17,7 @@ export const state = (v) => {
 };
 export const step = (action) => ({
   FingerprintMatches: "fingerprint matches",
-  FingerprintChanged: "fingerprint differs; return error",
+  FingerprintChanged: "fingerprint differs; roll back earlier targets",
   BackupTarget: "rename original to backup",
   SkipAbsentBackup: "target was absent",
   BackupFailed: "backup rename fails",

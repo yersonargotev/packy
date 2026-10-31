@@ -545,11 +545,14 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 		item := &items[i]
 		if item.change.ExpectedTargetFingerprint != "" {
 			actual, err := filesystemChangeTargetFingerprint(item.change)
-			if err != nil {
-				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: err}
+			if err == nil && actual != item.change.ExpectedTargetFingerprint {
+				err = fmt.Errorf("target changed after preflight: expected %s, observed %s", item.change.ExpectedTargetFingerprint, actual)
 			}
-			if actual != item.change.ExpectedTargetFingerprint {
-				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("target changed after preflight: expected %s, observed %s", item.change.ExpectedTargetFingerprint, actual)}
+			if err != nil {
+				if rollbackErr := rollbackFilesystemChanges(items[:committed]); rollbackErr != nil {
+					err = fmt.Errorf("%w; rollback failed: %w", err, rollbackErr)
+				}
+				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: err}
 			}
 		}
 		verb := item.change.errorVerb
