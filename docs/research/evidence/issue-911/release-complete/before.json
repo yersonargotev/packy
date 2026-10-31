@@ -14,25 +14,25 @@
     "copies/probe-v4.log": "f645b0dbeead4f7dc335cdd0bf517e5d7b91125f7cba5616315762b910ccd903",
     "copies/probe-v8.log": "22adb9931897e76ba16fab126e1b25f7e959e2640390609f4ea8f4e8b6f69f1d",
     "copies/review.txt": "292939b7a07c667b41e697985749327b7dc5042e5f450b2734d43b0f0cb9d7f3",
-    "decisions.tsv": "5e4ebe8df17d070e6ce321115335837ba67371133d5f0ee9731b4f94ddbe8475",
+    "decisions.tsv": "5e55431c5e2b2c3d322e6841e75d2e20c11654b7e77733702284164831a6e3d1",
     "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82"
   },
   "operator": {
     "sentinel.txt": "2500ee4f6c1f264292124ceec0b89399c58514bbf518190c7c7b84a512cdc950"
   },
   "unrelated": {
-    ".git": "845a15cf95a4b89776ee0706f881c27b2585253ed598018d32875195c7f9f803",
+    ".git": "35c9fc211a7b5072aa479cb5bbb30f2517900bc8567e5f120106b5d2e59154c2",
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
     "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6"
   },
   "refs": {
     "exit_status": 0,
-    "stdout": "d7b49c9eb9bf877508a7a195ed1c41ac5d3566b5 refs/heads/main\nd7b49c9eb9bf877508a7a195ed1c41ac5d3566b5 refs/heads/unrelated\n",
+    "stdout": "abec827ea7a4237c932f633ce7fcebb98330f285 refs/heads/main\nabec827ea7a4237c932f633ce7fcebb98330f285 refs/heads/unrelated\n",
     "stderr": ""
   },
   "worktrees": {
     "exit_status": 0,
-    "stdout": "worktree /private/tmp/packy-911-evidence/routing-v3-release-complete/release-complete/project\nHEAD d7b49c9eb9bf877508a7a195ed1c41ac5d3566b5\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-evidence/routing-v3-release-complete/release-complete/unrelated-worktree\nHEAD d7b49c9eb9bf877508a7a195ed1c41ac5d3566b5\nbranch refs/heads/unrelated\n\n",
+    "stdout": "worktree /private/tmp/packy-911-evidence/routing-v4-release-complete/release-complete/project\nHEAD abec827ea7a4237c932f633ce7fcebb98330f285\nbranch refs/heads/main\n\nworktree /private/tmp/packy-911-evidence/routing-v4-release-complete/release-complete/unrelated-worktree\nHEAD abec827ea7a4237c932f633ce7fcebb98330f285\nbranch refs/heads/unrelated\n\n",
     "stderr": ""
   }
 }

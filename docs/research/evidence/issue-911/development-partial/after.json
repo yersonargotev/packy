@@ -9,7 +9,7 @@
     "probe-v4.log": "f645b0dbeead4f7dc335cdd0bf517e5d7b91125f7cba5616315762b910ccd903"
   },
   "retained_proof": {
-    "decisions.tsv": "f0a553c24f6851cfc905c00ca724d956089c99a570d1d99e773143cd099d9727",
+    "decisions.tsv": "03479758faf03acebe4c2b6a94e715b58de1017d63e6f6aa2ef06a80c891989a",
     "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82",
     "copies/later-acceptance.log": "cdfd2142710d855c40e8dad3bfe9fe41c8c61f8ad099f0211995d237d00347c3"
   },
@@ -19,6 +19,6 @@
   "unrelated": {
     "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6",
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
-    ".git": "9b63d543acd57decf6f86660494556fd186067377bf7b39431af3572e4183d8e"
+    ".git": "c175df45949f488c1f333d5a819a6385969d499fe52613ea3adbd6cb4fa1dcd6"
   }
 }

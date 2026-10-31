@@ -1,0 +1,77 @@
+{
+  "checker_sha256": "10e439dfecd02d11ac8217c1aedf6ed4dc20ae19e2010f3eff4f7301262b6386",
+  "root": "/private/tmp/packy-911-raw-92pc8rmn",
+  "cases": [
+    {
+      "reference": "retained/proof.log",
+      "expected": 0,
+      "exit_status": 0,
+      "stdout": "Evidence retention check passed; cleanup requires separate authorization.\n",
+      "stderr": ""
+    },
+    {
+      "reference": "retained/./proof.log",
+      "expected": 0,
+      "exit_status": 0,
+      "stdout": "Evidence retention check passed; cleanup requires separate authorization.\n",
+      "stderr": ""
+    },
+    {
+      "reference": "retained/existing/../proof.log",
+      "expected": 0,
+      "exit_status": 0,
+      "stdout": "Evidence retention check passed; cleanup requires separate authorization.\n",
+      "stderr": ""
+    },
+    {
+      "reference": "retained/nonexistent/../proof.log",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: cannot inspect /private/tmp/packy-911-raw-92pc8rmn/retained/nonexistent: [Errno 2] No such file or directory: '/private/tmp/packy-911-raw-92pc8rmn/retained/nonexistent'\n"
+    },
+    {
+      "reference": "retained/proof.log/../proof.log",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: cannot inspect /private/tmp/packy-911-raw-92pc8rmn/retained/proof.log/..: [Errno 20] Not a directory: '/private/tmp/packy-911-raw-92pc8rmn/retained/proof.log/..'\n"
+    },
+    {
+      "reference": "retained/proof.log/",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: cannot inspect /private/tmp/packy-911-raw-92pc8rmn/retained/proof.log/: [Errno 20] Not a directory: '/private/tmp/packy-911-raw-92pc8rmn/retained/proof.log/'\n"
+    },
+    {
+      "reference": "retained/proof.log//",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: cannot inspect /private/tmp/packy-911-raw-92pc8rmn/retained/proof.log/: [Errno 20] Not a directory: '/private/tmp/packy-911-raw-92pc8rmn/retained/proof.log/'\n"
+    },
+    {
+      "reference": "retained/alias/../proof.log",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: symlink path is unsupported: /private/tmp/packy-911-raw-92pc8rmn/retained/alias\n"
+    },
+    {
+      "reference": "retained/missing.log",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: cannot inspect /private/tmp/packy-911-raw-92pc8rmn/retained/missing.log: [Errno 2] No such file or directory: '/private/tmp/packy-911-raw-92pc8rmn/retained/missing.log'\n"
+    },
+    {
+      "reference": "retained/proof%2elog",
+      "expected": 1,
+      "exit_status": 1,
+      "stdout": "",
+      "stderr": "/private/tmp/packy-911-raw-92pc8rmn/decisions.tsv:2: unsupported path: retained/proof%2elog\n"
+    }
+  ],
+  "all_inputs_unchanged": true
+}

@@ -12,9 +12,9 @@ an opt-in routing probe. The reusable checker and procedure are authored in
 The Packy PR does not publish that dependency or change installed resources.
 
 The exercised helper SHA-256 is
-`1d234f7c45aefe91d711feae9fb216e9ed0a11bcb4d500ce2c7e32f0707b8773`.
+`10e439dfecd02d11ac8217c1aedf6ed4dc20ae19e2010f3eff4f7301262b6386`.
 The supporting reference SHA-256 is
-`3744bd234772c4e7638f1fcbd2e2511396c3d7900667f99454388b6979f80e8d`.
+`663fac035eea563d13b533aa1d0f22d3e165b5296c2d7df49fd60d994b62923e`.
 The reports bind every copied Packy instruction by SHA-256. The final PR records
 the exact reviewed candidate commits and validation results.
 
@@ -42,6 +42,13 @@ per-copy hashes are logged and [passes afterward](identity-green.log). The
 by filesystem identity and print original, retained path, and matched SHA-256.
 The retained digest remains checkable after the fixture original is removed.
 
+A further review exposed invalid raw paths that passed after normalization. The
+[raw-path regression](path-resolution-red.log) fails before component validation
+and [passes after repair](path-resolution-green.log). The lead independently
+checked a [ten-case path matrix](raw-resolution-matrix.json), including valid
+parent traversal, missing and non-directory components, trailing file slashes,
+symlinks, and unsupported percent paths. Inputs remain unchanged.
+
 ## Actual controlled tool traces
 
 Four fresh Codex turns read candidate instructions and execute the real checker.
@@ -66,7 +73,7 @@ The checked-in traces contain the checker, deletion, and applicable state-read
 tool events extracted from the raw command records. Prompts, before and after
 state, replies, and source hashes remain beside each report. Full raw JSONL and
 all commands are retained outside disposable state under
-`/private/tmp/packy-911-evidence/routing-v3-*`.
+`/private/tmp/packy-911-evidence/routing-v4-*`.
 
 The first routing attempt produced observer failures for nested or redirected
 checker commands, shell quoting, and newly written continuation records. Its

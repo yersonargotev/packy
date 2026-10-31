@@ -2,7 +2,7 @@
   "owned_target_exists": false,
   "originals": null,
   "retained_proof": {
-    "decisions.tsv": "5e4ebe8df17d070e6ce321115335837ba67371133d5f0ee9731b4f94ddbe8475",
+    "decisions.tsv": "5e55431c5e2b2c3d322e6841e75d2e20c11654b7e77733702284164831a6e3d1",
     "handoff.md": "421cf59e983fb7b48df1d0e484a35994f757df0ea8eb26dcec24fabbcb13df82",
     "copies/probe-v8.log": "22adb9931897e76ba16fab126e1b25f7e959e2640390609f4ea8f4e8b6f69f1d",
     "copies/review.txt": "292939b7a07c667b41e697985749327b7dc5042e5f450b2734d43b0f0cb9d7f3",
@@ -17,6 +17,6 @@
   "unrelated": {
     "sentinel.txt": "11ad7a40ef730714224bfc0d023c2d73cea20866abc02abf2a2d9db7db0942a6",
     "AGENTS.md": "fbb4c90292ffbed62eb12e486e545fa88a1b0eb07f4dfa5dce748127ebee104b",
-    ".git": "845a15cf95a4b89776ee0706f881c27b2585253ed598018d32875195c7f9f803"
+    ".git": "35c9fc211a7b5072aa479cb5bbb30f2517900bc8567e5f120106b5d2e59154c2"
   }
 }
