@@ -63,7 +63,7 @@ integration or publication occurred.
 | Release | [Refusal](release-partial/report.json), [tool trace](release-partial/tool-trace.json) | [Success](release-complete/report.json), [tool trace](release-complete/tool-trace.json) |
 
 The partial traces have a nonzero checker result and no deletion attempt. The
-complete traces show exit zero before a separate exact-path `find` deletion.
+complete traces show exit zero before a separate exact-path deletion.
 The `after.json` beside each report independently records the observed final
 files. Retained proof and reference bytes, operator files, unrelated worktrees,
 Git refs, and worktree registrations remain unchanged. Only the authorized
