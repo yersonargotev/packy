@@ -6,35 +6,31 @@ inside another target cannot count as retained evidence. Keep the documents and
 proof outside every target. Retain only the evidence needed for its claim,
 without copying credentials.
 
-## Resolve the reviewed checker
+## Use the repository checker
 
-The reusable checker belongs to the Catalog Project's maintained
-`pstack:show-me-your-work` adaptations. Resolve `scripts/check-retention.py`
-and `references/evidence-retention.md` from the same reviewed Agents or Claude
-resource root. An explicit reviewed Catalog source checkout is also usable.
-Record its exact commit and helper SHA-256 with the run's evidence.
-
-[Catalog issue #132](https://github.com/yersonargotev/packy-catalog/issues/132)
-tracks this delivery prerequisite. The installed pstack 6.1.0 does not contain
-the checker. This Packy change does not publish Catalog content, refresh a
-snapshot, or update an installation. Until the dependency is integrated and
-acquired, use an explicitly reviewed candidate source checkout or stop cleanup.
-Never patch an installed or prepared resource to obtain the helper.
+Packy's cleanup policy owns `scripts/check-evidence-retention.py` in this
+repository. Use the checker from the same candidate checkout as the development
+or release instructions. Record the candidate commit, working-tree changes, and
+helper SHA-256 with the run's evidence. Set `PACKY_SOURCE_ROOT` to that checkout
+and `PACKY_RUN_BASE` to the directory used to resolve trail paths. Python 3 with
+its standard library is required.
 
 ## Run the preflight
 
-Read the helper's supporting reference for its supported citation forms,
-resolution bases, and relocation records. Resolve TSV paths against the
-explicit `--base`. Resolve handoff links against their containing document.
+Use the supported citation forms below. Resolve TSV paths against the explicit
+`--base`. Resolve handoff links against their containing document.
 Use the existing six-column TSV and Markdown documents. Preserve historical
 rows and append explicit relocation records after copying affected originals.
 Copies must match available originals byte for byte and survive every target.
+Append a six-column TSV row with phase `relocation` for each copy. Its evidence
+cell must be exactly `[/old/absolute/path](/new/absolute/path)`. Keep the original
+rows and files. Conflicting or chained mappings block the check.
 
 Run the helper with explicit absolute document and target paths. Repeat each
 flag for every corresponding input.
 
 ```sh
-python3 -B "$PACKY_EVIDENCE_CHECKER" \
+python3 -B "$PACKY_SOURCE_ROOT/scripts/check-evidence-retention.py" \
   --base "$PACKY_RUN_BASE" \
   --trail "$PACKY_RETAINED_TRAIL" \
   --handoff "$PACKY_RETAINED_HANDOFF" \
@@ -48,8 +44,8 @@ status, exact inputs, source identity, and final-state observations outside the
 cleanup targets. Preserve the checker's per-copy source, destination, and matched
 SHA-256 output. After cleanup, compare those recorded hashes with the retained
 files. This checks the earlier observation without claiming a new comparison
-against the deleted original. The checker only reads. It performs no copy, reference update,
-or deletion.
+against the deleted original. The checker only reads. It performs no copy,
+reference update, or deletion.
 
 A nonzero result stops cleanup before any destructive action. Missing originals,
 invalid copies, dangling citations, and unsupported or ambiguous local references
@@ -70,3 +66,33 @@ no ownership, merge, publication, or deletion authority. Preserve pending work,
 validate each exact owned path, and keep unrelated operator state and worktrees.
 Use the permitted deletion primitive as a separate action. Check that intended
 targets are absent and retained evidence still resolves afterward.
+
+## Supported citations
+
+A trail uses the exact `ts`, `phase`, `decision`, `why`, `evidence`, `result` TSV
+header. Normal evidence cells contain pointers separated by commas or semicolons.
+Supported pointers are absolute paths, relative paths with a slash, simple filenames
+with an extension, an optional numeric `:line` suffix, ordinary inline Markdown
+links, HTTPS URLs, `commit <hex>`, a 7-to-64-digit hexadecimal commit, `PR #N`,
+and `#N`. Link destinations follow the same local path rules. Relocation links
+require absolute local paths on both sides. Whitespace, escapes, percent signs
+(including percent-encoded link destinations), shell variables, globs, URL
+relocations and paths with Markdown delimiters are unsupported.
+Directories and special files are not evidence files; cite their individual files.
+Path components must resolve under filesystem traversal rules before normalization.
+Symlink paths and ancestors are rejected, including symlinks encountered before
+`..`. Missing cleanup targets are allowed, but `..` cannot follow a missing
+component. Existing targets are also compared by filesystem identity with paths
+and their ancestors, so aliases into targets are blocked. A hard-linked file may
+therefore be treated conservatively as inside a file target. An absent cleanup
+target can pass only when all citations still resolve.
+
+In handoffs, express local citations as ordinary inline links or inline code paths.
+Links resolve relative to the handoff. Plain HTTPS URLs are independent citations.
+Reference-style links, nested or escaped Markdown, malformed constructs and
+path-like prose block the check. Inline code must be a supported path or external
+citation. The helper is not a general Markdown parser and cannot discover
+implicit references in free-form prose or documents omitted from
+the inventory. Rewrite mutable handoff citations into the supported form, and
+record any append-only trail correction without erasing history. Unknown trail
+cells block visibly; do not omit them to obtain a pass.

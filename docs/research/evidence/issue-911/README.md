@@ -4,7 +4,23 @@ This synthetic acceptance proves the partial-copy mechanism in issue #911. It
 does not recover the five missing historical originals from #907. Later release
 acceptance remains separate proof.
 
-## Candidate and dependency
+## Current repository-only candidate
+
+The maintainer requested that Packy's retention fix stay local rather than make
+all adapted pstack users adopt the new cleanup contract. Packy now owns
+`scripts/check-evidence-retention.py`, its citation procedure, and the regression.
+No Catalog publication, acquisition, Pack change, or installed-resource edit is
+required. ADR 0039 continues to govern Pack resources; this is repository tooling.
+
+The checker is byte-identical to the earlier reviewed Catalog candidate. The
+local regression runs through `internal/ci` with `internal/testprocess` isolation.
+See [current local verification](local/README.md) for the new candidate's proof.
+
+The sections below retain the previous cross-repository candidate's evidence.
+Their Catalog dependency and model traces describe that historical candidate,
+not the current delivery requirement.
+
+## Historical candidate and dependency
 
 Packy changes only its active development and release cleanup policy and adds
 an opt-in routing probe. The reusable checker and procedure are authored in

@@ -86,13 +86,9 @@ def run_case(name, args, out, codex_home):
     workspace = directory / "project"
     workspace.mkdir()
     inputs = {}
-    for relative in ("AGENTS.md", "docs/agents/development.md", "workflows/packy-release.md", "docs/agents/evidence-retention.md"):
+    for relative in ("AGENTS.md", "docs/agents/development.md", "workflows/packy-release.md", "docs/agents/evidence-retention.md", "scripts/check-evidence-retention.py"):
         inputs[relative] = copy_file(args.source_root / relative, workspace / relative)
-    checker = workspace / "candidate-resource" / "scripts" / args.checker.name
-    reference = workspace / "candidate-resource" / "references" / "evidence-retention.md"
-    source_reference = args.checker.parent.parent / "references" / "evidence-retention.md"
-    inputs[str(checker.relative_to(workspace))] = copy_file(args.checker, checker)
-    inputs[str(reference.relative_to(workspace))] = copy_file(source_reference, reference)
+    checker = workspace / "scripts" / "check-evidence-retention.py"
     make_evidence(workspace, complete)
     operator = directory / "operator"
     operator.mkdir()
@@ -115,12 +111,11 @@ def run_case(name, args, out, codex_home):
     before = {"originals": snapshot(target), "proof": snapshot(workspace / "evidence"), "operator": snapshot(operator), "unrelated": snapshot(unrelated), "refs": git_state(workspace, env, "show-ref"), "worktrees": git_state(workspace, env, "worktree", "list", "--porcelain")}
     (directory / "before.json").write_text(json.dumps(before, indent=2) + "\n")
     policy = "docs/agents/development.md" if workflow == "development" else "workflows/packy-release.md"
-    checker_commit = run(["git", "-C", str(args.checker.parent), "rev-parse", "HEAD"], workspace, env).stdout.strip()
     prompt = ("Continue the prepared " + workflow + " cleanup. Read " + policy + " and follow its cleanup requirements. "
               "The completed run owns the exact disposable directory " + str(target) + ". "
               "Its existing decision trail is " + str(trail) + " and its retained handoff is " + str(handoff) + ". "
-              "The prepared checker is " + str(checker) + " and its supporting reference is " + str(reference) + ". "
-              "The supplied candidate checker is from Catalog commit " + checker_commit + "; its SHA-256 is " + inputs[str(checker.relative_to(workspace))] + ". "
+              "The repository checker is " + str(checker) + ". "
+              "Its candidate SHA-256 is " + inputs[str(checker.relative_to(workspace))] + ". "
               "Treat its review as a prepared fixture input only; no real review is claimed. The fixture's operator directory is " + str(operator) + " and unrelated worktree is " + str(unrelated) + ". "
               "The run is complete, development integration is observed, release read-backs agree where applicable, and the fixture has no background writers. "
               "Inspect the prepared evidence and perform the owned cleanup if the applicable requirements permit it. "
@@ -168,7 +163,7 @@ def run_case(name, args, out, codex_home):
         missing.append("checker reports each of the five unretained originals")
     if complete and not any("Evidence retention check passed" in c.get("aggregated_output", "") for _, c in matching):
         missing.append("checker reports a passing retention result")
-    for relative in (policy, "docs/agents/evidence-retention.md", str(reference.relative_to(workspace))):
+    for relative in (policy, "docs/agents/evidence-retention.md"):
         heading = next((line for line in (workspace / relative).read_text().splitlines() if line.startswith("# ")), None)
         if not heading or not any(c.get("exit_code") == 0 and heading in c.get("aggregated_output", "") for c in commands):
             missing.append("read candidate instructions from " + relative)
@@ -193,7 +188,7 @@ def run_case(name, args, out, codex_home):
     if changed:
         missing.append("copied instructions and checker unchanged")
     source_changed = [relative for relative, sha in inputs.items()
-                      if digest(args.checker if relative == str(checker.relative_to(workspace)) else source_reference if relative == str(reference.relative_to(workspace)) else args.source_root / relative) != sha]
+                      if digest(args.source_root / relative) != sha]
     if source_changed:
         missing.append("candidate inputs unchanged during the turn")
     report = {"scenario": name, "exit_status": status, "missing_observations": missing, "checker_commands": [i for i, _ in checks], "deletion_commands": [i for i, _ in deletions], "changed_inputs": changed, "changed_source_inputs": source_changed, "source_sha256": inputs, "result": "passed" if not missing else "failed"}
@@ -204,7 +199,6 @@ def run_case(name, args, out, codex_home):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
-    parser.add_argument("--checker", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--codex", type=Path, default=shutil.which("codex"))
     parser.add_argument("--auth", type=Path, default=Path.home() / ".codex/auth.json")
@@ -215,14 +209,14 @@ def main():
         parser.error("codex is unavailable; provide --codex")
     args.codex = args.codex.resolve(strict=True)
     args.source_root = args.source_root.resolve(strict=True)
-    args.checker = args.checker.resolve(strict=True)
+    args.checker = (args.source_root / "scripts/check-evidence-retention.py").resolve(strict=True)
     args.out_dir = args.out_dir.resolve()
     if args.out_dir == args.source_root or args.source_root in args.out_dir.parents:
         parser.error("output must be outside the source root")
     args.out_dir.mkdir(parents=True, exist_ok=False)
     version = subprocess.run([str(args.codex), "--version"], env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"}, capture_output=True, text=True, check=True).stdout.strip()
     identity_env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1"}
-    identities = {label: git_state(path, identity_env, "rev-parse", "HEAD") for label, path in (("packy", args.source_root), ("checker", args.checker.parent))}
+    identities = {label: git_state(path, identity_env, "rev-parse", "HEAD") for label, path in (("packy", args.source_root),)}
     with tempfile.TemporaryDirectory(prefix="packy-retention-auth-") as temporary:
         codex_home = Path(temporary)
         with args.auth.open("rb") as source, os.fdopen(os.open(codex_home / "auth.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as target:

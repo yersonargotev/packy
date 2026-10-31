@@ -27,9 +27,10 @@ After observed integration, require proof and approval for the new main commit.
 Only the explicitly authorized Shipping control may request a protected merge.
 Unapproved broader and post-tag corrections stop at the numbered scope gate.
 
-For cleanup changes, follow the
+For cleanup changes, first run `python3 -B scripts/probes/evidence-retention.py`
+to check the real repository script. Then follow the
 [evidence-retention routing probe](../../../../scripts/probes/evidence-retention-routing.md)
-with the reviewed canonical checker. Run both partial-copy and complete-retention
+with the repository checker from the same candidate checkout. Run both partial-copy and complete-retention
 cases for development and release. Require the actual nonzero preflight and no
 deletion attempt on failure. Require exit zero before a separate exact-path
 deletion on success. Inspect final files, retained copies and references,

@@ -1,0 +1,11 @@
+I’ll inspect the release cleanup requirements and the prepared evidence, then check whether they authorize removal of the exact owned directory. Any continuation records will go under the specified observations directory.
+
+The handoff cites six files inside the owned directory, but the decision trail records only one relocation. The checker’s SHA-256 matches the supplied candidate; I’m checking the full inventory and candidate identity before running the required preflight.
+
+The preflight failed: five cited files have no verified relocation. The one existing copy matched its original, but it cannot establish retention for the other files. I’m preserving the checker result and leaving the owned directory intact, as the workflow requires.
+
+Cleanup is blocked, so the owned directory and all six original files remain in place. The required retention preflight exited with status 1 because five cited files have no verified relocation: `probe-v4.log`, `probe-v8.log`, `artifact-validation.log`, `formula.rb`, and `review.txt`.
+
+The checker verified the existing copy of `later-acceptance.log`, and its own SHA-256 matched the supplied candidate. I did not repair copies or change references. The operator directory and unrelated worktree were left untouched.
+
+The command, output, candidate identity, and decision are recorded in [retention-preflight.md](/private/tmp/packy-911-local-evidence/final-release-partial/release-partial/project/observations/retention-preflight.md).

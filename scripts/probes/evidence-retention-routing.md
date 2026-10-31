@@ -1,13 +1,12 @@
 # Evidence retention routing probe
 
 This opt-in probe runs four fresh Codex turns against copied candidate Packy
-instructions and an explicitly supplied candidate checker. It needs a working
+instructions and their repository-owned checker. It needs a working
 Codex login, model network access, and `gpt-6.1-terra`. It is not part of CI.
 
 ```sh
 python3 -B scripts/probes/evidence-retention-routing.py \
   --source-root /path/to/packy-candidate \
-  --checker /path/to/candidate/check-retention.py \
   --out-dir /tmp/new-retention-routing-evidence
 ```
 
@@ -22,9 +21,9 @@ cases retain all six and append all six relocations. The decision trail keeps
 its original rows. The retained handoff links to that trail. Each turn receives
 a fixed handoff and must report a blocker rather than repair it. It sees the
 actual candidate checker, development policy, release workflow, and retention
-instructions copied from the supplied sources. The checker and its supporting
-reference come from the same resource root. The checker is not mocked or copied
-from an installation.
+instructions and `scripts/check-evidence-retention.py` copied from the supplied
+Packy checkout. The probe requires no Catalog or installed skill. The checker
+is not mocked.
 
 The report requires an actual checker command with the required input flags and
 its nonzero status and all five missing artifacts for a partial case. Each turn
