@@ -1,10 +1,61 @@
 # Preserve evidence before cleanup
 
+Use this lifecycle for development and release evidence. Collect only what the
+run needs to prove its claims and resume work. Set `PYTHONDONTWRITEBYTECODE=1`
+before launching Python. Do not copy a whole sandbox, project, or home directory
+into evidence. Keep generated caches and disposable fixture state out of durable
+evidence. Record a tested binary or archive's identity, commands, results,
+checksums, and publication URLs where applicable. Keep a payload only when a
+named unresolved claim needs it for investigation or reproduction.
+
+## Keep active proof
+
+Keep original citations, decision trails, and handoffs for active, pending, or
+unresolved work. Keep their proof outside every cleanup target. A summary does
+not replace required proof, and age does not authorize deleting pending evidence.
 Inventory every exact workflow-owned cleanup target and every decision trail
 and retained handoff for the run. Include all targets in one preflight so a copy
-inside another target cannot count as retained evidence. Keep the documents and
-proof outside every target. Retain only the evidence needed for its claim,
-without copying credentials.
+inside another target cannot count as retained evidence. Retain only the
+evidence needed for its claim, without copying credentials.
+
+Cleaning disposable scratch while keeping the proof is not evidence retirement.
+It needs no completed-run closeout. Use the normal preflight with all retained
+trails and handoffs, verified copies, and relocation records. After deletion,
+check the retained files against the recorded hashes, not against absent originals.
+
+## Retire completed detail
+
+A development run is complete after observing the candidate merged and its issue
+closed. A release run is complete after successful publication and all required
+readbacks. In either case, no correction, investigation, or owned process may
+remain pending. Stop retirement if a raw detail is still needed to resolve a
+claim. Record any deliberately retained raw artifact, its named claim, and the
+reason it remains necessary.
+
+Before retirement, preserve a compact closeout reachable from the PR description
+or existing publication record. Include the approved scope, candidate identity,
+commands and results, reviews, limitations, and persistent issue, PR, release,
+and check references as applicable. State which raw detail is retired and that
+hashes record earlier observations; hashes cannot reconstruct deleted originals.
+Do not send an unsolicited message to make the closeout reachable.
+
+Record the exact retirement inventory and its owner outside the targets. Treat
+historical target paths as inventory data, not live citations. If the inventory
+contains retired paths, keep it in a separate record linked from the closeout.
+The inventory is a record of past targets, not a retained handoff with live
+citations. Explicitly retire the historical working trail and handoffs together
+with their raw details. Do not edit trail rows to pretend proof remains, or omit
+active documents from preflight. Inventory the retired documents as targets.
+Cite each deliberately retained raw artifact in the final summary or a retained
+trail or handoff. Pass those documents to the checker. All their local references
+must survive and pass the unchanged checker. The retirement decision does not
+bypass the separate ownership and deletion authority checks.
+
+Local raw evidence is temporary through handoff and is removed at observed
+closure once the closeout exists and cleanup is authorized. A diagnostic grace
+period needs an explicit reason and expiry. On the next related run, offer or
+apply authorized cleanup of owned completed-run evidence; do not promise a
+background cleanup.
 
 ## Use the repository checker
 
@@ -19,13 +70,14 @@ its standard library is required.
 
 Use the supported citation forms below. Resolve TSV paths against the explicit
 `--base`. Resolve handoff links against their containing document.
-Use the existing six-column TSV and Markdown documents. Preserve historical
-rows and append explicit relocation records after copying affected originals.
+Use the existing six-column TSV and Markdown documents. For each retained trail,
+preserve historical rows and append explicit relocation records after copying
+affected originals.
 Copies must match available originals byte for byte and survive every target.
 Append a six-column TSV row with phase `relocation` for each copy. Its evidence
 cell must be one inline Markdown link: the label is the original absolute path,
-and the destination is the retained absolute path. Keep the original rows and
-files. Conflicting or chained mappings block the check.
+and the destination is the retained absolute path. Keep the original rows and files through preflight. Conflicting or chained
+mappings block the check.
 
 Run the helper with explicit absolute document and target paths. Repeat each
 flag for every corresponding input.
@@ -39,8 +91,10 @@ python3 -B "$PACKY_SOURCE_ROOT/scripts/check-evidence-retention.py" \
   --target "$PACKY_OWNED_WORKTREE"
 ```
 
-If a document kind does not exist for the run, declare `--no-trail` or
-`--no-handoff` instead of omitting its inventory. Keep stdout, stderr, exit
+If the run has no retained documents of a kind, declare `--no-trail` or
+`--no-handoff`. Explicitly retired originals can still exist inside the targets
+until deletion and remain in the retirement inventory. Do not omit active or
+deliberately retained documents. Keep stdout, stderr, exit
 status, exact inputs, source identity, and final-state observations outside the
 cleanup targets. Preserve the checker's per-copy source, destination, and matched
 SHA-256 output. After cleanup, compare those recorded hashes with the retained

@@ -9,7 +9,7 @@ Use this capability for changed Packy behavior. Read the [feature map](features/
 
 ## Launch
 
-Run from the candidate repository root. Use a new private scratch directory and a separate durable evidence directory. Resolve Go caches before changing `HOME`. Keep the variables below in one owned shell session through Cleanup. Do not use the operator's project or configuration for mutation journeys.
+Run from the candidate repository root. Use a new private scratch directory and a separate run-owned evidence directory. Resolve Go caches before changing `HOME`. Keep the variables below in one owned shell session through Cleanup. Do not use the operator's project or configuration for mutation journeys.
 
 ```sh
 export PACKY_VERIFY_ROOT="$(pwd)"
@@ -25,7 +25,9 @@ mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$PACKY_VERIFY_SCRATCH/project"
 go build -o "$PACKY_VERIFY_SCRATCH/packy" ./cmd/packy
 ```
 
-Keep evidence outside scratch and any path cleanup removes. The binary is ready when the build succeeds and Doctor passes. Start each TUI journey in a fresh private PTY. For project journeys, use a disposable Git worktree or repository under scratch, with only the required reviewed fixture. Do not copy credentials.
+Keep active evidence outside scratch and any path cleanup removes. Follow the
+[evidence lifecycle](../../../docs/agents/evidence-retention.md) for minimal
+collection and retirement. The binary is ready when the build succeeds and Doctor passes. Start each TUI journey in a fresh private PTY. For project journeys, use a disposable Git worktree or repository under scratch, with only the required reviewed fixture. Do not copy credentials.
 
 ## Doctor
 
@@ -53,15 +55,14 @@ The helper requires Python 3 on macOS or Linux. `ESC`, `TAB`, and `ENTER` send t
 
 ## Evidence
 
-For each journey retain its feature and entry point, candidate identity, commands and inputs, stdout, stderr, exit status, terminal transcript when applicable, and observed final state. Compare the relevant sandbox files before and after both read-only and mutation paths. Record absent effects as well as expected writes. Inspect independent state after a mutation, not just the success screen. Redact secrets. Mocks are acceptable only at an existing production boundary, and any skipped external behavior remains unverified. Observe the actual effects of a dry-run rather than trusting its name.
+For each active journey retain its feature and entry point, candidate identity, commands and inputs, stdout, stderr, exit status, terminal transcript when applicable, and observed final state. Compare the relevant sandbox files before and after both read-only and mutation paths. Record absent effects as well as expected writes. Inspect independent state after a mutation, not just the success screen. Redact secrets. Mocks are acceptable only at an existing production boundary, and any skipped external behavior remains unverified. Observe the actual effects of a dry-run rather than trusting its name.
 
 ## Cleanup
 
-Wait for every process started by the run to exit. The PTY helper owns its child and cleans it on failure. Remove only the scratch directory created by Launch after checking its path. Never remove the evidence directory. Confirm the evidence files still exist and can be read after cleanup.
-
-```sh
-rm -r -- "$PACKY_VERIFY_SCRATCH"
-test -s "$PACKY_VERIFY_EVIDENCE/tui.raw"
-```
+Wait for every process started by the run to exit. The PTY helper owns its
+child and cleans it on failure. Apply the [evidence lifecycle and preflight](../../../docs/agents/evidence-retention.md)
+before removing any owned scratch or evidence. Keep active proof and resumable
+handoffs. Retire completed evidence only after its closeout and required checks.
+Use the separate deletion operation permitted by the development policy.
 
 Use `/maintain-verification-skill` to audit and update this map as Packy changes.

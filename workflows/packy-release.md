@@ -33,9 +33,13 @@ state are all known and checkable.
 
 ## Prove
 
-Run focused checks with sandboxed `HOME` and `XDG_CONFIG_HOME`. Acquire the
+Follow the [evidence lifecycle](../docs/agents/evidence-retention.md) from
+the start. Set `PYTHONDONTWRITEBYTECODE=1` before Python launches and collect
+only the proof needed for the release. Run focused checks with sandboxed
+`HOME` and `XDG_CONFIG_HOME`. Acquire the
 exact-commit main CI proof with `go run ./internal/tools/ciproof --sha <frozen-commit>`
-and retain its JSON outside the checkout. Build disposable artifacts with
+and retain its JSON outside the checkout while the release is active. Build
+disposable artifacts with
 `scripts/build-release-artifacts.sh`, validate them with
 `scripts/validate-release-artifacts.sh`, and generate the formula from the same
 `SHA256SUMS`. Confirm required CI is green for the commit.
@@ -62,9 +66,10 @@ The tag-triggered workflow additionally executes the same complete Catalog CLI
 contract against all four staged release archives in native compatible
 Darwin/Linux amd64/arm64 runtimes before publication. Every target must pass;
 ordinary CI exercises this same staged-artifact gate with unpublished fixtures.
-Retain the release-run contract evidence, identities, and four archive checksums
-for Catalog adoption. No live Catalog Publication or model/host service is part
-of contract proof.
+Retain the release-run contract results, identities, and four archive checksums
+for Catalog adoption. Keep archives only for a named unresolved claim that needs
+them for investigation or reproduction. No live Catalog Publication or
+model/host service is part of contract proof.
 
 ## Approve
 
@@ -135,13 +140,11 @@ four archives, `SHA256SUMS`, tap formula, and installed Homebrew binary. All
 versions, URLs, and checksums must agree. Remove temporary state and confirm the
 operator checkout retains its original branch, HEAD, and pre-existing changes.
 
-Before removal, require the successful read-only
-[evidence-retention preflight](../docs/agents/evidence-retention.md) against all
-exact cleanup targets, the release decision trail, and every retained handoff.
-An unavailable checker, failed result, or unevaluated reference stops cleanup
-with the originals preserved. Retain identical copies and append relocation
-records before retrying. Later acceptance proof cannot reconstruct an omitted
-original.
+After successful publication and readbacks, follow the
+[evidence lifecycle and preflight](../docs/agents/evidence-retention.md) to
+preserve the closeout and retire completed detail. Pending corrections or
+investigations keep their original trails, handoffs, and proof. A failed or
+unavailable checker or an unevaluated reference stops cleanup.
 
 Make the deletion decision separately after preflight. Validate exact-path
 ownership, preserve pending corrections and unrelated worktrees, and use an
