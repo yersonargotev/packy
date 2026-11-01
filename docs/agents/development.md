@@ -31,7 +31,8 @@ Retain canonical validation, the actual changed-path checks, and final-state
 evidence for the candidate. Even a non-CLI change builds the binary and runs
 `version`. Apply focused checks while iterating and `./scripts/validate-packy.sh`
 for cross-cutting changes. Keep `go test ./...` green.
-Keep proof outside disposable state and user configuration. Follow AGENTS.md
+Collect minimal proof under the [evidence lifecycle](evidence-retention.md).
+Keep active proof outside disposable state and user configuration. Follow AGENTS.md
 for sandboxed user paths and explicit test-process environments.
 
 Apply specialist verification or assurance required by the affected surface.
@@ -86,12 +87,10 @@ checking that they contain no unexpected operator changes. Confirm issue
 closure and the integrated candidate. Never reset the operator's checkout.
 Release publication follows its own exact-version and commit approval.
 
-Before any temporary-state or worktree deletion, run the read-only
-[evidence-retention preflight](evidence-retention.md) for every exact cleanup
-target and all of the run's decision trails and retained handoffs. Require a
-successful result immediately before the separate cleanup decision. Failure,
-an unavailable checker, or an unevaluated reference stops cleanup. Preserve the
-originals while correcting retention and appending relocation records.
+Follow the [evidence lifecycle and preflight](evidence-retention.md) before
+any temporary-state or worktree deletion. Keep active trails and handoffs. After
+observed merge and issue closure, retire completed detail only under that policy.
+A failed or unavailable checker or an unevaluated reference stops cleanup.
 
 Preflight establishes no path ownership or deletion authority. Resolve each
 exact owned target and reject empty, broad, unresolved, or non-owned paths.

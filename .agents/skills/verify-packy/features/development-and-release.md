@@ -9,7 +9,8 @@ Development produces a PR. Integration and publication have separate authority.
 - A release correction stops at its pending PR.
 - Release resumption observes integration before fresh candidate proof and approval.
 - An explicit integration request uses Shipping under branch protection.
-- Development and release cleanup refuse unretained evidence before deletion.
+- Active development and release cleanup refuse missing proof before deletion.
+- Completed runs retire historical detail after a durable closeout; pending work blocks retirement.
 - Release observation detects both environment waits and separately checks approval identity.
 
 ## How to get to it (user POV)
@@ -36,10 +37,13 @@ The fake forge cannot establish real approval or publication.
 For cleanup changes, first run `python3 -B scripts/probes/evidence-retention.py`
 to check the real repository script. Then follow the
 [evidence-retention routing probe](../../../../scripts/probes/evidence-retention-routing.md)
-with the repository checker from the same candidate checkout. Run both partial-copy and complete-retention
-cases for development and release. Require the actual nonzero preflight and no
-deletion attempt on failure. Require exit zero before a separate exact-path
-deletion on success. Inspect final files, retained copies and references,
+with the repository checker from the same candidate checkout. Run its partial-copy
+and complete-retention cases for development and release. Also exercise active
+missing-proof refusal, completed-run retirement for both workflows, and a
+pending-work retirement refusal. Require an
+actual nonzero preflight and no deletion on missing proof. For completed work,
+require a durable closeout, explicit retirement inventory, and exit zero before
+a separate exact-path deletion. Inspect final files, retained references,
 operator state, unrelated worktrees, and Git refs in the actual tool traces.
 Fixture integration and release-readback statements remain prepared inputs.
 
