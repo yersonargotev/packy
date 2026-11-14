@@ -203,6 +203,206 @@
     },
     {
       "pack": {
+        "id": "matty",
+        "version": "5.0.0",
+        "catalog_snapshot": "7aa85c55e9188237b43198f41f17475928033606"
+      },
+      "surface": "claude",
+      "readiness_obligations": [
+        "runtime-usability",
+        "surface-authorization"
+      ],
+      "external_requirements": [],
+      "selection": {
+        "mode": "custom",
+        "roots": [
+          {
+            "kind": "skill",
+            "id": "codebase-design"
+          },
+          {
+            "kind": "skill",
+            "id": "domain-modeling"
+          },
+          {
+            "kind": "skill",
+            "id": "grill-me"
+          },
+          {
+            "kind": "skill",
+            "id": "grill-with-docs"
+          },
+          {
+            "kind": "skill",
+            "id": "grilling"
+          },
+          {
+            "kind": "skill",
+            "id": "handoff"
+          },
+          {
+            "kind": "skill",
+            "id": "research"
+          },
+          {
+            "kind": "skill",
+            "id": "setup-matt-pocock-skills"
+          },
+          {
+            "kind": "skill",
+            "id": "to-spec"
+          },
+          {
+            "kind": "skill",
+            "id": "to-tickets"
+          },
+          {
+            "kind": "skill",
+            "id": "triage"
+          },
+          {
+            "kind": "skill",
+            "id": "writing-for-agents"
+          }
+        ]
+      },
+      "resources": [
+        {
+          "kind": "notice",
+          "id": "mit"
+        },
+        {
+          "kind": "skill",
+          "id": "codebase-design"
+        },
+        {
+          "kind": "skill",
+          "id": "domain-modeling"
+        },
+        {
+          "kind": "skill",
+          "id": "grill-me"
+        },
+        {
+          "kind": "skill",
+          "id": "grill-with-docs"
+        },
+        {
+          "kind": "skill",
+          "id": "grilling"
+        },
+        {
+          "kind": "skill",
+          "id": "handoff"
+        },
+        {
+          "kind": "skill",
+          "id": "research"
+        },
+        {
+          "kind": "skill",
+          "id": "setup-matt-pocock-skills"
+        },
+        {
+          "kind": "skill",
+          "id": "to-spec"
+        },
+        {
+          "kind": "skill",
+          "id": "to-tickets"
+        },
+        {
+          "kind": "skill",
+          "id": "triage"
+        },
+        {
+          "kind": "skill",
+          "id": "writing-for-agents"
+        }
+      ],
+      "projections": [
+        {
+          "id": "skill:codebase-design",
+          "target": ".claude/skills/codebase-design",
+          "digest": "7400a980a87f014a048377308d17f565ea5a3ea976f8003b093cb5d999b8d91f",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:domain-modeling",
+          "target": ".claude/skills/domain-modeling",
+          "digest": "492f41d4d322add221ac94fa33812515d95e8c953d218c6f2f52216aed9bcd52",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:grill-me",
+          "target": ".claude/skills/grill-me",
+          "digest": "b6a3d1141615795991f049bdf87f81be826ae7d452d0059ab165d9dba1f680a0",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:grill-with-docs",
+          "target": ".claude/skills/grill-with-docs",
+          "digest": "03e949369f2e9db6e33bf331920eb473de280957ae0e46d07b39ce2b9c45ec04",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:grilling",
+          "target": ".claude/skills/grilling",
+          "digest": "3f8c1413ff9843c8a11d99b391d57cd9c2e2bc0f80ee7901280ae5f1bcd5734a",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:handoff",
+          "target": ".claude/skills/handoff",
+          "digest": "4c525ce0c7aebb2b06ef6ea037843f1dcb4be5441b373f8bc74ed181c653edab",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:research",
+          "target": ".claude/skills/research",
+          "digest": "e38fb2ff717bee13dd0e3d6e7589f7c1b184611b63fa372a32f8143975114844",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:setup-matt-pocock-skills",
+          "target": ".claude/skills/setup-matt-pocock-skills",
+          "digest": "b21ea5565d3604972e46d1081622fd86d674c3cb444486a9781fe0361bc785e2",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:to-spec",
+          "target": ".claude/skills/to-spec",
+          "digest": "a0f79a913dc450a18df610a282c3dfd3bddcd2b3d4e894bc749e958c1c9b4a94",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:to-tickets",
+          "target": ".claude/skills/to-tickets",
+          "digest": "9c882ce2c60c2d6ec9747d6b387cb1ec994914c824437c654ccef692d820fc90",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:triage",
+          "target": ".claude/skills/triage",
+          "digest": "4c2b49966581105ec44b85897ac4b9de145687b6eec98c4b3a5868bfacff552a",
+          "file_mode": 493
+        },
+        {
+          "id": "skill:writing-for-agents",
+          "target": ".claude/skills/writing-for-agents",
+          "digest": "ccf92002b84cbb74322b57c4b2290f6234130d83b14b31f70b6fbcd904b746bb",
+          "file_mode": 493
+        },
+        {
+          "id": "notice:pack-matty-claude",
+          "target": "PACKY-NOTICES.md",
+          "digest": "d94486b7226678dce6d65b2e82505af496c6a3f84ff846b6e9fdb292a90792a6",
+          "file_mode": 420
+        }
+      ]
+    },
+    {
+      "pack": {
         "id": "packy",
         "version": "1.0.0",
         "catalog_snapshot": "bbf3eecfd7afb85d36586e6f4e18801d2eef47b6"
