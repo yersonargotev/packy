@@ -13,7 +13,7 @@ The `formalverification` build tag keeps the bounded replay separate from ordina
 
 ## Run and interpret
 
-1. Read accepted [ADR 0031](../../../../docs/adr/0031-simplify-packy-around-reviewed-packs.md) for receipt ownership. Compare the covered code below with the sync commit, including uncommitted changes. Confirm the model's steps still match the implementation before treating its verdict as evidence about current code.
+1. Read accepted [ADR 0031](../../../docs/adr/0031-simplify-packy-around-reviewed-packs.md) for receipt ownership. Compare the covered code below with the sync commit, including uncommitted changes. Confirm the model's steps still match the implementation before treating its verdict as evidence about current code.
 2. From the repository root, run:
 
    ```sh
