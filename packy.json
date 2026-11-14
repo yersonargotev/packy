@@ -94,6 +94,15 @@
             "roots": []
           },
           "aliases": []
+        },
+        {
+          "surface": "claude",
+          "version": "6.2.0",
+          "selection": {
+            "mode": "all",
+            "roots": []
+          },
+          "aliases": []
         }
       ]
     }
