@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -515,6 +516,9 @@ func resolveInvocationSources(ctx context.Context, opts Options, snapshot workst
 	}
 	store := newCatalogStore(opts, snapshot)
 	selected, err := store.Selected(catalogstore.Official().Repository)
+	if errors.Is(err, catalogstore.ErrEarlierLayout) {
+		return invocationSources{}, err
+	}
 	if err != nil {
 		return invocationSources{}, fmt.Errorf("official Catalog Snapshot is unavailable; run `packy init`: %w", err)
 	}

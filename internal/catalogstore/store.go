@@ -44,6 +44,10 @@ var (
 	builderPattern = regexp.MustCompile(`^yersonargotev/packy@[0-9a-f]{40}$`)
 )
 
+// ErrEarlierLayout reports a Catalog Store that holds only the layout that
+// predates catalog registrations.
+var ErrEarlierLayout = errors.New("holds the layout that predates catalog registrations, which this Packy does not read; follow docs/catalog-adoption.md")
+
 // Source is the network boundary used only by explicit acquisition.
 type Source interface {
 	Latest(context.Context, Registration) (Release, error)
@@ -294,7 +298,7 @@ func (s *Store) earlierLayout(err error) error {
 	if _, statErr := os.Lstat(filepath.Join(s.root, selectionFile)); statErr != nil {
 		return err
 	}
-	return fmt.Errorf("the Catalog Store at %s holds the layout that predates catalog registrations, which this Packy does not read; follow docs/catalog-adoption.md", s.root)
+	return fmt.Errorf("the Catalog Store at %s %w", s.root, ErrEarlierLayout)
 }
 
 // retainLatest validates the latest release of a catalog into its retained

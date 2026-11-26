@@ -62,6 +62,7 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 		return fmt.Errorf("initialize Sigstore verifier: %w", err)
 	}
 	workflow := strings.TrimPrefix(signerWorkflow, repository+"/")
+	// Repository is lowercase, and the certificate keeps the repository's GitHub case.
 	sanPattern := "^(?i:" + regexp.QuoteMeta("https://github.com/"+repository+"/") + ")" + regexp.QuoteMeta(workflow+"@refs/heads/main") + "$"
 	identity, err := verify.NewShortCertificateIdentity(githubOIDCIssuer, "", "", sanPattern)
 	if err != nil {

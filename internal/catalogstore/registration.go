@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const defaultPublicationWorkflow = ".github/workflows/publish.yml"
+const officialPublicationWorkflow = ".github/workflows/publish.yml"
 
 var (
 	repositoryPattern = regexp.MustCompile(`^[a-z0-9_.-]+/[a-z0-9_.-]+$`)
@@ -54,7 +54,7 @@ type Registration struct {
 
 // Official returns the built-in registration of the official catalog.
 func Official() Registration {
-	return Registration{Repository: Repository{owner: "yersonargotev", name: "packy-catalog"}, Trust: Attested{Workflow: defaultPublicationWorkflow}}
+	return Registration{Repository: Repository{owner: "yersonargotev", name: "packy-catalog"}, Trust: Attested{Workflow: officialPublicationWorkflow}}
 }
 
 func (r Registration) validate() error {
