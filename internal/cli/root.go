@@ -42,6 +42,8 @@ type Options struct {
 	ClaudeRuntimeEvidence  claudecode.RuntimeEvidenceObserver
 	TUIRunner              func(context.Context, Options, io.Reader, io.Writer) error
 	CatalogSource          catalogstore.Source
+	HTTPClient             *http.Client
+	AttestationVerifier    catalogstore.AttestationVerifier
 	CatalogOriginResolver  cataloglayout.OriginResolver
 	catalogRootOverride    string
 	localCandidate         *catalogcandidate.Workspace
@@ -354,8 +356,15 @@ func resolveCatalogOrigins(opts Options) (cataloglayout.OriginResolver, func() e
 func newCatalogStore(opts Options, snapshot workstation.Snapshot) *catalogstore.Store {
 	source := opts.CatalogSource
 	if source == nil {
-		client := &http.Client{Timeout: 2 * time.Minute}
-		source = catalogstore.NewGitHubSource(client, catalogstore.NewGitHubAttestationVerifier(client))
+		client := opts.HTTPClient
+		if client == nil {
+			client = &http.Client{Timeout: 2 * time.Minute}
+		}
+		verifier := opts.AttestationVerifier
+		if verifier == nil {
+			verifier = catalogstore.NewGitHubAttestationVerifier(client)
+		}
+		source = catalogstore.NewGitHubSource(client, verifier)
 	}
 	return catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), source)
 }

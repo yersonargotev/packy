@@ -3,15 +3,15 @@ package ci_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/yersonargotev/packy/internal/catalogstore"
+	"github.com/yersonargotev/packy/internal/githubfake"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
@@ -28,7 +28,7 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 
 	bin := t.TempDir()
 	buildEnvironment := testprocess.GoOfflineEnv(t)
-	buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, "packy"), "./internal/cli/testdata/issue798packy")
+	buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, "packy"), "./internal/cli/testdata/packytransport")
 
 	validation := runIssue798Process(t, testprocess.Env(t), root, catalogCLI,
 		"catalog", "validate", "--project", candidate, "--baseline", baseline)
@@ -60,22 +60,30 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 	publishIssue798Snapshot(t, catalogCLI, fakeGH, baselineReleaseRoot, baselineCommit, baselineDist)
 	publishIssue798Snapshot(t, catalogCLI, fakeGH, candidateReleaseRoot, candidateCommit, candidateDist)
 
-	releasePath := filepath.Join(t.TempDir(), "catalog-release.json")
-	writeIssue798Release(t, releasePath, publishedIssue798Release(t, baselineReleaseRoot, baselineCommit))
-	packyEnvironment := testprocess.Env(t, "PACKY_CATALOG_RELEASE="+releasePath)
+	fixtures := t.TempDir()
+	if err := githubfake.Publish(fixtures, "yersonargotev/packy-catalog", baselineCommit, filepath.Join(baselineReleaseRoot, "release")); err != nil {
+		t.Fatal(err)
+	}
+	github := httptest.NewTLSServer(githubfake.Handler(fixtures))
+	defer github.Close()
+	addressFile := filepath.Join(t.TempDir(), "addr")
+	if err := githubfake.AddressOf(github).Write(addressFile); err != nil {
+		t.Fatal(err)
+	}
+	packyEnvironment := testprocess.Env(t, "PACKY_GITHUBFAKE_ADDR_FILE="+addressFile)
 	packy := filepath.Join(bin, "packy")
 	executableDigest := issue798Digest(readIssue798File(t, packy))
 	if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, "init"); !strings.Contains(output, baselineCommit) {
 		t.Fatalf("initialization omitted baseline snapshot %s:\n%s", baselineCommit, output)
 	}
 
-	writeIssue798Release(t, releasePath, publishedIssue798Release(t, candidateReleaseRoot, candidateCommit))
+	if err := githubfake.Publish(fixtures, "yersonargotev/packy-catalog", candidateCommit, filepath.Join(candidateReleaseRoot, "release")); err != nil {
+		t.Fatal(err)
+	}
 	if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, "catalog", "refresh"); !strings.Contains(output, candidateCommit) {
 		t.Fatalf("refresh omitted candidate snapshot %s:\n%s", candidateCommit, output)
 	}
-	if err := os.Remove(releasePath); err != nil {
-		t.Fatal(err)
-	}
+	github.Close()
 	for _, check := range []struct {
 		want string
 		args []string
@@ -214,36 +222,6 @@ func publishIssue798Snapshot(t *testing.T, executable, fakeGH, releaseRoot, comm
 		if string(published) != string(built) {
 			t.Fatalf("published %s differs from validated candidate", asset)
 		}
-	}
-}
-
-func publishedIssue798Release(t *testing.T, releaseRoot, commit string) catalogstore.Release {
-	t.Helper()
-	archive := readIssue798File(t, filepath.Join(releaseRoot, "release", "catalog-snapshot.tar.gz"))
-	checksum := readIssue798File(t, filepath.Join(releaseRoot, "release", "SHA256SUMS"))
-	return catalogstore.Release{
-		Repository:          "yersonargotev/packy-catalog",
-		Tag:                 "catalog-" + commit,
-		Commit:              commit,
-		Publisher:           "github-actions[bot]",
-		Published:           true,
-		Immutable:           true,
-		AttestationVerified: true,
-		Assets: []catalogstore.Asset{
-			{Name: "catalog-snapshot.tar.gz", SHA256: issue798Digest(archive), Data: archive},
-			{Name: "SHA256SUMS", SHA256: issue798Digest(checksum), Data: checksum},
-		},
-	}
-}
-
-func writeIssue798Release(t *testing.T, path string, release catalogstore.Release) {
-	t.Helper()
-	data, err := json.Marshal(release)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
 	}
 }
 
