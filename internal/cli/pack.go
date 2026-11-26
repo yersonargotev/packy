@@ -2177,15 +2177,33 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 // the transaction spanning validation, discovery, and later resource reads.
 func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
 	catalogRoot := sources.catalogRoot
-	if sources.candidate != nil {
-		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, sources.candidate.Resolve)
-	}
-	if !sources.isDefault {
+	if !sources.isDefault && sources.candidate == nil {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
-	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
-		return sources.store.Resolve(catalogstore.Official().Repository, snapshotID)
+	selected := snapshotCatalogRef(sources.snapshot)
+	if sources.candidate != nil {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
+			if ref.Repository != selected.Repository {
+				return "", fmt.Errorf("catalog %s is outside this candidate workspace", ref.Repository)
+			}
+			return sources.candidate.Resolve(ctx, ref.Commit)
+		})
+	}
+	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(_ context.Context, ref capabilitypack.CatalogRef) (string, error) {
+		return resolveRetainedSnapshot(sources.store, ref)
 	})
+}
+
+func snapshotCatalogRef(snapshot catalogstore.Snapshot) capabilitypack.CatalogRef {
+	return capabilitypack.CatalogRef{Repository: snapshot.Index.Source.Repository, Commit: snapshot.Commit}
+}
+
+func resolveRetainedSnapshot(store *catalogstore.Store, ref capabilitypack.CatalogRef) (string, error) {
+	repository, err := catalogstore.ParseRepository(ref.Repository)
+	if err != nil {
+		return "", err
+	}
+	return store.Resolve(repository, ref.Commit)
 }
 
 func discoverPackCatalog(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {

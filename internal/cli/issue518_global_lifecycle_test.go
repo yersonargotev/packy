@@ -43,7 +43,7 @@ func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatalf("decode receipt document: %v\n%s", err, data)
 	}
-	if document.SchemaVersion != 1 || len(document.Receipts) != 1 {
+	if document.SchemaVersion != 2 || len(document.Receipts) != 1 {
 		t.Fatalf("receipt document = %#v\n%s", document, data)
 	}
 	receipt := document.Receipts[0]

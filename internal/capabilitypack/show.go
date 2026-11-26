@@ -237,7 +237,7 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 		surfaceIntents[surface] = intent
 		surfaceSet[surface] = true
 		if intent.Active {
-			retained, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+			retained, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogRef)
 			if err != nil {
 				return ShowReport{}, fmt.Errorf("resolve %s retained surface contract: %w", surface, err)
 			}
@@ -293,7 +293,7 @@ func (f Facade) showDetailForLifecycle(ctx context.Context, id string) (CatalogD
 		if !installed || !intent.Active {
 			continue
 		}
-		pack, err := f.catalog.resolveIntentPackAt(ctx, id, intent.Version, intent.CatalogSnapshot)
+		pack, err := f.catalog.resolveIntentPackAt(ctx, id, intent.Version, intent.CatalogRef)
 		if err != nil {
 			return CatalogDetail{}, false, err
 		}

@@ -294,10 +294,10 @@ func (a controlledCheckSurfaceAdapter) controlledCheckDescriptor() ControlledChe
 }
 
 type ActivationIntent struct {
-	PackID               string                `json:"pack_id"`
-	Surface              Surface               `json:"surface"`
-	Version              string                `json:"version"`
-	CatalogSnapshot      string                `json:"catalog_snapshot,omitempty"`
+	PackID  string  `json:"pack_id"`
+	Surface Surface `json:"surface"`
+	Version string  `json:"version"`
+	CatalogRef
 	Active               bool                  `json:"active"`
 	Revision             int                   `json:"revision"`
 	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
@@ -681,7 +681,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	oldVersion := requested.Version
 	if active && intent.Version != "" {
 		oldVersion = intent.Version
-		requested, err = f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogSnapshot)
+		requested, err = f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogRef)
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}
@@ -1198,7 +1198,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			targetVersion = request.Plan.oldVersion
 		}
 		explicit := true
-		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, CatalogSnapshot: pack.CatalogSnapshot, Active: activeTarget, Revision: state.Intent.Revision + 1, ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...), ExternalRequirements: append([]string{}, pack.Requires.Tools...), Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, Resources: packResourceIdentities(pack), Explicit: &explicit}
+		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, CatalogRef: pack.CatalogRef, Active: activeTarget, Revision: state.Intent.Revision + 1, ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...), ExternalRequirements: append([]string{}, pack.Requires.Tools...), Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, Resources: packResourceIdentities(pack), Explicit: &explicit}
 		byID := map[string]ActivationIntent{}
 		for _, intent := range previousIntents {
 			byID[intent.PackID] = intent
@@ -1215,7 +1215,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			if previouslyActive {
 				explicitFact = previous.Explicit
 			}
-			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, CatalogSnapshot: activation.Pack.CatalogSnapshot, Active: true, Revision: state.Intent.Revision, ReadinessObligations: append([]ReadinessObligation(nil), activation.Pack.ReadinessObligations...), ExternalRequirements: append([]string{}, activation.Pack.Requires.Tools...), Aliases: cloneAliases(aliases), Selection: activationSelection, Resources: packResourceIdentities(activation.Pack), Explicit: explicitFact}
+			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, CatalogRef: activation.Pack.CatalogRef, Active: true, Revision: state.Intent.Revision, ReadinessObligations: append([]ReadinessObligation(nil), activation.Pack.ReadinessObligations...), ExternalRequirements: append([]string{}, activation.Pack.Requires.Tools...), Aliases: cloneAliases(aliases), Selection: activationSelection, Resources: packResourceIdentities(activation.Pack), Explicit: explicitFact}
 			if activation.Pack.ID == pack.ID {
 				byID[activation.Pack.ID] = state.Intent
 			}
@@ -1552,7 +1552,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if plan.operation == OperationDeactivate {
 		intent, ok := intentForPack(state, plan.pack.ID, plan.surface)
 		if ok && intent.Version != "" {
-			pack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+			pack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogRef)
 			if err != nil {
 				return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("historical artifact changed after Preview: %v; rerun deactivate to preview a fresh plan", err)}
 			}
@@ -1664,7 +1664,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	}
 	intent, hasIntent := intentForPack(state, request.PackID, request.Surface)
 	if operation == OperationDeactivate && hasIntent {
-		pack, err := f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogSnapshot)
+		pack, err := f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogRef)
 		if err != nil {
 			return Pack{}, nil, ActivationState{}, err
 		}

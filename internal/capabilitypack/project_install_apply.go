@@ -337,18 +337,26 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 	if err := strictDecode(data, &lock); err != nil {
 		return ProjectLockProposal{}, false, fmt.Errorf("decode project lock: %w", err)
 	}
+	if lock.SchemaVersion < projectLockSchemaVersion {
+		return ProjectLockProposal{}, false, fmt.Errorf("project lock at schema_version %d does not name the catalog of each Pack; follow docs/catalog-adoption.md to reinstall the project Packs", lock.SchemaVersion)
+	}
+	if !supportedProjectLockVersion(lock) {
+		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
+	}
+	for _, receipt := range lock.Receipts {
+		if !receipt.Pack.CatalogRef.complete() {
+			return ProjectLockProposal{}, false, fmt.Errorf("project lock receipt for capability pack %q has an incomplete catalog reference", receipt.Pack.ID)
+		}
+	}
 	lock, err = hydrateProjectLock(lock)
 	if err != nil {
 		return ProjectLockProposal{}, false, err
 	}
-	if !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
-		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
-	}
 	return lock, true, nil
 }
 
-func supportedProjectContractVersion(schemaVersion int, minimumCapability string) bool {
-	return schemaVersion == projectContractSchemaV1 && minimumCapability == ""
+func supportedProjectLockVersion(lock ProjectLockProposal) bool {
+	return lock.SchemaVersion == projectLockSchemaVersion && lock.MinimumPackyCapability == ""
 }
 
 func findProjectSurfaceLockProjection(lock ProjectLockProposal, surface Surface, resource ResourceIdentity, target string) (ProjectProjectionPlan, bool) {

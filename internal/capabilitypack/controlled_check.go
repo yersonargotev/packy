@@ -196,7 +196,7 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 			return ControlledCheckIdentity{}, nil, errors.New("requested client does not match the installed native role selection")
 		}
 		selection = intent.Selection
-		pack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+		pack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogRef)
 		if err != nil {
 			return ControlledCheckIdentity{}, nil, err
 		}
@@ -247,7 +247,7 @@ func (f Facade) projectControlledCheckIdentity(ctx context.Context, request Cont
 			version = intent.Version
 		}
 	}
-	pack, err := f.catalog.resolveIntentPackAt(ctx, request.PackID, version, projectReceiptCatalogSnapshot(installation.Lock, request.PackID, request.Surface))
+	pack, err := f.catalog.resolveIntentPackAt(ctx, request.PackID, version, projectReceiptCatalogRef(installation.Lock, request.PackID, request.Surface))
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}

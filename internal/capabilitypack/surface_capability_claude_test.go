@@ -12,8 +12,8 @@ import (
 	"github.com/yersonargotev/packy/internal/claudecode"
 )
 
-func claudePackResolver(packs map[string]capabilitypack.Pack) func(context.Context, string, string, string) (capabilitypack.Pack, error) {
-	return func(_ context.Context, id, version, _ string) (capabilitypack.Pack, error) {
+func claudePackResolver(packs map[string]capabilitypack.Pack) capabilitypack.IntentPackResolver {
+	return func(_ context.Context, id, version string, _ capabilitypack.CatalogRef) (capabilitypack.Pack, error) {
 		pack, ok := packs[id+"@"+version]
 		if !ok {
 			pack, ok = packs[id]

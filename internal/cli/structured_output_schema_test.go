@@ -126,6 +126,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertProjectStructuredOutput(t, root, "project-lock.schema.json", string(lockData))
 	var lockDocument map[string]any
 	if err := json.Unmarshal(lockData, &lockDocument); err != nil {
 		t.Fatal(err)
@@ -614,49 +615,43 @@ func assertProjectStructuredOutput(t *testing.T, root, schemaName, instance stri
 func validateProjectStructuredOutput(t *testing.T, root, schemaName, instance string) error {
 	t.Helper()
 	compiler := jsonschema.NewCompiler()
-	schemaRoot := filepath.Join(root, "schemas", "project", "v1.0.0")
-	entries, err := os.ReadDir(schemaRoot)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		schemaBytes, err := os.ReadFile(filepath.Join(schemaRoot, entry.Name()))
+	for _, generation := range []string{"v1.0.0", "v2", "v4", "v5"} {
+		schemaRoot := filepath.Join(root, "schemas", "project", generation)
+		entries, err := os.ReadDir(schemaRoot)
 		if err != nil {
 			return err
 		}
-		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
-		if err != nil {
-			return fmt.Errorf("parse project schema %s: %w", entry.Name(), err)
-		}
-		if err := compiler.AddResource("https://yersonargotev.github.io/packy/schemas/project/v1.0.0/"+entry.Name(), document); err != nil {
-			return err
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			schemaBytes, err := os.ReadFile(filepath.Join(schemaRoot, entry.Name()))
+			if err != nil {
+				return err
+			}
+			document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
+			if err != nil {
+				return fmt.Errorf("parse project schema %s/%s: %w", generation, entry.Name(), err)
+			}
+			if err := compiler.AddResource("https://yersonargotev.github.io/packy/schemas/project/"+generation+"/"+entry.Name(), document); err != nil {
+				return err
+			}
 		}
 	}
-	schemaURL := "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/" + schemaName
 	var versioned struct {
 		SchemaVersion int `json:"schema_version"`
 	}
 	if err := json.Unmarshal([]byte(instance), &versioned); err != nil {
 		return err
 	}
-	if schemaName == "project-preview.schema.json" && versioned.SchemaVersion == 4 {
-		data, err := os.ReadFile(filepath.Join(root, "schemas", "project", "v4", schemaName))
-		if err != nil {
-			return err
-		}
-		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
-		if err != nil {
-			return err
-		}
-		schemaURL = "https://yersonargotev.github.io/packy/schemas/project/v4/" + schemaName
-		if err := compiler.AddResource(schemaURL, document); err != nil {
-			return err
-		}
+	generation := "v1.0.0"
+	switch {
+	case schemaName == "project-preview.schema.json" && versioned.SchemaVersion >= 4:
+		generation = fmt.Sprintf("v%d", versioned.SchemaVersion)
+	case schemaName == "project-lock.schema.json" && versioned.SchemaVersion == 2:
+		generation = "v2"
 	}
-	schema, err := compiler.Compile(schemaURL)
+	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/project/" + generation + "/" + schemaName)
 	if err != nil {
 		return err
 	}

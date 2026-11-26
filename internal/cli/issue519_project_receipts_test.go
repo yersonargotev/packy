@@ -75,7 +75,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode project lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 1 || len(lock.Receipts) != 2 {
+	if lock.SchemaVersion != 2 || len(lock.Receipts) != 2 {
 		t.Fatalf("project receipt document = %#v\n%s", lock, lockData)
 	}
 	for _, receipt := range lock.Receipts {

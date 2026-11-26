@@ -51,22 +51,23 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 				return failure(cmd, "catalog_unavailable", err)
 			}
 			dataRoot := catalogstore.DefaultDataRoot(station.Home())
-			var root, identity string
+			var root string
+			var identity capabilitypack.CatalogRef
 			if opts.localCandidate != nil {
-				identity = snapshotID
-				if identity == "" {
-					identity = opts.localCandidate.Snapshot.ID
+				identity = snapshotCatalogRef(opts.localCandidate.Snapshot)
+				if snapshotID != "" {
+					identity.Commit = snapshotID
 				}
-				root, err = opts.localCandidate.Resolve(cmd.Context(), identity)
+				root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
 			} else {
 				store := catalogstore.New(dataRoot, nil)
 				if snapshotID != "" {
-					identity = snapshotID
-					root, err = store.Resolve(catalogstore.Official().Repository, identity)
+					identity = capabilitypack.CatalogRef{Repository: catalogstore.Official().Repository.String(), Commit: snapshotID}
+					root, err = resolveRetainedSnapshot(store, identity)
 				} else {
 					var selected catalogstore.Snapshot
 					selected, err = store.Selected(catalogstore.Official().Repository)
-					root, identity = selected.Root, selected.ID
+					root, identity = selected.Root, snapshotCatalogRef(selected)
 				}
 			}
 			if err != nil {

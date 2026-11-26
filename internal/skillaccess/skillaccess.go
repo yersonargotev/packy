@@ -19,7 +19,10 @@ import (
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
-var snapshotPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var (
+	snapshotPattern   = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	repositoryPattern = regexp.MustCompile(`^[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*/[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*$`)
+)
 
 // Error identifies an actionable retrieval failure without a partial success.
 type Error struct {
@@ -65,11 +68,12 @@ func ValidateRequest(qualified string, surface capabilitypack.Surface) error {
 // Prepare consumes a validated retained snapshot. The caller must resolve the
 // exact snapshot through catalogstore or catalogcandidate, never a source tree
 // override. Index identities are checked again while copying the selected files.
-func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified string, surface capabilitypack.Surface) (Result, error) {
+func Prepare(ctx context.Context, snapshotRoot string, ref capabilitypack.CatalogRef, dataRoot, qualified string, surface capabilitypack.Surface) (Result, error) {
 	if err := ValidateRequest(qualified, surface); err != nil {
 		return Result{}, err
 	}
-	if !snapshotPattern.MatchString(snapshotID) {
+	snapshotID := ref.Commit
+	if !snapshotPattern.MatchString(snapshotID) || !repositoryPattern.MatchString(ref.Repository) {
 		return Result{}, failure("snapshot_unavailable", "a retained immutable Catalog Snapshot identity is required")
 	}
 	dataRoot, err := filepath.Abs(dataRoot)
@@ -133,7 +137,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 	}
 	files := []cataloglayout.FileRecord{}
 	for packID, roots := range rootsByPack {
-		declared, err := declaredFiles(snapshotRoot, snapshotID, packID, roots)
+		declared, err := declaredFiles(snapshotRoot, ref, packID, roots)
 		if err != nil {
 			return Result{}, failure("snapshot_unavailable", "read retained snapshot %s: %v", snapshotID, err)
 		}
@@ -143,7 +147,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 		}
 	}
 	slices.SortFunc(files, func(a, b cataloglayout.FileRecord) int { return strings.Compare(a.Path, b.Path) })
-	destination, err := preparationPath(dataRoot, snapshotRoot, snapshotID, surface, pack.ID, skill.Resource.ID)
+	destination, err := preparationPath(dataRoot, snapshotRoot, ref, surface, pack.ID, skill.Resource.ID)
 	if err != nil {
 		return Result{}, failure("preparation_failed", "prepare owned resource directory: %v", err)
 	}
@@ -172,7 +176,7 @@ func Prepare(ctx context.Context, snapshotRoot, snapshotID, dataRoot, qualified 
 
 // Refuse linked descendants so preparing data can never write through a link
 // into catalog sources, installed projections, or a consumer's target project.
-func preparationPath(dataRoot, snapshotRoot, snapshotID string, surface capabilitypack.Surface, packID, skillID string) (string, error) {
+func preparationPath(dataRoot, snapshotRoot string, ref capabilitypack.CatalogRef, surface capabilitypack.Surface, packID, skillID string) (string, error) {
 	if err := os.MkdirAll(dataRoot, 0755); err != nil {
 		return "", err
 	}
@@ -187,7 +191,8 @@ func preparationPath(dataRoot, snapshotRoot, snapshotID string, surface capabili
 	if relative, err := filepath.Rel(source, root); err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("prepared resources must be outside the Catalog Snapshot")
 	}
-	for _, component := range []string{"skill-access", "v2", snapshotID, string(surface), packID} {
+	owner, name, _ := strings.Cut(ref.Repository, "/")
+	for _, component := range []string{"skill-access", "v3", owner, name, ref.Commit, string(surface), packID} {
 		root = filepath.Join(root, component)
 		if err := os.Mkdir(root, 0755); err != nil && !os.IsExist(err) {
 			return "", err
@@ -238,7 +243,7 @@ func renderedFiles(source string, files []cataloglayout.FileRecord, resources []
 	return rendered, nil
 }
 
-func declaredFiles(snapshotRoot, snapshotID, packID string, roots []string) ([]cataloglayout.FileRecord, error) {
+func declaredFiles(snapshotRoot string, ref capabilitypack.CatalogRef, packID string, roots []string) ([]cataloglayout.FileRecord, error) {
 	data, err := os.ReadFile(filepath.Join(snapshotRoot, "catalog-index.json"))
 	if err != nil {
 		return nil, err
@@ -247,8 +252,8 @@ func declaredFiles(snapshotRoot, snapshotID, packID string, roots []string) ([]c
 	if err := json.Unmarshal(data, &index); err != nil {
 		return nil, err
 	}
-	if index.SchemaVersion != 3 || index.Source.Commit != snapshotID {
-		return nil, fmt.Errorf("retained index does not match Catalog Snapshot %s", snapshotID)
+	if index.SchemaVersion != 3 || index.Source.Repository != ref.Repository || index.Source.Commit != ref.Commit {
+		return nil, fmt.Errorf("retained index does not match Catalog Snapshot %s@%s", ref.Repository, ref.Commit)
 	}
 	for _, pack := range index.Packs {
 		if pack.ID != packID {

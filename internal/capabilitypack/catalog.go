@@ -400,11 +400,23 @@ type OptionalMode struct {
 	Fallback    string   `json:"fallback"`
 }
 
+// CatalogRef names the catalog repository and the Catalog Snapshot commit
+// that a Pack contract comes from. The zero value names no catalog, as for a
+// catalog root that Packy reads in place.
+type CatalogRef struct {
+	Repository string `json:"catalog_repository,omitempty"`
+	Commit     string `json:"catalog_snapshot,omitempty"`
+}
+
+func (r CatalogRef) label() string { return r.Repository + "@" + r.Commit }
+
+func (r CatalogRef) complete() bool { return (r.Repository == "") == (r.Commit == "") }
+
 type Pack struct {
 	Origins              []PackOrigin
 	ID                   string
 	Version              string
-	CatalogSnapshot      string
+	CatalogRef           CatalogRef
 	Description          string
 	Selectable           bool
 	Surfaces             []Surface
@@ -445,8 +457,8 @@ func (p Pack) ResourceCounts() ResourceCounts {
 type Catalog struct {
 	packs                 []Pack
 	catalogRoot           string
-	snapshotID            string
-	resolveSnapshot       func(context.Context, string) (string, error)
+	ref                   CatalogRef
+	resolveSnapshot       SnapshotResolver
 	entries               []catalogEntry
 	deferSourceValidation bool
 	transactionHeld       bool
@@ -482,44 +494,48 @@ func DiscoverValidatedForDurableIntents(ctx context.Context, catalogRoot string,
 	return discoverProductionCatalog(ctx, catalogRoot, false, validate)
 }
 
+// SnapshotResolver returns the validated root of the retained Catalog Snapshot
+// that a CatalogRef names.
+type SnapshotResolver func(context.Context, CatalogRef) (string, error)
+
 // DiscoverRetainedForDurableIntents loads one immutable retained Catalog
 // Snapshot. Historical lifecycle reads resolve through the supplied snapshot
 // resolver instead of following the currently selected catalog. The resolver
 // also validates the selected snapshot before discovery and every observation;
 // it must be read-only and must not acquire a catalog lock.
-func DiscoverRetainedForDurableIntents(ctx context.Context, catalogRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
+func DiscoverRetainedForDurableIntents(ctx context.Context, catalogRoot string, ref CatalogRef, resolveSnapshot SnapshotResolver) (Catalog, error) {
 	catalog, err := discoverProductionCatalog(ctx, catalogRoot, false, func(ctx context.Context) error {
-		root, err := resolveSnapshot(ctx, snapshotID)
+		root, err := resolveSnapshot(ctx, ref)
 		if err != nil {
 			return err
 		}
 		if filepath.Clean(root) != filepath.Clean(catalogRoot) {
-			return fmt.Errorf("retained Catalog Snapshot %s resolved outside its selected root", snapshotID)
+			return fmt.Errorf("retained Catalog Snapshot %s resolved outside its selected root", ref.label())
 		}
 		return nil
 	})
 	if err != nil {
 		return Catalog{}, err
 	}
-	return configureRetainedCatalog(catalog, snapshotID, resolveSnapshot), nil
+	return configureRetainedCatalog(catalog, ref, resolveSnapshot), nil
 }
 
 // discoverRetainedForDurableIntentsUnlocked reads a catalog root returned by a
 // validating immutable-snapshot resolver. Callers may already hold another
 // snapshot's observation lock, so this path must not acquire a catalog lock.
-func discoverRetainedForDurableIntentsUnlocked(catalogRoot, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) (Catalog, error) {
+func discoverRetainedForDurableIntentsUnlocked(catalogRoot string, ref CatalogRef, resolveSnapshot SnapshotResolver) (Catalog, error) {
 	catalog, err := discoverCurrentCatalogUnlocked(catalogRoot, false)
 	if err != nil {
 		return Catalog{}, err
 	}
-	return configureRetainedCatalog(catalog, snapshotID, resolveSnapshot), nil
+	return configureRetainedCatalog(catalog, ref, resolveSnapshot), nil
 }
 
-func configureRetainedCatalog(catalog Catalog, snapshotID string, resolveSnapshot func(context.Context, string) (string, error)) Catalog {
-	catalog.snapshotID = snapshotID
+func configureRetainedCatalog(catalog Catalog, ref CatalogRef, resolveSnapshot SnapshotResolver) Catalog {
+	catalog.ref = ref
 	catalog.resolveSnapshot = resolveSnapshot
 	for i := range catalog.packs {
-		catalog.packs[i].CatalogSnapshot = snapshotID
+		catalog.packs[i].CatalogRef = ref
 	}
 	return catalog
 }
@@ -576,10 +592,10 @@ func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
 		refreshed, err = discoverCurrentCatalogUnlocked(c.catalogRoot, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
 		refreshed.validateSource = locked.validateSource
-		refreshed.snapshotID = locked.snapshotID
+		refreshed.ref = locked.ref
 		refreshed.resolveSnapshot = locked.resolveSnapshot
 		for i := range refreshed.packs {
-			refreshed.packs[i].CatalogSnapshot = locked.snapshotID
+			refreshed.packs[i].CatalogRef = locked.ref
 		}
 		return err
 	})
