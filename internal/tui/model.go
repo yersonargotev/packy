@@ -1587,6 +1587,9 @@ func (m Model) renderCatalogOperationResult() string {
 	}
 	lines := []string{statusBadge(map[bool]string{true: "failed", false: "verified"}[failed])}
 	if m.catalogOperation == catalogOperationRefresh {
+		if failed && m.catalogOperationErr == nil && slices.ContainsFunc(m.catalogRefreshes, func(refresh CatalogRefresh) bool { return refresh.Err == nil }) {
+			lines[0] = statusBadge("partial")
+		}
 		return m.renderPagedScreen("Catalog refresh", m.catalogRefreshStatus(), strings.Join(append(lines, m.catalogRefreshLines()...), "\n"), action+" · Esc dashboard · q quit")
 	}
 	status := "Initialization succeeded"

@@ -283,6 +283,7 @@ func TestPartialCatalogRefreshReportsEachCatalogAndKeepsFailedSelection(t *testi
 	model = runModelCommand(t, model, command)
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{
+		"[WARN] partial",
 		"Catalog refresh failed for 1 of 2 catalogs",
 		"[OK] " + officialCatalog,
 		"  selected Catalog Snapshot " + refreshed,
@@ -324,7 +325,7 @@ func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testin
 	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
 	model = runModelCommand(t, model, command)
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Catalog refresh failed for 1 of 1 catalogs", "requires Packy engine 2", "keeps Catalog Snapshot " + snapshotID} {
+	for _, want := range []string{"[FAIL] failed", "Catalog refresh failed for 1 of 1 catalogs", "requires Packy engine 2", "keeps Catalog Snapshot " + snapshotID} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("failed refresh missing %q:\n%s", want, view)
 		}

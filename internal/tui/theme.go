@@ -87,7 +87,7 @@ func statusBadge(status string) string {
 	switch strings.ToLower(status) {
 	case "healthy", "pass", "verified", "active", "supported":
 		label, background = "[OK] "+status, mochaGreen
-	case "warnings", "warn", "warning", "unknown", "unsupported":
+	case "warnings", "warn", "warning", "unknown", "unsupported", "partial":
 		label, background = "[WARN] "+status, mochaYellow
 	case "failures", "fail", "failed", "blocked", "unhealthy":
 		label, background = "[FAIL] "+status, mochaRed
