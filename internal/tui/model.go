@@ -1624,12 +1624,16 @@ func (m Model) catalogRefreshStatus() string {
 
 func (m Model) catalogRefreshLines() []string {
 	lines := []string{sectionHeading("Catalogs", len(m.catalogRefreshes))}
+	header := func(severity, repository string) string {
+		marker := severityMarker(severity)
+		return marker + " " + elideRepository(repository, m.viewportTextWidth()-ansi.StringWidth(marker)-1)
+	}
 	for _, refresh := range m.catalogRefreshes {
 		if refresh.Err == nil {
-			lines = append(lines, severityMarker("PASS")+" "+refresh.Repository, "  selected Catalog Snapshot "+refresh.SnapshotID)
+			lines = append(lines, header("PASS", refresh.Repository), "  selected Catalog Snapshot "+refresh.SnapshotID)
 			continue
 		}
-		lines = append(lines, severityMarker("FAIL")+" "+refresh.Repository)
+		lines = append(lines, header("FAIL", refresh.Repository))
 		if refresh.SnapshotID != "" {
 			lines = append(lines, "  failed and keeps Catalog Snapshot "+refresh.SnapshotID)
 		}

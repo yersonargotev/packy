@@ -195,15 +195,18 @@ func (m Model) viewportMaxOffset(content string) int {
 }
 
 func (m Model) viewportLines(content string) []string {
+	wrapped := lipgloss.NewStyle().Width(m.viewportTextWidth()).Render(content)
+	return strings.Split(wrapped, "\n")
+}
+
+func (m Model) viewportTextWidth() int {
 	width := m.width
 	if width <= 0 {
 		width = 100
 	}
 	// panel width includes its two padding cells and border, leaving ten cells
 	// less than the terminal for actual text after the screen margins.
-	innerWidth := max(width-10, 38)
-	wrapped := lipgloss.NewStyle().Width(innerWidth).Render(content)
-	return strings.Split(wrapped, "\n")
+	return max(width-10, 38)
 }
 
 func (m Model) viewportVisibleLines() int {

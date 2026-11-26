@@ -259,6 +259,46 @@ func TestNarrowCatalogRowsElideLongRepositoryNames(t *testing.T) {
 	}
 }
 
+func TestNarrowCatalogRefreshResultElidesLongRepositoryNames(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{
+			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "attested", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog}}},
+	}}
+	backend.refresh = func(func(string)) ([]tui.CatalogRefresh, error) {
+		return []tui.CatalogRefresh{
+			{Repository: officialCatalog, SnapshotID: strings.Repeat("b", 40)},
+			{Repository: longCatalog, SnapshotID: strings.Repeat("e", 40), Err: errors.New("latest release returned HTTP 500")},
+		}, nil
+	}
+	for _, tc := range []struct {
+		width int
+		want  []string
+	}{
+		{width: 80, want: []string{"[OK] " + officialCatalog, "[FAIL] …/shared-agent-capability-packs"}},
+		{width: 160, want: []string{"[OK] " + officialCatalog, "[FAIL] " + longCatalog}},
+	} {
+		model := loadModel(t, backend)
+		model, _ = model.Update(tea.WindowSizeMsg{Width: tc.width, Height: 60})
+		model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+		model = runModelCommand(t, model, command)
+		view := ansi.Strip(model.View().Content)
+		for _, line := range strings.Split(view, "\n") {
+			if width := ansi.StringWidth(line); width > tc.width {
+				t.Fatalf("%d-column refresh result line width = %d:\n%s", tc.width, width, view)
+			}
+		}
+		for _, want := range tc.want {
+			if !regexp.MustCompile(regexp.QuoteMeta(want) + ` *│`).MatchString(view) {
+				t.Fatalf("%d-column refresh result lacks whole header %q:\n%s", tc.width, want, view)
+			}
+		}
+	}
+}
+
 func TestPartialCatalogRefreshReportsEachCatalogAndKeepsFailedSelection(t *testing.T) {
 	previous, failed := strings.Repeat("a", 40), strings.Repeat("c", 40)
 	refreshed := strings.Repeat("b", 40)
