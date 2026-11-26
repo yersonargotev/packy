@@ -1329,13 +1329,15 @@ func (m Model) dashboardContent() (string, string) {
 
 	globalPacks := filteredPacks(m.dashboard.Global.Packs, m.filter)
 	projectPacks := filteredPacks(m.dashboard.Project.Packs, m.filter)
-	global := panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty), contentWidth, !m.project)
-	project := panel(m.renderProjectScope(projectPacks, projectEmpty), contentWidth, m.project)
+	globalWidth, projectWidth := contentWidth, contentWidth
+	if width >= 96 {
+		globalWidth = (contentWidth - 2) / 2
+		projectWidth = contentWidth - globalWidth - 2
+	}
+	global := panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty, panelTextWidth(globalWidth)), globalWidth, !m.project)
+	project := panel(m.renderProjectScope(projectPacks, projectEmpty, panelTextWidth(projectWidth)), projectWidth, m.project)
 	scopes := global + "\n" + project
 	if width >= 96 {
-		columnWidth := (contentWidth - 2) / 2
-		global = panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty), columnWidth, !m.project)
-		project = panel(m.renderProjectScope(projectPacks, projectEmpty), contentWidth-columnWidth-2, m.project)
 		scopes = lipgloss.JoinHorizontal(lipgloss.Top, global, "  ", project)
 	}
 	filter := ""
@@ -1523,7 +1525,7 @@ func (m Model) renderHealth() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderProjectScope(packs []Pack, empty string) string {
+func (m Model) renderProjectScope(packs []Pack, empty string, width int) string {
 	if !m.dashboard.Project.Available {
 		return strings.Join([]string{
 			sectionTitleStyle.Render("Current project"),
@@ -1531,7 +1533,7 @@ func (m Model) renderProjectScope(packs []Pack, empty string) string {
 			mutedStyle.Render("Global inspection remains available"),
 		}, "\n")
 	}
-	content := m.renderScope("Current project", packs, m.projectRow, m.project, empty)
+	content := m.renderScope("Current project", packs, m.projectRow, m.project, empty, width)
 	return content + "\n" + dimStyle.Render(m.dashboard.Project.Root)
 }
 
@@ -1644,7 +1646,7 @@ func (m Model) renderBody(content string) string {
 	return style.Render(content)
 }
 
-func (m Model) renderScope(title string, packs []Pack, row int, selected bool, empty string) string {
+func (m Model) renderScope(title string, packs []Pack, row int, selected bool, empty string, width int) string {
 	if selected {
 		title += " · selected"
 	}
@@ -1658,18 +1660,26 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 	}
 	visible, offset := m.visibleScopePacks(packs, row, selected)
 	for index, pack := range visible {
-		actualIndex := offset + index
+		current := selected && offset+index == row
 		label := pack.ID + "  " + pack.Version
 		rowText := "  " + pack.ID + "  " + versionStyle.Render(pack.Version)
-		if pack.Catalog != "" {
-			label += "  " + pack.Catalog
-			rowText += "  " + dimStyle.Render(pack.Catalog)
+		used := ansi.StringWidth(rowText)
+		if current {
+			used = ansi.StringWidth(" › " + label + "  · selected")
 		}
-		if selected && actualIndex == row {
+		catalog := fitRepository(pack.Catalog, width-used-2)
+		if catalog != "" {
+			label += "  " + catalog
+			rowText += "  " + dimStyle.Render(catalog)
+		}
+		if current {
 			rowText = selectedRowStyle.Padding(0, 1).Render("› "+label) + " · selected"
 		}
 		lines = append(lines, rowText)
-		if selected && actualIndex == row && pack.Description != "" {
+		if current && catalog == "" && pack.Catalog != "" {
+			lines = append(lines, "    "+dimStyle.Render(elideRepository(pack.Catalog, width-4)))
+		}
+		if current && pack.Description != "" {
 			lines = append(lines, "  "+mutedStyle.Render(pack.Description))
 		}
 	}

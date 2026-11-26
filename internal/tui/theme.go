@@ -78,6 +78,10 @@ func panel(content string, width int, focused bool) string {
 		Render(content)
 }
 
+func panelTextWidth(width int) int {
+	return max(width-8, 1)
+}
+
 func statusBadge(status string) string {
 	label, foreground, background := "[INFO] "+status, mochaBase, mochaSapphire
 	switch strings.ToLower(status) {

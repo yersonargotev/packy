@@ -173,6 +173,66 @@ func TestDashboardListsEveryCatalogWithTrustSnapshotAndPackCatalog(t *testing.T)
 
 const longCatalog = "acme-enterprise-platform-engineering/shared-agent-capability-packs"
 
+func TestPackRowsFitPanelsWithoutCuttingRepositoryNames(t *testing.T) {
+	repositories := []string{officialCatalog, acmeCatalog, longCatalog}
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{
+			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
+			{Repository: acmeCatalog, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{
+			{ID: "acme", Version: "1.0.0", Catalog: acmeCatalog, Description: "Fixture Pack"},
+			{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog},
+			{ID: "shared", Version: "2.0.0", Catalog: longCatalog},
+		}},
+	}}
+	repositoryToken := regexp.MustCompile(`^(…|[a-z0-9-]+)/[a-z0-9.-]*$`)
+	for _, width := range []int{80, 100, 110, 160} {
+		for _, row := range []int{0, 1, 2} {
+			t.Run(fmt.Sprintf("width=%d/row=%d", width, row), func(t *testing.T) {
+				model := loadModel(t, backend)
+				model, _ = model.Update(tea.WindowSizeMsg{Width: width, Height: 60})
+				for range row {
+					model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+				}
+				view := ansi.Strip(model.View().Content)
+				for _, line := range strings.Split(view, "\n") {
+					if lineWidth := ansi.StringWidth(line); lineWidth > width {
+						t.Fatalf("line width = %d, want <= %d:\n%s", lineWidth, width, view)
+					}
+					for _, token := range strings.Fields(line) {
+						if !repositoryToken.MatchString(token) {
+							continue
+						}
+						if !slices.ContainsFunc(repositories, func(repository string) bool {
+							_, name, _ := strings.Cut(repository, "/")
+							return token == repository || token == "…/"+name
+						}) {
+							t.Fatalf("repository name cut to %q:\n%s", token, view)
+						}
+					}
+				}
+				pack := backend.dashboard.Global.Packs[row]
+				_, name, _ := strings.Cut(pack.Catalog, "/")
+				lines := strings.Split(view, "\n")
+				current := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "› "+pack.ID+"  "+pack.Version) })
+				if current < 0 || !regexp.MustCompile(`(  |│ +)(`+regexp.QuoteMeta(pack.Catalog)+"|…/"+regexp.QuoteMeta(name)+")").MatchString(strings.Join(lines[current:current+2], "\n")) {
+					t.Fatalf("selected Pack %s does not show its catalog:\n%s", pack.ID, view)
+				}
+				if width == 160 {
+					for _, want := range []string{"fixture  1.0.0  " + officialCatalog, "shared  2.0.0  …/shared-agent-capability-packs"} {
+						if !strings.Contains(view, want) {
+							t.Fatalf("wide Pack row missing %q:\n%s", want, view)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestNarrowCatalogRowsElideLongRepositoryNames(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "healthy"},
