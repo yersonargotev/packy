@@ -68,7 +68,7 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			if snapshotID != "" {
 				code = "snapshot_unavailable"
 			}
-			if errors.Is(err, catalogstore.ErrEarlierLayout) {
+			if errors.Is(err, catalogstore.ErrEarlierLayout) || errors.Is(err, catalogstore.ErrAmbiguousPack) {
 				return failure(cmd, "catalog_unavailable", err)
 			}
 			return failure(cmd, code, fmt.Errorf("local retained Catalog Snapshot unavailable; acquire explicitly with packy init or packy catalog refresh, or restore the exact requested snapshot: %w", err))

@@ -258,11 +258,17 @@ func (s *Store) Resolve(repository Repository, snapshotID string) (string, error
 	return snapshot.Root, err
 }
 
+// ErrAmbiguousPack reports a Pack that more than one registered catalog
+// provides at the requested Catalog Snapshot.
+var ErrAmbiguousPack = errors.New("several registered catalogs provide the Pack")
+
 // Providing returns the Catalog Snapshot of a registered catalog whose index
 // lists packID, reading each catalog's selected snapshot, or its retained
-// snapshot snapshotID when one is given. When no catalog provides the Pack it
-// returns the official catalog's snapshot, or the error from reading it, so the
-// caller reports the unknown Pack against the official catalog.
+// snapshot snapshotID when one is given. It fails with ErrAmbiguousPack when
+// several catalogs provide the Pack there, as forks that share a commit can.
+// When no catalog provides the Pack it returns the official catalog's
+// snapshot, or the error from reading it, so the caller reports the unknown
+// Pack against the official catalog.
 func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 	registrations, err := s.Registrations()
 	if err != nil {
@@ -270,6 +276,7 @@ func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 	}
 	var official Snapshot
 	var officialErr error
+	var providing []Snapshot
 	for _, registration := range registrations {
 		var snapshot Snapshot
 		var err error
@@ -288,11 +295,21 @@ func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 		}
 		for _, pack := range snapshot.Index.Packs {
 			if pack.ID == packID {
-				return snapshot, nil
+				providing = append(providing, snapshot)
 			}
 		}
 	}
-	return official, officialErr
+	switch len(providing) {
+	case 0:
+		return official, officialErr
+	case 1:
+		return providing[0], nil
+	}
+	catalogs := make([]string, len(providing))
+	for i, snapshot := range providing {
+		catalogs[i] = snapshot.Index.Source.Repository + "@" + snapshot.ID
+	}
+	return Snapshot{}, fmt.Errorf("Pack %q is ambiguous: %w: %s; remove the catalog you do not use with `packy catalog remove <owner/repo>`", packID, ErrAmbiguousPack, strings.Join(catalogs, ", "))
 }
 
 func (s *Store) retained(repository Repository, snapshotID string) (Snapshot, error) {

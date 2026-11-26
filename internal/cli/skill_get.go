@@ -67,7 +67,7 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 				root, identity, err = packSnapshot(catalogstore.New(dataRoot, nil), packID, snapshotID)
 			}
 			if err != nil {
-				if errors.Is(err, catalogstore.ErrEarlierLayout) {
+				if errors.Is(err, catalogstore.ErrEarlierLayout) || errors.Is(err, catalogstore.ErrAmbiguousPack) {
 					return failure(cmd, "catalog_unavailable", err)
 				}
 				if snapshotID != "" {
