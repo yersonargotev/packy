@@ -246,6 +246,25 @@ func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveInte
 	return observation
 }
 
+// InstalledFromCatalog returns every active installed Pack receipt that names
+// the catalog repository. It fails when any surface's receipts cannot be read,
+// so a caller never mistakes unreadable state for an unused catalog.
+func InstalledFromCatalog(ctx context.Context, store ActivationStore, repository string) ([]ActivationIntent, error) {
+	var installed []ActivationIntent
+	for _, surface := range statusSurfaces() {
+		state, err := store.LoadSnapshot(ctx, surface)
+		if err != nil {
+			return nil, err
+		}
+		for _, intent := range activeIntents(state) {
+			if intent.Surface == surface && intent.CatalogRef.Repository == repository {
+				installed = append(installed, intent)
+			}
+		}
+	}
+	return installed, nil
+}
+
 func statusSurfaces() []Surface {
 	return SupportedSurfaces()
 }

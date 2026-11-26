@@ -18,10 +18,10 @@ func (c Catalog) IntentPackResolver() IntentPackResolver {
 		current[intentPackContract{pack.ID, pack.Version, pack.CatalogRef}] = clonePack(pack)
 	}
 	return func(ctx context.Context, id, version string, ref CatalogRef) (Pack, error) {
-		if c.ref != (CatalogRef{}) && ref == (CatalogRef{}) {
+		if c.bound() && ref == (CatalogRef{}) {
 			return Pack{}, unboundReceiptError(id)
 		}
-		if ref != c.ref {
+		if !c.selects(ref) {
 			pack, err := c.resolveIntentPackAt(ctx, id, version, ref)
 			if err != nil {
 				return Pack{}, err
@@ -53,10 +53,10 @@ func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pac
 }
 
 func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version string, ref CatalogRef) (Pack, error) {
-	if c.ref != (CatalogRef{}) && ref == (CatalogRef{}) {
+	if c.bound() && ref == (CatalogRef{}) {
 		return Pack{}, unboundReceiptError(id)
 	}
-	if ref != (CatalogRef{}) && ref != c.ref {
+	if !c.selects(ref) {
 		if c.resolveSnapshot == nil {
 			return Pack{}, fmt.Errorf("capability pack %q receipt references unavailable Catalog Snapshot %s", id, ref.label())
 		}
@@ -87,6 +87,9 @@ func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version string, re
 	pack, err := c.Show(ctx, id)
 	if err != nil {
 		return Pack{}, err
+	}
+	if pack.CatalogRef != ref {
+		return Pack{}, fmt.Errorf("capability pack %q is not in Catalog Snapshot %s", id, ref.label())
 	}
 	if version != "" && version != pack.Version {
 		return Pack{}, fmt.Errorf("capability pack %q receipt targets unsupported version %s; only catalog-current version %s is available", id, version, pack.Version)

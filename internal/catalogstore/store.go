@@ -170,8 +170,9 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 }
 
 // Unregister removes a catalog registration and its selection. Retained
-// snapshots stay in place.
-func (s *Store) Unregister(ctx context.Context, repository Repository) error {
+// snapshots stay in place. inUse runs under the store lock and refuses the
+// removal with its error, as when an installed Pack receipt names the catalog.
+func (s *Store) Unregister(ctx context.Context, repository Repository, inUse func(context.Context, Repository) error) error {
 	if repository == Official().Repository {
 		return fmt.Errorf("catalog %s is built in and cannot be removed", repository)
 	}
@@ -181,6 +182,9 @@ func (s *Store) Unregister(ctx context.Context, repository Repository) error {
 	}
 	defer guard.Release()
 	if _, err := s.registration(repository); err != nil {
+		return err
+	}
+	if err := inUse(ctx, repository); err != nil {
 		return err
 	}
 	directory := s.catalog(repository)

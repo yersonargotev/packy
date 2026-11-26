@@ -71,7 +71,7 @@ func testIssue929OfficialRefresh(t *testing.T, transport string) {
 	publishIssue929Fixture(t, transport, fixtures, issue929OfficialCatalog, commit, githubfake.Pack{ID: "fixture", Version: "1.0.0"})
 	environment := startIssue929GitHub(t, fixtures)
 
-	if out, err := runIssue929(t, transport, environment, "catalog", "refresh"); err != nil || !strings.Contains(out, "selected official Catalog Snapshot "+commit) {
+	if out, err := runIssue929(t, transport, environment, "catalog", "refresh"); err != nil || !strings.Contains(out, "selected Catalog Snapshot "+commit+" of "+issue929OfficialCatalog) {
 		t.Fatalf("catalog refresh: %v\n%s", err, out)
 	}
 	out, err := runIssue929(t, transport, environment, "list", "--json")

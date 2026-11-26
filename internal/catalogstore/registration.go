@@ -9,7 +9,9 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const officialPublicationWorkflow = ".github/workflows/publish.yml"
+// DefaultWorkflow is the publication workflow an attested registration names
+// when the operator gives none.
+const DefaultWorkflow = ".github/workflows/publish.yml"
 
 var (
 	workflowPattern = regexp.MustCompile(`^\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml$`)
@@ -55,7 +57,7 @@ type Registration struct {
 
 // Official returns the built-in registration of the official catalog.
 func Official() Registration {
-	return Registration{Repository: Repository{owner: "yersonargotev", name: "packy-catalog"}, Trust: Attested{Workflow: officialPublicationWorkflow}}
+	return Registration{Repository: Repository{owner: "yersonargotev", name: "packy-catalog"}, Trust: Attested{Workflow: DefaultWorkflow}}
 }
 
 func (r Registration) validate() error {

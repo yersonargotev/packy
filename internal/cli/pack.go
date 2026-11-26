@@ -2180,19 +2180,23 @@ func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capa
 	if !sources.isDefault && sources.candidate == nil {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
-	selected, err := snapshotCatalogRef(sources.snapshot)
-	if err != nil {
-		return capabilitypack.Catalog{}, err
+	var selected []capabilitypack.SelectedSnapshot
+	for _, snapshot := range append([]catalogstore.Snapshot{sources.snapshot}, sources.others...) {
+		ref, err := snapshotCatalogRef(snapshot)
+		if err != nil {
+			return capabilitypack.Catalog{}, err
+		}
+		selected = append(selected, capabilitypack.SelectedSnapshot{Root: snapshot.Root, Ref: ref})
 	}
 	if sources.candidate != nil {
-		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
-			if ref.Repository != selected.Repository {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
+			if ref.Repository != selected[0].Ref.Repository {
 				return "", fmt.Errorf("catalog %s is outside this candidate workspace", ref.Repository)
 			}
 			return sources.candidate.Resolve(ctx, ref.Commit)
 		})
 	}
-	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(_ context.Context, ref capabilitypack.CatalogRef) (string, error) {
+	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, selected, func(_ context.Context, ref capabilitypack.CatalogRef) (string, error) {
 		return resolveRetainedSnapshot(sources.store, ref)
 	})
 }

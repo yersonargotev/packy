@@ -285,10 +285,23 @@ func TestRegistrationLifecycleKeepsRetainedSnapshots(t *testing.T) {
 	if _, err := store.Register(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "built in") {
 		t.Fatalf("Register(official) = %v", err)
 	}
-	if err := store.Unregister(context.Background(), official); err == nil || !strings.Contains(err.Error(), "cannot be removed") {
+	free := func(context.Context, catalogstore.Repository) error { return nil }
+	if err := store.Unregister(context.Background(), official, free); err == nil || !strings.Contains(err.Error(), "cannot be removed") {
 		t.Fatalf("Unregister(official) = %v", err)
 	}
-	if err := store.Unregister(context.Background(), acme); err != nil {
+	inUse := errors.New("an installed Pack receipt names acme/packs")
+	if err := store.Unregister(context.Background(), acme, func(_ context.Context, repository catalogstore.Repository) error {
+		if repository != acme {
+			t.Fatalf("guard checked %s, want %s", repository, acme)
+		}
+		return inUse
+	}); !errors.Is(err, inUse) {
+		t.Fatalf("Unregister() past a refusing guard = %v", err)
+	}
+	if again, err := store.Selected(acme); err != nil || again.ID != selected.ID {
+		t.Fatalf("Selected() after a refused Unregister() = %#v, %v", again, err)
+	}
+	if err := store.Unregister(context.Background(), acme, free); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(selected.Root); err != nil {

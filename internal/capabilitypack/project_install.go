@@ -676,7 +676,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	notices := make([]ProjectNoticeContribution, 0)
 	for _, resource := range intentPack.Resources {
 		if resource.Kind == "notice" {
-			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(f.catalog.catalogRoot), resource.Source))
+			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(""), resource.Source))
 			if err != nil {
 				return JSONProjectInstallPreview{}, fmt.Errorf("read selected notice %q: %w", resource.ID, err)
 			}

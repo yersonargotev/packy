@@ -19,7 +19,7 @@ func TestCatalogListCurrentHonorsCancellationWhileWaitingForBundle(t *testing.T)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
-	_, err = (Catalog{catalogRoot: repository}).ListCurrent(ctx)
+	_, err = (Catalog{snapshots: []SelectedSnapshot{{Root: repository}}}).ListCurrent(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("ListCurrent error = %v; want context deadline", err)
 	}

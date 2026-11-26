@@ -201,16 +201,8 @@ func initializeCatalog(ctx context.Context, opts Options, resolver *workstation.
 }
 
 func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
-	command := &cobra.Command{Use: "catalog", Short: "Manage the official reviewed Pack catalog", Args: cobra.NoArgs}
-	command.AddCommand(&cobra.Command{
-		Use: "refresh", Short: "Acquire and select the latest official Catalog Snapshot", Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return initializeCatalog(cmd.Context(), opts, resolver, initializationRequest{ReportProgress: func(message string) error {
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "packy catalog refresh: %s\n", message)
-				return err
-			}})
-		},
-	})
+	command := &cobra.Command{Use: "catalog", Short: "Manage registered Pack catalogs and author Catalog Projects", Args: cobra.NoArgs}
+	command.AddCommand(newCatalogAddCommand(opts, resolver), newCatalogRemoveCommand(opts, resolver), newCatalogListCommand(opts, resolver), newCatalogRefreshCommand(opts, resolver))
 	command.AddCommand(newCatalogValidateCommand(opts), newCatalogBuildCommand(opts), newCatalogPublishCommand(), newCatalogCandidateCommand(opts), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
 	return command
 }
@@ -495,6 +487,7 @@ type invocationSources struct {
 	catalogRoot string
 	isDefault   bool
 	snapshot    catalogstore.Snapshot
+	others      []catalogstore.Snapshot
 	store       *catalogstore.Store
 	candidate   *catalogcandidate.Workspace
 }
@@ -522,10 +515,23 @@ func resolveInvocationSources(ctx context.Context, opts Options, snapshot workst
 	if err != nil {
 		return invocationSources{}, fmt.Errorf("official Catalog Snapshot is unavailable; run `packy init`: %w", err)
 	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		return invocationSources{}, err
+	}
+	var others []catalogstore.Snapshot
+	for _, registration := range registrations[1:] {
+		other, err := store.Selected(registration.Repository)
+		if err != nil {
+			return invocationSources{}, fmt.Errorf("catalog %s has no usable Catalog Snapshot; run `packy catalog refresh %s`: %w", registration.Repository, registration.Repository, err)
+		}
+		others = append(others, other)
+	}
 	return invocationSources{
 		catalogRoot: selected.Root,
 		isDefault:   true,
 		snapshot:    selected,
+		others:      others,
 		store:       store,
 	}, nil
 }
