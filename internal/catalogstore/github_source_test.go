@@ -56,12 +56,22 @@ func TestGitHubSourceDownloadsExactReleaseAssetsAndVerifiesArchiveAttestation(t 
 	}
 }
 
-func TestGitHubSourceMarksARejectedAttestation(t *testing.T) {
-	github := newFakeGitHub(t, "acme/packs", false)
-	_, err := NewGitHubSource(github.client(), &recordingVerifier{err: errors.New("signed by another workflow")}, nil).Latest(context.Background(), Registration{Repository: mustRepository(t, "acme/packs"), Trust: Attested{Workflow: DefaultWorkflow}})
+func TestGitHubSourceMarksOnlyUnverifiedAttestationsAsRejected(t *testing.T) {
+	registration := Registration{Repository: mustRepository(t, "acme/packs"), Trust: Attested{Workflow: DefaultWorkflow}}
+	unverified := fmt.Errorf("%w: signed by another workflow", ErrNoAttestationVerified)
+	_, err := NewGitHubSource(newFakeGitHub(t, "acme/packs", false).client(), &recordingVerifier{err: unverified}, nil).Latest(context.Background(), registration)
 	var rejected *AttestationRejectedError
-	if !errors.As(err, &rejected) || rejected.Repository != "acme/packs" || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation: signed by another workflow") {
+	if !errors.As(err, &rejected) || rejected.Repository != "acme/packs" || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation: no catalog attestation verified: signed by another workflow") {
 		t.Fatalf("Latest() error = %v", err)
+	}
+	for _, failure := range []error{
+		errors.New("fetch catalog artifact attestations: GitHub returned 503 Service Unavailable"),
+		fmt.Errorf("initialize Sigstore trust metadata: %w", context.DeadlineExceeded),
+	} {
+		_, err := NewGitHubSource(newFakeGitHub(t, "acme/packs", false).client(), &recordingVerifier{err: failure}, nil).Latest(context.Background(), registration)
+		if errors.As(err, &rejected) || !errors.Is(err, failure) || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation") {
+			t.Fatalf("Latest() with %v = %v", failure, err)
+		}
 	}
 }
 

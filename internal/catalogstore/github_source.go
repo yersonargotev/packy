@@ -23,8 +23,9 @@ type AttestationVerifier interface {
 	Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error
 }
 
-// AttestationRejectedError reports that the attestation verifier refused or
-// could not verify the archive of a catalog.
+// AttestationRejectedError reports that the verifier read the attestations of
+// a catalog's archive and none verified, as ErrNoAttestationVerified marks.
+// A transport or Sigstore failure is not a rejection.
 type AttestationRejectedError struct {
 	Repository string
 	Err        error
@@ -122,7 +123,10 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 		return Release{}, err
 	}
 	if err := source.verifier.Verify(ctx, repository, digest(assets[archiveAsset].Data), repository+"/"+attested.Workflow); err != nil {
-		return Release{}, &AttestationRejectedError{Repository: repository, Err: err}
+		if errors.Is(err, ErrNoAttestationVerified) {
+			return Release{}, &AttestationRejectedError{Repository: repository, Err: err}
+		}
+		return Release{}, fmt.Errorf("verify catalog %s artifact attestation: %w", repository, err)
 	}
 	release.AttestationVerified = true
 	return release, nil

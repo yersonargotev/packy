@@ -185,7 +185,14 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 					return err
 				}
 				if !slices.Contains(repositories, repository) {
-					return fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
+					err := fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
+					if jsonOutput {
+						report := catalogRefreshReport{SchemaVersion: 1, Report: "catalog-refresh", Catalogs: []catalogRefreshEntry{{Repository: repository.String(), Result: "failed", Error: err.Error()}}}
+						if encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(report); encodeErr != nil {
+							return encodeErr
+						}
+					}
+					return err
 				}
 				repositories = []catalogstore.Repository{repository}
 			}
