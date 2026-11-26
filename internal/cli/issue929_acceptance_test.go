@@ -1108,6 +1108,10 @@ func testIssue929UnregisteredLock(t *testing.T, transport string) {
 	if !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs, which is not registered on this workstation") || !strings.Contains(out, "packy catalog add acme/packs") {
 		t.Fatalf("update --project over a lock from an unregistered catalog: %v\n%s", err, out)
 	}
+	out, err = runIssue929At(t, transport, elsewhere, project, "activate", "acme", "--project", "--surface", "agents", "--dry-run")
+	if !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs, which is not registered on this workstation") || !strings.Contains(out, "packy catalog add acme/packs") {
+		t.Fatalf("activate --project over a lock from an unregistered catalog: %v\n%s", err, out)
+	}
 	publishIssue929Fixture(t, transport, fixtures, "other/packs", strings.Repeat("f", 40), githubfake.Pack{ID: "acme", Version: "3.0.0"})
 	if out, err := runIssue929(t, transport, elsewhere, "catalog", "add", "other/packs"); err != nil {
 		t.Fatalf("catalog add other/packs: %v\n%s", err, out)

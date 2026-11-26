@@ -808,7 +808,11 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				if err != nil {
 					return err
 				}
-				facade := capabilitypack.NewFacade(capabilitypack.Catalog{}, capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil))
+				repositories, err := registeredCatalogRepositories(snapshot)
+				if err != nil {
+					return err
+				}
+				facade := capabilitypack.NewFacade(capabilitypack.Catalog{}, capabilitypack.WithRegisteredCatalogs(repositories), capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil))
 				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
 				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
 				globalRelevant := slices.Contains(global.FailedSurfaces, capabilitypack.Surface(surface))
@@ -931,13 +935,9 @@ func projectExecutableResolver(opts Options, snapshot workstation.Snapshot) capa
 }
 
 func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) (capabilitypack.Facade, error) {
-	registrations, err := catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), nil).Registrations()
+	repositories, err := registeredCatalogRepositories(snapshot)
 	if err != nil {
 		return capabilitypack.Facade{}, err
-	}
-	repositories := make([]string, 0, len(registrations))
-	for _, registration := range registrations {
-		repositories = append(repositories, registration.Repository.String())
 	}
 	adapters := projectStatusAdapters(ctx, opts, snapshot)
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
@@ -946,6 +946,18 @@ func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation
 		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
 	), nil
+}
+
+func registeredCatalogRepositories(snapshot workstation.Snapshot) ([]string, error) {
+	registrations, err := catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), nil).Registrations()
+	if err != nil {
+		return nil, err
+	}
+	repositories := make([]string, 0, len(registrations))
+	for _, registration := range registrations {
+		repositories = append(repositories, registration.Repository.String())
+	}
+	return repositories, nil
 }
 
 func approveAndApplyProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, preview capabilitypack.JSONProjectActivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool, cancellation string) error {
