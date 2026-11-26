@@ -12,7 +12,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
+	"time"
+
+	"github.com/yersonargotev/packy/internal/catalogstore"
 )
 
 var routedHosts = map[string]bool{"api.github.com": true, "github.com": true, "objects.githubusercontent.com": true}
@@ -28,20 +32,33 @@ func AddressOf(server *httptest.Server) Address {
 	return Address{URL: server.URL, Certificate: server.Certificate().Raw}
 }
 
-// Write records the address in a file that NewClient reads.
+// Write records the address in a file that NewClient reads. The file appears
+// complete, so a process that waits for it never reads a partial address.
 func (a Address) Write(path string) error {
 	data, err := json.Marshal(a)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".addr-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporary.Name())
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), path)
 }
 
 // NewClient returns a client that sends GitHub API and asset hosts to the fake
 // named by addressFile over TLS, and refuses every other host so that nothing
 // reaches the real network. It reads addressFile on the first request.
 func NewClient(addressFile string) *http.Client {
-	return &http.Client{Transport: &redirectTransport{load: sync.OnceValues(func() (*redirectTarget, error) {
+	return &http.Client{Timeout: 2 * time.Minute, Transport: &redirectTransport{load: sync.OnceValues(func() (*redirectTarget, error) {
 		return loadTarget(addressFile)
 	})}}
 }
@@ -106,7 +123,8 @@ func NewAttestationVerifier(client *http.Client) *AttestationVerifier {
 	return &AttestationVerifier{client: client}
 }
 
-// Verify implements catalogstore.AttestationVerifier.
+var _ catalogstore.AttestationVerifier = (*AttestationVerifier)(nil)
+
 func (v *AttestationVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+repository+"/attestations/sha256:"+subjectSHA256, nil)
 	if err != nil {
