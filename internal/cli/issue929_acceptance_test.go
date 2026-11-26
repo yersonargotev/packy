@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http/httptest"
@@ -109,7 +110,7 @@ func testIssue929IncompatibleOfficialSnapshot(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	out, err := runIssue929(t, transport, environment, "catalog", "refresh")
-	if err == nil || !strings.Contains(out, `Pack "other" requires a newer Packy engine`) {
+	if !issue929Exit(err, 1) || !strings.Contains(out, `Pack "other" requires a newer Packy engine`) {
 		t.Fatalf("catalog refresh of an incompatible snapshot: %v\n%s", err, out)
 	}
 	if after, err := os.ReadFile(selection); err != nil || !bytes.Equal(after, before) {
@@ -143,7 +144,7 @@ func testIssue929EarlierStoreLayout(t *testing.T, transport string) {
 		}
 	}
 
-	if out, err := runIssue929(t, transport, environment, "list", "--json"); err == nil || !strings.Contains(out, "docs/catalog-adoption.md") {
+	if out, err := runIssue929(t, transport, environment, "list", "--json"); !issue929Exit(err, 1) || !strings.Contains(out, "docs/catalog-adoption.md") {
 		t.Fatalf("list over the earlier store layout: %v\n%s", err, out)
 	}
 	if out, err := runIssue929(t, transport, environment, "catalog", "refresh"); err != nil {
@@ -182,6 +183,11 @@ func listIssue929Packs(t *testing.T, transport string, environment []string) str
 		packs = append(packs, pack.ID+"@"+pack.Version)
 	}
 	return strings.Join(packs, ",")
+}
+
+func issue929Exit(err error, code int) bool {
+	var exit *exec.ExitError
+	return errors.As(err, &exit) && exit.ExitCode() == code
 }
 
 func issue929Home(t *testing.T, environment []string) string {

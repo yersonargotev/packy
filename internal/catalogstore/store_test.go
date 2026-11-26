@@ -383,6 +383,32 @@ func TestEarlierStoreLayoutIsRejectedWithAdoptionGuidance(t *testing.T) {
 	}
 }
 
+func TestSelectionMustNameItsCatalog(t *testing.T) {
+	root := t.TempDir()
+	commit := strings.Repeat("a", 40)
+	store := catalogstore.New(root, staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))})
+	snapshot, err := store.AcquireLatest(context.Background(), official)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := filepath.Join(filepath.Dir(filepath.Dir(snapshot.Root)), "selected.json")
+	data, err := os.ReadFile(selection)
+	if err != nil || !strings.Contains(string(data), `"repository": "yersonargotev/packy-catalog"`) {
+		t.Fatalf("selected.json = %s, %v", data, err)
+	}
+	for _, document := range []string{
+		`{"schema_version":1,"snapshot_id":"` + commit + `"}`,
+		`{"schema_version":2,"repository":"acme/packs","snapshot_id":"` + commit + `"}`,
+	} {
+		if err := os.WriteFile(selection, []byte(document), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Selected(official); err == nil || !strings.Contains(err.Error(), "invalid identity") {
+			t.Fatalf("Selected() accepted %s: %v", document, err)
+		}
+	}
+}
+
 func TestRegistrationsFailClosedOnAnInvalidRegistration(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "catalog", "v2", "acme", "packs", "registration.json")

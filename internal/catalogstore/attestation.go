@@ -61,10 +61,7 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 	if err != nil {
 		return fmt.Errorf("initialize Sigstore verifier: %w", err)
 	}
-	workflow, ok := strings.CutPrefix(signerWorkflow, repository+"/")
-	if !ok {
-		return fmt.Errorf("signer workflow %s is not in catalog repository %s", signerWorkflow, repository)
-	}
+	workflow := strings.TrimPrefix(signerWorkflow, repository+"/")
 	sanPattern := "^(?i:" + regexp.QuoteMeta("https://github.com/"+repository+"/") + ")" + regexp.QuoteMeta(workflow+"@refs/heads/main") + "$"
 	identity, err := verify.NewShortCertificateIdentity(githubOIDCIssuer, "", "", sanPattern)
 	if err != nil {

@@ -113,7 +113,7 @@ func (s *Store) AcquireLatest(ctx context.Context, repository Repository) (Snaps
 	if err != nil {
 		return Snapshot{}, err
 	}
-	if err := writeDocument(s.catalog(repository), selectionFile, selectionDocument{SchemaVersion: 1, SnapshotID: snapshot.ID}); err != nil {
+	if err := writeDocument(s.catalog(repository), selectionFile, newSelection(repository, snapshot.ID)); err != nil {
 		return Snapshot{}, fmt.Errorf("select Catalog Snapshot: %w", err)
 	}
 	return snapshot, nil
@@ -144,7 +144,7 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 	fresh := errors.Is(statErr, fs.ErrNotExist)
 	snapshot, created, err := s.retainLatest(ctx, registration)
 	if err == nil {
-		err = writeDocument(directory, selectionFile, selectionDocument{SchemaVersion: 1, SnapshotID: snapshot.ID})
+		err = writeDocument(directory, selectionFile, newSelection(registration.Repository, snapshot.ID))
 	}
 	if err == nil {
 		err = writeDocument(directory, registrationFile, encodeRegistration(registration))
@@ -216,7 +216,7 @@ func (s *Store) Selected(repository Repository) (Snapshot, error) {
 	if _, err := s.registration(repository); err != nil {
 		return Snapshot{}, err
 	}
-	id, err := readSelection(s.catalog(repository))
+	id, err := s.readSelection(repository)
 	if err != nil {
 		return Snapshot{}, s.earlierLayout(err)
 	}
@@ -294,7 +294,7 @@ func (s *Store) earlierLayout(err error) error {
 	if _, statErr := os.Lstat(filepath.Join(s.root, selectionFile)); statErr != nil {
 		return err
 	}
-	return fmt.Errorf("the Catalog Store at %s uses the layout that predates catalog registrations, which this Packy does not read; follow docs/catalog-adoption.md and run `packy catalog refresh`", s.root)
+	return fmt.Errorf("the Catalog Store at %s holds the layout that predates catalog registrations, which this Packy does not read; follow docs/catalog-adoption.md", s.root)
 }
 
 // retainLatest validates the latest release of a catalog into its retained
@@ -365,7 +365,7 @@ func (s *Store) checkPackIDs(repository Repository, index cataloglayout.CatalogS
 		if other.Repository == repository {
 			continue
 		}
-		id, err := readSelection(s.catalog(other.Repository))
+		id, err := s.readSelection(other.Repository)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
@@ -387,20 +387,25 @@ func (s *Store) checkPackIDs(repository Repository, index cataloglayout.CatalogS
 
 type selectionDocument struct {
 	SchemaVersion int    `json:"schema_version"`
+	Repository    string `json:"repository"`
 	SnapshotID    string `json:"snapshot_id"`
 }
 
-func readSelection(directory string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(directory, selectionFile))
+func newSelection(repository Repository, id string) selectionDocument {
+	return selectionDocument{SchemaVersion: 2, Repository: repository.String(), SnapshotID: id}
+}
+
+func (s *Store) readSelection(repository Repository) (string, error) {
+	data, err := os.ReadFile(filepath.Join(s.catalog(repository), selectionFile))
 	if err != nil {
-		return "", fmt.Errorf("read selected Catalog Snapshot: %w", err)
+		return "", fmt.Errorf("read selected Catalog Snapshot of %s: %w", repository, err)
 	}
 	var selection selectionDocument
 	if err := strictDecode(data, &selection); err != nil {
-		return "", fmt.Errorf("decode selected Catalog Snapshot: %w", err)
+		return "", fmt.Errorf("decode selected Catalog Snapshot of %s: %w", repository, err)
 	}
-	if selection.SchemaVersion != 1 || !commitPattern.MatchString(selection.SnapshotID) {
-		return "", errors.New("selected Catalog Snapshot has invalid identity")
+	if selection != newSelection(repository, selection.SnapshotID) || !commitPattern.MatchString(selection.SnapshotID) {
+		return "", fmt.Errorf("selected Catalog Snapshot of %s has invalid identity", repository)
 	}
 	return selection.SnapshotID, nil
 }
