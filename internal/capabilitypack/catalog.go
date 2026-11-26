@@ -16,7 +16,7 @@ import (
 )
 
 // CatalogAdoptionGuide is the public procedure for state that predates
-// catalog-bound receipts. Error reports must name it unredacted.
+// catalog-bound receipts.
 const CatalogAdoptionGuide = "https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md"
 
 // SupportedSurfaces returns Packy's complete product-owned CLI surface set in
@@ -419,8 +419,7 @@ func (r CatalogRef) paired() bool { return (r.Repository == "") == (r.Commit == 
 var catalogRepositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 // CanonicalCatalogRepository lowercases an ASCII GitHub owner/name to its
-// canonical form and rejects any other value. GitHub resolves repository
-// names case-insensitively.
+// canonical form and rejects any other value.
 func CanonicalCatalogRepository(value string) (string, error) {
 	owner, name, _ := strings.Cut(value, "/")
 	if !catalogRepositoryPattern.MatchString(value) || strings.Trim(owner, ".") == "" || strings.Trim(name, ".") == "" {
