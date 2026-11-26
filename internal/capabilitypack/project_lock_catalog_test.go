@@ -44,3 +44,16 @@ func TestReadExistingProjectLockCanonicalizesTheCatalogRepository(t *testing.T) 
 		t.Fatalf("lock with an invalid catalog repository = %v", err)
 	}
 }
+
+func TestReadExistingProjectLockRejectsAnUnpairedCatalogReference(t *testing.T) {
+	for name, ref := range map[string]CatalogRef{
+		"repository without snapshot": {Repository: "yersonargotev/packy-catalog"},
+		"snapshot without repository": {Commit: strings.Repeat("a", 40)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := readExistingProjectLock(writeProjectLockWithCatalog(t, ref)); err == nil || !strings.Contains(err.Error(), "incomplete catalog reference") {
+				t.Fatalf("lock with %s = %v", name, err)
+			}
+		})
+	}
+}
