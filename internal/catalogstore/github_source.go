@@ -15,7 +15,6 @@ import (
 
 const privateCatalogGuide = "https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md"
 
-// assetHosts are the hosts that GitHub's release asset API redirects to.
 var assetHosts = map[string]bool{"release-assets.githubusercontent.com": true, "objects.githubusercontent.com": true}
 
 // AttestationVerifier verifies GitHub build-provenance cryptography and binds

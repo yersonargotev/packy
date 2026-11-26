@@ -32,7 +32,7 @@ Preconditions: the same transport, started with `-request-log "$PACKY_VERIFY_SCR
 
 - Run `catalog refresh`, then `GH_TOKEN=packy-fixture-token packy catalog add team/private-packs --trust access-controlled`. Confirm exit 0, `access-controlled` in `catalog list --json`, and `team/private-packs (access-controlled)` in `packy list`.
 - With `GH_TOKEN` unset and no `gh` on `PATH`, add it in a fresh sandbox. Confirm exit 1, a message that names `GH_TOKEN` and `gh auth login`, and no files below `catalog/v2/team`. Repeat with `GH_TOKEN=wrong`, and add `acme/packs --trust access-controlled` with the fixture token. Confirm exit 1 each time.
-- Grep `$HOME` and `$XDG_CONFIG_HOME` for `packy-fixture-token` and confirm no match. Confirm that no line of `requests.jsonl` with host `release-assets.githubusercontent.com` lists `Authorization`.
+- Grep the sandbox root, which holds `$HOME` and every `XDG_*` directory, and the project for `packy-fixture-token`, and confirm no match. Confirm that no line of `requests.jsonl` with host `release-assets.githubusercontent.com` lists `Authorization`.
 
 ## Gotchas
 

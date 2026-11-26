@@ -61,6 +61,7 @@ func Lookup(ctx context.Context, getenv func(string) string) (Token, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, gh, "auth", "token", "--hostname", "github.com")
+	command.Env = []string{}
 	for _, name := range ghEnvironment {
 		if value := getenv(name); value != "" {
 			command.Env = append(command.Env, name+"="+value)

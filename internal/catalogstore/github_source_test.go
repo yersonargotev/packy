@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/githubauth"
@@ -113,7 +112,7 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 		want    []string
 	}{
 		{"missing token", true, func(g *fakeGitHub) { g.credentialErr = githubauth.ErrMissing }, []string{"an access-controlled catalog needs a GitHub token", "GH_TOKEN or GITHUB_TOKEN", "gh auth login", privateCatalogGuide}},
-		{"rejected token", true, func(g *fakeGitHub) { g.status = http.StatusUnauthorized }, []string{"401", "GitHub rejected the token from GH_TOKEN, so replace or unset GH_TOKEN"}},
+		{"rejected token", true, func(g *fakeGitHub) { g.status = http.StatusUnauthorized }, []string{"401", "GitHub rejected the token from GH_TOKEN, so replace or unset GH_TOKEN", privateCatalogGuide}},
 		{"insufficient token", true, func(g *fakeGitHub) { g.status = http.StatusNotFound }, []string{"404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
 		{"contents hidden from the token", true, func(g *fakeGitHub) { g.releaseStatus = http.StatusNotFound }, []string{"read latest catalog release", "404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
 		{"rate limited", true, func(g *fakeGitHub) { g.status, g.rateLimited = http.StatusForbidden, true }, []string{"403", "rate limit is exhausted"}},
@@ -190,7 +189,6 @@ type fakeGitHub struct {
 	redirectHost    string
 	credentialErr   error
 	credentialCalls int
-	mu              sync.Mutex
 	requests        []fakeRequest
 }
 
@@ -228,9 +226,7 @@ func (g *fakeGitHub) client() *http.Client {
 }
 
 func (g *fakeGitHub) roundTrip(request *http.Request) (*http.Response, error) {
-	g.mu.Lock()
 	g.requests = append(g.requests, fakeRequest{url: request.URL.String(), authorization: request.Header.Get("Authorization"), accept: request.Header.Get("Accept")})
-	g.mu.Unlock()
 	url := request.URL.String()
 	api := "https://api.github.com/repos/" + g.repository
 	if strings.HasPrefix(url, api) {
