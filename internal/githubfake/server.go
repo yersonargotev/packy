@@ -7,6 +7,9 @@
 //	<root>/<owner>/<repo>/release/release.json  the latest Release
 //	<root>/<owner>/<repo>/release/<asset>       release asset bytes
 //
+// The release asset API answers with a redirect to an unauthenticated asset
+// host URL, as GitHub does.
+//
 // The handler reads the directory on every request, so a test or a person can
 // edit a fixture while the server runs. Asset digests, sizes, and attestations
 // derive from the bytes on disk.
@@ -22,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -58,10 +62,15 @@ type Release struct {
 	} `json:"author"`
 }
 
+// AssetHost is the host that the release asset API redirects to, as GitHub's
+// does.
+const AssetHost = "release-assets.githubusercontent.com"
+
 type asset struct {
+	ID     int64  `json:"id"`
 	Name   string `json:"name"`
 	Digest string `json:"digest"`
-	URL    string `json:"browser_download_url"`
+	URL    string `json:"url"`
 	Size   int64  `json:"size"`
 }
 
@@ -116,14 +125,15 @@ func WriteRepository(root, repository string, value Repository) error {
 }
 
 // Handler serves the fixture repositories below root for the api.github.com
-// and github.com hosts.
+// and asset hosts.
 func Handler(root string) http.Handler {
 	fixtures := fixtureRoot(root)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}", fixtures.repository)
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/releases/latest", fixtures.latestRelease)
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/attestations/{subject}", fixtures.attestations)
-	mux.HandleFunc("GET github.com/{owner}/{repo}/releases/download/{tag}/{asset}", fixtures.download)
+	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/releases/assets/{id}", fixtures.asset)
+	mux.HandleFunc("GET "+AssetHost+"/{owner}/{repo}/{tag}/{asset}", fixtures.download)
 	return mux
 }
 
@@ -136,6 +146,25 @@ type fixture struct {
 }
 
 func (root fixtureRoot) open(w http.ResponseWriter, r *http.Request) (fixture, bool) {
+	result, ok := root.find(w, r)
+	if !ok {
+		return fixture{}, false
+	}
+	if token := result.repository.Token; token != "" {
+		switch authorization := r.Header.Get("Authorization"); authorization {
+		case "Bearer " + token, "token " + token:
+		case "":
+			writeStatus(w, http.StatusNotFound)
+			return fixture{}, false
+		default:
+			writeStatus(w, http.StatusUnauthorized)
+			return fixture{}, false
+		}
+	}
+	return result, true
+}
+
+func (root fixtureRoot) find(w http.ResponseWriter, r *http.Request) (fixture, bool) {
 	name := r.PathValue("owner") + "/" + r.PathValue("repo")
 	if !filepath.IsLocal(name) {
 		writeStatus(w, http.StatusNotFound)
@@ -150,17 +179,6 @@ func (root fixtureRoot) open(w http.ResponseWriter, r *http.Request) (fixture, b
 	if err := readJSON(filepath.Join(directory, repositoryFile), &result.repository); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return fixture{}, false
-	}
-	if token := result.repository.Token; token != "" {
-		switch authorization := r.Header.Get("Authorization"); authorization {
-		case "Bearer " + token, "token " + token:
-		case "":
-			writeStatus(w, http.StatusNotFound)
-			return fixture{}, false
-		default:
-			writeStatus(w, http.StatusUnauthorized)
-			return fixture{}, false
-		}
 	}
 	return result, true
 }
@@ -185,6 +203,7 @@ func (f fixture) release(w http.ResponseWriter) (Release, []asset, bool) {
 		if entry.Name() == releaseFile || !entry.Type().IsRegular() {
 			continue
 		}
+		id := int64(len(assets) + 1)
 		data, err := os.ReadFile(filepath.Join(f.directory, releaseDirectory, entry.Name()))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -192,9 +211,10 @@ func (f fixture) release(w http.ResponseWriter) (Release, []asset, bool) {
 		}
 		sum := sha256.Sum256(data)
 		assets = append(assets, asset{
+			ID:     id,
 			Name:   entry.Name(),
 			Digest: "sha256:" + hex.EncodeToString(sum[:]),
-			URL:    "https://github.com/" + f.name + "/releases/download/" + release.Tag + "/" + entry.Name(),
+			URL:    fmt.Sprintf("https://api.github.com/repos/%s/releases/assets/%d", f.name, id),
 			Size:   int64(len(data)),
 		})
 	}
@@ -255,8 +275,37 @@ func (root fixtureRoot) attestations(w http.ResponseWriter, r *http.Request) {
 	writeStatus(w, http.StatusNotFound)
 }
 
-func (root fixtureRoot) download(w http.ResponseWriter, r *http.Request) {
+func (root fixtureRoot) asset(w http.ResponseWriter, r *http.Request) {
 	f, ok := root.open(w, r)
+	if !ok {
+		return
+	}
+	release, assets, ok := f.release(w)
+	if !ok {
+		return
+	}
+	for _, candidate := range assets {
+		if strconv.FormatInt(candidate.ID, 10) != r.PathValue("id") {
+			continue
+		}
+		if r.Header.Get("Accept") != "application/octet-stream" {
+			writeBody(w, candidate)
+			return
+		}
+		http.Redirect(w, r, "https://"+AssetHost+"/"+f.name+"/"+release.Tag+"/"+candidate.Name, http.StatusFound)
+		return
+	}
+	writeStatus(w, http.StatusNotFound)
+}
+
+// download serves the bytes behind a redirect. Like a signed URL, it needs no
+// token, and like GitHub's asset host, it refuses a request that carries one.
+func (root fixtureRoot) download(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "" {
+		writeStatus(w, http.StatusBadRequest)
+		return
+	}
+	f, ok := root.find(w, r)
 	if !ok {
 		return
 	}

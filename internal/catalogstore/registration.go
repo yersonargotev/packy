@@ -84,10 +84,14 @@ type registrationDocument struct {
 }
 
 // ParseTrustPolicy returns the trust policy that name and workflow describe.
-// Only an attested policy names a publication workflow.
+// Only an attested policy names a publication workflow, and an attested policy
+// without one names DefaultWorkflow.
 func ParseTrustPolicy(name, workflow string) (TrustPolicy, error) {
 	switch name {
 	case "attested":
+		if workflow == "" {
+			workflow = DefaultWorkflow
+		}
 		return Attested{Workflow: workflow}, nil
 	case "access-controlled":
 		if workflow != "" {
@@ -123,6 +127,9 @@ func decodeRegistration(document registrationDocument) (Registration, error) {
 	repository, err := ParseRepository(document.Repository)
 	if err != nil {
 		return Registration{}, err
+	}
+	if document.Trust == "attested" && document.Workflow == "" {
+		return Registration{}, fmt.Errorf("attested catalog %s registration names no publication workflow", repository)
 	}
 	trust, err := ParseTrustPolicy(document.Trust, document.Workflow)
 	if err != nil {

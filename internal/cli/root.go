@@ -20,6 +20,7 @@ import (
 	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/engrambin"
+	"github.com/yersonargotev/packy/internal/githubauth"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/tools/catalogorigin"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -357,7 +358,9 @@ func newCatalogStore(opts Options, snapshot workstation.Snapshot) *catalogstore.
 		if verifier == nil {
 			verifier = catalogstore.NewGitHubAttestationVerifier(client)
 		}
-		source = catalogstore.NewGitHubSource(client, rejectionMarkingVerifier{verifier})
+		source = catalogstore.NewGitHubSource(client, verifier, func(ctx context.Context) (githubauth.Token, error) {
+			return githubauth.Lookup(ctx, opts.Env.Getenv)
+		})
 	}
 	return catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), source)
 }

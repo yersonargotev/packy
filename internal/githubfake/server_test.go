@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/catalogstore"
+	"github.com/yersonargotev/packy/internal/githubauth"
 	"github.com/yersonargotev/packy/internal/githubfake"
 )
 
@@ -55,13 +56,21 @@ func startFake(t *testing.T) (string, *http.Client) {
 
 func get(t *testing.T, client *http.Client, url, authorization string) (int, []byte) {
 	t.Helper()
+	header := http.Header{}
+	if authorization != "" {
+		header.Set("Authorization", authorization)
+	}
+	status, _, body := fetch(t, client, url, header)
+	return status, body
+}
+
+func fetch(t *testing.T, client *http.Client, url string, header http.Header) (int, http.Header, []byte) {
+	t.Helper()
 	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if authorization != "" {
-		request.Header.Set("Authorization", authorization)
-	}
+	request.Header = header
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +80,7 @@ func get(t *testing.T, client *http.Client, url, authorization string) (int, []b
 	if err != nil {
 		t.Fatal(err)
 	}
-	return response.StatusCode, body
+	return response.StatusCode, response.Header, body
 }
 
 func TestHandlerRoutesGitHubEndpointsFromFixtures(t *testing.T) {
@@ -85,7 +94,7 @@ func TestHandlerRoutesGitHubEndpointsFromFixtures(t *testing.T) {
 		Assets []struct {
 			Name   string `json:"name"`
 			Digest string `json:"digest"`
-			URL    string `json:"browser_download_url"`
+			URL    string `json:"url"`
 		} `json:"assets"`
 	}
 	if err := json.Unmarshal(body, &release); status != http.StatusOK || err != nil {
@@ -95,7 +104,7 @@ func TestHandlerRoutesGitHubEndpointsFromFixtures(t *testing.T) {
 		t.Fatalf("release = %+v", release)
 	}
 	for _, asset := range release.Assets {
-		status, data := get(t, client, asset.URL, "")
+		status, _, data := fetch(t, client, asset.URL, http.Header{"Accept": {"application/octet-stream"}})
 		sum := sha256.Sum256(data)
 		if status != http.StatusOK || asset.Digest != "sha256:"+hex.EncodeToString(sum[:]) {
 			t.Fatalf("download %s = %d with digest %x, want %s", asset.URL, status, sum, asset.Digest)
@@ -115,9 +124,10 @@ func TestHandlerAnswersUnknownPathsWith404(t *testing.T) {
 		"https://api.github.com/repos/example/missing/releases/latest",
 		"https://api.github.com/repos/" + official + "/releases",
 		"https://api.github.com/repos/" + official + "/attestations/sha256:" + strings.Repeat("0", 64),
-		"https://github.com/" + official + "/releases/download/catalog-other/SHA256SUMS",
-		"https://github.com/" + official + "/releases/download/catalog-" + commit + "/release.json",
-		"https://objects.githubusercontent.com/anything",
+		"https://api.github.com/repos/" + official + "/releases/assets/99",
+		"https://" + githubfake.AssetHost + "/" + official + "/catalog-other/SHA256SUMS",
+		"https://" + githubfake.AssetHost + "/" + official + "/catalog-" + commit + "/release.json",
+		"https://" + githubfake.AssetHost + "/anything",
 	} {
 		if status, body := get(t, client, url, ""); status != http.StatusNotFound {
 			t.Errorf("GET %s = %d %s, want 404", url, status, body)
@@ -130,7 +140,7 @@ func TestHandlerHidesPrivateFixturesWithoutTheirToken(t *testing.T) {
 	for _, url := range []string{
 		"https://api.github.com/repos/" + private,
 		"https://api.github.com/repos/" + private + "/releases/latest",
-		"https://github.com/" + private + "/releases/download/catalog-" + commit + "/SHA256SUMS",
+		"https://api.github.com/repos/" + private + "/releases/assets/1",
 	} {
 		if status, _ := get(t, client, url, ""); status != http.StatusNotFound {
 			t.Errorf("GET %s without a token = %d, want 404", url, status)
@@ -147,6 +157,22 @@ func TestHandlerHidesPrivateFixturesWithoutTheirToken(t *testing.T) {
 	}
 }
 
+func TestAssetAPIRedirectsToAnAssetHostThatRefusesTheToken(t *testing.T) {
+	_, client := startFake(t)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	status, header, _ := fetch(t, client, "https://api.github.com/repos/"+private+"/releases/assets/1", http.Header{"Accept": {"application/octet-stream"}, "Authorization": {"Bearer secret"}})
+	location := header.Get("Location")
+	if status != http.StatusFound || !strings.HasPrefix(location, "https://"+githubfake.AssetHost+"/"+private+"/") {
+		t.Fatalf("asset API = %d to %q", status, location)
+	}
+	if status, _, body := fetch(t, client, location, http.Header{}); status != http.StatusOK || len(body) == 0 {
+		t.Fatalf("asset host without a token = %d %s", status, body)
+	}
+	if status, _, _ := fetch(t, client, location, http.Header{"Authorization": {"Bearer secret"}}); status != http.StatusBadRequest {
+		t.Fatalf("asset host with a token = %d, want 400", status)
+	}
+}
+
 func TestClientRefusesHostsOutsideGitHub(t *testing.T) {
 	_, client := startFake(t)
 	response, err := client.Get("https://tuf-repo-cdn.sigstore.dev/root.json")
@@ -158,7 +184,18 @@ func TestClientRefusesHostsOutsideGitHub(t *testing.T) {
 
 func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	root, client := startFake(t)
-	source := catalogstore.NewGitHubSource(client, githubfake.NewAttestationVerifier(client))
+	source := catalogstore.NewGitHubSource(client, githubfake.NewAttestationVerifier(client), func(ctx context.Context) (githubauth.Token, error) {
+		return githubauth.Lookup(ctx, func(name string) string {
+			if name == "GH_TOKEN" {
+				return "secret"
+			}
+			return ""
+		})
+	})
+	privateRegistration := catalogstore.Registration{Repository: mustRepository(t, private), Trust: catalogstore.AccessControlled{}}
+	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || release.AttestationVerified || release.Commit != commit || len(release.Assets) != 2 {
+		t.Fatalf("Latest() of the private catalog = %+v, %v", release, err)
+	}
 	release, err := source.Latest(context.Background(), catalogstore.Official())
 	if err != nil {
 		t.Fatal(err)
@@ -180,4 +217,13 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "500") {
 		t.Fatalf("Latest() with a failing releases/latest = %v", err)
 	}
+}
+
+func mustRepository(t *testing.T, value string) catalogstore.Repository {
+	t.Helper()
+	repository, err := catalogstore.ParseRepository(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repository
 }
