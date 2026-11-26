@@ -935,8 +935,18 @@ func testIssue929RefreshAllAndOne(t *testing.T, transport string) {
 	if packs := listIssue929Packs(t, transport, environment); packs != "acme@2.0.0,fixture@2.0.0" {
 		t.Fatalf("list after refreshing every catalog = %s", packs)
 	}
-	if out, err := runIssue929(t, transport, environment, "catalog", "refresh", "nobody/packs"); !issue929Exit(err, 1) || out != "catalog nobody/packs is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add nobody/packs` to register it\n" {
+	unregistered := "catalog nobody/packs is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add nobody/packs` to register it"
+	if out, err := runIssue929(t, transport, environment, "catalog", "refresh", "nobody/packs"); !issue929Exit(err, 1) || out != unregistered+"\n" {
 		t.Fatalf("catalog refresh of an unregistered catalog: %v\n%s", err, out)
+	}
+	out, err = runIssue929(t, transport, environment, "catalog", "refresh", "nobody/packs", "--json")
+	report, message, _ := strings.Cut(out, "\n")
+	if !issue929Exit(err, 1) || message != unregistered+"\n" {
+		t.Fatalf("catalog refresh --json of an unregistered catalog: %v\n%s", err, out)
+	}
+	assertStructuredOutput(t, filepath.Join("..", ".."), "catalog-refresh.schema.json", report)
+	if report != `{"schema_version":1,"report":"catalog-refresh","catalogs":[{"repository":"nobody/packs","result":"failed","snapshot_id":null,"error":"`+unregistered+`"}]}` {
+		t.Fatalf("catalog refresh --json report of an unregistered catalog:\n%s", report)
 	}
 }
 
