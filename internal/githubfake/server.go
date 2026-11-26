@@ -105,7 +105,8 @@ func Publish(root, repository, commit, dist string) error {
 	return os.Rename(stage, current)
 }
 
-// WriteRepository writes the repository.json of a fixture repository.
+// WriteRepository replaces the repository.json of a fixture repository and
+// keeps its release.
 func WriteRepository(root, repository string, value Repository) error {
 	directory := filepath.Join(root, filepath.FromSlash(repository))
 	if err := os.MkdirAll(directory, 0o755); err != nil {
