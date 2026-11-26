@@ -15,6 +15,10 @@ import (
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
+// CatalogAdoptionGuide is the public procedure for state that predates
+// catalog-bound receipts. Error reports must name it unredacted.
+const CatalogAdoptionGuide = "https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md"
+
 // SupportedSurfaces returns Packy's complete product-owned CLI surface set in
 // stable display order. Pack manifests decide which members each Pack supports.
 func SupportedSurfaces() []Surface {

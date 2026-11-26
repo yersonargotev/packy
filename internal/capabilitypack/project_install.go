@@ -576,7 +576,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if lockErr != nil {
 		remediation := "restore or remove the invalid project lock before installation"
 		if errors.As(lockErr, new(earlierProjectLockError)) {
-			remediation = "uninstall the project Packs with the previous Packy as https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md describes, then install them again"
+			remediation = "uninstall the project Packs with the previous Packy as " + CatalogAdoptionGuide + " describes, then install them again"
 		}
 		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: remediation})
 	} else if lockExists {

@@ -42,6 +42,19 @@ func Error(err error, argumentSets [][]string, sealedPayloads []string) error {
 	return redactedError{message: Text(err.Error(), argumentSets, sealedPayloads), cause: err}
 }
 
+// ErrorKeeping is Error that leaves every occurrence of public intact, so a
+// sealed payload that also appears inside public text does not mangle it.
+func ErrorKeeping(err error, public string, argumentSets [][]string, sealedPayloads []string) error {
+	if err == nil || public == "" {
+		return Error(err, argumentSets, sealedPayloads)
+	}
+	parts := strings.Split(err.Error(), public)
+	for i := range parts {
+		parts[i] = Text(parts[i], argumentSets, sealedPayloads)
+	}
+	return redactedError{message: strings.Join(parts, public), cause: err}
+}
+
 // Text removes environment argument values and sealed payloads from arbitrary
 // report text such as host readiness evidence.
 func Text(message string, argumentSets [][]string, sealedPayloads []string) string {

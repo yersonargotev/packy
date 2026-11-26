@@ -1015,7 +1015,7 @@ func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err err
 }
 
 func projectLifecycleFailure(cmd *cobra.Command, jsonOutput bool, operation, stage string, err error) error {
-	err = reportredaction.Error(err, nil, projectLifecycleArgumentValues(cmd))
+	err = reportredaction.ErrorKeeping(err, capabilitypack.CatalogAdoptionGuide, nil, projectLifecycleArgumentValues(cmd))
 	if jsonOutput {
 		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.JSONProjectFailureFor(operation, stage, err))
 	}
