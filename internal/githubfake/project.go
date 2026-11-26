@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 )
 
-// Pack names one Pack of a fixture Catalog Project.
+// Pack names one Pack of a fixture Catalog Project. A Portable Pack's skill
+// also declares on-demand access and a plugin export.
 type Pack struct {
-	ID      string
-	Version string
+	ID       string
+	Version  string
+	Portable bool
 }
 
 // WriteCatalogProject writes a Catalog Project whose Packs each carry one
@@ -51,13 +53,22 @@ func WriteCatalogProject(root string, packs ...Pack) error {
       "sharing": "exclusive",
       "capabilities": []
     }],
-    "surface_exclusions": []
+    "surface_exclusions": []%[5]s
   }]
 }
-`, pack.ID, pack.Version, "skills/"+pack.ID, "$"+pack.ID)
+`, pack.ID, pack.Version, "skills/"+pack.ID, "$"+pack.ID, portability(pack))
 		if err := os.WriteFile(filepath.Join(packRoot, "pack.json"), []byte(manifest), 0o644); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func portability(pack Pack) string {
+	if !pack.Portable {
+		return ""
+	}
+	return fmt.Sprintf(`,
+    "on_demand": {"protocol": "skill-tree-v1", "prerequisites": []},
+    "plugin_exports": [{"format": "agent-plugins", "name": %q, "prerequisites": [], "references": [], "roles": []}]`, pack.ID)
 }

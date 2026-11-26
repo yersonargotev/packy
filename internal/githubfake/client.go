@@ -19,7 +19,7 @@ import (
 	"github.com/yersonargotev/packy/internal/catalogstore"
 )
 
-var routedHosts = map[string]bool{"api.github.com": true, "github.com": true, "objects.githubusercontent.com": true}
+var routedHosts = map[string]bool{"api.github.com": true, AssetHost: true}
 
 // Address locates a running fake and carries the certificate its clients trust.
 type Address struct {

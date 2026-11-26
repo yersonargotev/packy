@@ -321,6 +321,38 @@ func TestRegistrationLifecycleKeepsRetainedSnapshots(t *testing.T) {
 	}
 }
 
+func TestAccessControlledRegistrationKeepsTheReleaseChecks(t *testing.T) {
+	private := mustRepository(t, "acme/private")
+	commit := strings.Repeat("c", 40)
+	for _, test := range []struct {
+		name   string
+		mutate func(*catalogstore.Release)
+		want   string
+	}{
+		{"unofficial publisher", func(r *catalogstore.Release) { r.Publisher = "someone" }, "publisher metadata"},
+		{"release of another repository", func(r *catalogstore.Release) { r.Repository = "acme/packs" }, "publisher metadata"},
+		{"index of another repository", func(r *catalogstore.Release) {
+			*r = catalogRelease(t, "acme/private", "acme/packs", commit, validManifest("secret", "1.0.0"))
+		}, "index names acme/packs@"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			release := catalogRelease(t, "acme/private", "acme/private", commit, validManifest("secret", "1.0.0"))
+			test.mutate(&release)
+			release.AttestationVerified = false
+			store := catalogstore.New(t.TempDir(), catalogSource{
+				official.String(): validRelease(t, strings.Repeat("a", 40), validManifest("example", "1.2.3")),
+				"acme/private":    release,
+			})
+			if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: private, Trust: catalogstore.AccessControlled{}}); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Register() error = %v, want %q", err, test.want)
+			}
+			if registrations, err := store.Registrations(); err != nil || len(registrations) != 1 {
+				t.Fatalf("Registrations() after a refused release = %v, %v", registrations, err)
+			}
+		})
+	}
+}
+
 func TestPackIDCollisionIsRejectedWithoutResidue(t *testing.T) {
 	root := t.TempDir()
 	acme := mustRepository(t, "acme/packs")
@@ -467,6 +499,8 @@ func TestRegistrationsFailClosedOnAnInvalidRegistration(t *testing.T) {
 	for _, document := range []string{
 		`{"schema_version":1,"repository":"acme/packs","trust":"unverified"}`,
 		`{"schema_version":1,"repository":"acme/packs","trust":"attested","workflow":"../publish.yml"}`,
+		`{"schema_version":1,"repository":"acme/packs","trust":"attested"}`,
+		`{"schema_version":1,"repository":"acme/packs","trust":"access-controlled","workflow":".github/workflows/publish.yml"}`,
 		`{"schema_version":1,"repository":"acme/other","trust":"access-controlled"}`,
 		`{"schema_version":1,"repository":"acme/packs","trust":"access-controlled","extra":true}`,
 	} {
@@ -476,6 +510,24 @@ func TestRegistrationsFailClosedOnAnInvalidRegistration(t *testing.T) {
 		if registrations, err := catalogstore.New(root, nil).Registrations(); err == nil {
 			t.Fatalf("Registrations() accepted %s: %v", document, registrations)
 		}
+	}
+}
+
+func TestParseTrustPolicyDefaultsTheAttestedWorkflow(t *testing.T) {
+	for _, test := range []struct {
+		name, workflow string
+		want           catalogstore.TrustPolicy
+	}{
+		{"attested", "", catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}},
+		{"attested", ".github/workflows/release.yaml", catalogstore.Attested{Workflow: ".github/workflows/release.yaml"}},
+		{"access-controlled", "", catalogstore.AccessControlled{}},
+	} {
+		if got, err := catalogstore.ParseTrustPolicy(test.name, test.workflow); err != nil || got != test.want {
+			t.Errorf("ParseTrustPolicy(%q, %q) = %#v, %v; want %#v", test.name, test.workflow, got, err, test.want)
+		}
+	}
+	if _, err := catalogstore.ParseTrustPolicy("access-controlled", catalogstore.DefaultWorkflow); err == nil {
+		t.Fatal("ParseTrustPolicy() accepted an access-controlled policy with a workflow")
 	}
 }
 

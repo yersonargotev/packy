@@ -53,9 +53,6 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			if err != nil {
 				return err
 			}
-			if trust == "access-controlled" {
-				return fmt.Errorf("catalog %s: --trust access-controlled arrives with private catalog support; this Packy registers only --trust attested catalogs", repository)
-			}
 			policy, err := catalogstore.ParseTrustPolicy(trust, workflow)
 			if err != nil {
 				return err
@@ -66,43 +63,27 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 				return err
 			}
 			snapshot, err := store.Register(cmd.Context(), registration)
-			var rejected attestationRejection
-			if errors.As(err, &rejected) && rejected.repository == repository.String() {
+			var rejected *catalogstore.AttestationRejectedError
+			if errors.As(err, &rejected) && rejected.Repository == repository.String() {
 				return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
 			}
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (attested by %s) and selected Catalog Snapshot %s\n", repository, workflow, snapshot.ID)
+			var evidence string
+			switch policy := policy.(type) {
+			case catalogstore.Attested:
+				evidence = "attested by " + policy.Workflow
+			case catalogstore.AccessControlled:
+				evidence = accessControlledName + ", " + accessControlledNote
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (%s) and selected Catalog Snapshot %s\n", repository, evidence, snapshot.ID)
 			return err
 		},
 	}
-	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog, which is attested")
-	command.Flags().StringVar(&workflow, "workflow", catalogstore.DefaultWorkflow, "publication workflow that must sign attested Catalog Snapshots")
+	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested, or access-controlled for a private repository read with a GitHub token")
+	command.Flags().StringVar(&workflow, "workflow", "", "publication workflow that must sign attested Catalog Snapshots (default "+catalogstore.DefaultWorkflow+")")
 	return command
-}
-
-// attestationRejection marks a catalog whose attestations were read and none
-// verified for the signer workflow, so catalog add can name the --workflow
-// flag for that catalog. A transport or Sigstore failure is not marked.
-type attestationRejection struct {
-	repository string
-	err        error
-}
-
-func (r attestationRejection) Error() string { return r.err.Error() }
-func (r attestationRejection) Unwrap() error { return r.err }
-
-type rejectionMarkingVerifier struct {
-	catalogstore.AttestationVerifier
-}
-
-func (v rejectionMarkingVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
-	err := v.AttestationVerifier.Verify(ctx, repository, subjectSHA256, signerWorkflow)
-	if errors.Is(err, catalogstore.ErrNoAttestationVerified) {
-		return attestationRejection{repository: repository, err: err}
-	}
-	return err
 }
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
@@ -253,6 +234,24 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 	return command
 }
 
+func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map[string]bool, error) {
+	store, _, err := registryStore(opts, resolver)
+	if err != nil {
+		return nil, err
+	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]bool{}
+	for _, registration := range registrations {
+		if _, ok := registration.Trust.(catalogstore.AccessControlled); ok {
+			result[registration.Repository.String()] = true
+		}
+	}
+	return result, nil
+}
+
 func registryStore(opts Options, resolver *workstation.Resolver) (*catalogstore.Store, workstation.Snapshot, error) {
 	station, err := resolver.Resolve(workstation.Options{})
 	if err != nil {
@@ -274,10 +273,16 @@ func selectedSnapshotID(store *catalogstore.Store, repository catalogstore.Repos
 	return &snapshot.ID, nil
 }
 
+const accessControlledNote = "trusts GitHub access to a private repository in place of build provenance, a weaker trust level"
+
+var accessControlledName, _ = catalogstore.TrustPolicyName(catalogstore.AccessControlled{})
+
 func renderCatalogList(w io.Writer, report catalogListReport) error {
 	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(writer, "CATALOG\tTRUST\tWORKFLOW\tSNAPSHOT")
+	weaker := false
 	for _, entry := range report.Catalogs {
+		weaker = weaker || entry.Trust == accessControlledName
 		workflow, snapshot := entry.Workflow, "none"
 		if workflow == "" {
 			workflow = "-"
@@ -287,7 +292,18 @@ func renderCatalogList(w io.Writer, report catalogListReport) error {
 		}
 		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", entry.Repository, entry.Trust, workflow, snapshot)
 	}
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	return renderAccessControlledNote(w, weaker)
+}
+
+func renderAccessControlledNote(w io.Writer, shown bool) error {
+	if !shown {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "\n%s %s.\n", accessControlledName, accessControlledNote)
+	return err
 }
 
 func renderCatalogRefresh(w io.Writer, entry catalogRefreshEntry) error {
