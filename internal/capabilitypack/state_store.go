@@ -25,9 +25,9 @@ type activationDocument struct {
 }
 
 type installedPackIdentity struct {
-	ID              string `json:"id"`
-	Version         string `json:"version"`
-	CatalogSnapshot string `json:"catalog_snapshot,omitempty"`
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	CatalogRef
 }
 
 type installedProjection struct {
@@ -49,6 +49,11 @@ type installedPackReceipt struct {
 	Projections          []installedProjection        `json:"projections"`
 	Sensitive            []ProjectSensitiveDisclosure `json:"sensitive,omitempty"`
 }
+
+const (
+	earliestInstalledReceiptSchemaVersion = 1
+	installedReceiptSchemaVersion         = 2
+)
 
 type installedReceiptDocument struct {
 	SchemaVersion int                    `json:"schema_version"`
@@ -174,7 +179,12 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 		}
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid installed receipt document: %w", s.path, err)
 	}
-	if receipts.SchemaVersion != 1 {
+	// The previous Packy leaves an empty schema_version 1 document after its
+	// last deactivation, and that document holds no catalog state to reject.
+	if receipts.SchemaVersion == earliestInstalledReceiptSchemaVersion && len(receipts.Receipts) > 0 {
+		return activationDocument{}, fmt.Errorf("read capability-pack state %s: installed receipts at schema_version %d do not name their catalog; follow %s to reinstall them", s.path, receipts.SchemaVersion, CatalogAdoptionGuide)
+	}
+	if receipts.SchemaVersion != earliestInstalledReceiptSchemaVersion && receipts.SchemaVersion != installedReceiptSchemaVersion {
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: unsupported schema_version %d", s.path, receipts.SchemaVersion)
 	}
 	document, err := activationDocumentFromReceipts(receipts)
@@ -185,14 +195,14 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 }
 
 func receiptDocumentFromActivation(document activationDocument) installedReceiptDocument {
-	receipts := installedReceiptDocument{SchemaVersion: 1, Revision: document.Revision, Receipts: []installedPackReceipt{}}
+	receipts := installedReceiptDocument{SchemaVersion: installedReceiptSchemaVersion, Revision: document.Revision, Receipts: []installedPackReceipt{}}
 	for _, state := range document.Activations {
 		for _, intent := range activeIntents(state) {
 			if !intent.Active {
 				continue
 			}
 			receipt := installedPackReceipt{
-				Pack: installedPackIdentity{ID: intent.PackID, Version: intent.Version, CatalogSnapshot: intent.CatalogSnapshot}, Surface: intent.Surface,
+				Pack: installedPackIdentity{ID: intent.PackID, Version: intent.Version, CatalogRef: intent.CatalogRef}, Surface: intent.Surface,
 				ReadinessObligations: append([]ReadinessObligation(nil), intent.ReadinessObligations...),
 				ExternalRequirements: append([]string{}, intent.ExternalRequirements...),
 				Selection:            cloneSelection(intent.Selection), Aliases: cloneAliases(intent.Aliases),
@@ -231,8 +241,12 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 		if err := ValidateSurface(receipt.Surface); err != nil {
 			return activationDocument{}, err
 		}
-		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" {
-			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, and surface")
+		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" || !receipt.Pack.CatalogRef.paired() {
+			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, surface, and a paired catalog repository and snapshot")
+		}
+		ref, err := receipt.Pack.CatalogRef.canonical()
+		if err != nil {
+			return activationDocument{}, fmt.Errorf("installed receipt for capability pack %q: %w", receipt.Pack.ID, err)
 		}
 		state := bySurface[receipt.Surface]
 		if state == nil {
@@ -240,7 +254,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 			bySurface[receipt.Surface] = state
 		}
 		explicit := true
-		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, CatalogSnapshot: receipt.Pack.CatalogSnapshot, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
+		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, CatalogRef: ref, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
 		state.Intents = append(state.Intents, intent)
 		state.Intent = intent
 		for _, projection := range receipt.Projections {

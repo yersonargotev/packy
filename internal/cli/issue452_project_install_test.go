@@ -83,7 +83,7 @@ func TestIssue452SyntheticAgentsProjectInstallMutatesRecoverablyAndRepeatsAsNoOp
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 1 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) == 0 || len(lock.Receipts[0].Projections) == 0 {
+	if lock.SchemaVersion != 2 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) == 0 || len(lock.Receipts[0].Projections) == 0 {
 		t.Fatalf("lock = %#v", lock)
 	}
 

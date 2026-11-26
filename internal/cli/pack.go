@@ -1015,7 +1015,7 @@ func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err err
 }
 
 func projectLifecycleFailure(cmd *cobra.Command, jsonOutput bool, operation, stage string, err error) error {
-	err = reportredaction.Error(err, nil, projectLifecycleArgumentValues(cmd))
+	err = reportredaction.ErrorKeeping(err, capabilitypack.CatalogAdoptionGuide, nil, projectLifecycleArgumentValues(cmd))
 	if jsonOutput {
 		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.JSONProjectFailureFor(operation, stage, err))
 	}
@@ -2177,15 +2177,40 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 // the transaction spanning validation, discovery, and later resource reads.
 func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capabilitypack.Catalog, error) {
 	catalogRoot := sources.catalogRoot
-	if sources.candidate != nil {
-		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, sources.candidate.Resolve)
-	}
-	if !sources.isDefault {
+	if !sources.isDefault && sources.candidate == nil {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
-	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
-		return sources.store.Resolve(catalogstore.Official().Repository, snapshotID)
+	selected, err := snapshotCatalogRef(sources.snapshot)
+	if err != nil {
+		return capabilitypack.Catalog{}, err
+	}
+	if sources.candidate != nil {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
+			if ref.Repository != selected.Repository {
+				return "", fmt.Errorf("catalog %s is outside this candidate workspace", ref.Repository)
+			}
+			return sources.candidate.Resolve(ctx, ref.Commit)
+		})
+	}
+	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(_ context.Context, ref capabilitypack.CatalogRef) (string, error) {
+		return resolveRetainedSnapshot(sources.store, ref)
 	})
+}
+
+func snapshotCatalogRef(snapshot catalogstore.Snapshot) (capabilitypack.CatalogRef, error) {
+	repository, err := catalogstore.ParseRepository(snapshot.Index.Source.Repository)
+	if err != nil {
+		return capabilitypack.CatalogRef{}, err
+	}
+	return capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshot.Commit}, nil
+}
+
+func resolveRetainedSnapshot(store *catalogstore.Store, ref capabilitypack.CatalogRef) (string, error) {
+	repository, err := catalogstore.ParseRepository(ref.Repository)
+	if err != nil {
+		return "", err
+	}
+	return store.Resolve(repository, ref.Commit)
 }
 
 func discoverPackCatalog(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {

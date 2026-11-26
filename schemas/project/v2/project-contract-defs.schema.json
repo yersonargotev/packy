@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/project/v2/project-contract-defs.schema.json",
+  "title": "Packy project receipt definitions v2",
+  "$defs": {
+    "installed_pack": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "catalog_repository": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*/[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*$"
+        },
+        "catalog_snapshot": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "dependentRequired": {
+        "catalog_repository": [
+          "catalog_snapshot"
+        ],
+        "catalog_snapshot": [
+          "catalog_repository"
+        ]
+      },
+      "additionalProperties": false
+    },
+    "installed_receipt": {
+      "type": "object",
+      "required": [
+        "pack",
+        "surface",
+        "readiness_obligations",
+        "external_requirements",
+        "selection",
+        "resources",
+        "projections"
+      ],
+      "properties": {
+        "pack": {
+          "$ref": "#/$defs/installed_pack"
+        },
+        "surface": {
+          "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/surface"
+        },
+        "readiness_obligations": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "runtime-usability",
+              "surface-authorization"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "external_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "uniqueItems": true
+        },
+        "selection": {
+          "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/selection"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/alias"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/resource"
+          }
+        },
+        "projections": {
+          "type": "array",
+          "items": {
+            "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/installed_projection"
+          }
+        },
+        "role_bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/role_binding"
+          }
+        },
+        "sensitive": {
+          "type": "array",
+          "items": {
+            "$ref": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-contract-defs.schema.json#/$defs/sensitive"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

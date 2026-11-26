@@ -60,8 +60,8 @@ var retainedPluginSnapshot = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // ExportPlugin consumes an already validated immutable snapshot supplied by the
 // retained catalog boundary. All planning and validation precede publication.
-func ExportPlugin(ctx context.Context, snapshotRoot, snapshotID, packID string, surface Surface, skills []string, output string) (PluginExportResult, error) {
-	if !idPattern.MatchString(packID) || !retainedPluginSnapshot.MatchString(snapshotID) {
+func ExportPlugin(ctx context.Context, snapshotRoot string, ref CatalogRef, packID string, surface Surface, skills []string, output string) (PluginExportResult, error) {
+	if !idPattern.MatchString(packID) || ref.Repository == "" || !retainedPluginSnapshot.MatchString(ref.Commit) {
 		return PluginExportResult{}, fmt.Errorf("export requires a Pack ID and retained immutable Catalog Snapshot identity")
 	}
 	if surface != SurfaceAgents && surface != SurfaceClaude {
@@ -74,7 +74,7 @@ func ExportPlugin(ctx context.Context, snapshotRoot, snapshotID, packID string, 
 	if !pack.Selectable || !slices.Contains(pack.Surfaces, surface) {
 		return PluginExportResult{}, fmt.Errorf("Pack %s is not selectable on %s", packID, surface)
 	}
-	plan, err := planPluginExport(ctx, pack, snapshotID, surface, skills)
+	plan, err := planPluginExport(ctx, pack, ref, surface, skills)
 	if err != nil {
 		return PluginExportResult{}, err
 	}
@@ -86,7 +86,7 @@ func ExportPlugin(ctx context.Context, snapshotRoot, snapshotID, packID string, 
 	return plan.result, nil
 }
 
-func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface Surface, skills []string) (pluginPlan, error) {
+func planPluginExport(ctx context.Context, pack Pack, ref CatalogRef, surface Surface, skills []string) (pluginPlan, error) {
 	format := AgentPluginsFormat
 	if surface == SurfaceClaude {
 		format = ClaudePluginFormat
@@ -146,7 +146,7 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 	sort.Slice(resources, func(i, j int) bool {
 		return resources[i].Kind+":"+resources[i].ID < resources[j].Kind+":"+resources[j].ID
 	})
-	result := PluginExportResult{SnapshotID: snapshotID, PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Format: format, PluginName: pack.ID, SelectedSkills: []string{}, Resources: []ExportedResource{}, Prerequisites: slices.Clone(pack.Requires.Tools)}
+	result := PluginExportResult{SnapshotID: ref.Commit, PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Format: format, PluginName: pack.ID, SelectedSkills: []string{}, Resources: []ExportedResource{}, Prerequisites: slices.Clone(pack.Requires.Tools)}
 	for _, root := range selection.Roots {
 		result.SelectedSkills = append(result.SelectedSkills, root.ID)
 	}
@@ -299,12 +299,13 @@ func planPluginExport(ctx context.Context, pack Pack, snapshotID string, surface
 		return pluginPlan{}, err
 	}
 	provenance := struct {
-		SnapshotID  string             `json:"snapshot_id"`
-		Origins     []PackOrigin       `json:"origins"`
-		PackID      string             `json:"pack_id"`
-		PackVersion string             `json:"pack_version"`
-		Resources   []ExportedResource `json:"resources"`
-	}{snapshotID, origins, pack.ID, pack.Version, result.Resources}
+		CatalogRepository string             `json:"catalog_repository"`
+		SnapshotID        string             `json:"snapshot_id"`
+		Origins           []PackOrigin       `json:"origins"`
+		PackID            string             `json:"pack_id"`
+		PackVersion       string             `json:"pack_version"`
+		Resources         []ExportedResource `json:"resources"`
+	}{ref.Repository, ref.Commit, origins, pack.ID, pack.Version, result.Resources}
 	data, err = json.MarshalIndent(provenance, "", "  ")
 	if err != nil {
 		return pluginPlan{}, err

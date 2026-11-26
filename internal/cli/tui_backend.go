@@ -173,13 +173,13 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		if currentPackIDs[packID] || projectWithdrawn[packID] {
 			continue
 		}
-		snapshotID := packStatus.Pack.CatalogSnapshot
+		ref := packStatus.Pack.CatalogRef
 		if installationErr == nil {
-			if installedSnapshot := projectReceiptSnapshot(installation.Lock, packID, packStatus.Surface); installedSnapshot != "" {
-				snapshotID = installedSnapshot
+			if installed := projectReceiptCatalogRef(installation.Lock, packID, packStatus.Surface); installed != (capabilitypack.CatalogRef{}) {
+				ref = installed
 			}
 		}
-		detail, detailErr := catalog.ResolveIntentDetailAt(ctx, packID, packStatus.Pack.Version, snapshotID)
+		detail, detailErr := catalog.ResolveIntentDetailAt(ctx, packID, packStatus.Pack.Version, ref)
 		if detailErr != nil {
 			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 				Cause: fmt.Sprintf("inspect retained project Pack %s: %v", packID, detailErr), AffectedActions: []string{"Current-project status", "Project Pack lifecycle actions"},
@@ -193,13 +193,13 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	return dashboard, nil
 }
 
-func projectReceiptSnapshot(lock capabilitypack.ProjectLockProposal, packID string, surface capabilitypack.Surface) string {
+func projectReceiptCatalogRef(lock capabilitypack.ProjectLockProposal, packID string, surface capabilitypack.Surface) capabilitypack.CatalogRef {
 	for _, receipt := range lock.Receipts {
 		if receipt.Pack.ID == packID && receipt.Surface == surface {
-			return receipt.Pack.CatalogSnapshot
+			return receipt.Pack.CatalogRef
 		}
 	}
-	return ""
+	return capabilitypack.CatalogRef{}
 }
 
 func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) error {

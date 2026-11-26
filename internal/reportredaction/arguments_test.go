@@ -20,6 +20,15 @@ func TestErrorRedactsSealedEnvironmentValuesAndPreservesCause(t *testing.T) {
 	}
 }
 
+func TestErrorKeepingLeavesPublicTextIntact(t *testing.T) {
+	const guide = "https://example.com/packy/guide.md"
+	cause := errors.New("packy failed; follow " + guide)
+	got := ErrorKeeping(cause, guide, nil, []string{"packy"})
+	if !errors.Is(got, cause) || got.Error() != "<redacted> failed; follow "+guide {
+		t.Fatalf("ErrorKeeping() = %q", got)
+	}
+}
+
 func TestTextRedactsSealedEnvironmentValuesAndPayloads(t *testing.T) {
 	got := Text("observed TOKEN=secret and merged-document", [][]string{{"--env", "TOKEN=secret"}}, []string{"merged-document"})
 	if strings.Contains(got, "secret") || strings.Contains(got, "merged-document") {

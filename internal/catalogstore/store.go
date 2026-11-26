@@ -46,7 +46,7 @@ var (
 
 // ErrEarlierLayout reports a Catalog Store that holds only the layout that
 // predates catalog registrations.
-var ErrEarlierLayout = errors.New("the Catalog Store holds only the layout that predates catalog registrations, which this Packy does not read; follow https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md")
+var ErrEarlierLayout = errors.New("the Catalog Store holds only the layout that predates catalog registrations, which this Packy does not read; follow " + capabilitypack.CatalogAdoptionGuide)
 
 // Source is the network boundary used only by explicit acquisition.
 type Source interface {

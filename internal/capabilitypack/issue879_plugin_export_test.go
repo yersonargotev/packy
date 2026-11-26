@@ -157,7 +157,7 @@ func TestIssue879GeneratedMetadataCannotOverwriteDeclaredResources(t *testing.T)
 				}
 			}
 			output := filepath.Join(t.TempDir(), "plugin")
-			_, err = ExportPlugin(context.Background(), root, strings.Repeat("a", 40), "sample", SurfaceAgents, nil, output)
+			_, err = ExportPlugin(context.Background(), root, CatalogRef{Repository: "yersonargotev/packy-catalog", Commit: strings.Repeat("a", 40)}, "sample", SurfaceAgents, nil, output)
 			if err == nil || !strings.Contains(err.Error(), "collision") {
 				t.Fatalf("reserved resource overwritten: %v", err)
 			}

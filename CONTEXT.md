@@ -227,7 +227,8 @@ surface, and resource intent.
 ### Installed Pack receipt
 
 The minimal current-state record for one Pack and surface: Pack identity and
-version, reviewed readiness obligations and external-requirement names,
+version, the catalog repository and Catalog Snapshot commit it came from,
+reviewed readiness obligations and external-requirement names,
 selected resource closure, projected paths, and content digests. It is the
 authority for safe update or removal of unchanged Pack-owned content and for
 offline readiness evaluation. Project receipts also seal committed projection
@@ -237,7 +238,7 @@ evidence.
 ### Project Pack lock
 
 The generated `packy.lock.json` containing one installed Pack receipt per Pack
-and surface. It is committed with the project Pack manifest.
+and surface, so it records the catalog of each Pack. It is committed with the project Pack manifest.
 
 ### Pack ownership
 

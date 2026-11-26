@@ -240,7 +240,7 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if err := strictDecode(manifestData, &document); err != nil {
 		return ProjectInstallation{}, fmt.Errorf("decode project manifest: %w", err)
 	}
-	if !supportedProjectContractVersion(document.SchemaVersion, "") {
+	if document.SchemaVersion != projectManifestSchemaVersion {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
 	}
 	packs := make([]ProjectManifestPack, 0, len(document.Packs))
@@ -287,7 +287,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			}
 			runtime := ProjectRuntimePending
 			version := ""
-			catalogSnapshot := ""
+			var catalogRef CatalogRef
 			pendingActions := []string{}
 			effects := []ProjectRuntimeEffectStatus{}
 			blockers := []ProjectInstallBlocker{}
@@ -301,7 +301,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 						return report, fmt.Errorf("personal project activation belongs to capability pack %q, not %q", document.State.PackID, request.PackID)
 					}
 					version = document.State.Version
-					catalogSnapshot = document.State.CatalogSnapshot
+					catalogRef = document.State.CatalogRef
 					runtime = ProjectRuntimeOrphaned
 					for _, receipt := range document.Receipts {
 						for _, detail := range receipt.Details {
@@ -316,7 +316,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				Surface: request.Surface, Scope: ReadinessScopeProject, Revision: "project-installation-absent",
 			})
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
-				Pack:    ProjectManifestPack{ID: request.PackID, Version: version, CatalogSnapshot: catalogSnapshot, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
+				Pack:    ProjectManifestPack{ID: request.PackID, Version: version, CatalogRef: catalogRef, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
 				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: runtime, RuntimeRequired: len(effects) > 0,
 				RuntimeEffects: effects, Readiness: readiness, Conditions: conditions, Projections: []ProjectProjectionStatus{}, Blockers: blockers, PendingHumanActions: sortedUnique(pendingActions), Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
 				readinessRevision: "project-installation-absent",
@@ -589,7 +589,7 @@ func inspectOrphanedProjectActivationDocument(ctx context.Context, request Proje
 		Scope: ReadinessScopeProject, Revision: "project-installation-absent",
 	})
 	return JSONProjectPackStatus{
-		Pack:    ProjectManifestPack{ID: document.State.PackID, Version: document.State.Version, CatalogSnapshot: document.State.CatalogSnapshot, Surfaces: []Surface{document.State.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
+		Pack:    ProjectManifestPack{ID: document.State.PackID, Version: document.State.Version, CatalogRef: document.State.CatalogRef, Surfaces: []Surface{document.State.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
 		Surface: document.State.Surface, Installation: ProjectInstallationAbsent, Runtime: runtime, RuntimeRequired: len(effects) > 0, RuntimeEffects: effects,
 		Readiness: readiness, Conditions: conditions, Projections: []ProjectProjectionStatus{}, Blockers: blockers,
 		PendingHumanActions: []string{fmt.Sprintf("packy deactivate %s --surface %s --project", document.State.PackID, document.State.Surface)}, Evidence: []string{}, Requirement: orphanedProjectRequirement(request), RequirementSatisfied: !request.RequireInstalled && !request.RequireUsable,
@@ -618,13 +618,13 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		status := &report.Packs[i]
 		var pack Pack
 		if status.Pack.Version != "" {
-			snapshotID := status.Pack.CatalogSnapshot
+			ref := status.Pack.CatalogRef
 			if installationErr == nil {
-				if installedSnapshot := projectReceiptCatalogSnapshot(installation.Lock, status.Pack.ID, status.Surface); installedSnapshot != "" {
-					snapshotID = installedSnapshot
+				if installed := projectReceiptCatalogRef(installation.Lock, status.Pack.ID, status.Surface); installed != (CatalogRef{}) {
+					ref = installed
 				}
 			}
-			pack, err = f.catalog.resolveIntentPackAt(ctx, status.Pack.ID, status.Pack.Version, snapshotID)
+			pack, err = f.catalog.resolveIntentPackAt(ctx, status.Pack.ID, status.Pack.Version, ref)
 		} else {
 			pack, err = f.catalog.Show(ctx, status.Pack.ID)
 		}
@@ -963,8 +963,11 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 		manifestPacks[candidate.ID] = candidate
 	}
-	if !supportedProjectContractVersion(manifest.SchemaVersion, "") || lock.SchemaVersion != manifest.SchemaVersion || !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
-		return errors.New("project manifest and lock schema versions do not match")
+	if manifest.SchemaVersion != projectManifestSchemaVersion {
+		return errors.New("project manifest schema version is unsupported")
+	}
+	if !supportedProjectLockVersion(lock) {
+		return errors.New("project lock schema version is unsupported")
 	}
 	if lock.Path != "packy.lock.json" {
 		return errors.New("project lock path is invalid")

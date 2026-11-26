@@ -13,12 +13,12 @@ import (
 // into Claude host identities. The CLI only wires its immutable catalog view.
 type CapabilityPackOwnershipProvider struct {
 	store       capabilitypack.ActivationStore
-	resolve     func(context.Context, string, string, string) (capabilitypack.Pack, error)
+	resolve     capabilitypack.IntentPackResolver
 	layout      CanonicalLayout
 	catalogRoot string
 }
 
-func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, resolve func(context.Context, string, string, string) (capabilitypack.Pack, error), layout CanonicalLayout, catalogRoot string) CapabilityPackOwnershipProvider {
+func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, resolve capabilitypack.IntentPackResolver, layout CanonicalLayout, catalogRoot string) CapabilityPackOwnershipProvider {
 	return CapabilityPackOwnershipProvider{store: store, resolve: resolve, layout: layout, catalogRoot: catalogRoot}
 }
 
@@ -49,7 +49,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 	records := []OwnershipRecord{}
 	recorded := map[string]bool{}
 	for _, intent := range intents {
-		pack, err := o.resolve(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+		pack, err := o.resolve(ctx, intent.PackID, intent.Version, intent.CatalogRef)
 		if err != nil {
 			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract: %w", intent.PackID, intent.Version, err)
 		}

@@ -285,7 +285,7 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 		pack, current := f.catalog.catalogMetadataIfPresent(target.intent.PackID)
 		var err error
 		if !current {
-			pack, err = f.catalog.resolveIntentPackAt(ctx, target.intent.PackID, target.intent.Version, target.intent.CatalogSnapshot)
+			pack, err = f.catalog.resolveIntentPackAt(ctx, target.intent.PackID, target.intent.Version, target.intent.CatalogRef)
 			if err != nil {
 				report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
 				continue
@@ -390,7 +390,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 			if !installed || !intent.Active {
 				return StatusReport{}, fmt.Errorf("unknown capability pack %q in the current catalog; run `packy list` to see available packs", request.PackID)
 			}
-			pack, err = f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogSnapshot)
+			pack, err = f.catalog.resolveIntentPackAt(ctx, request.PackID, intent.Version, intent.CatalogRef)
 			if err != nil {
 				return StatusReport{}, err
 			}
@@ -410,7 +410,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 				if !intent.Active || knownPacks[intent.PackID] {
 					continue
 				}
-				pack, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+				pack, err := f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogRef)
 				if err != nil {
 					return StatusReport{}, fmt.Errorf("inspect withdrawn pack %q on %s: %w", intent.PackID, surface, err)
 				}
@@ -436,7 +436,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 				if !installed || !intent.Active {
 					continue
 				}
-				inspectionPack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogSnapshot)
+				inspectionPack, err = f.catalog.resolveIntentPackAt(ctx, intent.PackID, intent.Version, intent.CatalogRef)
 				if err != nil {
 					return StatusReport{}, fmt.Errorf("inspect withdrawn pack %q on %s: %w", pack.ID, surface, err)
 				}
@@ -518,7 +518,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active && intent.Version != pack.Version {
-			evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
+			evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogRef)
 			if err != nil {
 				return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
 			}
@@ -533,7 +533,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		}
 		if evidencePack.ID == "" {
 			if intent.Active || ownedResidual {
-				evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogSnapshot)
+				evidencePack, err = f.catalog.resolveIntentPackAt(ctx, pack.ID, intent.Version, intent.CatalogRef)
 			} else {
 				evidencePack, err = f.catalog.Show(ctx, pack.ID)
 			}

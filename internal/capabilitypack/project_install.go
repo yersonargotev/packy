@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	ProjectInstallPreviewSchemaVersion = 4
-	projectContractSchemaV1            = 1
+	ProjectInstallPreviewSchemaVersion = 5
+	projectManifestSchemaVersion       = 1
+	projectLockSchemaVersion           = 2
 )
 
 type ProjectInstallDisposition string
@@ -66,13 +67,13 @@ type ProjectContractProposal struct {
 }
 
 type ProjectManifestPack struct {
-	ID              string                 `json:"id"`
-	Version         string                 `json:"version"`
-	CatalogSnapshot string                 `json:"-"`
-	Surfaces        []Surface              `json:"surfaces"`
-	Selection       ResourceSelection      `json:"selection"`
-	Aliases         []SurfaceAlias         `json:"aliases"`
-	SurfaceIntents  []ProjectSurfaceIntent `json:"surface_intents,omitempty"`
+	ID             string                 `json:"id"`
+	Version        string                 `json:"version"`
+	CatalogRef     CatalogRef             `json:"-"`
+	Surfaces       []Surface              `json:"surfaces"`
+	Selection      ResourceSelection      `json:"selection"`
+	Aliases        []SurfaceAlias         `json:"aliases"`
+	SurfaceIntents []ProjectSurfaceIntent `json:"surface_intents,omitempty"`
 }
 
 type ProjectSurfaceIntent struct {
@@ -573,7 +574,11 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	var existingInstallation ProjectInstallation
 	existingContract := false
 	if lockErr != nil {
-		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: "restore or remove the invalid project lock before installation"})
+		remediation := "restore or remove the invalid project lock before installation"
+		if errors.As(lockErr, new(earlierProjectLockError)) {
+			remediation = "uninstall the project Packs with the previous Packy as " + CatalogAdoptionGuide + " describes, then install them again"
+		}
+		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: remediation})
 	} else if lockExists {
 		installation, contractErr := LoadProjectInstallation(request.ProjectRoot)
 		if contractErr != nil {
@@ -742,8 +747,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		SchemaVersion:       ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
-		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV1, Packs: manifestPacks},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV1, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
+		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectManifestSchemaVersion, Packs: manifestPacks},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectLockSchemaVersion, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: append([]string{}, requirements...), Blockers: append([]ProjectInstallBlocker{}, blockers...), Disposition: disposition,
 		ExpectedReadiness: expectedReadiness, Conditions: readinessConditions,
@@ -958,7 +963,7 @@ func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {
 
 func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, aliases []SurfaceAlias, graph ResourceGraph, projections []ProjectProjectionPlan) installedPackReceipt {
 	receipt := installedPackReceipt{
-		Pack: installedPackIdentity{ID: pack.ID, Version: pack.Version, CatalogSnapshot: pack.CatalogSnapshot}, Surface: surface,
+		Pack: installedPackIdentity{ID: pack.ID, Version: pack.Version, CatalogRef: pack.CatalogRef}, Surface: surface,
 		ReadinessObligations: append([]ReadinessObligation{}, pack.ReadinessObligations...),
 		ExternalRequirements: append([]string{}, pack.Requires.Tools...),
 		Selection:            cloneSelection(selection), Aliases: cloneAliases(aliases), Resources: []ResourceIdentity{}, Projections: []installedProjection{},
@@ -997,13 +1002,13 @@ func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, ali
 	return receipt
 }
 
-func projectReceiptCatalogSnapshot(lock ProjectLockProposal, packID string, surface Surface) string {
+func projectReceiptCatalogRef(lock ProjectLockProposal, packID string, surface Surface) CatalogRef {
 	for _, receipt := range lock.Receipts {
 		if receipt.Pack.ID == packID && receipt.Surface == surface {
-			return receipt.Pack.CatalogSnapshot
+			return receipt.Pack.CatalogRef
 		}
 	}
-	return ""
+	return CatalogRef{}
 }
 
 func projectNoticeProjectionID(packID string, surface Surface) string {

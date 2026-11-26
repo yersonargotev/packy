@@ -69,6 +69,45 @@ one and leaves the earlier files unchanged. Packy never moves or deletes them.
 Archive them under your own retention policy after no receipt of the previous
 Packy references them.
 
+## Catalog-bound receipts and locks
+
+Every installed Pack receipt names the catalog it came from. The `pack` object
+in `~/.packy/packs.json` and in each project's `packy.lock.json` records
+`catalog_repository` next to `catalog_snapshot`:
+
+```json
+"pack": {
+  "id": "<pack>",
+  "version": "<version>",
+  "catalog_repository": "yersonargotev/packy-catalog",
+  "catalog_snapshot": "<commit>"
+}
+```
+
+Packy reads only receipts at `schema_version` 2, project locks at
+`schema_version` 2, and personal project activations at `schema_version` 2.
+It rejects an earlier `packs.json` that still holds receipts, an earlier
+`packy.lock.json`, or an earlier personal project activation with an error that
+names this guide. An earlier `packs.json` with no receipts, which the previous
+Packy leaves after the last deactivation, loads as empty, and the next change
+rewrites it at `schema_version` 2. Packy leaves the rejected file
+unchanged and never reads an earlier receipt as official-catalog state. No
+converter exists.
+
+To adopt catalog-bound receipts, follow steps 1 to 4 with these checks:
+
+- In step 2, use the previous Packy to deactivate every global and personal
+  project activation and to uninstall every shared project installation. The
+  previous Packy removes its receipts and the project's `packy.lock.json`
+  entries.
+- In step 3, confirm that `packy status` and `packy status --project` exit 0
+  with the current Packy before you reinstall anything.
+- In step 4, reinstall the Packs. Open `~/.packy/packs.json` and
+  `packy.lock.json` and confirm that each receipt names its
+  `catalog_repository`.
+- Commit the new `packy.lock.json` so that other workstations reinstall from
+  the same catalog and snapshot.
+
 ## 1. Inventory with the previous Packy
 
 Before replacing the binary, enter each affected Git worktree and record the

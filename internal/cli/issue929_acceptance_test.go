@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/githubfake"
 	"github.com/yersonargotev/packy/internal/testprocess"
@@ -48,8 +49,8 @@ func TestIssue929(t *testing.T) {
 		{"A12", "Full lifecycle of a non-official Pack, own-catalog updates, uninstall then install from another catalog", "P4", nil},
 		{"A13", "Removal refused while a receipt references it, and removal keeps snapshots", "P4", nil},
 		{"A14", "A project lock naming an unregistered catalog fails and names it", "P4", nil},
-		{"A15", "Offline operation from retained snapshots", "P3 for official, P4 for others", nil},
-		{"A16", "Earlier store, receipt, and lock schemas are rejected with adoption guidance", "P2 and P3", testIssue929EarlierStoreLayout},
+		{"A15", "Offline operation from retained snapshots", "P3 for official, P4 for others", testIssue929OfficialOffline},
+		{"A16", "Earlier store, receipt, and lock schemas are rejected with adoption guidance", "P2 and P3", testIssue929EarlierSchemas},
 		{"A17", "The TUI shows catalogs, trust, snapshots, Pack catalogs, and refreshes", "P6", nil},
 	} {
 		t.Run(scenario.id, func(t *testing.T) {
@@ -121,6 +122,144 @@ func testIssue929IncompatibleOfficialSnapshot(t *testing.T, transport string) {
 	}
 	if packs := listIssue929Packs(t, transport, environment); packs != "fixture@1.0.0" {
 		t.Fatalf("list after a refused refresh = %s", packs)
+	}
+}
+
+func testIssue929OfficialOffline(t *testing.T, transport string) {
+	commit := strings.Repeat("a", 40)
+	fixtures, project := t.TempDir(), t.TempDir()
+	if err := githubfake.WriteCatalogProject(project, githubfake.Pack{ID: "fixture", Version: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(project, "packs", "fixture", "pack.json")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable := `"surface_exclusions": [], "on_demand": {"protocol": "skill-tree-v1", "prerequisites": []}, "plugin_exports": [{"format": "agent-plugins", "name": "fixture", "prerequisites": [], "references": [], "roles": []}]`
+	if !bytes.Contains(data, []byte(`"surface_exclusions": []`)) {
+		t.Fatalf("fixture manifest has no surface_exclusions to extend:\n%s", data)
+	}
+	if err := os.WriteFile(manifest, bytes.Replace(data, []byte(`"surface_exclusions": []`), []byte(portable), 1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := githubfake.Publish(fixtures, issue929OfficialCatalog, commit, buildIssue929DistFrom(t, transport, project, issue929OfficialCatalog, commit)); err != nil {
+		t.Fatal(err)
+	}
+	online := startIssue929GitHub(t, fixtures)
+	if out, err := runIssue929(t, transport, online, "catalog", "refresh"); err != nil {
+		t.Fatalf("catalog refresh: %v\n%s", err, out)
+	}
+	offline := issue929Offline(t, online)
+	project = t.TempDir()
+	writeTestGitWorktree(t, project)
+	approveIssue929(t, transport, offline, project, "activate", "fixture", "--surface", "agents")
+	approveIssue929(t, transport, offline, project, "install", "fixture", "--surface", "agents")
+	exported := filepath.Join(t.TempDir(), "plugin")
+	if err := os.Mkdir(exported, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list", "--json"}, {"show", "fixture"}, {"status"}, {"status", "--project"}, {"export", "fixture", "--surface", "agents", "--output", exported}} {
+		if out, err := runIssue929At(t, transport, offline, project, args...); err != nil {
+			t.Fatalf("offline %v: %v\n%s", args, err, out)
+		}
+	}
+	out, err := runIssue929At(t, transport, offline, project, "get", "skill", "fixture:fixture", "--surface", "agents", "--json")
+	var access struct {
+		EntryDocument string `json:"entry_document"`
+	}
+	if err != nil || json.Unmarshal([]byte(out), &access) != nil || !strings.Contains(access.EntryDocument, filepath.Join("skill-access", "v3", "yersonargotev", "packy-catalog", commit)) {
+		t.Fatalf("offline get skill: %v\n%s", err, out)
+	}
+
+	want := map[string]string{"catalog_repository": issue929OfficialCatalog, "catalog_snapshot": commit}
+	for _, path := range []string{filepath.Join(issue929Home(t, offline), ".packy", "packs.json"), filepath.Join(project, "packy.lock.json")} {
+		var document struct {
+			SchemaVersion int `json:"schema_version"`
+			Receipts      []struct {
+				Pack map[string]string `json:"pack"`
+			} `json:"receipts"`
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || json.Unmarshal(data, &document) != nil || document.SchemaVersion != 2 || len(document.Receipts) != 1 || document.Receipts[0].Pack["catalog_repository"] != want["catalog_repository"] || document.Receipts[0].Pack["catalog_snapshot"] != want["catalog_snapshot"] {
+			t.Fatalf("%s does not bind its receipt to %v: %s %v", path, want, data, err)
+		}
+	}
+	lock, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectStructuredOutput(t, filepath.Join("..", ".."), "project-lock.schema.json", string(lock))
+	for name, broken := range map[string][]byte{
+		"repository without snapshot": bytes.Replace(lock, []byte(`"catalog_snapshot": "`+commit+`"`), []byte(`"unused": ""`), 1),
+		"dot-segment repository":      bytes.Replace(lock, []byte(issue929OfficialCatalog), []byte("../.."), 1),
+	} {
+		var document map[string]any
+		if err := json.Unmarshal(broken, &document); err != nil {
+			t.Fatal(err)
+		}
+		pack := document["receipts"].([]any)[0].(map[string]any)["pack"].(map[string]any)
+		delete(pack, "unused")
+		encoded, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateProjectStructuredOutput(t, filepath.Join("..", ".."), "project-lock.schema.json", string(encoded)); err == nil {
+			t.Fatalf("project lock schema accepted a receipt with a %s", name)
+		}
+	}
+	var provenance map[string]any
+	data, err = os.ReadFile(filepath.Join(exported, "packy-provenance.json"))
+	if err != nil || json.Unmarshal(data, &provenance) != nil || provenance["catalog_repository"] != issue929OfficialCatalog || provenance["snapshot_id"] != commit {
+		t.Fatalf("plugin provenance = %s %v", data, err)
+	}
+}
+
+func testIssue929EarlierSchemas(t *testing.T, transport string) {
+	t.Run("store", func(t *testing.T) { testIssue929EarlierStoreLayout(t, transport) })
+	t.Run("receipts and locks", func(t *testing.T) { testIssue929EarlierReceiptsAndLocks(t, transport) })
+}
+
+func testIssue929EarlierReceiptsAndLocks(t *testing.T, transport string) {
+	commit := strings.Repeat("a", 40)
+	fixtures := t.TempDir()
+	publishIssue929Fixture(t, transport, fixtures, issue929OfficialCatalog, commit, githubfake.Pack{ID: "fixture", Version: "1.0.0"})
+	environment := startIssue929GitHub(t, fixtures)
+	if out, err := runIssue929(t, transport, environment, "catalog", "refresh"); err != nil {
+		t.Fatalf("catalog refresh: %v\n%s", err, out)
+	}
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	approveIssue929(t, transport, environment, project, "activate", "fixture", "--surface", "agents")
+	approveIssue929(t, transport, environment, project, "install", "fixture", "--surface", "agents")
+
+	for _, earlier := range []struct {
+		path string
+		args []string
+	}{
+		{filepath.Join(issue929Home(t, environment), ".packy", "packs.json"), []string{"status"}},
+		{filepath.Join(project, "packy.lock.json"), []string{"status", "--project"}},
+	} {
+		data, err := os.ReadFile(earlier.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = bytes.Replace(data, []byte(`"schema_version": 2`), []byte(`"schema_version": 1`), 1)
+		data = bytes.ReplaceAll(data, []byte(`"catalog_repository": "`+issue929OfficialCatalog+`",`), nil)
+		if err := os.WriteFile(earlier.path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runIssue929At(t, transport, environment, project, earlier.args...)
+		if !issue929Exit(err, 1) || !strings.Contains(out, "docs/catalog-adoption.md") {
+			t.Fatalf("%v over an earlier %s: %v\n%s", earlier.args, filepath.Base(earlier.path), err, out)
+		}
+		if after, err := os.ReadFile(earlier.path); err != nil || !bytes.Equal(after, data) {
+			t.Fatalf("earlier %s changed: %s %v", filepath.Base(earlier.path), after, err)
+		}
+	}
+	out, err := runIssue929At(t, transport, environment, project, "install", "fixture", "--surface", "agents", "--dry-run")
+	if err == nil || !strings.Contains(out, "uninstall the project Packs with the previous Packy") || strings.Contains(out, "remove the invalid project lock") {
+		t.Fatalf("install over an earlier lock: %v\n%s", err, out)
 	}
 }
 
@@ -325,10 +464,16 @@ func publishIssue929Fixture(t *testing.T, transport, fixtures, repository, commi
 
 func buildIssue929Dist(t *testing.T, transport, repository, commit string, packs ...githubfake.Pack) string {
 	t.Helper()
-	project, dist := t.TempDir(), filepath.Join(t.TempDir(), "dist")
+	project := t.TempDir()
 	if err := githubfake.WriteCatalogProject(project, packs...); err != nil {
 		t.Fatal(err)
 	}
+	return buildIssue929DistFrom(t, transport, project, repository, commit)
+}
+
+func buildIssue929DistFrom(t *testing.T, transport, project, repository, commit string) string {
+	t.Helper()
+	dist := filepath.Join(t.TempDir(), "dist")
 	if out, err := runIssue929(t, transport, testprocess.Env(t), "catalog", "build", "--project", project, "--source-repository", repository, "--source-commit", commit, "--out-dir", dist); err != nil {
 		t.Fatalf("catalog build: %v\n%s", err, out)
 	}
@@ -348,11 +493,56 @@ func startIssue929GitHub(t *testing.T, fixtures string) []string {
 
 func runIssue929(t *testing.T, transport string, environment []string, args ...string) (string, error) {
 	t.Helper()
+	return runIssue929At(t, transport, environment, t.TempDir(), args...)
+}
+
+func runIssue929At(t *testing.T, transport string, environment []string, directory string, args ...string) (string, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	command := exec.CommandContext(ctx, transport, args...)
-	command.Dir = t.TempDir()
+	command.Dir = directory
 	command.Env = environment
 	out, err := command.CombinedOutput()
 	return string(out), err
+}
+
+// approveIssue929 answers the apply prompt through a terminal, because Packy
+// applies a lifecycle plan only after interactive approval.
+func approveIssue929(t *testing.T, transport string, environment []string, directory string, args ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, transport, args...)
+	command.Dir, command.Env = directory, environment
+	terminal, stdin, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terminal.Close()
+	defer stdin.Close()
+	var output bytes.Buffer
+	command.Stdin, command.Stdout, command.Stderr = stdin, &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := terminal.Write([]byte("y\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatalf("%v: %v\n%s", args, err, output.String())
+	}
+}
+
+// issue929Offline points the transport at an address file that does not
+// exist, so every GitHub request fails as it would with the network blocked.
+func issue929Offline(t *testing.T, environment []string) []string {
+	t.Helper()
+	offline := []string{"PACKY_GITHUBFAKE_ADDR_FILE=" + filepath.Join(t.TempDir(), "offline")}
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, "PACKY_GITHUBFAKE_ADDR_FILE=") {
+			offline = append(offline, entry)
+		}
+	}
+	return offline
 }

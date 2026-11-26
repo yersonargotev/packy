@@ -100,13 +100,13 @@ type ProjectActivationApplyResult struct {
 	Conditions    []ReadinessCondition `json:"conditions"`
 }
 
-const projectActivationDocumentSchemaVersion = 1
+const projectActivationDocumentSchemaVersion = 2
 
 type projectActivationState struct {
-	SchemaVersion         int     `json:"schema_version"`
-	PackID                string  `json:"pack_id"`
-	Version               string  `json:"version"`
-	CatalogSnapshot       string  `json:"catalog_snapshot,omitempty"`
+	SchemaVersion int    `json:"schema_version"`
+	PackID        string `json:"pack_id"`
+	Version       string `json:"version"`
+	CatalogRef
 	Surface               Surface `json:"surface"`
 	ProjectRootDigest     string  `json:"project_root_digest"`
 	SensitiveLockIdentity string  `json:"sensitive_lock_identity"`
@@ -161,7 +161,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if len(orphanBlockers) > 0 {
 		return report, errors.New(orphanBlockers[0].Detail + "; " + orphanBlockers[0].Remediation)
 	}
-	pack.CatalogSnapshot = projectReceiptCatalogSnapshot(installation.Lock, pack.ID, request.Surface)
+	pack.CatalogRef = projectReceiptCatalogRef(installation.Lock, pack.ID, request.Surface)
 	var resolver ExecutableResolver
 	if f.activation != nil {
 		resolver = f.activation.resolver
@@ -259,7 +259,7 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	if err != nil {
 		return ProjectActivationApplyResult{}, err
 	}
-	state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: preview.Pack.ID, Version: preview.Pack.Version, CatalogSnapshot: preview.Pack.CatalogSnapshot, Surface: preview.Surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: preview.SensitiveLockIdentity}
+	state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: preview.Pack.ID, Version: preview.Pack.Version, CatalogRef: preview.Pack.CatalogRef, Surface: preview.Surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: preview.SensitiveLockIdentity}
 	receipts := make([]projectActivationReceipt, 0, len(preview.Categories))
 	for _, category := range preview.Categories {
 		receipts = append(receipts, projectActivationReceipt{Category: category.Kind, Digest: preview.Digest, Details: append([]ProjectSensitiveDisclosure(nil), category.Details...)})
@@ -424,13 +424,13 @@ func projectProjectionOwnedBySurface(projection ProjectProjectionPlan, surface S
 }
 
 func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
-	catalogSnapshot := preview.Pack.CatalogSnapshot
+	catalogRef := preview.Pack.CatalogRef
 	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request = "", "", "", "", ProjectActivationRequest{}
 	preview.ExpectedReadiness, preview.Conditions = ReadinessStatus{}, nil
 	data, _ := json.Marshal(struct {
-		Preview         JSONProjectActivationPreview `json:"preview"`
-		CatalogSnapshot string                       `json:"catalog_snapshot,omitempty"`
-	}{Preview: preview, CatalogSnapshot: catalogSnapshot})
+		Preview JSONProjectActivationPreview `json:"preview"`
+		CatalogRef
+	}{Preview: preview, CatalogRef: catalogRef})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
@@ -499,7 +499,10 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID stri
 	if err != nil {
 		return projectActivationDocument{}, false, err
 	}
-	if document.SchemaVersion != projectActivationDocumentSchemaVersion || document.State.SchemaVersion != projectActivationDocumentSchemaVersion || document.State.Surface != surface || document.State.ProjectRootDigest != rootDigest || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || len(document.Approvals) == 0 || len(document.Approvals) != len(document.Receipts) {
+	if document.SchemaVersion < projectActivationDocumentSchemaVersion {
+		return projectActivationDocument{}, false, fmt.Errorf("personal project activation at schema_version %d does not name its catalog; follow %s to reactivate it", document.SchemaVersion, CatalogAdoptionGuide)
+	}
+	if document.SchemaVersion != projectActivationDocumentSchemaVersion || document.State.SchemaVersion != projectActivationDocumentSchemaVersion || !document.State.CatalogRef.paired() || document.State.Surface != surface || document.State.ProjectRootDigest != rootDigest || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || len(document.Approvals) == 0 || len(document.Approvals) != len(document.Receipts) {
 		return projectActivationDocument{}, false, errors.New("project activation state is incomplete or unsupported")
 	}
 	approvalDigests := map[ProjectActivationCategory]string{}

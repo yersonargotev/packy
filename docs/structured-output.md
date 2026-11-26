@@ -21,7 +21,8 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy show PACK --json` | `schemas/cli/v7/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v13/pack-status.schema.json` |
 | global Pack lifecycle | `schemas/cli/v13/pack-lifecycle.schema.json` |
-| project installation/update preview | `schemas/project/v4/project-preview.schema.json` |
+| project installation/update preview | `schemas/project/v5/project-preview.schema.json` |
+| project lock `packy.lock.json` | `schemas/project/v2/project-lock.schema.json` |
 | other project Pack lifecycle | `schemas/project/v1.0.0/` |
 
 Canonical fixtures live under `internal/cli/testdata/`. Repository tests compile
@@ -125,7 +126,7 @@ baseline using the receipt's selected resources. Available comparisons set
 ## Selected resource definitions
 
 Show v7 and global status/lifecycle v13 expose `resource_definitions` in the
-surface lifecycle contract. Project installation/update preview v4 exposes the
+surface lifecycle contract. Project installation/update preview v5 exposes the
 same domain facts at the top level. Each entry preserves the logical resource
 identity and identifies its `surface`, `definition` (`common` or
 `surface_variant`), effective Pack-relative `source` when applicable, imported
@@ -134,7 +135,20 @@ use those same facts. Excluded resources do not appear as selected definitions.
 Preview definitions follow the selected closure; receipts continue to seal
 canonical identities and actual projected bytes without persisting provenance.
 Historical schema generations remain immutable documentation; producers emit
-only their current generation. Project receipt and lock schemas are unchanged.
+only their current generation.
+
+## Catalog-bound receipts
+
+Each installed Pack receipt names its catalog. The receipt's `pack` object
+carries `catalog_repository`, the catalog's GitHub `owner/repo`, next to
+`catalog_snapshot`, the Catalog Snapshot commit. Global receipts in
+`~/.packy/packs.json` use `schema_version` 2. The project lock
+`packy.lock.json` uses `schema_version` 2 and keeps the manifest
+`packy.json` at `schema_version` 1. Personal project activation state uses
+`schema_version` 2. Project installation/update preview v5 embeds the v2
+lock. Packy rejects each earlier version with an error that names
+[catalog adoption](catalog-adoption.md) and leaves the file unchanged. An
+earlier `packs.json` with no receipts loads as empty.
 
 ## Catalog validation and executable identity
 
