@@ -338,7 +338,7 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 		return ProjectLockProposal{}, false, fmt.Errorf("decode project lock: %w", err)
 	}
 	if lock.SchemaVersion < projectLockSchemaVersion {
-		return ProjectLockProposal{}, false, fmt.Errorf("project lock at schema_version %d does not name the catalog of each Pack; follow docs/catalog-adoption.md to reinstall the project Packs", lock.SchemaVersion)
+		return ProjectLockProposal{}, false, earlierProjectLockError{schemaVersion: lock.SchemaVersion}
 	}
 	if !supportedProjectLockVersion(lock) {
 		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
@@ -353,6 +353,12 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 		return ProjectLockProposal{}, false, err
 	}
 	return lock, true, nil
+}
+
+type earlierProjectLockError struct{ schemaVersion int }
+
+func (e earlierProjectLockError) Error() string {
+	return fmt.Sprintf("project lock at schema_version %d does not name the catalog of each Pack; follow docs/catalog-adoption.md to reinstall the project Packs", e.schemaVersion)
 }
 
 func supportedProjectLockVersion(lock ProjectLockProposal) bool {

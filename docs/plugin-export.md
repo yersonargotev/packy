@@ -106,8 +106,8 @@ Assets and notices retain their Pack-relative paths inside the package root.
 Pack/version, selected resource provenance, the sorted registry of referenced
 immutable upstream origins (repository, commit, and optional revision),
 license/attribution, and reviewed role resolutions. Unrelated origins remain
-outside the package. It does
-not include unrelated instruction content or native role definitions. Repeated
+outside the package. It does not include unrelated instruction content or
+native role definitions. Repeated
 exports with identical retained inputs have identical file bytes, modes, and
 `content_sha256`, independent of output directory.
 

@@ -137,6 +137,9 @@ func testIssue929OfficialOffline(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	portable := `"surface_exclusions": [], "on_demand": {"protocol": "skill-tree-v1", "prerequisites": []}, "plugin_exports": [{"format": "agent-plugins", "name": "fixture", "prerequisites": [], "references": [], "roles": []}]`
+	if !bytes.Contains(data, []byte(`"surface_exclusions": []`)) {
+		t.Fatalf("fixture manifest has no surface_exclusions to extend:\n%s", data)
+	}
 	if err := os.WriteFile(manifest, bytes.Replace(data, []byte(`"surface_exclusions": []`), []byte(portable), 1), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +190,24 @@ func testIssue929OfficialOffline(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	assertProjectStructuredOutput(t, filepath.Join("..", ".."), "project-lock.schema.json", string(lock))
+	for name, broken := range map[string][]byte{
+		"repository without snapshot": bytes.Replace(lock, []byte(`"catalog_snapshot": "`+commit+`"`), []byte(`"unused": ""`), 1),
+		"dot-segment repository":      bytes.Replace(lock, []byte(issue929OfficialCatalog), []byte("../.."), 1),
+	} {
+		var document map[string]any
+		if err := json.Unmarshal(broken, &document); err != nil {
+			t.Fatal(err)
+		}
+		pack := document["receipts"].([]any)[0].(map[string]any)["pack"].(map[string]any)
+		delete(pack, "unused")
+		encoded, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateProjectStructuredOutput(t, filepath.Join("..", ".."), "project-lock.schema.json", string(encoded)); err == nil {
+			t.Fatalf("project lock schema accepted a receipt with a %s", name)
+		}
+	}
 	var provenance map[string]any
 	data, err = os.ReadFile(filepath.Join(exported, "packy-provenance.json"))
 	if err != nil || json.Unmarshal(data, &provenance) != nil || provenance["catalog_repository"] != issue929OfficialCatalog || provenance["snapshot_id"] != commit {
@@ -235,6 +256,10 @@ func testIssue929EarlierReceiptsAndLocks(t *testing.T, transport string) {
 		if after, err := os.ReadFile(earlier.path); err != nil || !bytes.Equal(after, data) {
 			t.Fatalf("earlier %s changed: %s %v", filepath.Base(earlier.path), after, err)
 		}
+	}
+	out, err := runIssue929At(t, transport, environment, project, "install", "fixture", "--surface", "agents", "--dry-run")
+	if err == nil || !strings.Contains(out, "uninstall the project Packs with the previous Packy") || strings.Contains(out, "remove the invalid project lock") {
+		t.Fatalf("install over an earlier lock: %v\n%s", err, out)
 	}
 }
 
