@@ -1090,6 +1090,19 @@ func testIssue929RemoveCatalog(t *testing.T, transport string) {
 		t.Fatalf("catalog remove of the official catalog: %v\n%s", err, out)
 	}
 	approveIssue929(t, transport, environment, project, "deactivate", "acme", "--surface", "agents")
+	activation := filepath.Join(issue929Home(t, environment), ".packy", "projects", "project", "state-acme-agents.json")
+	if err := os.MkdirAll(filepath.Dir(activation), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(activation, []byte(`{"schema_version":2,"state":{"pack_id":"acme","version":"1.0.0","catalog_repository":"acme/packs","catalog_snapshot":"`+strings.Repeat("c", 40)+`","surface":"agents","active":true}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in a project") {
+		t.Fatalf("catalog remove with an active personal project activation: %v\n%s", err, out)
+	}
+	if err := os.Remove(activation); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); err != nil || !strings.Contains(out, "removed catalog acme/packs") {
 		t.Fatalf("catalog remove: %v\n%s", err, out)
 	}
