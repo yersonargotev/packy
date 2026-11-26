@@ -242,6 +242,9 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 	if !installed {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project does not declare capability Pack %q", request.PackID)
 	}
+	if repository := projectReceiptCatalogRef(installation.Lock, request.PackID, request.Surface).Repository; repository != "" && !f.catalog.registers(repository) {
+		return JSONProjectInstallPreview{}, unregisteredCatalogError(request.PackID, repository)
+	}
 	targetPack, err := f.resolveProjectPackUnlocked(request.PackID)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
