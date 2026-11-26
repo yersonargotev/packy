@@ -652,8 +652,8 @@ func listIssue929Catalogs(t *testing.T, transport string, environment []string) 
 	return report
 }
 
-// issue929Receipt returns the catalog pair of the one receipt for packID in a
-// receipt document: ~/.packy/packs.json or packy.lock.json.
+// issue929Receipt returns the version and catalog pair of the receipt for
+// packID in ~/.packy/packs.json or packy.lock.json.
 func issue929Receipt(t *testing.T, path, packID string) (version, repository, snapshot string) {
 	t.Helper()
 	var document struct {

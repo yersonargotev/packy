@@ -1691,7 +1691,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 }
 
 // crossCatalogError explains how to move a Pack ID to the catalog that now
-// provides it: an explicit deactivation followed by a new activation.
+// provides it. The move is an explicit deactivation and a new activation.
 func crossCatalogError(operation Operation, id string, surface Surface, installed, current string) error {
 	move := fmt.Sprintf("to install it from %s, run `packy deactivate %s --surface %s` and then activate it again", current, id, surface)
 	if operation == OperationUpdate {

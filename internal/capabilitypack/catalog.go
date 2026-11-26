@@ -700,8 +700,9 @@ func (c Catalog) bound() bool {
 	return false
 }
 
-// registers reports whether a Pack from repository can resolve here: the
-// repository has a selected Catalog Snapshot, or the Catalog names no catalog.
+// registers reports whether a Pack from repository can resolve here. It can
+// when the repository has a selected Catalog Snapshot or when the Catalog
+// names no catalog.
 func (c Catalog) registers(repository string) bool {
 	if !c.bound() {
 		return true

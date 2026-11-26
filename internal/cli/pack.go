@@ -2245,7 +2245,7 @@ func snapshotCatalogRef(snapshot catalogstore.Snapshot) (capabilitypack.CatalogR
 }
 
 // packSnapshot finds the Catalog Snapshot of a registered catalog that
-// provides packID: the selected snapshot, or the retained snapshot
+// provides packID. It reads the selected snapshot, or the retained snapshot
 // snapshotID when one is given. Without a match it returns the official
 // catalog's snapshot, whose readers name the missing Pack or snapshot.
 func packSnapshot(store *catalogstore.Store, packID, snapshotID string) (string, capabilitypack.CatalogRef, error) {

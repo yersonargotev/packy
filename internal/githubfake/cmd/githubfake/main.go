@@ -19,9 +19,9 @@ import (
 
 const fixtureBuilder = "2222222222222222222222222222222222222222"
 
-// seeds are the fixture catalogs of a new fixture directory: the official
-// catalog, a second public attested catalog, and a catalog whose snapshot
-// reuses an official Pack ID.
+// seeds are the fixture catalogs of a new fixture directory. They are the
+// official catalog, a second public attested catalog, and a catalog whose
+// snapshot reuses an official Pack ID.
 var seeds = []struct {
 	repository, commit string
 	pack               githubfake.Pack
