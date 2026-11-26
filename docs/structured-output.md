@@ -164,13 +164,15 @@ catalog, and `snapshot_id`, which is `null` before the first selection.
 Catalog refresh v1 reports one entry for each refreshed catalog. `result` is
 `selected` or `failed`. `snapshot_id` is the snapshot that the catalog has
 selected after the refresh, so a failed refresh reports the previous selection
-and an `error`. The command exits non-zero after it reports every catalog when
+and an `error`. `snapshot_id` is `null` when the catalog has no readable
+selection, and the `error` then says why. The command exits non-zero after it reports every catalog when
 any of them failed.
 
 Pack list v2 adds `catalog_repository` to each Pack, which names the catalog
-whose selected Catalog Snapshot provides it. Pack list v1 forbids additional
-properties, so the field needs a new generation. Pack list v1 remains
-historical documentation.
+whose selected Catalog Snapshot provides it. The field is absent only when
+Packy reads a catalog root in place instead of a downloaded snapshot. Pack list
+v1 forbids additional properties, so the field needs a new generation. Pack
+list v1 remains historical documentation.
 
 ## Catalog validation and executable identity
 

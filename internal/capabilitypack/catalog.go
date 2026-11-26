@@ -730,7 +730,6 @@ func unregisteredCatalogError(id, repository string) error {
 	return UnregisteredCatalogError{PackID: id, Repository: repository}
 }
 
-// selects reports whether ref names one of the selected Catalog Snapshots.
 func (c Catalog) selects(ref CatalogRef) bool {
 	if len(c.snapshots) == 0 {
 		return ref == CatalogRef{}

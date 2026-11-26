@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -931,37 +930,22 @@ func projectExecutableResolver(opts Options, snapshot workstation.Snapshot) capa
 	return toolbin.NewPATHResolver(opts.Runner.LookPath)
 }
 
-// requireLockCatalogs fails when the project lock installs a Pack from a
-// catalog that this workstation has not registered. An unreadable lock is left
-// to project status, which reports it.
-func requireLockCatalogs(store *catalogstore.Store, projectRoot string) error {
-	installation, err := capabilitypack.LoadProjectInstallation(projectRoot)
+func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) (capabilitypack.Facade, error) {
+	registrations, err := catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), nil).Registrations()
 	if err != nil {
-		return nil
+		return capabilitypack.Facade{}, err
 	}
-	registrations, err := store.Registrations()
-	if err != nil {
-		return err
-	}
-	registered := map[string]bool{}
+	repositories := make([]string, 0, len(registrations))
 	for _, registration := range registrations {
-		registered[registration.Repository.String()] = true
+		repositories = append(repositories, registration.Repository.String())
 	}
-	for _, repository := range installation.Lock.CatalogRepositories() {
-		if !registered[repository] {
-			return fmt.Errorf("the project lock installs Packs from catalog %s, which is not registered on this workstation; register it with `packy catalog add %s`", repository, repository)
-		}
-	}
-	return nil
-}
-
-func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) capabilitypack.Facade {
 	adapters := projectStatusAdapters(ctx, opts, snapshot)
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
+		capabilitypack.WithRegisteredCatalogs(repositories),
 		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File()), adapters),
 		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
-	)
+	), nil
 }
 
 func approveAndApplyProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, preview capabilitypack.JSONProjectActivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool, cancellation string) error {
@@ -1598,7 +1582,10 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: projectStatusAdapters(cmd.Context(), opts, snapshot), Resolver: projectExecutableResolver(opts, snapshot),
 				}
-				facade := projectStatusFacade(cmd.Context(), opts, snapshot)
+				facade, err := projectStatusFacade(cmd.Context(), opts, snapshot)
+				if err != nil {
+					return err
+				}
 				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
 				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
 				globalRelevant := packID == "" && (len(global.FailedSurfaces) > 0 || len(global.Intents) > 0)
@@ -1614,9 +1601,6 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 						return facadeErr
 					}
 					facade = fullFacade
-				}
-				if err := requireLockCatalogs(catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), nil), projectRoot); err != nil {
-					return err
 				}
 				report, err := facade.InspectProjectStatus(cmd.Context(), statusRequest)
 				if err != nil {
@@ -2249,42 +2233,15 @@ func snapshotCatalogRef(snapshot catalogstore.Snapshot) (capabilitypack.CatalogR
 	return capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshot.Commit}, nil
 }
 
-// packSnapshot finds the Catalog Snapshot of a registered catalog that
-// provides packID. It reads the selected snapshot, or the retained snapshot
-// snapshotID when one is given. Without a match it returns the official
-// catalog's snapshot, whose readers name the missing Pack or snapshot.
+// packSnapshot returns the root and catalog identity of the Catalog Snapshot
+// that provides packID.
 func packSnapshot(store *catalogstore.Store, packID, snapshotID string) (string, capabilitypack.CatalogRef, error) {
-	registrations, err := store.Registrations()
+	snapshot, err := store.Providing(packID, snapshotID)
 	if err != nil {
 		return "", capabilitypack.CatalogRef{}, err
 	}
-	for i, registration := range registrations {
-		root, ref, err := catalogSnapshot(store, registration.Repository, snapshotID)
-		if err != nil {
-			if snapshotID != "" || i == 0 {
-				continue
-			}
-			return "", capabilitypack.CatalogRef{}, fmt.Errorf("catalog %s: %w", registration.Repository, err)
-		}
-		if info, err := os.Stat(filepath.Join(root, "packs", packID)); err == nil && info.IsDir() {
-			return root, ref, nil
-		}
-	}
-	return catalogSnapshot(store, catalogstore.Official().Repository, snapshotID)
-}
-
-func catalogSnapshot(store *catalogstore.Store, repository catalogstore.Repository, snapshotID string) (string, capabilitypack.CatalogRef, error) {
-	if snapshotID != "" {
-		ref := capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshotID}
-		root, err := store.Resolve(repository, snapshotID)
-		return root, ref, err
-	}
-	selected, err := store.Selected(repository)
-	if err != nil {
-		return "", capabilitypack.CatalogRef{}, err
-	}
-	ref, err := snapshotCatalogRef(selected)
-	return selected.Root, ref, err
+	ref, err := snapshotCatalogRef(snapshot)
+	return snapshot.Root, ref, err
 }
 
 func resolveRetainedSnapshot(store *catalogstore.Store, ref capabilitypack.CatalogRef) (string, error) {

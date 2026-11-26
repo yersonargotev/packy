@@ -85,7 +85,7 @@ type Observation struct {
 	CatalogFailure      string
 	ActivePacks         []ActivePack
 	FailedStateSurfaces []string
-	StateFailure        string
+	StateFailures       map[string]string
 }
 
 // Diagnose reports Packy core availability plus compact active-pack health.
@@ -113,7 +113,7 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 			Name:     fmt.Sprintf("pack-state-%s", surface),
 			Scope:    CheckScopeGlobal,
 			Severity: Fail,
-			Detail:   stateFailureDetail(surface, observation.StateFailure),
+			Detail:   stateFailureDetail(surface, observation.StateFailures[surface]),
 		})
 	}
 	for _, pack := range observation.ActivePacks {

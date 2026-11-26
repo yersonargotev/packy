@@ -411,6 +411,19 @@ func WithControlledCheckEvidence(store ControlledCheckEvidenceStore) FacadeOptio
 	return func(f *Facade) { f.controlledChecks = store }
 }
 
+// WithRegisteredCatalogs names the registered catalog repositories for a
+// Facade that inspects receipts without loading any Catalog Snapshot.
+func WithRegisteredCatalogs(repositories []string) FacadeOption {
+	return func(f *Facade) { f.registeredCatalogs = append([]string{}, repositories...) }
+}
+
+func (f Facade) catalogRegistered(repository string) bool {
+	if f.registeredCatalogs == nil || repository == "" {
+		return f.catalog.registers(repository)
+	}
+	return slices.Contains(f.registeredCatalogs, repository)
+}
+
 type PlanPhase struct {
 	Kind             ConsentKind
 	Digest           string

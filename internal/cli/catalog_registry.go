@@ -73,7 +73,7 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			return err
 		},
 	}
-	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested")
+	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog, which is attested")
 	command.Flags().StringVar(&workflow, "workflow", catalogstore.DefaultWorkflow, "publication workflow that must sign attested Catalog Snapshots")
 	return command
 }
@@ -182,7 +182,11 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 				} else {
 					failed++
 					entry.Result, entry.Error = "failed", refreshErr.Error()
-					entry.SnapshotID, _ = selectedSnapshotID(store, repository)
+					previous, err := selectedSnapshotID(store, repository)
+					if err != nil {
+						entry.Error += "; the previous selection is unreadable: " + err.Error()
+					}
+					entry.SnapshotID = previous
 				}
 				report.Catalogs = append(report.Catalogs, entry)
 				if !jsonOutput {
@@ -255,10 +259,10 @@ func renderCatalogRefresh(w io.Writer, entry catalogRefreshEntry) error {
 		_, err := fmt.Fprintf(w, "packy catalog refresh: selected Catalog Snapshot %s of %s\n", *entry.SnapshotID, entry.Repository)
 		return err
 	}
-	kept := "no Catalog Snapshot"
-	if entry.SnapshotID != nil {
-		kept = "Catalog Snapshot " + *entry.SnapshotID
+	if entry.SnapshotID == nil {
+		_, err := fmt.Fprintf(w, "packy catalog refresh: %s failed: %s\n", entry.Repository, entry.Error)
+		return err
 	}
-	_, err := fmt.Fprintf(w, "packy catalog refresh: %s failed and keeps %s: %s\n", entry.Repository, kept, entry.Error)
+	_, err := fmt.Fprintf(w, "packy catalog refresh: %s failed and keeps Catalog Snapshot %s: %s\n", entry.Repository, *entry.SnapshotID, entry.Error)
 	return err
 }

@@ -178,15 +178,16 @@ type StatusReport struct {
 type ActiveIntentObservation struct {
 	Intents        []ActivationIntent
 	FailedSurfaces []Surface
-	Failure        string
+	Failures       map[Surface]string
 }
 
 // Facade is the single capability-pack use-case boundary consumed by the CLI.
 type Facade struct {
-	catalog          Catalog
-	activation       *activationDependencies
-	controlledChecks ControlledCheckEvidenceStore
-	clock            func() time.Time
+	catalog            Catalog
+	activation         *activationDependencies
+	controlledChecks   ControlledCheckEvidenceStore
+	clock              func() time.Time
+	registeredCatalogs []string
 }
 
 func NewFacade(catalog Catalog, options ...FacadeOption) Facade {
@@ -230,7 +231,10 @@ func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveInte
 		state, err := store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			observation.FailedSurfaces = append(observation.FailedSurfaces, surface)
-			observation.Failure = err.Error()
+			if observation.Failures == nil {
+				observation.Failures = map[Surface]string{}
+			}
+			observation.Failures[surface] = err.Error()
 			continue
 		}
 		for _, intent := range activeIntents(state) {

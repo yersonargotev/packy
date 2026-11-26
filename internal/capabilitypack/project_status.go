@@ -624,7 +624,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 					ref = installed
 				}
 			}
-			if !f.catalog.registers(ref.Repository) {
+			if !f.catalogRegistered(ref.Repository) {
 				return report, unregisteredCatalogError(status.Pack.ID, ref.Repository)
 			}
 			pack, err = f.catalog.resolveIntentPackAt(ctx, status.Pack.ID, status.Pack.Version, ref)

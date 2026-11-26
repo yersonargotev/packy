@@ -240,17 +240,60 @@ func (s *Store) Selected(repository Repository) (Snapshot, error) {
 // Resolve returns one retained snapshot root of a registered catalog without
 // using Source.
 func (s *Store) Resolve(repository Repository, snapshotID string) (string, error) {
+	snapshot, err := s.retained(repository, snapshotID)
+	return snapshot.Root, err
+}
+
+// Providing returns the Catalog Snapshot of a registered catalog whose index
+// lists packID, reading each catalog's selected snapshot, or its retained
+// snapshot snapshotID when one is given. When no catalog provides the Pack it
+// returns the official catalog's snapshot, or the error from reading it, so the
+// caller reports the unknown Pack against the official catalog.
+func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
+	registrations, err := s.Registrations()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	var official Snapshot
+	var officialErr error
+	for _, registration := range registrations {
+		var snapshot Snapshot
+		var err error
+		if snapshotID == "" {
+			snapshot, err = s.Selected(registration.Repository)
+		} else {
+			snapshot, err = s.retained(registration.Repository, snapshotID)
+		}
+		if registration.Repository == Official().Repository {
+			official, officialErr = snapshot, err
+		} else if err != nil && snapshotID == "" {
+			return Snapshot{}, fmt.Errorf("catalog %s: %w", registration.Repository, err)
+		}
+		if err != nil {
+			continue
+		}
+		for _, pack := range snapshot.Index.Packs {
+			if pack.ID == packID {
+				return snapshot, nil
+			}
+		}
+	}
+	return official, officialErr
+}
+
+func (s *Store) retained(repository Repository, snapshotID string) (Snapshot, error) {
 	if !commitPattern.MatchString(snapshotID) {
-		return "", fmt.Errorf("invalid Catalog Snapshot identity %q", snapshotID)
+		return Snapshot{}, fmt.Errorf("invalid Catalog Snapshot identity %q", snapshotID)
 	}
 	if _, err := s.registration(repository); err != nil {
-		return "", err
+		return Snapshot{}, err
 	}
 	root := s.snapshot(repository, snapshotID)
-	if _, err := validateSnapshot(root, repository, snapshotID); err != nil {
-		return "", fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
+	index, err := validateSnapshot(root, repository, snapshotID)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
 	}
-	return root, nil
+	return snapshotFrom(index, "catalog-"+snapshotID, root), nil
 }
 
 func (s *Store) layout() string { return filepath.Join(s.root, "v2") }
