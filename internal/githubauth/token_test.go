@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,13 +48,15 @@ func TestLookupRunsGHWithAnExplicitEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"PATH=" + bin, "HOME=" + home, "GH_CONFIG_DIR=/gh/config"} {
-		if !strings.Contains(string(env), want+"\n") {
-			t.Fatalf("gh environment lacks %s:\n%s", want, env)
+	var got, names []string
+	for _, entry := range strings.Split(strings.TrimSpace(string(env)), "\n") {
+		if name, _, _ := strings.Cut(entry, "="); !slices.Contains([]string{"PWD", "OLDPWD", "SHLVL", "_"}, name) {
+			got, names = append(got, entry), append(names, name)
 		}
 	}
-	if strings.Contains(string(env), "PACKY_AMBIENT_SECRET") {
-		t.Fatalf("gh environment carries an unrelated variable:\n%s", env)
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"GH_CONFIG_DIR=/gh/config", "HOME=" + home, "PATH=" + bin}) {
+		t.Fatalf("gh environment has variables %q, want only GH_CONFIG_DIR, HOME, and PATH from getenv besides the variables sh sets", names)
 	}
 }
 
