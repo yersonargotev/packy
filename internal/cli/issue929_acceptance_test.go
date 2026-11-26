@@ -32,6 +32,7 @@ const issue929OfficialCatalog = "yersonargotev/packy-catalog"
 func TestIssue929(t *testing.T) {
 	transport := buildIssue929Transport(t, t.TempDir())
 	issue929Dists.root = t.TempDir()
+	issue929Dists.built.Clear()
 	for _, scenario := range []struct {
 		id, name, greenIn string
 		run               func(*testing.T, string)

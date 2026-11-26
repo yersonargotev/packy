@@ -83,19 +83,6 @@ type ProjectSurfaceIntent struct {
 	Aliases   []SurfaceAlias    `json:"aliases"`
 }
 
-// CatalogRepositories returns the distinct catalog repositories that the lock
-// receipts name, in sorted order.
-func (l ProjectLockProposal) CatalogRepositories() []string {
-	repositories := []string{}
-	for _, receipt := range l.Receipts {
-		if receipt.Pack.CatalogRef.Repository != "" {
-			repositories = append(repositories, receipt.Pack.CatalogRef.Repository)
-		}
-	}
-	slices.Sort(repositories)
-	return slices.Compact(repositories)
-}
-
 type ProjectLockProposal struct {
 	Path                   string                       `json:"-"`
 	SchemaVersion          int                          `json:"schema_version"`

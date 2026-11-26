@@ -165,8 +165,8 @@ Catalog refresh v1 reports one entry for each refreshed catalog. `result` is
 `selected` or `failed`. `snapshot_id` is the snapshot that the catalog has
 selected after the refresh, so a failed refresh reports the previous selection
 and an `error`. `snapshot_id` is `null` when the catalog has no readable
-selection, and the `error` then says why. The command exits non-zero after it reports every catalog when
-any of them failed.
+selection, and the `error` then says why. When any catalog fails, the command
+exits non-zero after it reports every catalog.
 
 Pack list v2 adds `catalog_repository` to each Pack, which names the catalog
 whose selected Catalog Snapshot provides it. The field is absent only when

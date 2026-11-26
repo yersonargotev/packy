@@ -83,11 +83,36 @@ type registrationDocument struct {
 	Workflow      string `json:"workflow,omitempty"`
 }
 
-func encodeRegistration(registration Registration) registrationDocument {
-	document := registrationDocument{SchemaVersion: 1, Repository: registration.Repository.String(), Trust: "access-controlled"}
-	if attested, ok := registration.Trust.(Attested); ok {
-		document.Trust, document.Workflow = "attested", attested.Workflow
+// ParseTrustPolicy returns the trust policy that name and workflow describe.
+// Only an attested policy names a publication workflow.
+func ParseTrustPolicy(name, workflow string) (TrustPolicy, error) {
+	switch name {
+	case "attested":
+		return Attested{Workflow: workflow}, nil
+	case "access-controlled":
+		if workflow != "" {
+			return nil, errors.New("an access-controlled catalog names no publication workflow")
+		}
+		return AccessControlled{}, nil
 	}
+	return nil, fmt.Errorf("trust policy must be attested or access-controlled, not %q", name)
+}
+
+// TrustPolicyName returns the name and publication workflow of a trust
+// policy, as ParseTrustPolicy reads them.
+func TrustPolicyName(trust TrustPolicy) (name, workflow string) {
+	switch trust := trust.(type) {
+	case Attested:
+		return "attested", trust.Workflow
+	case AccessControlled:
+		return "access-controlled", ""
+	}
+	return "", ""
+}
+
+func encodeRegistration(registration Registration) registrationDocument {
+	document := registrationDocument{SchemaVersion: 1, Repository: registration.Repository.String()}
+	document.Trust, document.Workflow = TrustPolicyName(registration.Trust)
 	return document
 }
 
@@ -99,17 +124,10 @@ func decodeRegistration(document registrationDocument) (Registration, error) {
 	if err != nil {
 		return Registration{}, err
 	}
-	registration := Registration{Repository: repository}
-	switch document.Trust {
-	case "attested":
-		registration.Trust = Attested{Workflow: document.Workflow}
-	case "access-controlled":
-		if document.Workflow != "" {
-			return Registration{}, fmt.Errorf("access-controlled catalog %s names a publication workflow", repository)
-		}
-		registration.Trust = AccessControlled{}
-	default:
-		return Registration{}, fmt.Errorf("catalog %s has unknown trust policy %q", repository, document.Trust)
+	trust, err := ParseTrustPolicy(document.Trust, document.Workflow)
+	if err != nil {
+		return Registration{}, fmt.Errorf("catalog %s: %w", repository, err)
 	}
+	registration := Registration{Repository: repository, Trust: trust}
 	return registration, registration.validate()
 }

@@ -52,15 +52,14 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			if err != nil {
 				return err
 			}
-			registration := catalogstore.Registration{Repository: repository}
-			switch trust {
-			case "attested":
-				registration.Trust = catalogstore.Attested{Workflow: workflow}
-			case "access-controlled":
+			if trust == "access-controlled" {
 				return fmt.Errorf("catalog %s: --trust access-controlled arrives with private catalog support; this Packy registers only --trust attested catalogs", repository)
-			default:
-				return fmt.Errorf("--trust must be attested or access-controlled, not %q", trust)
 			}
+			policy, err := catalogstore.ParseTrustPolicy(trust, workflow)
+			if err != nil {
+				return err
+			}
+			registration := catalogstore.Registration{Repository: repository, Trust: policy}
 			store, _, err := registryStore(opts, resolver)
 			if err != nil {
 				return err
@@ -137,7 +136,7 @@ func newCatalogListCommand(opts Options, resolver *workstation.Resolver) *cobra.
 			report := catalogListReport{SchemaVersion: 1, Report: "catalog-list", Catalogs: []catalogListEntry{}}
 			for _, registration := range registrations {
 				entry := catalogListEntry{Repository: registration.Repository.String(), Official: registration.Repository == catalogstore.Official().Repository}
-				entry.Trust, entry.Workflow = trustPolicy(registration.Trust)
+				entry.Trust, entry.Workflow = catalogstore.TrustPolicyName(registration.Trust)
 				entry.SnapshotID, err = selectedSnapshotID(store, registration.Repository)
 				if err != nil {
 					return err
@@ -223,13 +222,6 @@ func registryStore(opts Options, resolver *workstation.Resolver) (*catalogstore.
 		return nil, workstation.Snapshot{}, err
 	}
 	return newCatalogStore(opts, station), station, nil
-}
-
-func trustPolicy(trust catalogstore.TrustPolicy) (string, string) {
-	if attested, ok := trust.(catalogstore.Attested); ok {
-		return "attested", attested.Workflow
-	}
-	return "access-controlled", ""
 }
 
 // selectedSnapshotID reports no selection when the catalog has never selected

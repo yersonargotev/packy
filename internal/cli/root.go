@@ -526,7 +526,10 @@ func resolveInvocationSources(ctx context.Context, opts Options, snapshot workst
 		return invocationSources{}, err
 	}
 	var others []catalogstore.Snapshot
-	for _, registration := range registrations[1:] {
+	for _, registration := range registrations {
+		if registration.Repository == catalogstore.Official().Repository {
+			continue
+		}
 		other, err := store.Selected(registration.Repository)
 		if err != nil {
 			return invocationSources{}, fmt.Errorf("catalog %s has no usable Catalog Snapshot; run `packy catalog refresh %s`: %w", registration.Repository, registration.Repository, err)
