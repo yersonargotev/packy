@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/agents"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/reportredaction"
@@ -2183,7 +2184,7 @@ func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capa
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
 	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, sources.snapshot.ID, func(_ context.Context, snapshotID string) (string, error) {
-		return sources.store.Resolve(snapshotID)
+		return sources.store.Resolve(catalogstore.Official().Repository, snapshotID)
 	})
 }
 

@@ -1,0 +1,110 @@
+package catalogstore
+
+import (
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+const defaultPublicationWorkflow = ".github/workflows/publish.yml"
+
+var (
+	repositoryPattern = regexp.MustCompile(`^[a-z0-9_.-]+/[a-z0-9_.-]+$`)
+	workflowPattern   = regexp.MustCompile(`^\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml$`)
+)
+
+// Repository is a GitHub catalog repository in canonical lowercase
+// owner/name form. GitHub resolves repository names case-insensitively.
+type Repository struct{ owner, name string }
+
+// ParseRepository parses a GitHub owner/name repository.
+func ParseRepository(value string) (Repository, error) {
+	canonical := strings.ToLower(value)
+	owner, name, _ := strings.Cut(canonical, "/")
+	if !repositoryPattern.MatchString(canonical) || strings.Trim(owner, ".") == "" || strings.Trim(name, ".") == "" {
+		return Repository{}, fmt.Errorf("catalog repository %q is not a GitHub owner/repo", value)
+	}
+	return Repository{owner: owner, name: name}, nil
+}
+
+func (r Repository) String() string { return r.owner + "/" + r.name }
+
+// TrustPolicy is the publisher evidence a catalog registration requires. It is
+// Attested or AccessControlled.
+type TrustPolicy interface{ trustPolicy() }
+
+// Attested requires a verified GitHub build-provenance attestation of the
+// archive, signed by Workflow of the catalog repository on refs/heads/main.
+type Attested struct{ Workflow string }
+
+// AccessControlled relies on GitHub access control of a private repository.
+type AccessControlled struct{}
+
+func (Attested) trustPolicy()         {}
+func (AccessControlled) trustPolicy() {}
+
+// Registration binds a catalog repository to its fixed trust policy.
+type Registration struct {
+	Repository Repository
+	Trust      TrustPolicy
+}
+
+// Official returns the built-in registration of the official catalog.
+func Official() Registration {
+	return Registration{Repository: Repository{owner: "yersonargotev", name: "packy-catalog"}, Trust: Attested{Workflow: defaultPublicationWorkflow}}
+}
+
+func (r Registration) validate() error {
+	if r.Repository == (Repository{}) {
+		return errors.New("catalog registration requires a repository")
+	}
+	switch trust := r.Trust.(type) {
+	case Attested:
+		if !workflowPattern.MatchString(trust.Workflow) {
+			return fmt.Errorf("catalog %s publication workflow %q is not a file in .github/workflows", r.Repository, trust.Workflow)
+		}
+	case AccessControlled:
+	default:
+		return fmt.Errorf("catalog %s requires an attested or access-controlled trust policy", r.Repository)
+	}
+	return nil
+}
+
+type registrationDocument struct {
+	SchemaVersion int    `json:"schema_version"`
+	Repository    string `json:"repository"`
+	Trust         string `json:"trust"`
+	Workflow      string `json:"workflow,omitempty"`
+}
+
+func encodeRegistration(registration Registration) registrationDocument {
+	document := registrationDocument{SchemaVersion: 1, Repository: registration.Repository.String(), Trust: "access-controlled"}
+	if attested, ok := registration.Trust.(Attested); ok {
+		document.Trust, document.Workflow = "attested", attested.Workflow
+	}
+	return document
+}
+
+func decodeRegistration(document registrationDocument) (Registration, error) {
+	if document.SchemaVersion != 1 {
+		return Registration{}, errors.New("catalog registration schema_version must be 1")
+	}
+	repository, err := ParseRepository(document.Repository)
+	if err != nil {
+		return Registration{}, err
+	}
+	registration := Registration{Repository: repository}
+	switch document.Trust {
+	case "attested":
+		registration.Trust = Attested{Workflow: document.Workflow}
+	case "access-controlled":
+		if document.Workflow != "" {
+			return Registration{}, fmt.Errorf("access-controlled catalog %s names a publication workflow", repository)
+		}
+		registration.Trust = AccessControlled{}
+	default:
+		return Registration{}, fmt.Errorf("catalog %s has unknown trust policy %q", repository, document.Trust)
+	}
+	return registration, registration.validate()
+}

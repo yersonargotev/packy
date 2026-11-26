@@ -1043,7 +1043,7 @@ type catalogSnapshotFixtureSource struct {
 	release catalogstore.Release
 }
 
-func (s catalogSnapshotFixtureSource) Latest(context.Context, string) (catalogstore.Release, error) {
+func (s catalogSnapshotFixtureSource) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
 	return s.release, nil
 }
 
@@ -1117,7 +1117,7 @@ func selectCatalogSnapshotFixture(ctx context.Context, layout sandboxLayout, env
 			{Name: "SHA256SUMS", SHA256: digest(checksum), Data: checksum},
 		},
 	}
-	if _, err := catalogstore.New(catalogstore.DefaultDataRoot(layout.Home), catalogSnapshotFixtureSource{release: release}).AcquireLatest(ctx); err != nil {
+	if _, err := catalogstore.New(catalogstore.DefaultDataRoot(layout.Home), catalogSnapshotFixtureSource{release: release}).AcquireLatest(ctx, catalogstore.Official().Repository); err != nil {
 		return fmt.Errorf("select disposable Catalog Snapshot fixture: %w", err)
 	}
 	return nil

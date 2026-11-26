@@ -11,7 +11,7 @@ import (
 
 // UnpackCandidate validates local snapshot assets into a new directory. It
 // establishes integrity and engine compatibility, never publisher authority.
-// It neither acquires nor selects content in the official Catalog Store.
+// It neither acquires nor selects content in the Catalog Store.
 func UnpackCandidate(ctx context.Context, assetsRoot, destination string) (Snapshot, string, error) {
 	archive, err := readCandidateAsset(filepath.Join(assetsRoot, archiveAsset), maxArchiveBytes)
 	if err != nil {
@@ -45,17 +45,22 @@ func UnpackCandidate(ctx context.Context, assetsRoot, destination string) (Snaps
 	return snapshot, want, nil
 }
 
-// InspectCandidate revalidates all retained local bytes without claiming an
-// official publication or accepting a different catalog source.
+// InspectCandidate revalidates all retained local bytes against the
+// repository and commit that the candidate index names. It confers no
+// publisher trust on that repository.
 func InspectCandidate(root string) (Snapshot, error) {
 	index, err := readIndex(root)
 	if err != nil {
 		return Snapshot{}, err
 	}
+	repository, err := ParseRepository(index.Source.Repository)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("local candidate source: %w", err)
+	}
 	if !commitPattern.MatchString(index.Source.Commit) {
 		return Snapshot{}, errors.New("local candidate has an invalid source commit")
 	}
-	index, err = validateSnapshot(root, Release{Commit: index.Source.Commit, Tag: "catalog-" + index.Source.Commit})
+	index, err = validateSnapshot(root, repository, index.Source.Commit)
 	if err != nil {
 		return Snapshot{}, err
 	}

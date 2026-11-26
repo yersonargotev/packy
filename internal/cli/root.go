@@ -189,7 +189,7 @@ func initializeCatalog(ctx context.Context, opts Options, resolver *workstation.
 	if err != nil {
 		return err
 	}
-	result, err := newCatalogStore(opts, snapshot).AcquireLatest(ctx)
+	result, err := newCatalogStore(opts, snapshot).AcquireLatest(ctx, catalogstore.Official().Repository)
 	if err != nil {
 		return err
 	}
@@ -514,7 +514,7 @@ func resolveInvocationSources(ctx context.Context, opts Options, snapshot workst
 		return invocationSources{catalogRoot: filepath.Clean(explicit)}, nil
 	}
 	store := newCatalogStore(opts, snapshot)
-	selected, err := store.Selected()
+	selected, err := store.Selected(catalogstore.Official().Repository)
 	if err != nil {
 		return invocationSources{}, fmt.Errorf("official Catalog Snapshot is unavailable; run `packy init`: %w", err)
 	}

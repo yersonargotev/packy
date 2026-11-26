@@ -338,7 +338,7 @@ func checkCrossPackProcedure(t *testing.T, binary string) {
 				t.Fatalf("drift: %v %s", err, out)
 			}
 			assertAccessFile(t, first.Dependencies[0].EntryDocument, []byte("consumer drift\n"), 0644)
-			retained := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog/snapshots", firstID, "packs/other/skills/grilling-"+host+"/ACCESS.md")
+			retained := filepath.Join(retainedOfficialSnapshot(env["HOME"], firstID), "packs/other/skills/grilling-"+host+"/ACCESS.md")
 			if err := os.Remove(retained); err != nil {
 				t.Fatal(err)
 			}
@@ -535,7 +535,7 @@ func checkInvalidUnselectedPack(t *testing.T, binary string) {
 	}
 	opts := Options{Env: env, Getwd: func() (string, error) { return directory, nil }, CatalogSource: &catalogSourceFixture{release: release}}
 	store := catalogstore.New(catalogstore.DefaultDataRoot(env["HOME"]), nil)
-	before, err := store.Selected()
+	before, err := store.Selected(catalogstore.Official().Repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ func checkInvalidUnselectedPack(t *testing.T, binary string) {
 	if err == nil || !strings.Contains(out+err.Error(), "absent") {
 		t.Fatalf("invalid refresh: %v %s", err, out)
 	}
-	after, err := store.Selected()
+	after, err := store.Selected(catalogstore.Official().Repository)
 	if err != nil || after.ID != before.ID {
 		t.Fatalf("failed refresh changed selection: %+v %v", after, err)
 	}

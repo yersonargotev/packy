@@ -61,7 +61,11 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 	if err != nil {
 		return fmt.Errorf("initialize Sigstore verifier: %w", err)
 	}
-	sanPattern := "^" + regexp.QuoteMeta("https://github.com/"+signerWorkflow+"@refs/heads/main") + "$"
+	workflow, ok := strings.CutPrefix(signerWorkflow, repository+"/")
+	if !ok {
+		return fmt.Errorf("signer workflow %s is not in catalog repository %s", signerWorkflow, repository)
+	}
+	sanPattern := "^(?i:" + regexp.QuoteMeta("https://github.com/"+repository+"/") + ")" + regexp.QuoteMeta(workflow+"@refs/heads/main") + "$"
 	identity, err := verify.NewShortCertificateIdentity(githubOIDCIssuer, "", "", sanPattern)
 	if err != nil {
 		return fmt.Errorf("construct catalog publisher identity: %w", err)
@@ -77,7 +81,7 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 		}
 		cert := result.Signature.Certificate
 		if cert == nil || !strings.EqualFold(cert.SourceRepositoryURI, expectedRepository) || cert.SourceRepositoryRef != "refs/heads/main" || cert.RunnerEnvironment != "github-hosted" {
-			lastErr = errors.New("verified attestation does not match the official repository, main ref, and GitHub-hosted runner")
+			lastErr = errors.New("verified attestation does not match the catalog repository, main ref, and GitHub-hosted runner")
 			continue
 		}
 		return nil
@@ -85,7 +89,7 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 	if lastErr == nil {
 		lastErr = errors.New("no build-provenance attestations were returned")
 	}
-	return fmt.Errorf("no official catalog attestation verified: %w", lastErr)
+	return fmt.Errorf("no catalog attestation verified: %w", lastErr)
 }
 
 func (v *githubAttestationVerifier) fetch(ctx context.Context, repository, digest string) ([]*bundle.Bundle, error) {

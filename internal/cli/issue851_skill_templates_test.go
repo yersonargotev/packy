@@ -46,7 +46,7 @@ func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testin
 						source = &catalogSourceFixture{release: issue851CatalogRelease(t, commit, "1.0.0", "v1")}
 						opts.catalogRootOverride = ""
 						opts.CatalogSource = source
-						catalogRoot = filepath.Join(catalogstore.DefaultDataRoot(fixture.home), "catalog", "snapshots", commit)
+						catalogRoot = retainedOfficialSnapshot(fixture.home, commit)
 					}
 					run := func(args ...string) string {
 						t.Helper()
@@ -106,7 +106,7 @@ func TestIssue851ReviewedSkillTemplatesCoexistThroughCompleteLifecycle(t *testin
 						commit := strings.Repeat("b", 40)
 						source.release = issue851CatalogRelease(t, commit, "1.1.0", "v2")
 						run("catalog", "refresh")
-						catalogRoot = filepath.Join(catalogstore.DefaultDataRoot(fixture.home), "catalog", "snapshots", commit)
+						catalogRoot = retainedOfficialSnapshot(fixture.home, commit)
 					}
 					updatedSource := snapshotTree(t, filepath.Join(catalogRoot, "packs", templated.ID()))
 					update := []string{"update", templated.ID(), "--surface", surface}

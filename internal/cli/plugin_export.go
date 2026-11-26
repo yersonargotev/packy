@@ -60,10 +60,10 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			store := catalogstore.New(catalogstore.DefaultDataRoot(station.Home()), nil)
 			if snapshotID != "" {
 				identity = snapshotID
-				root, err = store.Resolve(identity)
+				root, err = store.Resolve(catalogstore.Official().Repository, identity)
 			} else {
 				var snapshot catalogstore.Snapshot
-				snapshot, err = store.Selected()
+				snapshot, err = store.Selected(catalogstore.Official().Repository)
 				root, identity = snapshot.Root, snapshot.ID
 			}
 		}

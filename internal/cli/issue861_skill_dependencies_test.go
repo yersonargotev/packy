@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/skillaccess"
 	"net/url"
 	"os"
@@ -224,7 +223,7 @@ func checkIssue861SkillDependencies(t *testing.T, binary string) {
 				t.Fatalf("returned dependency lost: %v %s", err, body)
 			}
 		}
-		sourceRoot := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog/snapshots", firstID)
+		sourceRoot := retainedOfficialSnapshot(env["HOME"], firstID)
 		if err := os.Remove(filepath.Join(sourceRoot, "packs/reviewed/skills/shared-agents/ACCESS.md")); err != nil {
 			t.Fatal(err)
 		}

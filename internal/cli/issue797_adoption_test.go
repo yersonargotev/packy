@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
-	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
@@ -135,7 +134,7 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 	}
 	assertAdoptionCatalogSnapshot(t, filepath.Join(env["HOME"], ".packy", "packs.json"), snapshotID)
 	assertAdoptionCatalogSnapshot(t, filepath.Join(project, "packy.lock.json"), snapshotID)
-	snapshotRoot := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", snapshotID)
+	snapshotRoot := retainedOfficialSnapshot(env["HOME"], snapshotID)
 	assertAdoptionProjectionSymlinksUseSnapshot(t, filepath.Join(env["HOME"], ".packy", "packs.json"), "", snapshotRoot)
 	assertAdoptionProjectionSymlinksUseSnapshot(t, filepath.Join(project, "packy.lock.json"), project, snapshotRoot)
 	if _, err := os.Stat(catalogRoot); err != nil {
