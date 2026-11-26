@@ -896,7 +896,7 @@ func testIssue929RefreshAllAndOne(t *testing.T, transport string) {
 	if packs := listIssue929Packs(t, transport, environment); packs != "acme@2.0.0,fixture@2.0.0" {
 		t.Fatalf("list after refreshing every catalog = %s", packs)
 	}
-	if out, err := runIssue929(t, transport, environment, "catalog", "refresh", "nobody/packs"); !issue929Exit(err, 1) || !strings.Contains(out, "catalog nobody/packs is not registered") {
+	if out, err := runIssue929(t, transport, environment, "catalog", "refresh", "nobody/packs"); !issue929Exit(err, 1) || out != "catalog nobody/packs is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add nobody/packs` to register it\n" {
 		t.Fatalf("catalog refresh of an unregistered catalog: %v\n%s", err, out)
 	}
 }

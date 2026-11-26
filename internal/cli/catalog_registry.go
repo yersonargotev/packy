@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -162,21 +163,23 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 			if err != nil {
 				return err
 			}
+			registrations, err := store.Registrations()
+			if err != nil {
+				return err
+			}
 			var repositories []catalogstore.Repository
+			for _, registration := range registrations {
+				repositories = append(repositories, registration.Repository)
+			}
 			if len(args) == 1 {
 				repository, err := catalogstore.ParseRepository(args[0])
 				if err != nil {
 					return err
 				}
-				repositories = append(repositories, repository)
-			} else {
-				registrations, err := store.Registrations()
-				if err != nil {
-					return err
+				if !slices.Contains(repositories, repository) {
+					return fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
 				}
-				for _, registration := range registrations {
-					repositories = append(repositories, registration.Repository)
-				}
+				repositories = []catalogstore.Repository{repository}
 			}
 			report := catalogRefreshReport{SchemaVersion: 1, Report: "catalog-refresh", Catalogs: []catalogRefreshEntry{}}
 			failed := 0
