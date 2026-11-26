@@ -84,8 +84,9 @@ type Snapshot struct {
 }
 
 // Store is a filesystem-backed Catalog Snapshot store keyed by catalog
-// registration. Each catalog keeps its registration, selection, and retained
-// snapshots below catalog/v2/<owner>/<repo>.
+// registration. Each catalog keeps its selection and retained snapshots below
+// catalog/v2/<owner>/<repo>, and every catalog except the built-in official one
+// also keeps its registration.json there.
 type Store struct {
 	root   string
 	source Source
@@ -289,8 +290,9 @@ func (s *Store) registration(repository Repository) (Registration, error) {
 	return registration, nil
 }
 
-// earlierLayout explains a missing retained file when the store holds only
-// the layout that predates catalog registrations for this catalog.
+// earlierLayout explains a missing retained file when a catalog has no
+// current selection and the store still holds the layout that predates
+// catalog registrations.
 func (s *Store) earlierLayout(repository Repository, err error) error {
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -298,7 +300,7 @@ func (s *Store) earlierLayout(repository Repository, err error) error {
 	if _, statErr := os.Lstat(filepath.Join(s.root, selectionFile)); statErr != nil {
 		return err
 	}
-	if _, statErr := os.Lstat(s.catalog(repository)); !errors.Is(statErr, fs.ErrNotExist) {
+	if _, statErr := os.Lstat(filepath.Join(s.catalog(repository), selectionFile)); !errors.Is(statErr, fs.ErrNotExist) {
 		return err
 	}
 	return fmt.Errorf("%s: %w", s.root, ErrEarlierLayout)

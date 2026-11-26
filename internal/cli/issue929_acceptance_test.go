@@ -236,7 +236,6 @@ func rewriteIssue929Manifest(t *testing.T, dist, packID string, mutate func(stri
 		}
 		entries = append(entries, entry{header, content})
 	}
-	sum := func(data []byte) string { digest := sha256.Sum256(data); return hex.EncodeToString(digest[:]) }
 	manifestPath := "packs/" + packID + "/pack.json"
 	var manifest []byte
 	for i := range entries {
@@ -261,8 +260,8 @@ func rewriteIssue929Manifest(t *testing.T, dist, packID string, mutate func(stri
 			closure := sha256.New()
 			for f := range pack.Files {
 				if pack.Files[f].Path == "pack.json" {
-					pack.Files[f].SHA256 = sum(manifest)
-					pack.ManifestSHA256 = sum(manifest)
+					pack.Files[f].SHA256 = catalogFixtureDigest(manifest)
+					pack.ManifestSHA256 = catalogFixtureDigest(manifest)
 				}
 				fmt.Fprintf(closure, "%s\x00%s\x00%s\n", pack.Files[f].Path, pack.Files[f].Mode, pack.Files[f].SHA256)
 			}
@@ -272,7 +271,7 @@ func rewriteIssue929Manifest(t *testing.T, dist, packID string, mutate func(stri
 		if err != nil {
 			t.Fatal(err)
 		}
-		index.CatalogSHA256 = sum(packs)
+		index.CatalogSHA256 = catalogFixtureDigest(packs)
 		if entries[i].data, err = json.Marshal(index); err != nil {
 			t.Fatal(err)
 		}
@@ -298,7 +297,7 @@ func rewriteIssue929Manifest(t *testing.T, dist, packID string, mutate func(stri
 	if err := os.WriteFile(archivePath, output.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(sum(output.Bytes())+"  catalog-snapshot.tar.gz\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(catalogFixtureDigest(output.Bytes())+"  catalog-snapshot.tar.gz\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

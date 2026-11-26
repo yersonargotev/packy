@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -363,11 +364,15 @@ func TestEarlierStoreLayoutIsRejectedWithAdoptionGuidance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	incompatible := validRelease(t, strings.Repeat("c", 40), strings.Replace(validManifest("example", "1.2.3"), `"resources":[`, `"future_engine_field":true,"resources":[`, 1))
+	if _, err := catalogstore.New(root, staticSource{release: incompatible}).AcquireLatest(context.Background(), official); err == nil {
+		t.Fatal("AcquireLatest() accepted an incompatible snapshot")
+	}
 	store := catalogstore.New(root, staticSource{release: validRelease(t, strings.Repeat("b", 40), validManifest("example", "1.2.3"))})
-	if _, err := store.Selected(official); err == nil || !strings.Contains(err.Error(), "docs/catalog-adoption.md") {
+	if _, err := store.Selected(official); !errors.Is(err, catalogstore.ErrEarlierLayout) {
 		t.Fatalf("Selected() over the earlier layout = %v", err)
 	}
-	if _, err := store.Resolve(official, commit); err == nil || !strings.Contains(err.Error(), "docs/catalog-adoption.md") {
+	if _, err := store.Resolve(official, commit); !errors.Is(err, catalogstore.ErrEarlierLayout) {
 		t.Fatalf("Resolve() over the earlier layout = %v", err)
 	}
 	if _, err := store.AcquireLatest(context.Background(), official); err != nil {
