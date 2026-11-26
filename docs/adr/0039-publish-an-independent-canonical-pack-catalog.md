@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR 0046
 ---
 
 # Publish an independent canonical Pack catalog

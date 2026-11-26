@@ -33,6 +33,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0043-render-reviewed-skill-identities-and-references.md"),
 		filepath.Join(root, "docs", "adr", "0044-provide-on-demand-skill-access.md"),
 		filepath.Join(root, "docs", "adr", "0045-focus-surfaces-on-agents-and-claude.md"),
+		filepath.Join(root, "docs", "adr", "0046-support-multiple-and-private-pack-catalogs.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
@@ -76,6 +77,10 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"explicit action", "rejected as a whole", "supersedes ADR 0038", "supporting evidence",
 		"implicitly accepted",
 	})
+	requireDocumentationText(t, root, "docs/adr/0046-support-multiple-and-private-pack-catalogs.md", []string{
+		"supersedes ADR 0039", "Catalog registration", "Catalog trust policy", "`attested`", "`access-controlled`",
+		"GitHub Enterprise Cloud", "Pack IDs stay global", "never cross catalogs", "clean cut", "never stores credentials",
+	})
 	requireDocumentationText(t, root, "docs/adr/0033-make-the-tui-the-primary-interactive-interface.md", []string{
 		"Bubble Tea v2 TUI", "minimum Go version to 1.25", "same `internal/capabilitypack` behavior",
 		"one Pack, surface", "global or project", "preview, phase consent", "verification boundary",
@@ -98,6 +103,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"configured, authorized, or usable", "true, false, or unknown", "Issue delivery policy",
 		"Agent integration requires separate explicit authorization",
 		"Catalog Project", "Catalog Snapshot", "Catalog Publication", "Catalog Refresh",
+		"Catalog registration", "Catalog trust policy",
 		"Pack Import", "Upstream Refresh", "External Source Project", "Declared Pack Closure",
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/packy-catalog-architecture-proposal-2026-09-13.md", []string{

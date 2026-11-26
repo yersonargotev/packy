@@ -4,8 +4,9 @@ This glossary defines Packy's domain language. The accepted
 architecture is recorded in [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md)
 and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
 Readiness architecture is recorded in [ADR 0035](docs/adr/0035-make-pack-readiness-capability-driven.md).
-Independent catalog authoring and publication are recorded in
-[ADR 0039](docs/adr/0039-publish-an-independent-canonical-pack-catalog.md).
+Independent catalog authoring, publication, and consumption of multiple and
+private catalogs are recorded in
+[ADR 0046](docs/adr/0046-support-multiple-and-private-pack-catalogs.md).
 The two projection conventions and explicit custom-agent client targets are
 recorded in [ADR 0045](docs/adr/0045-focus-surfaces-on-agents-and-claude.md).
 
@@ -34,13 +35,33 @@ declares its own resources and supported surfaces.
 
 ### Catalog Project
 
-The maintainer-controlled project that canonically authors the reviewed Pack
-catalog's manifests, resources, adaptations, and provenance.
+The maintainer-controlled GitHub repository that canonically authors one
+reviewed Pack catalog's manifests, resources, adaptations, and provenance. It
+is identified by its `owner/repo`.
+_Avoid_: catalog source, catalog alias
+
+### Official catalog
+
+The Catalog Project `yersonargotev/packy-catalog`, registered by Packy itself
+and never removable. It has no precedence over other registered catalogs.
+
+### Catalog registration
+
+A workstation's explicit, retained consent to consume one Catalog Project
+under one fixed Catalog trust policy. It exists only together with a validated
+selected Catalog Snapshot.
+
+### Catalog trust policy
+
+The publisher evidence a Catalog registration requires. With `attested`, the
+evidence is build provenance from the catalog's own publication workflow. With
+`access-controlled`, which only private repositories may use, the evidence is
+GitHub repository access together with release and checksum integrity.
 
 ### Catalog Snapshot
 
-An immutable, complete publication of the reviewed Pack catalog, identifying
-the exact included Pack versions and content.
+An immutable, complete publication of one Catalog Project, identifying the
+exact included Pack versions and content.
 
 ### Catalog Publication
 
@@ -50,7 +71,7 @@ Packy release.
 ### Catalog Refresh
 
 The explicit selection of a newly acquired, validated Catalog Snapshot as the
-available reviewed Pack catalog. It does not update installed Packs.
+available content of one registered catalog. It does not update installed Packs.
 
 ### On-demand Skill Access
 
