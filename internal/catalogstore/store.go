@@ -110,6 +110,10 @@ func (s *Store) AcquireLatest(ctx context.Context, repository Repository) (Snaps
 		return Snapshot{}, err
 	}
 	defer guard.Release()
+	return s.selectLatest(ctx, repository)
+}
+
+func (s *Store) selectLatest(ctx context.Context, repository Repository) (Snapshot, error) {
 	registration, err := s.registration(repository)
 	if err != nil {
 		return Snapshot{}, err
@@ -125,8 +129,11 @@ func (s *Store) AcquireLatest(ctx context.Context, repository Repository) (Snaps
 }
 
 // Register acquires, validates, and selects the initial snapshot of a new
-// catalog, then records its registration. A failed registration leaves no
-// registration, selection, or newly retained snapshot behind.
+// catalog, then records its registration. When the official catalog has no
+// selection, Register first selects its latest snapshot, so the new catalog's
+// Pack IDs are always checked against it. A failed registration leaves no
+// registration, selection, or newly retained snapshot of the new catalog
+// behind.
 func (s *Store) Register(ctx context.Context, registration Registration) (Snapshot, error) {
 	if err := registration.validate(); err != nil {
 		return Snapshot{}, err
@@ -144,6 +151,13 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 		return Snapshot{}, fmt.Errorf("catalog %s is already registered", registration.Repository)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return Snapshot{}, fmt.Errorf("inspect catalog %s registration: %w", registration.Repository, err)
+	}
+	if _, err := s.readSelection(Official().Repository); errors.Is(err, fs.ErrNotExist) {
+		if _, err := s.selectLatest(ctx, Official().Repository); err != nil {
+			return Snapshot{}, fmt.Errorf("register catalog %s: select the official catalog first: %w", registration.Repository, err)
+		}
+	} else if err != nil {
+		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
 	}
 	_, statErr := os.Lstat(directory)
 	fresh := errors.Is(statErr, fs.ErrNotExist)
@@ -433,9 +447,14 @@ func (s *Store) checkPackIDs(repository Repository, index cataloglayout.CatalogS
 			return fmt.Errorf("check Pack IDs against catalog %s: %w", other.Repository, err)
 		}
 		for _, pack := range selected.Packs {
-			if introduced[pack.ID] {
-				return fmt.Errorf("Catalog Snapshot %s of %s introduces Pack %q, which selected Catalog Snapshot %s of %s already provides", index.Source.Commit, repository, pack.ID, id, other.Repository)
+			if !introduced[pack.ID] {
+				continue
 			}
+			err := fmt.Errorf("Catalog Snapshot %s of %s introduces Pack %q, which selected Catalog Snapshot %s of %s already provides", index.Source.Commit, repository, pack.ID, id, other.Repository)
+			if repository == Official().Repository {
+				err = fmt.Errorf("%w; run `packy catalog remove %s` so the official catalog can be selected", err, other.Repository)
+			}
+			return err
 		}
 	}
 	return nil

@@ -41,7 +41,7 @@ func TestIssue929(t *testing.T) {
 		{"A1", "Register a public attested catalog", "P4", testIssue929RegisterCatalog},
 		{"A2", "Register a private access-controlled catalog with a token", "P5", nil},
 		{"A3", "Registration with an invalid snapshot leaves no residue", "P4", testIssue929InvalidRegistration},
-		{"A4", "Registration with a Pack ID collision leaves no residue", "P4", testIssue929PackIDCollision},
+		{"A4", "Registration with a Pack ID collision leaves no residue", "P4", testIssue929PackIDCollisions},
 		{"A5", "access-controlled on a public repository is refused", "P5", nil},
 		{"A6", "A missing token is refused with an explanation", "P5", nil},
 		{"A7", "A rejected token is refused", "P5", nil},
@@ -837,6 +837,17 @@ func testIssue929InvalidRegistration(t *testing.T, transport string) {
 	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "index names acme/elsewhere")
 }
 
+func testIssue929PackIDCollisions(t *testing.T, transport string) {
+	t.Run("after the official selection", func(t *testing.T) {
+		t.Parallel()
+		testIssue929PackIDCollision(t, transport)
+	})
+	t.Run("before the official selection", func(t *testing.T) {
+		t.Parallel()
+		testIssue929CollisionBeforeOfficialSelection(t, transport)
+	})
+}
+
 func testIssue929PackIDCollision(t *testing.T, transport string) {
 	fixtures := t.TempDir()
 	environment := startIssue929Official(t, transport, fixtures)
@@ -849,7 +860,7 @@ func testIssue929PackIDCollision(t *testing.T, transport string) {
 	}
 	publishIssue929Fixture(t, transport, fixtures, issue929OfficialCatalog, strings.Repeat("b", 40), githubfake.Pack{ID: "acme", Version: "2.0.0"}, githubfake.Pack{ID: "fixture", Version: "1.0.0"})
 	out, err := runIssue929(t, transport, environment, "catalog", "refresh", issue929OfficialCatalog)
-	if !issue929Exit(err, 1) || !strings.Contains(out, `introduces Pack "acme"`) || !strings.Contains(out, "acme/packs already provides") {
+	if !issue929Exit(err, 1) || !strings.Contains(out, `introduces Pack "acme"`) || !strings.Contains(out, "acme/packs already provides; run `packy catalog remove acme/packs` so the official catalog can be selected") {
 		t.Fatalf("official refresh that reuses a registered catalog's Pack ID: %v\n%s", err, out)
 	}
 	if selected := issue929Selected(t, environment, issue929OfficialCatalog); selected != strings.Repeat("a", 40) {
@@ -857,6 +868,21 @@ func testIssue929PackIDCollision(t *testing.T, transport string) {
 	}
 	if _, err := os.Stat(filepath.Join(issue929CatalogDirectory(t, environment, issue929OfficialCatalog), "snapshots", strings.Repeat("b", 40))); !os.IsNotExist(err) {
 		t.Fatalf("refused official snapshot was retained: %v", err)
+	}
+}
+
+func testIssue929CollisionBeforeOfficialSelection(t *testing.T, transport string) {
+	fixtures := t.TempDir()
+	publishIssue929Fixture(t, transport, fixtures, issue929OfficialCatalog, strings.Repeat("a", 40), githubfake.Pack{ID: "fixture", Version: "1.0.0"})
+	publishIssue929Fixture(t, transport, fixtures, "evil/packs", strings.Repeat("e", 40), githubfake.Pack{ID: "fixture", Version: "9.0.0"})
+	environment := startIssue929GitHub(t, fixtures)
+	out, err := runIssue929(t, transport, environment, "catalog", "add", "evil/packs")
+	if !issue929Exit(err, 1) || !strings.Contains(out, `evil/packs introduces Pack "fixture"`) || !strings.Contains(out, "yersonargotev/packy-catalog already provides") {
+		t.Fatalf("catalog add before the official catalog has a selection: %v\n%s", err, out)
+	}
+	report := listIssue929Catalogs(t, transport, environment)
+	if len(report.Catalogs) != 1 || report.Catalogs[0].SnapshotID == nil || *report.Catalogs[0].SnapshotID != strings.Repeat("a", 40) {
+		t.Fatalf("catalog list after a refused registration before the official selection = %+v", report)
 	}
 }
 

@@ -349,7 +349,7 @@ func TestPackIDCollisionIsRejectedWithoutResidue(t *testing.T) {
 		t.Fatal(err)
 	}
 	source[official.String()] = validRelease(t, strings.Repeat("c", 40), validManifest("tools", "2.0.0"))
-	if _, err := store.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), `introduces Pack "tools"`) {
+	if _, err := store.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), `introduces Pack "tools"`) || !strings.Contains(err.Error(), "run `packy catalog remove acme/packs` so the official catalog can be selected") {
 		t.Fatalf("official refresh with a colliding Pack ID = %v", err)
 	}
 	if selected, err := store.Selected(official); err != nil || selected.ID != officialCommit {
@@ -357,6 +357,34 @@ func TestPackIDCollisionIsRejectedWithoutResidue(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", strings.Repeat("c", 40))); !os.IsNotExist(err) {
 		t.Fatalf("colliding snapshot was retained: %v", err)
+	}
+}
+
+func TestRegisterSelectsTheOfficialCatalogFirst(t *testing.T) {
+	root := t.TempDir()
+	evil, acme := mustRepository(t, "evil/packs"), mustRepository(t, "acme/packs")
+	source := catalogSource{
+		"evil/packs": catalogRelease(t, "evil/packs", "evil/packs", strings.Repeat("e", 40), validManifest("example", "9.0.0")),
+		"acme/packs": catalogRelease(t, "acme/packs", "acme/packs", strings.Repeat("b", 40), validManifest("tools", "1.0.0")),
+	}
+	store := catalogstore.New(root, source)
+	attested := catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: attested}); err == nil || !strings.Contains(err.Error(), "register catalog acme/packs: select the official catalog first") || !strings.Contains(err.Error(), "no release for "+official.String()) {
+		t.Fatalf("Register() while the official catalog cannot be selected = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "acme")); !os.IsNotExist(err) {
+		t.Fatalf("refused registration left residue: %v", err)
+	}
+
+	source[official.String()] = validRelease(t, strings.Repeat("a", 40), validManifest("example", "1.2.3"))
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: evil, Trust: attested}); err == nil || !strings.Contains(err.Error(), `evil/packs introduces Pack "example"`) || !strings.Contains(err.Error(), official.String()+" already provides") {
+		t.Fatalf("Register() of a catalog that claims an official Pack ID before the official selection = %v", err)
+	}
+	if selected, err := store.Selected(official); err != nil || selected.ID != strings.Repeat("a", 40) {
+		t.Fatalf("official selection after Register() = %#v, %v", selected, err)
+	}
+	if registrations, err := store.Registrations(); err != nil || len(registrations) != 1 {
+		t.Fatalf("Registrations() = %v, %v", registrations, err)
 	}
 }
 
