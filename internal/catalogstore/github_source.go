@@ -92,6 +92,10 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 		} `json:"assets"`
 	}
 	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", token, &wire); err != nil {
+		var status *statusErr
+		if token == nil && errors.As(err, &status) && status.code == http.StatusNotFound {
+			err = fmt.Errorf("%w; if the repository is private, it needs --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
+		}
 		return Release{}, fmt.Errorf("read latest catalog release of %s: %w", repository, err)
 	}
 	release := Release{
@@ -142,7 +146,7 @@ func (source *gitHubSource) privateAccess(ctx context.Context, repository string
 		return githubauth.Token{}, errors.New("GitHub did not report whether the repository is private")
 	}
 	if !*visibility.Private {
-		return githubauth.Token{}, errors.New("the repository is public, and access-controlled is only for private repositories; use --trust attested")
+		return githubauth.Token{}, errors.New("the repository is public, and access-controlled is only for private repositories; a public repository uses --trust attested")
 	}
 	return token, nil
 }
@@ -176,10 +180,19 @@ func (source *gitHubSource) getJSON(ctx context.Context, url string, token *gith
 
 // download follows the asset API redirect without the token, because the
 // token must not leave api.github.com and GitHub's signed asset host refuses a
-// request that carries one.
+// request that carries one. It sends both requests through the transport,
+// because http.Client quotes an unparseable Location, signature and all, in
+// its error.
 func (source *gitHubSource) download(ctx context.Context, assetURL string, token *githubauth.Token) ([]byte, error) {
-	client := *source.client
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if source.client.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, source.client.Timeout)
+		defer cancel()
+	}
+	transport := source.client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
 	if err != nil {
 		return nil, err
@@ -190,7 +203,7 @@ func (source *gitHubSource) download(ctx context.Context, assetURL string, token
 	if token != nil {
 		token.Authorize(request)
 	}
-	response, err := client.Do(request)
+	response, err := transport.RoundTrip(request)
 	if err != nil {
 		return nil, err
 	}
@@ -214,12 +227,8 @@ func (source *gitHubSource) download(ctx context.Context, assetURL string, token
 		return nil, err
 	}
 	request.Header.Set("User-Agent", "packy-catalog-consumer")
-	redirected, err := client.Do(request)
+	redirected, err := transport.RoundTrip(request)
 	if err != nil {
-		var requestErr *url.Error
-		if errors.As(err, &requestErr) {
-			err = requestErr.Err
-		}
 		return nil, fmt.Errorf("download from %s: %w", location.Host, err)
 	}
 	defer redirected.Body.Close()
@@ -244,26 +253,29 @@ func readAsset(response *http.Response) ([]byte, error) {
 	return data, nil
 }
 
-// statusError points an anonymous 404 to private catalog registration, because
-// GitHub answers 404, not 403, for a private repository the caller cannot see.
+// statusErr keeps the status of a failed GitHub response, because GitHub
+// answers 404, not 403, for a private repository the caller cannot see.
+type statusErr struct {
+	code int
+	err  error
+}
+
+func (e *statusErr) Error() string { return e.err.Error() }
+
+func (e *statusErr) Unwrap() error { return e.err }
+
 func statusError(response *http.Response, token *githubauth.Token) error {
 	err := fmt.Errorf("GitHub returned %s", response.Status)
-	if response.Header.Get("X-RateLimit-Remaining") == "0" {
-		return fmt.Errorf("%w; the GitHub API rate limit is exhausted, so try again later", err)
+	switch {
+	case response.Header.Get("X-RateLimit-Remaining") == "0":
+		err = fmt.Errorf("%w; the GitHub API rate limit is exhausted, so try again later", err)
+	case token == nil:
+	case response.StatusCode == http.StatusUnauthorized:
+		err = fmt.Errorf("%w; GitHub rejected the token from %s, so %s; see %s", err, token, token.Renewal(), privateCatalogGuide)
+	case response.StatusCode == http.StatusForbidden, response.StatusCode == http.StatusNotFound:
+		err = fmt.Errorf("%w; the token from %s needs read access to the repository and its contents; see %s", err, token, privateCatalogGuide)
 	}
-	if token == nil {
-		if response.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("%w; if the repository is private, register it with --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
-		}
-		return err
-	}
-	switch response.StatusCode {
-	case http.StatusUnauthorized:
-		return fmt.Errorf("%w; GitHub rejected the token from %s, so %s; see %s", err, token, token.Renewal(), privateCatalogGuide)
-	case http.StatusForbidden, http.StatusNotFound:
-		return fmt.Errorf("%w; the token from %s needs read access to the repository and its contents; see %s", err, token, privateCatalogGuide)
-	}
-	return err
+	return &statusErr{code: response.StatusCode, err: err}
 }
 
 func validateReleaseWithoutAttestation(registration Registration, release Release) (map[string]Asset, error) {

@@ -126,9 +126,12 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 		{"contents hidden from the token", true, func(g *fakeGitHub) { g.releaseStatus = http.StatusNotFound }, []string{"read latest catalog release", "404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
 		{"rate limited", true, func(g *fakeGitHub) { g.status, g.rateLimited = http.StatusForbidden, true }, []string{"403", "rate limit is exhausted"}},
 		{"asset host unreachable", true, func(g *fakeGitHub) { g.assetHostDown = true }, []string{"download from release-assets.githubusercontent.com: asset host is down"}},
-		{"public repository", false, func(*fakeGitHub) {}, []string{"the repository is public", "use --trust attested"}},
+		{"public repository", false, func(*fakeGitHub) {}, []string{"the repository is public", "a public repository uses --trust attested"}},
 		{"redirect outside GitHub", true, func(g *fakeGitHub) { g.redirectHost = "example.com" }, []string{"untrusted host \"example.com\""}},
 		{"redirect to user content", true, func(g *fakeGitHub) { g.redirectHost = "raw.githubusercontent.com" }, []string{"untrusted host \"raw.githubusercontent.com\""}},
+		{"plaintext redirect", true, func(g *fakeGitHub) { g.redirectScheme = "http" }, []string{"untrusted host"}},
+		{"redirect with userinfo", true, func(g *fakeGitHub) { g.redirectHost = "u:p@release-assets.githubusercontent.com" }, []string{"untrusted host"}},
+		{"unparseable redirect", true, func(g *fakeGitHub) { g.redirectHost = "release-assets.githubusercontent.com/%zz" }, []string{"redirected the asset download to an invalid location"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			github := newFakeGitHub(t, "team/private", test.private)
@@ -149,7 +152,7 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 				t.Fatalf("Latest() error repeats the guide: %v", err)
 			}
 			for _, request := range github.requests {
-				if strings.Contains(request.url, "example.com") || strings.Contains(request.url, "raw.githubusercontent.com") {
+				if strings.Contains(request.url, "example.com") || strings.Contains(request.url, "raw.githubusercontent.com") || strings.HasPrefix(request.url, "http://") || strings.Contains(request.url, "u:p@") {
 					t.Fatalf("Latest() followed a redirect to %s", request.url)
 				}
 			}
@@ -176,7 +179,7 @@ func TestGitHubSourceRefusesAnUnknownTrustPolicy(t *testing.T) {
 func TestGitHubSourcePointsAnAnonymous404ToPrivateCatalogs(t *testing.T) {
 	github := newFakeGitHub(t, "team/private", true)
 	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, github.credential).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: Attested{Workflow: DefaultWorkflow}})
-	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "if the repository is private, register it with --trust access-controlled") {
+	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "if the repository is private, it needs --trust access-controlled") {
 		t.Fatalf("Latest() error = %v", err)
 	}
 }
@@ -195,6 +198,7 @@ type fakeGitHub struct {
 	releaseStatus   int
 	rateLimited     bool
 	assetHostDown   bool
+	redirectScheme  string
 	redirectHost    string
 	credentialErr   error
 	credentialCalls int
@@ -207,7 +211,7 @@ func newFakeGitHub(t *testing.T, repository string, private bool) *fakeGitHub {
 	archive := []byte("archive")
 	checksum := []byte(digest(archive) + "  " + archiveAsset + "\n")
 	api := "https://api.github.com/repos/" + repository
-	return &fakeGitHub{repository: repository, private: private, archive: archive, redirectHost: "release-assets.githubusercontent.com", responses: map[string]string{
+	return &fakeGitHub{repository: repository, private: private, archive: archive, redirectScheme: "https", redirectHost: "release-assets.githubusercontent.com", responses: map[string]string{
 		api: fmt.Sprintf(`{"full_name":%q,"private":%t}`, repository, private),
 		api + "/releases/latest": fmt.Sprintf(
 			`{"tag_name":"catalog-%s","target_commitish":"%s","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-09-14T00:00:00Z","author":{"login":"github-actions[bot]"},"assets":[{"id":11,"name":"%s","digest":"sha256:%s","size":%d},{"id":12,"name":"%s","digest":"sha256:%s","size":%d}]}`,
@@ -253,7 +257,7 @@ func (g *fakeGitHub) roundTrip(request *http.Request) (*http.Response, error) {
 		}
 	}
 	if id, ok := strings.CutPrefix(url, api+"/releases/assets/"); ok {
-		return response(http.StatusFound, http.Header{"Location": {"https://" + g.redirectHost + "/signed/" + id + "?sig=x"}}, ""), nil
+		return response(http.StatusFound, http.Header{"Location": {g.redirectScheme + "://" + g.redirectHost + "/signed/" + id + "?sig=x"}}, ""), nil
 	}
 	if id, ok := strings.CutPrefix(request.URL.Path, "/signed"); ok && request.URL.Host == "release-assets.githubusercontent.com" {
 		if g.assetHostDown {
