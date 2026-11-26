@@ -549,11 +549,6 @@ func buildIssue929Dist(t *testing.T, transport, repository, commit string, packs
 	if err := githubfake.WriteCatalogProject(project, packs...); err != nil {
 		t.Fatal(err)
 	}
-	return buildIssue929DistFrom(t, transport, project, repository, commit)
-}
-
-func buildIssue929DistFrom(t *testing.T, transport, project, repository, commit string) string {
-	t.Helper()
 	dist := filepath.Join(t.TempDir(), "dist")
 	if out, err := runIssue929(t, transport, testprocess.Env(t), "catalog", "build", "--project", project, "--source-repository", repository, "--source-commit", commit, "--out-dir", dist); err != nil {
 		t.Fatalf("catalog build: %v\n%s", err, out)

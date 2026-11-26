@@ -63,7 +63,8 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 				return err
 			}
 			snapshot, err := store.Register(cmd.Context(), registration)
-			if errors.Is(err, catalogstore.ErrAttestationRejected) {
+			var rejected *catalogstore.AttestationRejectedError
+			if errors.As(err, &rejected) && rejected.Repository == repository.String() {
 				return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
 			}
 			if err != nil {

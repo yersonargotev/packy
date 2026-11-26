@@ -16,6 +16,8 @@ digest, and the checksum of every Catalog Snapshot.
 `access-controlled` is a weaker trust level, and `packy catalog list` and
 `packy list` say so. Packy accepts it only when the GitHub API reports the
 repository as private. Register a public repository with `--trust attested`.
+Packy sends no token for an `attested` catalog, so a private repository
+cannot register as `attested`, even on GitHub Enterprise Cloud.
 
 ## Provide a GitHub token
 
