@@ -78,7 +78,9 @@ func TestCatalogRejectsAPackIDInTwoSelectedSnapshots(t *testing.T) {
 
 func TestUpdateLooksOnlyInTheReceiptCatalog(t *testing.T) {
 	ctx := context.Background()
-	official, acme := testCatalogRef("a"), testAcmeRef("c")
+	official, acme, acmeCurrent := testCatalogRef("a"), testAcmeRef("c"), testAcmeRef("d")
+	retainedRoot := filepath.Join(t.TempDir(), "bundle")
+	writeCurrentPackFixture(t, retainedRoot, "app")
 	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
 	explicit := true
 	intent := ActivationIntent{PackID: "app", Version: "1.0.0", CatalogRef: acme, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Explicit: &explicit}
@@ -86,7 +88,13 @@ func TestUpdateLooksOnlyInTheReceiptCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	pack := Pack{ID: "app", Version: "2.0.0", CatalogRef: official, Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
-	facade := NewFacade(Catalog{snapshots: []SelectedSnapshot{{Ref: official}, {Ref: acme}}, packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}))
+	resolveSnapshot := func(_ context.Context, ref CatalogRef) (string, error) {
+		if ref != acme {
+			return "", errors.New("unknown snapshot")
+		}
+		return retainedRoot, nil
+	}
+	facade := NewFacade(Catalog{snapshots: []SelectedSnapshot{{Ref: official}, {Ref: acmeCurrent}}, packs: []Pack{pack}, resolveSnapshot: resolveSnapshot}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}))
 
 	_, err := facade.PreviewUpdate(ctx, UpdateRequest{PackID: "app", Surface: SurfaceAgents})
 	if err == nil || !strings.Contains(err.Error(), "installed from catalog acme/packs, and updates look only in that catalog") || !strings.Contains(err.Error(), "packy deactivate app --surface agents") {
@@ -99,7 +107,7 @@ func TestUpdateLooksOnlyInTheReceiptCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(status.Entries) != 1 || status.Entries[0].CatalogCurrent || status.Entries[0].UpdateAvailable {
+	if len(status.Entries) != 1 || status.Entries[0].InspectionFailed || status.Entries[0].CatalogCurrent || status.Entries[0].UpdateAvailable || status.Entries[0].Pack.CatalogRef != acme {
 		t.Fatalf("status follows the Pack ID into another catalog: %+v", status.Entries)
 	}
 }
