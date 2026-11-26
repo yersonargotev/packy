@@ -116,19 +116,19 @@ func (source *gitHubSource) privateAccess(ctx context.Context, repository string
 	}
 	token, err := source.credential(ctx)
 	if err != nil {
-		return githubauth.Token{}, fmt.Errorf("catalog %s is access-controlled and needs a GitHub token that can read it: %w; see %s", repository, err, privateCatalogGuide)
+		return githubauth.Token{}, fmt.Errorf("an access-controlled catalog needs a GitHub token that can read its repository: %w; see %s", err, privateCatalogGuide)
 	}
 	var visibility struct {
 		Private *bool `json:"private"`
 	}
 	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository, &token, &visibility); err != nil {
-		return githubauth.Token{}, fmt.Errorf("read visibility of catalog %s: %w; see %s", repository, err, privateCatalogGuide)
+		return githubauth.Token{}, fmt.Errorf("read repository visibility: %w; see %s", err, privateCatalogGuide)
 	}
 	if visibility.Private == nil {
-		return githubauth.Token{}, fmt.Errorf("GitHub did not report whether catalog %s is private", repository)
+		return githubauth.Token{}, errors.New("GitHub did not report whether the repository is private")
 	}
 	if !*visibility.Private {
-		return githubauth.Token{}, fmt.Errorf("catalog %s is a public repository, and access-controlled is only for private repositories; use --trust attested", repository)
+		return githubauth.Token{}, errors.New("the repository is public, and access-controlled is only for private repositories; use --trust attested")
 	}
 	return token, nil
 }

@@ -112,10 +112,10 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 		prepare func(*fakeGitHub)
 		want    []string
 	}{
-		{"missing token", true, func(g *fakeGitHub) { g.credentialErr = githubauth.ErrMissing }, []string{"is access-controlled and needs a GitHub token", "GH_TOKEN or GITHUB_TOKEN", "gh auth login", privateCatalogGuide}},
+		{"missing token", true, func(g *fakeGitHub) { g.credentialErr = githubauth.ErrMissing }, []string{"an access-controlled catalog needs a GitHub token", "GH_TOKEN or GITHUB_TOKEN", "gh auth login", privateCatalogGuide}},
 		{"rejected token", true, func(g *fakeGitHub) { g.status = http.StatusUnauthorized }, []string{"401", "GitHub rejected the token from GH_TOKEN", "gh auth login"}},
 		{"insufficient token", true, func(g *fakeGitHub) { g.status = http.StatusNotFound }, []string{"404", "the token from GH_TOKEN needs read access"}},
-		{"public repository", false, func(*fakeGitHub) {}, []string{"catalog team/private is a public repository", "use --trust attested"}},
+		{"public repository", false, func(*fakeGitHub) {}, []string{"the repository is public", "use --trust attested"}},
 		{"untrusted redirect", true, func(g *fakeGitHub) { g.redirectHost = "example.com" }, []string{"untrusted host \"example.com\""}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

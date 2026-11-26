@@ -68,5 +68,5 @@ error says which case applies:
 - `needs read access to the repository and its contents` means that GitHub
   hides the repository or its releases from the token. Check the repository
   name and the token permissions.
-- `is a public repository` means that the repository is public. Register it
-  with `--trust attested`.
+- `the repository is public` means that GitHub reports the repository as
+  public. Register it with `--trust attested`.

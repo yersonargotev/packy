@@ -1306,12 +1306,12 @@ func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
 
 func testIssue929PublicAccessControlled(t *testing.T, transport string) {
 	withToken := issue929Setenv(startIssue929Private(t, transport), "GH_TOKEN="+issue929PrivateToken)
-	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "catalog acme/packs is a public repository, and access-controlled is only for private repositories; use --trust attested")
+	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "register catalog acme/packs", "the repository is public, and access-controlled is only for private repositories; use --trust attested")
 }
 
 func testIssue929MissingToken(t *testing.T, transport string) {
 	withoutGH := issue929Setenv(startIssue929Private(t, transport), "PATH="+t.TempDir())
-	assertIssue929RefusedAdd(t, transport, withoutGH, issue929AddPrivate, "catalog team/private-packs is access-controlled and needs a GitHub token", "set GH_TOKEN or GITHUB_TOKEN, or sign in with `gh auth login`", "docs/private-catalogs.md")
+	assertIssue929RefusedAdd(t, transport, withoutGH, issue929AddPrivate, "register catalog team/private-packs", "an access-controlled catalog needs a GitHub token", "set GH_TOKEN or GITHUB_TOKEN, or sign in with `gh auth login`", "docs/private-catalogs.md")
 
 	gh := t.TempDir()
 	if err := os.WriteFile(filepath.Join(gh, "gh"), []byte("#!/bin/sh\necho "+issue929PrivateToken+"\n"), 0o755); err != nil {
@@ -1321,7 +1321,7 @@ func testIssue929MissingToken(t *testing.T, transport string) {
 		t.Fatalf("catalog add with the token from gh: %v\n%s", err, out)
 	}
 	out, err := runIssue929(t, transport, withoutGH, "catalog", "refresh")
-	if !issue929Exit(err, 1) || !strings.Contains(out, "selected Catalog Snapshot "+strings.Repeat("a", 40)+" of "+issue929OfficialCatalog) || !strings.Contains(out, "team/private-packs failed and keeps Catalog Snapshot "+issue929PrivateSnapshot) || !strings.Contains(out, "catalog team/private-packs is access-controlled and needs a GitHub token") {
+	if !issue929Exit(err, 1) || !strings.Contains(out, "selected Catalog Snapshot "+strings.Repeat("a", 40)+" of "+issue929OfficialCatalog) || !strings.Contains(out, "team/private-packs failed and keeps Catalog Snapshot "+issue929PrivateSnapshot) || !strings.Contains(out, "an access-controlled catalog needs a GitHub token") {
 		t.Fatalf("catalog refresh without a token: %v\n%s", err, out)
 	}
 	if selected := issue929Selected(t, withoutGH, issue929Private); selected != issue929PrivateSnapshot {
