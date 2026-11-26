@@ -27,12 +27,13 @@ func (s *registeredCatalogSources) Latest(_ context.Context, registration catalo
 }
 
 func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) {
-	const official, acme = "yersonargotev/packy-catalog", "acme/packs"
-	officialPack, acmePack := testsupport.SkillVariants("tui-official"), testsupport.SkillVariants("tui-acme")
+	const official, acme, private = "yersonargotev/packy-catalog", "acme/packs", "zeta/private"
+	officialPack, acmePack, privatePack := testsupport.SkillVariants("tui-official"), testsupport.SkillVariants("tui-acme"), testsupport.SkillVariants("tui-private")
 	source := &registeredCatalogSources{
 		releases: map[string]catalogstore.Release{
 			official: catalogReleaseFixture(t, strings.Repeat("a", 40), officialPack),
 			acme:     catalogRepositoryReleaseFixture(t, acme, strings.Repeat("c", 40), acmePack),
+			private:  catalogRepositoryReleaseFixture(t, private, strings.Repeat("e", 40), privatePack),
 		},
 		errs: map[string]error{},
 	}
@@ -53,12 +54,14 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	acmeRepository, err := catalogstore.ParseRepository(acme)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Register(ctx, catalogstore.Registration{Repository: acmeRepository, Trust: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}); err != nil {
-		t.Fatal(err)
+	for repository, trust := range map[string]catalogstore.TrustPolicy{acme: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}, private: catalogstore.AccessControlled{}} {
+		parsed, err := catalogstore.ParseRepository(repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Register(ctx, catalogstore.Registration{Repository: parsed, Trust: trust}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	catalogs := func() []tui.Catalog {
@@ -67,7 +70,7 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, pack := range []struct{ id, catalog string }{{officialPack.ID(), official}, {acmePack.ID(), acme}} {
+		for _, pack := range []struct{ id, catalog string }{{officialPack.ID(), official}, {acmePack.ID(), acme}, {privatePack.ID(), private}} {
 			if found := findTUIPack(dashboard.Global.Packs, pack.id); found == nil || found.Catalog != pack.catalog {
 				t.Fatalf("Pack %s catalog = %#v, want %s", pack.id, found, pack.catalog)
 			}
@@ -83,32 +86,35 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 	if got, want := catalogs(), []tui.Catalog{
 		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("a", 40), Packs: 1},
 		{Repository: acme, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("c", 40), Packs: 1},
+		{Repository: private, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() catalogs = %#v, want %#v", got, want)
 	}
 
 	source.releases[official] = catalogReleaseFixture(t, strings.Repeat("b", 40), officialPack)
+	source.releases[private] = catalogRepositoryReleaseFixture(t, private, strings.Repeat("f", 40), privatePack)
 	source.errs[acme] = errors.New("latest release of acme/packs returned HTTP 500")
 	var progress []string
 	refreshes, err := backend.RefreshCatalog(ctx, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"Acquiring the latest Catalog Snapshot of " + official, "Acquiring the latest Catalog Snapshot of " + acme}; !reflect.DeepEqual(progress, want) {
+	if want := []string{"Acquiring the latest Catalog Snapshot of " + official, "Acquiring the latest Catalog Snapshot of " + acme, "Acquiring the latest Catalog Snapshot of " + private}; !reflect.DeepEqual(progress, want) {
 		t.Fatalf("RefreshCatalog() progress = %q, want %q", progress, want)
 	}
-	if len(refreshes) != 2 || refreshes[0] != (tui.CatalogRefresh{Repository: official, SnapshotID: strings.Repeat("b", 40)}) ||
-		refreshes[1].Repository != acme || refreshes[1].SnapshotID != strings.Repeat("c", 40) || refreshes[1].Err == nil || !strings.Contains(refreshes[1].Err.Error(), "HTTP 500") {
+	if len(refreshes) != 3 || refreshes[0] != (tui.CatalogRefresh{Repository: official, SnapshotID: strings.Repeat("b", 40)}) ||
+		refreshes[1].Repository != acme || refreshes[1].SnapshotID != strings.Repeat("c", 40) || refreshes[1].Err == nil || !strings.Contains(refreshes[1].Err.Error(), "HTTP 500") ||
+		refreshes[2] != (tui.CatalogRefresh{Repository: private, SnapshotID: strings.Repeat("f", 40)}) {
 		t.Fatalf("RefreshCatalog() = %#v", refreshes)
 	}
 	if got, want := catalogs(), []tui.Catalog{
 		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("b", 40), Packs: 1},
 		{Repository: acme, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("c", 40), Packs: 1},
+		{Repository: private, Trust: "access-controlled", SnapshotID: strings.Repeat("f", 40), Packs: 1},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() after a partial refresh = %#v, want %#v", got, want)
 	}
 }
-
 func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 	details := []capabilitypack.CatalogDetail{{
 		Pack: capabilitypack.Pack{
