@@ -103,7 +103,7 @@ func (v rejectionMarkingVerifier) Verify(ctx context.Context, repository, subjec
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
 	return &cobra.Command{
-		Use: "remove <owner/repo>", Short: "Unregister a catalog that no installed Pack uses; retained Catalog Snapshots stay", Args: cobra.ExactArgs(1),
+		Use: "remove <owner/repo>", Short: "Unregister a catalog that no receipt or personal project activation names; retained Catalog Snapshots stay", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repository, err := catalogstore.ParseRepository(args[0])
 			if err != nil {

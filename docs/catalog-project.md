@@ -502,16 +502,21 @@ until adoption.
 Any GitHub repository that follows the Catalog Publication contract is a
 catalog. A user registers it with `packy catalog add <owner/repo>` and its Packs
 then appear next to the official ones. Packy does not generate the repository.
-The reference workflow is the official
+The reference workflows are the official
+[`validate.yml`](https://github.com/yersonargotev/packy-catalog/blob/main/.github/workflows/validate.yml)
+and
 [`publish.yml`](https://github.com/yersonargotev/packy-catalog/blob/main/.github/workflows/publish.yml).
 
 1. Lay out each Pack below `packs/<pack-id>/` and run `packy catalog validate`.
    Choose Pack IDs that no other catalog provides. Packy refuses a whole
    Catalog Snapshot when it introduces a Pack ID that the selected snapshot of
    another registered catalog already provides.
-2. Copy the reference workflow to `.github/workflows/publish.yml` and change its
-   repository guard to your `owner/repo`. Keep it on a GitHub-hosted runner and
-   keep it triggered only by validated pushes to `main`.
+2. Copy both reference workflows to `.github/workflows/`. `publish.yml` runs on
+   `workflow_run` of the workflow named `Catalog validation`, which is
+   `validate.yml`, so without `validate.yml` nothing publishes. Keep that
+   workflow name. Change the repository guard in `publish.yml` to your
+   `owner/repo`. Keep both on GitHub-hosted runners, and keep publication
+   triggered only by validated pushes to `main`.
 3. Keep the two jobs of the reference workflow. The first job runs
    `packy catalog build --project . --source-repository "$GITHUB_REPOSITORY"
    --source-commit <commit> --out-dir dist` with a released Packy executable.

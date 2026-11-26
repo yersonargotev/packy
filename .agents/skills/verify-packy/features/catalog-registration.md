@@ -4,12 +4,12 @@ Users register more GitHub catalogs next to the official one, refresh them, list
 
 ## Sub-features
 
-- `packy catalog add <owner/repo> [--trust attested] [--workflow <path>]` downloads, validates, collision-checks, and selects the first snapshot before it writes the registration. A refused add leaves no registration or snapshot directory. `--trust access-controlled` is refused until private catalogs land.
+- `packy catalog add <owner/repo> [--trust attested] [--workflow <path>]` downloads, validates, collision-checks, and selects the first snapshot before it writes the registration. When the official catalog has no selection, it selects the official catalog first and fails the add if it cannot. A refused add leaves no registration or snapshot directory of the new catalog. A failed attestation names `--workflow`. `--trust access-controlled` is refused until private catalogs land.
 - `packy catalog list [--json]` shows repository, trust policy, workflow, and selected snapshot.
 - `packy catalog refresh [<owner/repo>] [--json]` refreshes every catalog or one. Each catalog refreshes on its own. The command prints every result and exits 1 when any failed. A failed catalog keeps its previous selection.
-- `packy catalog remove <owner/repo>` refuses the official catalog and any catalog that an installed Pack receipt in `~/.packy/packs.json` or an active personal project activation under `~/.packy/projects` names. Removal keeps the retained snapshots.
+- `packy catalog remove <owner/repo>` refuses the official catalog and any catalog that an installed Pack receipt in `~/.packy/packs.json` or an active personal project activation under `~/.packy/projects` names. It does not see project locks; a project whose lock names a removed catalog fails later with an error that names `packy catalog add`. Removal keeps the retained snapshots.
 - `packy list` and `packy status` name each Pack's catalog. New activations find Packs in every selected snapshot. Updates look only in the catalog that the receipt names.
-- `packy status --project` and `packy install` fail and name a catalog that the project lock uses but this workstation has not registered.
+- `packy status --project`, `packy install`, `packy update --project`, and `packy activate --project` fail and name a catalog that the project lock uses but this workstation has not registered.
 
 ## How to get to it (user POV)
 
