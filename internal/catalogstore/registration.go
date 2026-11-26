@@ -18,7 +18,8 @@ var (
 // owner/name form. GitHub resolves repository names case-insensitively.
 type Repository struct{ owner, name string }
 
-// ParseRepository parses a GitHub owner/name repository.
+// ParseRepository lowercases a GitHub owner/name to its canonical form and
+// rejects any other value.
 func ParseRepository(value string) (Repository, error) {
 	canonical := strings.ToLower(value)
 	owner, name, _ := strings.Cut(canonical, "/")
@@ -38,7 +39,8 @@ type TrustPolicy interface{ trustPolicy() }
 // archive, signed by Workflow of the catalog repository on refs/heads/main.
 type Attested struct{ Workflow string }
 
-// AccessControlled relies on GitHub access control of a private repository.
+// AccessControlled accepts GitHub access control of a private repository in
+// place of an attestation. NewGitHubSource refuses these catalogs.
 type AccessControlled struct{}
 
 func (Attested) trustPolicy()         {}
