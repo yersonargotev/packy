@@ -49,7 +49,22 @@ func NewGitHubSource(client *http.Client, verifier AttestationVerifier, credenti
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &gitHubSource{client: client, verifier: verifier, credential: credential}
+	guarded := *client
+	guarded.CheckRedirect = keepTokenOnAPI
+	return &gitHubSource{client: &guarded, verifier: verifier, credential: credential}
+}
+
+// keepTokenOnAPI refuses a redirect of a request that carries the token unless
+// it stays on https://api.github.com, because http.Client keeps Authorization
+// on a downgrade to http and on a subdomain.
+func keepTokenOnAPI(request *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if via[0].Header.Get("Authorization") != "" && (request.URL.Scheme != "https" || request.URL.Host != "api.github.com") {
+		return errors.New("refused to send the GitHub token to a redirect off https://api.github.com")
+	}
+	return nil
 }
 
 type gitHubSource struct {

@@ -32,7 +32,8 @@ The token needs read access to the repository contents. Use a fine-grained
 token with read-only Contents permission on the repository, or a classic token
 with the `repo` scope. A `gh auth login` session has the `repo` scope.
 
-Packy sends the token only to `api.github.com`. It downloads release assets
+Packy sends the token only to `https://api.github.com`, and it refuses an API
+redirect that would carry the token anywhere else. It downloads release assets
 through the release asset API, and it follows the redirect to GitHub's asset
 host without the token. Packy never writes the token to disk.
 

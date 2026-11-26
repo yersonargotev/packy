@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -170,6 +171,41 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 	}
 }
 
+func TestGitHubSourceFollowsAnAuthenticatedRedirectOnlyWithinTheAPI(t *testing.T) {
+	registration := Registration{Repository: mustRepository(t, "team/private"), Trust: AccessControlled{}}
+	redirected := func(target string) (*fakeGitHub, error) {
+		github := newFakeGitHub(t, "team/private", true)
+		github.apiRedirect = target
+		github.responses[target] = `{"private":true}`
+		_, err := NewGitHubSource(github.client(), nil, github.credential).Latest(context.Background(), registration)
+		return github, err
+	}
+	moved := "https://api.github.com/repositories/1"
+	github, err := redirected(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(github.requests, fakeRequest{url: moved, authorization: "Bearer " + testToken, accept: "application/vnd.github+json"}) {
+		t.Fatalf("the moved repository request did not carry the token: %#v", github.requests)
+	}
+	for _, target := range []string{
+		"http://api.github.com/repositories/1",
+		"https://sub.api.github.com/repositories/1",
+		"https://api.github.com.evil.example/repositories/1",
+		"https://evil.example/repositories/1",
+	} {
+		github, err := redirected(target)
+		if err == nil || !strings.Contains(err.Error(), "refused to send the GitHub token to a redirect off https://api.github.com") || strings.Contains(err.Error(), testToken) {
+			t.Errorf("Latest() redirected to %s: %v", target, err)
+		}
+		for _, request := range github.requests {
+			if request.url == target {
+				t.Errorf("Latest() followed the redirect to %s", target)
+			}
+		}
+	}
+}
+
 func TestGitHubSourceWithoutACredentialRefusesAccessControlledCatalogs(t *testing.T) {
 	github := newFakeGitHub(t, "team/private", true)
 	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, nil).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: AccessControlled{}})
@@ -210,6 +246,7 @@ type fakeGitHub struct {
 	assetHostDown   bool
 	redirectScheme  string
 	redirectHost    string
+	apiRedirect     string
 	credentialErr   error
 	credentialCalls int
 	requests        []fakeRequest
@@ -252,6 +289,9 @@ func (g *fakeGitHub) roundTrip(request *http.Request) (*http.Response, error) {
 	g.requests = append(g.requests, fakeRequest{url: request.URL.String(), authorization: request.Header.Get("Authorization"), accept: request.Header.Get("Accept")})
 	url := request.URL.String()
 	api := "https://api.github.com/repos/" + g.repository
+	if url == api && g.apiRedirect != "" {
+		return response(http.StatusMovedPermanently, http.Header{"Location": {g.apiRedirect}}, ""), nil
+	}
 	if strings.HasPrefix(url, api) {
 		switch authorization := request.Header.Get("Authorization"); {
 		case g.status != 0 && authorization != "":
