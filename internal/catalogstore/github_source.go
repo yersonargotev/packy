@@ -23,6 +23,10 @@ type AttestationVerifier interface {
 	Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error
 }
 
+// ErrAttestationRejected reports that the archive's build-provenance
+// attestation did not verify for the registered publication workflow.
+var ErrAttestationRejected = errors.New("no attestation verified")
+
 // Credential returns the GitHub token that reads an access-controlled catalog.
 type Credential func(context.Context) (githubauth.Token, error)
 
@@ -105,7 +109,7 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 		return Release{}, err
 	}
 	if err := source.verifier.Verify(ctx, repository, digest(assets[archiveAsset].Data), repository+"/"+attested.Workflow); err != nil {
-		return Release{}, fmt.Errorf("verify catalog %s artifact attestation: %w", repository, err)
+		return Release{}, fmt.Errorf("verify catalog %s artifact attestation: %w: %w", repository, ErrAttestationRejected, err)
 	}
 	release.AttestationVerified = true
 	return release, nil

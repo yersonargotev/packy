@@ -56,6 +56,14 @@ func TestGitHubSourceDownloadsExactReleaseAssetsAndVerifiesArchiveAttestation(t 
 	}
 }
 
+func TestGitHubSourceMarksARejectedAttestation(t *testing.T) {
+	github := newFakeGitHub(t, "acme/packs", false)
+	_, err := NewGitHubSource(github.client(), &recordingVerifier{err: errors.New("signed by another workflow")}, nil).Latest(context.Background(), Registration{Repository: mustRepository(t, "acme/packs"), Trust: Attested{Workflow: DefaultWorkflow}})
+	if !errors.Is(err, ErrAttestationRejected) || !strings.Contains(err.Error(), "signed by another workflow") {
+		t.Fatalf("Latest() error = %v", err)
+	}
+}
+
 func TestGitHubSourceFailsClosedWithoutAttestationVerifier(t *testing.T) {
 	_, err := NewGitHubSource(http.DefaultClient, nil, nil).Latest(context.Background(), Official())
 	if err == nil || !strings.Contains(err.Error(), "requires an artifact attestation verifier") {

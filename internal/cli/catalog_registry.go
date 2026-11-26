@@ -63,8 +63,7 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 				return err
 			}
 			snapshot, err := store.Register(cmd.Context(), registration)
-			var rejected attestationRejection
-			if errors.As(err, &rejected) && rejected.repository == repository.String() {
+			if errors.Is(err, catalogstore.ErrAttestationRejected) {
 				return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
 			}
 			if err != nil {
@@ -84,29 +83,6 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested, or access-controlled for a private repository read with a GitHub token")
 	command.Flags().StringVar(&workflow, "workflow", "", "publication workflow that must sign attested Catalog Snapshots (default "+catalogstore.DefaultWorkflow+")")
 	return command
-}
-
-// attestationRejection marks a catalog whose attestations were read and none
-// verified for the signer workflow, so catalog add can name the --workflow
-// flag for that catalog. A transport or Sigstore failure is not marked.
-type attestationRejection struct {
-	repository string
-	err        error
-}
-
-func (r attestationRejection) Error() string { return r.err.Error() }
-func (r attestationRejection) Unwrap() error { return r.err }
-
-type rejectionMarkingVerifier struct {
-	catalogstore.AttestationVerifier
-}
-
-func (v rejectionMarkingVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
-	err := v.AttestationVerifier.Verify(ctx, repository, subjectSHA256, signerWorkflow)
-	if errors.Is(err, catalogstore.ErrNoAttestationVerified) {
-		return attestationRejection{repository: repository, err: err}
-	}
-	return err
 }
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
@@ -208,14 +184,7 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 					return err
 				}
 				if !slices.Contains(repositories, repository) {
-					err := fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
-					if jsonOutput {
-						report := catalogRefreshReport{SchemaVersion: 1, Report: "catalog-refresh", Catalogs: []catalogRefreshEntry{{Repository: repository.String(), Result: "failed", Error: err.Error()}}}
-						if encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(report); encodeErr != nil {
-							return encodeErr
-						}
-					}
-					return err
+					return fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
 				}
 				repositories = []catalogstore.Repository{repository}
 			}
