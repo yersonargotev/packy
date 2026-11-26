@@ -22,7 +22,7 @@ verify it with `SHA256SUMS`, extract `packy` onto `PATH`, and run `packy init`.
 `packy init` acquires the latest immutable Catalog Snapshot published by
 `yersonargotev/packy-catalog`, verifies its release metadata, checksums,
 build-provenance attestation, complete file index, and every Pack manifest,
-then selects it under `~/.local/share/packy/catalog`. Later network acquisition
+then selects it under `~/.local/share/packy/catalog/v2/yersonargotev/packy-catalog`. Later network acquisition
 is explicit with `packy catalog refresh`. Inspection, status, and lifecycle
 commands consume retained snapshots offline; existing receipts keep their
 snapshot identity until that Pack is explicitly updated. The packaged CLI has

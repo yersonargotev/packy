@@ -52,6 +52,22 @@ remove retired resource receipts or convert commands into skills. Preview
 removal with the binary that owns those receipts before replacing it, preserving
 unrelated `.claude` configuration and the mixed user store.
 
+## Catalog store layout
+
+Packy keeps each registered catalog's selection and retained Catalog
+Snapshots in its own directory,
+`~/.local/share/packy/catalog/v2/<owner>/<repo>`. The official catalog is
+`catalog/v2/yersonargotev/packy-catalog`. Packy does not read the earlier
+single-catalog layout, `catalog/selected.json` and `catalog/snapshots`,
+and never treats it as the official catalog. A command that finds only the
+earlier layout fails and names this guide.
+
+Complete steps 1 and 2 with the previous Packy, which still reads the earlier
+layout. In step 3, `packy init` writes the current layout next to the earlier
+one and leaves the earlier files unchanged. Packy never moves or deletes them.
+Archive them under your own retention policy after no receipt of the previous
+Packy references them.
+
 ## 1. Inventory with the previous Packy
 
 Before replacing the binary, enter each affected Git worktree and record the
