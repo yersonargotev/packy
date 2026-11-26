@@ -40,7 +40,7 @@ type TrustPolicy interface{ trustPolicy() }
 type Attested struct{ Workflow string }
 
 // AccessControlled accepts GitHub access control of a private repository in
-// place of an attestation. NewGitHubSource refuses these catalogs.
+// place of an attestation.
 type AccessControlled struct{}
 
 func (Attested) trustPolicy()         {}

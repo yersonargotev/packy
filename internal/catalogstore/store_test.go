@@ -376,6 +376,9 @@ func TestEarlierStoreLayoutIsRejectedWithAdoptionGuidance(t *testing.T) {
 	if selected, err := store.Selected(official); err != nil || selected.ID != strings.Repeat("b", 40) {
 		t.Fatalf("Selected() after refresh = %#v, %v", selected, err)
 	}
+	if _, err := store.Resolve(official, commit); err == nil || strings.Contains(err.Error(), "docs/catalog-adoption.md") || !strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("Resolve() of a missing snapshot beside the earlier layout = %v", err)
+	}
 	for name, content := range files {
 		if data, err := os.ReadFile(filepath.Join(earlier, name)); err != nil || string(data) != content {
 			t.Fatalf("earlier layout file %s changed: %q %v", name, data, err)

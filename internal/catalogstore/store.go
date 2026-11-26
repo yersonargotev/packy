@@ -46,7 +46,7 @@ var (
 
 // ErrEarlierLayout reports a Catalog Store that holds only the layout that
 // predates catalog registrations.
-var ErrEarlierLayout = errors.New("holds the layout that predates catalog registrations, which this Packy does not read; follow docs/catalog-adoption.md")
+var ErrEarlierLayout = errors.New("the Catalog Store holds only the layout that predates catalog registrations, which this Packy does not read; follow docs/catalog-adoption.md")
 
 // Source is the network boundary used only by explicit acquisition.
 type Source interface {
@@ -222,7 +222,7 @@ func (s *Store) Selected(repository Repository) (Snapshot, error) {
 	}
 	id, err := s.readSelection(repository)
 	if err != nil {
-		return Snapshot{}, s.earlierLayout(err)
+		return Snapshot{}, s.earlierLayout(repository, err)
 	}
 	root := s.snapshot(repository, id)
 	index, err := validateSnapshot(root, repository, id)
@@ -243,7 +243,7 @@ func (s *Store) Resolve(repository Repository, snapshotID string) (string, error
 	}
 	root := s.snapshot(repository, snapshotID)
 	if _, err := validateSnapshot(root, repository, snapshotID); err != nil {
-		return "", fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(err))
+		return "", fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
 	}
 	return root, nil
 }
@@ -289,16 +289,19 @@ func (s *Store) registration(repository Repository) (Registration, error) {
 	return registration, nil
 }
 
-// earlierLayout explains a missing retained file when the store still holds
-// the layout that predates catalog registrations.
-func (s *Store) earlierLayout(err error) error {
+// earlierLayout explains a missing retained file when the store holds only
+// the layout that predates catalog registrations for this catalog.
+func (s *Store) earlierLayout(repository Repository, err error) error {
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if _, statErr := os.Lstat(filepath.Join(s.root, selectionFile)); statErr != nil {
 		return err
 	}
-	return fmt.Errorf("the Catalog Store at %s %w", s.root, ErrEarlierLayout)
+	if _, statErr := os.Lstat(s.catalog(repository)); !errors.Is(statErr, fs.ErrNotExist) {
+		return err
+	}
+	return fmt.Errorf("%s: %w", s.root, ErrEarlierLayout)
 }
 
 // retainLatest validates the latest release of a catalog into its retained
