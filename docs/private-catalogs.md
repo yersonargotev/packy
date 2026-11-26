@@ -28,6 +28,10 @@ reaches an access-controlled catalog. It takes the first token from this list:
 2. The `GITHUB_TOKEN` environment variable.
 3. The output of `gh auth token --hostname github.com`.
 
+Packy uses the first token it finds and never falls back to the next source.
+An invalid `GH_TOKEN` fails the command even when `GITHUB_TOKEN` or `gh`
+holds a valid token, so unset it or replace it.
+
 The token needs read access to the repository contents. Use a fine-grained
 token with read-only Contents permission on the repository, or a classic token
 with the `repo` scope. A `gh auth login` session has the `repo` scope.
@@ -61,8 +65,10 @@ network.
 
 ## Fix a refused registration
 
-A refused registration leaves no registration and no Catalog Snapshot. The
-error says which case applies:
+A refused registration leaves no registration and no Catalog Snapshot of the
+refused catalog. When no official Catalog Snapshot is selected yet,
+`packy catalog add` selects one first, and that selection stays after the
+refusal. The error says which case applies:
 
 - `needs a GitHub token` means that no source holds a token. Set `GH_TOKEN`
   or run `gh auth login`.
