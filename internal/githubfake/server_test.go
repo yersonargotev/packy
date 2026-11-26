@@ -159,7 +159,7 @@ func TestClientRefusesHostsOutsideGitHub(t *testing.T) {
 func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	root, client := startFake(t)
 	source := catalogstore.NewGitHubSource(client, githubfake.NewAttestationVerifier(client))
-	release, err := source.Latest(context.Background(), official)
+	release, err := source.Latest(context.Background(), catalogstore.Official())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,14 +170,14 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	if err := githubfake.WriteRepository(root, official, githubfake.Repository{AttestationWorkflow: "example/fork/.github/workflows/publish.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Latest(context.Background(), official); err == nil || !strings.Contains(err.Error(), "attestation") {
+	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "attestation") {
 		t.Fatalf("Latest() with a foreign signer workflow = %v", err)
 	}
 
 	if err := githubfake.WriteRepository(root, official, githubfake.Repository{ReleaseStatus: http.StatusInternalServerError}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Latest(context.Background(), official); err == nil || !strings.Contains(err.Error(), "500") {
+	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "500") {
 		t.Fatalf("Latest() with a failing releases/latest = %v", err)
 	}
 }

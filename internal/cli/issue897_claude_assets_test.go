@@ -15,7 +15,6 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
-	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
@@ -154,7 +153,7 @@ func TestIssue897ClaudeAssetClosureExecutable(t *testing.T) {
 		writeTestGitWorktree(t, directory)
 		acquireSkillAccessCatalog(t, env, directory, first, firstID, "init")
 		issue897ApproveCLI(t, binary, directory, environment, "activate", "independent", "--surface", "claude")
-		retained := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", firstID)
+		retained := retainedOfficialSnapshot(env["HOME"], firstID)
 		issue897RetainUnsupportedLayout(t, retained)
 		retainedBefore := snapshotTree(t, retained)
 		acquireSkillAccessCatalog(t, env, directory, next, nextID, "catalog", "refresh")
@@ -218,7 +217,7 @@ func TestIssue897ClaudeAssetClosureExecutable(t *testing.T) {
 				directory := t.TempDir()
 				writeTestGitWorktree(t, directory)
 				acquireSkillAccessCatalog(t, env, directory, next, nextID, "init")
-				retained := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", nextID)
+				retained := retainedOfficialSnapshot(env["HOME"], nextID)
 				issue897RetainUnsupportedLayout(t, retained)
 				homeBefore, projectBefore := snapshotTree(t, env["HOME"]), snapshotTree(t, directory)
 				out, stderr, err := runSkillAccessCLI(t, binary, directory, environment, operation, "external-assets", "--surface", "claude", "--resource", "skill:workflow")

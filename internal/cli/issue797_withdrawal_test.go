@@ -11,7 +11,6 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
-	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
@@ -161,7 +160,7 @@ func TestIssue797WithdrawnPackRemainsInspectableAndDeactivatable(t *testing.T) {
 			t.Fatalf("apply retained deactivation on %s = %#v, %v", surface, result, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", retainedSnapshot)); err != nil {
+	if _, err := os.Stat(retainedOfficialSnapshot(env["HOME"], retainedSnapshot)); err != nil {
 		t.Fatalf("retained Catalog Snapshot was removed after deactivation: %v", err)
 	}
 	projectPreview, err := backend.Preview(context.Background(), tui.PreviewRequest{

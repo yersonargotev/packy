@@ -21,7 +21,7 @@ type catalogSourceFixture struct {
 	err     error
 }
 
-func (s *catalogSourceFixture) Latest(context.Context, string) (catalogstore.Release, error) {
+func (s *catalogSourceFixture) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
 	s.calls++
 	return s.release, s.err
 }
@@ -132,7 +132,7 @@ func TestIssue798ContentOnlyPublicationPreservesAndUpdatesSelectedActivations(t 
 	if len(want) != 0 {
 		t.Fatalf("missing Pack receipts %v:\n%s", want, receipts)
 	}
-	if _, err := os.Stat(filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", initialCommit)); err != nil {
+	if _, err := os.Stat(retainedOfficialSnapshot(env["HOME"], initialCommit)); err != nil {
 		t.Fatalf("previous Catalog Snapshot was garbage-collected: %v", err)
 	}
 }
@@ -216,6 +216,10 @@ func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.
 			{Name: "SHA256SUMS", SHA256: catalogFixtureDigest(checksum), Data: checksum},
 		},
 	}
+}
+
+func retainedOfficialSnapshot(home, id string) string {
+	return filepath.Join(catalogstore.DefaultDataRoot(home), "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", id)
 }
 
 func catalogFixtureDigest(data []byte) string {

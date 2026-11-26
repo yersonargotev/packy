@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,10 +61,10 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			store := catalogstore.New(catalogstore.DefaultDataRoot(station.Home()), nil)
 			if snapshotID != "" {
 				identity = snapshotID
-				root, err = store.Resolve(identity)
+				root, err = store.Resolve(catalogstore.Official().Repository, identity)
 			} else {
 				var snapshot catalogstore.Snapshot
-				snapshot, err = store.Selected()
+				snapshot, err = store.Selected(catalogstore.Official().Repository)
 				root, identity = snapshot.Root, snapshot.ID
 			}
 		}
@@ -71,6 +72,9 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			code := "catalog_unavailable"
 			if snapshotID != "" {
 				code = "snapshot_unavailable"
+			}
+			if errors.Is(err, catalogstore.ErrEarlierLayout) {
+				return failure(cmd, "catalog_unavailable", err)
 			}
 			return failure(cmd, code, fmt.Errorf("local retained Catalog Snapshot unavailable; acquire explicitly with packy init or packy catalog refresh, or restore the exact requested snapshot: %w", err))
 		}

@@ -62,14 +62,17 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 				store := catalogstore.New(dataRoot, nil)
 				if snapshotID != "" {
 					identity = snapshotID
-					root, err = store.Resolve(identity)
+					root, err = store.Resolve(catalogstore.Official().Repository, identity)
 				} else {
 					var selected catalogstore.Snapshot
-					selected, err = store.Selected()
+					selected, err = store.Selected(catalogstore.Official().Repository)
 					root, identity = selected.Root, selected.ID
 				}
 			}
 			if err != nil {
+				if errors.Is(err, catalogstore.ErrEarlierLayout) {
+					return failure(cmd, "catalog_unavailable", err)
+				}
 				if snapshotID != "" {
 					return failure(cmd, "snapshot_unavailable", fmt.Errorf("required retained snapshot %s is unavailable; restore its exact content, without substituting a newer revision: %w", snapshotID, err))
 				}

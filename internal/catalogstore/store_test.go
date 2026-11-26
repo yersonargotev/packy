@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,28 +20,33 @@ import (
 	"github.com/yersonargotev/packy/internal/catalogstore"
 )
 
-const officialRepository = "yersonargotev/packy-catalog"
+var official = catalogstore.Official().Repository
 
 func TestStoreAcquiresValidatesAndSelectsAnImmutableOfficialSnapshot(t *testing.T) {
 	commit := strings.Repeat("a", 40)
 	release := validRelease(t, commit, validManifest("example", "1.2.3"))
-	store := catalogstore.New(t.TempDir(), staticSource{release: release})
+	dataRoot := t.TempDir()
+	store := catalogstore.New(dataRoot, staticSource{release: release})
 
-	snapshot, err := store.AcquireLatest(context.Background())
+	snapshot, err := store.AcquireLatest(context.Background(), official)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if snapshot.ID != commit || snapshot.Commit != commit || snapshot.Tag != "catalog-"+commit {
 		t.Fatalf("snapshot identity = %#v", snapshot)
 	}
-	if got, want := store.Root(), filepath.Join(filepath.Dir(store.Root()), "catalog"); got != want {
-		t.Fatalf("Root() = %q, want %q", got, want)
+	catalog := filepath.Join(dataRoot, "catalog", "v2", "yersonargotev", "packy-catalog")
+	if snapshot.Root != filepath.Join(catalog, "snapshots", commit) {
+		t.Fatalf("snapshot root = %s, want below %s", snapshot.Root, catalog)
 	}
-	selected, err := store.Selected()
+	if _, err := os.Stat(filepath.Join(catalog, "selected.json")); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := store.Selected(official)
 	if err != nil || selected.ID != commit {
 		t.Fatalf("Selected() = %#v, %v", selected, err)
 	}
-	root, err := store.Resolve(commit)
+	root, err := store.Resolve(official, commit)
 	if err != nil || root != snapshot.Root {
 		t.Fatalf("Resolve() = %q, %v; want %q", root, err, snapshot.Root)
 	}
@@ -50,7 +56,7 @@ func TestFailedAcquisitionPreservesPreviousSelection(t *testing.T) {
 	firstCommit := strings.Repeat("a", 40)
 	root := t.TempDir()
 	store := catalogstore.New(root, staticSource{release: validRelease(t, firstCommit, validManifest("example", "1.2.3"))})
-	if _, err := store.AcquireLatest(context.Background()); err != nil {
+	if _, err := store.AcquireLatest(context.Background(), official); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +65,11 @@ func TestFailedAcquisitionPreservesPreviousSelection(t *testing.T) {
 		mutate func(*catalogstore.Release)
 		want   string
 	}{
-		{"unofficial publisher", func(r *catalogstore.Release) { r.Publisher = "someone" }, "official publisher"},
+		{"unofficial publisher", func(r *catalogstore.Release) { r.Publisher = "someone" }, "publisher metadata"},
+		{"release of another repository", func(r *catalogstore.Release) { r.Repository = "acme/packs" }, "publisher metadata"},
+		{"index of another repository", func(r *catalogstore.Release) {
+			*r = catalogRelease(t, official.String(), "acme/packs", r.Commit, validManifest("newer", "2.0.0"))
+		}, "index names acme/packs@"},
 		{"mutable release", func(r *catalogstore.Release) { r.Immutable = false }, "immutable"},
 		{"unverified attestation", func(r *catalogstore.Release) { r.AttestationVerified = false }, "attestation"},
 		{"unexpected asset", func(r *catalogstore.Release) { r.Assets = append(r.Assets, catalogstore.Asset{Name: "extra"}) }, "exactly"},
@@ -84,10 +94,10 @@ func TestFailedAcquisitionPreservesPreviousSelection(t *testing.T) {
 			candidate := validRelease(t, fmt.Sprintf("%040x", i+2), validManifest("newer", "2.0.0"))
 			test.mutate(&candidate)
 			failed := catalogstore.New(root, staticSource{release: candidate})
-			if _, err := failed.AcquireLatest(context.Background()); err == nil || !strings.Contains(err.Error(), test.want) {
+			if _, err := failed.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("AcquireLatest() error = %v, want %q", err, test.want)
 			}
-			selected, err := failed.Selected()
+			selected, err := failed.Selected(official)
 			if err != nil || selected.ID != firstCommit {
 				t.Fatalf("selection after failure = %#v, %v", selected, err)
 			}
@@ -106,7 +116,7 @@ func TestConcurrentRepeatAcquisitionRetainsOneValidSnapshot(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			_, err := store.AcquireLatest(context.Background())
+			_, err := store.AcquireLatest(context.Background(), official)
 			errors <- err
 		}()
 	}
@@ -117,7 +127,7 @@ func TestConcurrentRepeatAcquisitionRetainsOneValidSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	selected, err := stores[0].Selected()
+	selected, err := stores[0].Selected(official)
 	if err != nil || selected.ID != commit {
 		t.Fatalf("Selected() = %#v, %v", selected, err)
 	}
@@ -140,14 +150,14 @@ func TestConcurrentAcquisitionFetchesLatestReleaseInsideStoreLock(t *testing.T) 
 	second := catalogstore.New(root, source)
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := first.AcquireLatest(context.Background())
+		_, err := first.AcquireLatest(context.Background(), official)
 		firstDone <- err
 	}()
 	<-source.firstStarted
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := second.AcquireLatest(cancelled); err == nil || !strings.Contains(err.Error(), "lock catalog store") {
+	if _, err := second.AcquireLatest(cancelled, official); err == nil || !strings.Contains(err.Error(), "lock catalog store") {
 		t.Fatalf("cancelled concurrent acquisition error = %v, want store lock failure", err)
 	}
 	select {
@@ -160,10 +170,10 @@ func TestConcurrentAcquisitionFetchesLatestReleaseInsideStoreLock(t *testing.T) 
 	if err := <-firstDone; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := second.AcquireLatest(context.Background()); err != nil {
+	if _, err := second.AcquireLatest(context.Background(), official); err != nil {
 		t.Fatal(err)
 	}
-	selected, err := second.Selected()
+	selected, err := second.Selected(official)
 	if err != nil || selected.ID != newCommit {
 		t.Fatalf("Selected() = %#v, %v; want new release %s", selected, err, newCommit)
 	}
@@ -172,19 +182,281 @@ func TestConcurrentAcquisitionFetchesLatestReleaseInsideStoreLock(t *testing.T) 
 func TestRetainedSnapshotReadsFailClosedAfterLocalTampering(t *testing.T) {
 	commit := strings.Repeat("a", 40)
 	store := catalogstore.New(t.TempDir(), staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))})
-	snapshot, err := store.AcquireLatest(context.Background())
+	snapshot, err := store.AcquireLatest(context.Background(), official)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(snapshot.Root, "packs", "example", "skills", "example", "SKILL.md"), []byte("tampered\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Selected(); err == nil || !strings.Contains(err.Error(), "indexed identity") {
+	if _, err := store.Selected(official); err == nil || !strings.Contains(err.Error(), "indexed identity") {
 		t.Fatalf("Selected() error = %v, want integrity failure", err)
 	}
-	if _, err := store.Resolve(commit); err == nil || !strings.Contains(err.Error(), "indexed identity") {
+	if _, err := store.Resolve(official, commit); err == nil || !strings.Contains(err.Error(), "indexed identity") {
 		t.Fatalf("Resolve() error = %v, want integrity failure", err)
 	}
+}
+
+func TestRefreshOverATamperedRetainedSnapshotFailsAndKeepsTheSelection(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	release := validRelease(t, commit, validManifest("example", "1.2.3"))
+	store := catalogstore.New(t.TempDir(), staticSource{release: release})
+	snapshot, err := store.AcquireLatest(context.Background(), official)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := filepath.Join(filepath.Dir(filepath.Dir(snapshot.Root)), "selected.json")
+	before, err := os.ReadFile(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshot.Root, "packs", "example", "pack.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), "conflicts with release") {
+		t.Fatalf("AcquireLatest() error = %v, want retained conflict", err)
+	}
+	if after, err := os.ReadFile(selection); err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("selection changed after a refused refresh: %s %v", after, err)
+	}
+}
+
+func TestFailedSourceKeepsThePreviousSelection(t *testing.T) {
+	root := t.TempDir()
+	commit := strings.Repeat("a", 40)
+	if _, err := catalogstore.New(root, staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))}).AcquireLatest(context.Background(), official); err != nil {
+		t.Fatal(err)
+	}
+	failing := catalogstore.New(root, staticSource{err: fmt.Errorf("GitHub returned 500")})
+	if _, err := failing.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("AcquireLatest() error = %v", err)
+	}
+	if selected, err := failing.Selected(official); err != nil || selected.ID != commit {
+		t.Fatalf("Selected() = %#v, %v", selected, err)
+	}
+}
+
+func TestRegistrationLifecycleKeepsRetainedSnapshots(t *testing.T) {
+	root := t.TempDir()
+	acme := mustRepository(t, "Acme/Packs")
+	private := mustRepository(t, "acme/private")
+	commit := strings.Repeat("c", 40)
+	unattested := catalogRelease(t, "acme/private", "acme/private", commit, validManifest("secret", "1.0.0"))
+	unattested.AttestationVerified = false
+	source := catalogSource{
+		official.String(): validRelease(t, strings.Repeat("a", 40), validManifest("example", "1.2.3")),
+		"acme/packs":      catalogRelease(t, "acme/packs", "ACME/packs", strings.Repeat("b", 40), validManifest("tools", "1.0.0")),
+		"acme/private":    unattested,
+	}
+	store := catalogstore.New(root, source)
+	if _, err := store.AcquireLatest(context.Background(), acme); err == nil || !strings.Contains(err.Error(), "catalog acme/packs is not registered") {
+		t.Fatalf("AcquireLatest() of an unregistered catalog = %v", err)
+	}
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: ".github/workflows/publish.yml"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: private, Trust: catalogstore.AccessControlled{}}); err != nil {
+		t.Fatal(err)
+	}
+	unattested.Repository, unattested.Commit, unattested.Tag = "acme/unverified", strings.Repeat("d", 40), "catalog-"+strings.Repeat("d", 40)
+	source["acme/unverified"] = unattested
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: mustRepository(t, "acme/unverified"), Trust: catalogstore.Attested{Workflow: ".github/workflows/publish.yml"}}); err == nil || !strings.Contains(err.Error(), "attestation is not verified") {
+		t.Fatalf("Register() of an attested catalog without attestation = %v", err)
+	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []catalogstore.Registration{
+		catalogstore.Official(),
+		{Repository: acme, Trust: catalogstore.Attested{Workflow: ".github/workflows/publish.yml"}},
+		{Repository: private, Trust: catalogstore.AccessControlled{}},
+	}
+	if fmt.Sprint(registrations) != fmt.Sprint(want) {
+		t.Fatalf("Registrations() = %v, want %v", registrations, want)
+	}
+	selected, err := store.Selected(acme)
+	if err != nil || selected.ID != strings.Repeat("b", 40) {
+		t.Fatalf("Selected(acme/packs) = %#v, %v", selected, err)
+	}
+	if _, err := store.Register(context.Background(), want[1]); err == nil || !strings.Contains(err.Error(), "already registered") {
+		t.Fatalf("second Register() = %v", err)
+	}
+	if _, err := store.Register(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "built in") {
+		t.Fatalf("Register(official) = %v", err)
+	}
+	if err := store.Unregister(context.Background(), official); err == nil || !strings.Contains(err.Error(), "cannot be removed") {
+		t.Fatalf("Unregister(official) = %v", err)
+	}
+	if err := store.Unregister(context.Background(), acme); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(selected.Root); err != nil {
+		t.Fatalf("Unregister() removed the retained snapshot: %v", err)
+	}
+	if _, err := store.Selected(acme); err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("Selected() after Unregister() = %v", err)
+	}
+	if _, err := store.Resolve(acme, selected.ID); err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("Resolve() after Unregister() = %v", err)
+	}
+	if registrations, err := store.Registrations(); err != nil || len(registrations) != 2 {
+		t.Fatalf("Registrations() after Unregister() = %v, %v", registrations, err)
+	}
+	if _, err := store.Register(context.Background(), want[1]); err != nil {
+		t.Fatalf("Register() over retained snapshots: %v", err)
+	}
+}
+
+func TestPackIDCollisionIsRejectedWithoutResidue(t *testing.T) {
+	root := t.TempDir()
+	acme := mustRepository(t, "acme/packs")
+	officialCommit := strings.Repeat("a", 40)
+	source := catalogSource{
+		official.String(): validRelease(t, officialCommit, validManifest("example", "1.2.3")),
+		"acme/packs":      catalogRelease(t, "acme/packs", "acme/packs", strings.Repeat("b", 40), validManifest("example", "9.0.0")),
+	}
+	store := catalogstore.New(root, source)
+	if _, err := store.AcquireLatest(context.Background(), official); err != nil {
+		t.Fatal(err)
+	}
+	registration := catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: ".github/workflows/publish.yml"}}
+	if _, err := store.Register(context.Background(), registration); err == nil || !strings.Contains(err.Error(), `introduces Pack "example"`) || !strings.Contains(err.Error(), official.String()) {
+		t.Fatalf("Register() with a colliding Pack ID = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "acme")); !os.IsNotExist(err) {
+		t.Fatalf("rejected registration left residue: %v", err)
+	}
+	if registrations, err := store.Registrations(); err != nil || len(registrations) != 1 {
+		t.Fatalf("Registrations() = %v, %v", registrations, err)
+	}
+
+	source["acme/packs"] = catalogRelease(t, "acme/packs", "acme/packs", strings.Repeat("b", 40), validManifest("tools", "1.0.0"))
+	if _, err := store.Register(context.Background(), registration); err != nil {
+		t.Fatal(err)
+	}
+	source[official.String()] = validRelease(t, strings.Repeat("c", 40), validManifest("tools", "2.0.0"))
+	if _, err := store.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), `introduces Pack "tools"`) {
+		t.Fatalf("official refresh with a colliding Pack ID = %v", err)
+	}
+	if selected, err := store.Selected(official); err != nil || selected.ID != officialCommit {
+		t.Fatalf("official selection after collision = %#v, %v", selected, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", strings.Repeat("c", 40))); !os.IsNotExist(err) {
+		t.Fatalf("colliding snapshot was retained: %v", err)
+	}
+}
+
+func TestEarlierStoreLayoutIsRejectedWithAdoptionGuidance(t *testing.T) {
+	root := t.TempDir()
+	earlier := filepath.Join(root, "catalog")
+	commit := strings.Repeat("a", 40)
+	files := map[string]string{
+		"selected.json": `{"schema_version":1,"snapshot_id":"` + commit + `"}` + "\n",
+		filepath.Join("snapshots", commit, "catalog-index.json"): "{}\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(earlier, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	incompatible := validRelease(t, strings.Repeat("c", 40), strings.Replace(validManifest("example", "1.2.3"), `"resources":[`, `"future_engine_field":true,"resources":[`, 1))
+	if _, err := catalogstore.New(root, staticSource{release: incompatible}).AcquireLatest(context.Background(), official); err == nil {
+		t.Fatal("AcquireLatest() accepted an incompatible snapshot")
+	}
+	store := catalogstore.New(root, staticSource{release: validRelease(t, strings.Repeat("b", 40), validManifest("example", "1.2.3"))})
+	if _, err := store.Selected(official); !errors.Is(err, catalogstore.ErrEarlierLayout) {
+		t.Fatalf("Selected() over the earlier layout = %v", err)
+	}
+	if _, err := store.Resolve(official, commit); !errors.Is(err, catalogstore.ErrEarlierLayout) {
+		t.Fatalf("Resolve() over the earlier layout = %v", err)
+	}
+	if _, err := store.AcquireLatest(context.Background(), official); err != nil {
+		t.Fatal(err)
+	}
+	if selected, err := store.Selected(official); err != nil || selected.ID != strings.Repeat("b", 40) {
+		t.Fatalf("Selected() after refresh = %#v, %v", selected, err)
+	}
+	if _, err := store.Resolve(official, commit); err == nil || strings.Contains(err.Error(), "docs/catalog-adoption.md") || !strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("Resolve() of a missing snapshot beside the earlier layout = %v", err)
+	}
+	for name, content := range files {
+		if data, err := os.ReadFile(filepath.Join(earlier, name)); err != nil || string(data) != content {
+			t.Fatalf("earlier layout file %s changed: %q %v", name, data, err)
+		}
+	}
+}
+
+func TestSelectionMustNameItsCatalog(t *testing.T) {
+	root := t.TempDir()
+	commit := strings.Repeat("a", 40)
+	store := catalogstore.New(root, staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))})
+	snapshot, err := store.AcquireLatest(context.Background(), official)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := filepath.Join(filepath.Dir(filepath.Dir(snapshot.Root)), "selected.json")
+	data, err := os.ReadFile(selection)
+	if err != nil || !strings.Contains(string(data), `"repository": "yersonargotev/packy-catalog"`) {
+		t.Fatalf("selected.json = %s, %v", data, err)
+	}
+	for _, document := range []string{
+		`{"schema_version":1,"snapshot_id":"` + commit + `"}`,
+		`{"schema_version":2,"repository":"acme/packs","snapshot_id":"` + commit + `"}`,
+	} {
+		if err := os.WriteFile(selection, []byte(document), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Selected(official); err == nil || !strings.Contains(err.Error(), "invalid identity") {
+			t.Fatalf("Selected() accepted %s: %v", document, err)
+		}
+	}
+}
+
+func TestRegistrationsFailClosedOnAnInvalidRegistration(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "catalog", "v2", "acme", "packs", "registration.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, document := range []string{
+		`{"schema_version":1,"repository":"acme/packs","trust":"unverified"}`,
+		`{"schema_version":1,"repository":"acme/packs","trust":"attested","workflow":"../publish.yml"}`,
+		`{"schema_version":1,"repository":"acme/other","trust":"access-controlled"}`,
+		`{"schema_version":1,"repository":"acme/packs","trust":"access-controlled","extra":true}`,
+	} {
+		if err := os.WriteFile(path, []byte(document), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if registrations, err := catalogstore.New(root, nil).Registrations(); err == nil {
+			t.Fatalf("Registrations() accepted %s: %v", document, registrations)
+		}
+	}
+}
+
+func TestParseRepositoryCanonicalizesGitHubNames(t *testing.T) {
+	repository, err := catalogstore.ParseRepository("Acme/Packs.v2")
+	if err != nil || repository.String() != "acme/packs.v2" {
+		t.Fatalf("ParseRepository() = %v, %v", repository, err)
+	}
+	for _, value := range []string{"", "acme", "acme/", "/packs", "acme/packs/extra", "../packs", "acme/..", "acme/pa cks", "https://github.com/acme/packs", "acme/\u212Ait"} {
+		if _, err := catalogstore.ParseRepository(value); err == nil {
+			t.Errorf("ParseRepository(%q) succeeded", value)
+		}
+	}
+}
+
+func mustRepository(t *testing.T, value string) catalogstore.Repository {
+	t.Helper()
+	repository, err := catalogstore.ParseRepository(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repository
 }
 
 type staticSource struct {
@@ -201,7 +473,7 @@ type orderedSource struct {
 	calls         int
 }
 
-func (s *orderedSource) Latest(context.Context, string) (catalogstore.Release, error) {
+func (s *orderedSource) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
 	s.mu.Lock()
 	call := s.calls
 	s.calls++
@@ -218,16 +490,31 @@ func (s *orderedSource) Latest(context.Context, string) (catalogstore.Release, e
 	return s.releases[call], nil
 }
 
-func (s staticSource) Latest(context.Context, string) (catalogstore.Release, error) {
+func (s staticSource) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
 	return s.release, s.err
+}
+
+type catalogSource map[string]catalogstore.Release
+
+func (s catalogSource) Latest(_ context.Context, registration catalogstore.Registration) (catalogstore.Release, error) {
+	release, ok := s[registration.Repository.String()]
+	if !ok {
+		return catalogstore.Release{}, fmt.Errorf("no release for %s", registration.Repository)
+	}
+	return release, nil
 }
 
 func validRelease(t *testing.T, commit, manifest string) catalogstore.Release {
 	t.Helper()
-	archive := snapshotArchive(t, commit, manifest)
+	return catalogRelease(t, official.String(), official.String(), commit, manifest)
+}
+
+func catalogRelease(t *testing.T, repository, indexed, commit, manifest string) catalogstore.Release {
+	t.Helper()
+	archive := snapshotArchive(t, indexed, commit, manifest)
 	checksum := []byte(digest(archive) + "  catalog-snapshot.tar.gz\n")
 	return catalogstore.Release{
-		Repository: officialRepository, Tag: "catalog-" + commit, Commit: commit,
+		Repository: repository, Tag: "catalog-" + commit, Commit: commit,
 		Publisher: "github-actions[bot]", Published: true, Immutable: true, AttestationVerified: true,
 		Assets: []catalogstore.Asset{{Name: "catalog-snapshot.tar.gz", SHA256: digest(archive), Data: archive}, {Name: "SHA256SUMS", SHA256: digest(checksum), Data: checksum}},
 	}
@@ -235,11 +522,10 @@ func validRelease(t *testing.T, commit, manifest string) catalogstore.Release {
 
 func replaceManifest(t *testing.T, release *catalogstore.Release, manifest string) {
 	t.Helper()
-	commit := release.Commit
-	*release = validRelease(t, commit, manifest)
+	*release = catalogRelease(t, release.Repository, release.Repository, release.Commit, manifest)
 }
 
-func snapshotArchive(t *testing.T, commit, manifest string) []byte {
+func snapshotArchive(t *testing.T, repository, commit, manifest string) []byte {
 	t.Helper()
 	manifestBytes := []byte(manifest)
 	skillBytes := []byte("# Fixture\n")
@@ -250,7 +536,7 @@ func snapshotArchive(t *testing.T, commit, manifest string) []byte {
 	closure := digestFileIndex(files)
 	packs := []cataloglayout.CatalogSnapshotPack{{ID: manifestID(t, manifest), Version: manifestVersion(t, manifest), ManifestSHA256: digest(manifestBytes), ClosureSHA256: closure, Files: files}}
 	encodedPacks, _ := json.Marshal(packs)
-	index := cataloglayout.CatalogSnapshotIndex{SchemaVersion: 3, Source: cataloglayout.CatalogSnapshotSource{Repository: officialRepository, Commit: commit}, Builder: "yersonargotev/packy@" + strings.Repeat("b", 40), CatalogSHA256: digest(encodedPacks), Packs: packs}
+	index := cataloglayout.CatalogSnapshotIndex{SchemaVersion: 3, Source: cataloglayout.CatalogSnapshotSource{Repository: repository, Commit: commit}, Builder: "yersonargotev/packy@" + strings.Repeat("b", 40), CatalogSHA256: digest(encodedPacks), Packs: packs}
 	indexBytes, _ := json.Marshal(index)
 
 	var output bytes.Buffer

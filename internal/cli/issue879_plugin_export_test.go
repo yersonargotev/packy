@@ -276,7 +276,7 @@ func TestIssue879PluginExportExecutable(t *testing.T) {
 		if !bytes.Contains(out, []byte(firstID)) || snapshotTree(t, root) != before {
 			t.Fatal("retained identity or state changed")
 		}
-		if err := os.Remove(filepath.Join(root, "catalog/snapshots", firstID, "packs/reviewed/skills/plugin-guide/SKILL.md")); err != nil {
+		if err := os.Remove(filepath.Join(retainedOfficialSnapshot(env["HOME"], firstID), "packs/reviewed/skills/plugin-guide/SKILL.md")); err != nil {
 			t.Fatal(err)
 		}
 		failed := filepath.Join(t.TempDir(), "missing-retained")

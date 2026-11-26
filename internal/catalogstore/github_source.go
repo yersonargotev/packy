@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-const officialSignerWorkflow = "yersonargotev/packy-catalog/.github/workflows/publish.yml"
-
 // AttestationVerifier verifies GitHub build-provenance cryptography and binds
 // the subject digest to the expected repository and signer workflow.
 type AttestationVerifier interface {
@@ -33,10 +31,12 @@ type gitHubSource struct {
 	verifier AttestationVerifier
 }
 
-func (source *gitHubSource) Latest(ctx context.Context, repository string) (Release, error) {
-	if repository != officialRepository {
-		return Release{}, fmt.Errorf("GitHub catalog Source only supports %s", officialRepository)
+func (source *gitHubSource) Latest(ctx context.Context, registration Registration) (Release, error) {
+	attested, ok := registration.Trust.(Attested)
+	if !ok {
+		return Release{}, fmt.Errorf("GitHub catalog Source supports only attested catalogs, not %s", registration.Repository)
 	}
+	repository := registration.Repository.String()
 	if source.verifier == nil {
 		return Release{}, errors.New("GitHub catalog Source requires an artifact attestation verifier")
 	}
@@ -58,7 +58,7 @@ func (source *gitHubSource) Latest(ctx context.Context, repository string) (Rele
 		} `json:"assets"`
 	}
 	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", &wire); err != nil {
-		return Release{}, fmt.Errorf("read latest official catalog release: %w", err)
+		return Release{}, fmt.Errorf("read latest catalog release of %s: %w", repository, err)
 	}
 	release := Release{
 		Repository: repository, Tag: wire.Tag, Commit: wire.Target, Publisher: wire.Author.Login,
@@ -75,13 +75,13 @@ func (source *gitHubSource) Latest(ctx context.Context, repository string) (Rele
 		}
 		release.Assets = append(release.Assets, Asset{Name: candidate.Name, SHA256: candidate.Digest, Data: data})
 	}
-	assets, err := validateReleaseWithoutAttestation(release)
+	assets, err := validateReleaseWithoutAttestation(registration, release)
 	if err != nil {
 		return Release{}, err
 	}
 	archiveDigest := digest(assets[archiveAsset].Data)
-	if err := source.verifier.Verify(ctx, repository, archiveDigest, officialSignerWorkflow); err != nil {
-		return Release{}, fmt.Errorf("verify official catalog artifact attestation: %w", err)
+	if err := source.verifier.Verify(ctx, repository, archiveDigest, repository+"/"+attested.Workflow); err != nil {
+		return Release{}, fmt.Errorf("verify catalog %s artifact attestation: %w", repository, err)
 	}
 	release.AttestationVerified = true
 	return release, nil
@@ -138,7 +138,7 @@ func (source *gitHubSource) download(ctx context.Context, url string) ([]byte, e
 	return data, nil
 }
 
-func validateReleaseWithoutAttestation(release Release) (map[string]Asset, error) {
+func validateReleaseWithoutAttestation(registration Registration, release Release) (map[string]Asset, error) {
 	release.AttestationVerified = true
-	return validateRelease(release)
+	return validateRelease(registration, release)
 }

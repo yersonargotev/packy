@@ -200,7 +200,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 				assertReport(t, out)
 			}
 		}
-		sourceRoot := filepath.Join(catalogstore.DefaultDataRoot(env["HOME"]), "catalog", "snapshots", firstID)
+		sourceRoot := retainedOfficialSnapshot(env["HOME"], firstID)
 		before := snapshotTree(t, sourceRoot)
 		next := skillAccessAssets(t, nextID, "next", nil)
 		acquireSkillAccessCatalog(t, env, directory, next, nextID, "catalog", "refresh")
@@ -471,7 +471,7 @@ func TestIssue860SkillAccessExecutable(t *testing.T) {
 		assets := skillAccessAssets(t, id, "first", nil)
 		acquireSkillAccessCatalog(t, env, directory, assets, id, "init")
 		dataRoot := catalogstore.DefaultDataRoot(env["HOME"])
-		source := filepath.Join(dataRoot, "catalog/snapshots", id)
+		source := retainedOfficialSnapshot(env["HOME"], id)
 		before := snapshotTree(t, source)
 		if err := os.Symlink(source, filepath.Join(dataRoot, "skill-access")); err != nil {
 			t.Fatal(err)

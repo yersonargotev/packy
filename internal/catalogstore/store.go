@@ -1,5 +1,5 @@
-// Package catalogstore owns acquisition, validation, retention, and selection
-// of immutable official Catalog Snapshots.
+// Package catalogstore owns registration, acquisition, validation, retention,
+// and selection of immutable Catalog Snapshots of registered GitHub catalogs.
 package catalogstore
 
 import (
@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,14 +26,15 @@ import (
 )
 
 const (
-	officialRepository = "yersonargotev/packy-catalog"
-	officialPublisher  = "github-actions[bot]"
-	archiveAsset       = "catalog-snapshot.tar.gz"
-	checksumAsset      = "SHA256SUMS"
-	maxArchiveBytes    = 96 << 20
-	maxExtractedBytes  = 64 << 20
-	maxFileBytes       = 8 << 20
-	maxFiles           = 2048
+	publisher         = "github-actions[bot]"
+	archiveAsset      = "catalog-snapshot.tar.gz"
+	checksumAsset     = "SHA256SUMS"
+	registrationFile  = "registration.json"
+	selectionFile     = "selected.json"
+	maxArchiveBytes   = 96 << 20
+	maxExtractedBytes = 64 << 20
+	maxFileBytes      = 8 << 20
+	maxFiles          = 2048
 )
 
 var (
@@ -42,9 +44,13 @@ var (
 	builderPattern = regexp.MustCompile(`^yersonargotev/packy@[0-9a-f]{40}$`)
 )
 
+// ErrEarlierLayout reports a Catalog Store that holds only the layout that
+// predates catalog registrations.
+var ErrEarlierLayout = errors.New("the Catalog Store holds only the layout that predates catalog registrations, which this Packy does not read; follow https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md")
+
 // Source is the network boundary used only by explicit acquisition.
 type Source interface {
-	Latest(context.Context, string) (Release, error)
+	Latest(context.Context, Registration) (Release, error)
 }
 
 // Release is the complete downloaded evidence for one GitHub release.
@@ -77,7 +83,10 @@ type Snapshot struct {
 	Index  cataloglayout.CatalogSnapshotIndex
 }
 
-// Store is a filesystem-backed official Catalog Snapshot store.
+// Store is a filesystem-backed Catalog Snapshot store keyed by catalog
+// registration. Each catalog keeps its selection and retained snapshots below
+// catalog/v2/<owner>/<repo>, and every catalog except the built-in official one
+// also keeps its registration.json there.
 type Store struct {
 	root   string
 	source Source
@@ -93,124 +102,349 @@ func New(dataRoot string, source Source) *Store {
 	return &Store{root: filepath.Join(dataRoot, "catalog"), source: source}
 }
 
-// Root returns the catalog store root.
-func (s *Store) Root() string { return s.root }
-
 // AcquireLatest downloads, fully validates, retains, and finally selects the
-// latest official immutable snapshot.
-func (s *Store) AcquireLatest(ctx context.Context) (Snapshot, error) {
-	if s.source == nil {
-		return Snapshot{}, errors.New("catalog Source is required")
-	}
-	if err := os.MkdirAll(filepath.Join(s.root, "snapshots"), 0o755); err != nil {
-		return Snapshot{}, fmt.Errorf("prepare catalog store: %w", err)
-	}
-	guard, err := catalogtransaction.Acquire(ctx, s.root)
+// latest immutable snapshot of a registered catalog.
+func (s *Store) AcquireLatest(ctx context.Context, repository Repository) (Snapshot, error) {
+	guard, err := s.lock(ctx)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("lock catalog store: %w", err)
+		return Snapshot{}, err
 	}
 	defer guard.Release()
-	release, err := s.source.Latest(ctx, officialRepository)
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("acquire latest official catalog release: %w", err)
-	}
-	assets, err := validateRelease(release)
+	registration, err := s.registration(repository)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return Snapshot{}, err
-	}
-	stage, err := os.MkdirTemp(filepath.Join(s.root, "snapshots"), ".staging-")
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("stage Catalog Snapshot: %w", err)
-	}
-	keep := false
-	defer func() {
-		if !keep {
-			_ = os.RemoveAll(stage)
-		}
-	}()
-	if err := extractSnapshot(ctx, assets[archiveAsset].Data, stage); err != nil {
-		return Snapshot{}, err
-	}
-	index, err := validateSnapshot(stage, release)
+	snapshot, _, err := s.retainLatest(ctx, registration)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	destination := filepath.Join(s.root, "snapshots", release.Commit)
-	if _, err := os.Stat(destination); err == nil {
-		// Never replace retained immutable bytes; revalidate them before selection.
-		if _, validationErr := validateSnapshot(destination, release); validationErr != nil {
-			return Snapshot{}, fmt.Errorf("retained Catalog Snapshot conflicts with release: %w", validationErr)
-		}
-	} else if !os.IsNotExist(err) {
-		return Snapshot{}, fmt.Errorf("inspect retained Catalog Snapshot: %w", err)
-	} else {
-		if err := os.Rename(stage, destination); err != nil {
-			return Snapshot{}, fmt.Errorf("retain Catalog Snapshot: %w", err)
-		}
-		keep = true
+	if err := writeDocument(s.catalog(repository), selectionFile, newSelection(repository, snapshot.ID)); err != nil {
+		return Snapshot{}, fmt.Errorf("select Catalog Snapshot: %w", err)
 	}
-	if err := writeSelection(s.root, release.Commit); err != nil {
-		return Snapshot{}, err
-	}
-	return snapshotFrom(index, release.Tag, destination), nil
+	return snapshot, nil
 }
 
-// Selected returns the selected retained snapshot without using Source.
-func (s *Store) Selected() (Snapshot, error) {
-	data, err := os.ReadFile(filepath.Join(s.root, "selected.json"))
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("read selected Catalog Snapshot: %w", err)
+// Register acquires, validates, and selects the initial snapshot of a new
+// catalog, then records its registration. A failed registration leaves no
+// registration, selection, or newly retained snapshot behind.
+func (s *Store) Register(ctx context.Context, registration Registration) (Snapshot, error) {
+	if err := registration.validate(); err != nil {
+		return Snapshot{}, err
 	}
-	var selection selectionDocument
-	if err := strictDecode(data, &selection); err != nil {
-		return Snapshot{}, fmt.Errorf("decode selected Catalog Snapshot: %w", err)
+	if registration.Repository == Official().Repository {
+		return Snapshot{}, fmt.Errorf("catalog %s is built in and always registered", registration.Repository)
 	}
-	if selection.SchemaVersion != 1 || !commitPattern.MatchString(selection.SnapshotID) {
-		return Snapshot{}, errors.New("selected Catalog Snapshot has invalid identity")
-	}
-	root := filepath.Join(s.root, "snapshots", selection.SnapshotID)
-	release := Release{Repository: officialRepository, Tag: "catalog-" + selection.SnapshotID, Commit: selection.SnapshotID}
-	index, err := validateSnapshot(root, release)
+	guard, err := s.lock(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return snapshotFrom(index, "catalog-"+selection.SnapshotID, root), nil
+	defer guard.Release()
+	directory := s.catalog(registration.Repository)
+	if _, err := os.Lstat(filepath.Join(directory, registrationFile)); err == nil {
+		return Snapshot{}, fmt.Errorf("catalog %s is already registered", registration.Repository)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return Snapshot{}, fmt.Errorf("inspect catalog %s registration: %w", registration.Repository, err)
+	}
+	_, statErr := os.Lstat(directory)
+	fresh := errors.Is(statErr, fs.ErrNotExist)
+	snapshot, created, err := s.retainLatest(ctx, registration)
+	if err == nil {
+		err = writeDocument(directory, selectionFile, newSelection(registration.Repository, snapshot.ID))
+	}
+	if err == nil {
+		err = writeDocument(directory, registrationFile, encodeRegistration(registration))
+	}
+	if err != nil {
+		if fresh {
+			_ = os.RemoveAll(directory)
+			_ = os.Remove(filepath.Dir(directory))
+		} else {
+			_ = os.Remove(filepath.Join(directory, selectionFile))
+			if created {
+				_ = os.RemoveAll(snapshot.Root)
+			}
+		}
+		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
+	}
+	return snapshot, nil
 }
 
-// Resolve returns one retained snapshot root without using Source.
-func (s *Store) Resolve(snapshotID string) (string, error) {
+// Unregister removes a catalog registration and its selection. Retained
+// snapshots stay in place.
+func (s *Store) Unregister(ctx context.Context, repository Repository) error {
+	if repository == Official().Repository {
+		return fmt.Errorf("catalog %s is built in and cannot be removed", repository)
+	}
+	guard, err := s.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer guard.Release()
+	if _, err := s.registration(repository); err != nil {
+		return err
+	}
+	directory := s.catalog(repository)
+	if err := os.Remove(filepath.Join(directory, registrationFile)); err != nil {
+		return fmt.Errorf("remove catalog %s registration: %w", repository, err)
+	}
+	if err := os.Remove(filepath.Join(directory, selectionFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove catalog %s selection: %w", repository, err)
+	}
+	return nil
+}
+
+// Registrations returns the official registration followed by every other
+// registered catalog in repository order.
+func (s *Store) Registrations() ([]Registration, error) {
+	paths, err := filepath.Glob(filepath.Join(s.layout(), "*", "*", registrationFile))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	result := []Registration{Official()}
+	for _, path := range paths {
+		registration, err := readRegistration(path)
+		if err != nil {
+			return nil, err
+		}
+		if registration.Repository == Official().Repository || path != filepath.Join(s.catalog(registration.Repository), registrationFile) {
+			return nil, fmt.Errorf("catalog registration %s does not match its location", path)
+		}
+		result = append(result, registration)
+	}
+	return result, nil
+}
+
+// Selected returns the selected retained snapshot of a registered catalog
+// without using Source.
+func (s *Store) Selected(repository Repository) (Snapshot, error) {
+	if _, err := s.registration(repository); err != nil {
+		return Snapshot{}, err
+	}
+	id, err := s.readSelection(repository)
+	if err != nil {
+		return Snapshot{}, s.earlierLayout(repository, err)
+	}
+	root := s.snapshot(repository, id)
+	index, err := validateSnapshot(root, repository, id)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("selected Catalog Snapshot %s of %s: %w", id, repository, err)
+	}
+	return snapshotFrom(index, "catalog-"+id, root), nil
+}
+
+// Resolve returns one retained snapshot root of a registered catalog without
+// using Source.
+func (s *Store) Resolve(repository Repository, snapshotID string) (string, error) {
 	if !commitPattern.MatchString(snapshotID) {
 		return "", fmt.Errorf("invalid Catalog Snapshot identity %q", snapshotID)
 	}
-	root := filepath.Join(s.root, "snapshots", snapshotID)
-	release := Release{Repository: officialRepository, Tag: "catalog-" + snapshotID, Commit: snapshotID}
-	index, err := validateSnapshot(root, release)
-	if err != nil {
-		return "", fmt.Errorf("resolve Catalog Snapshot %s: %w", snapshotID, err)
+	if _, err := s.registration(repository); err != nil {
+		return "", err
 	}
-	if index.Source.Repository != officialRepository || index.Source.Commit != snapshotID {
-		return "", fmt.Errorf("resolve Catalog Snapshot %s: index identity does not match", snapshotID)
+	root := s.snapshot(repository, snapshotID)
+	if _, err := validateSnapshot(root, repository, snapshotID); err != nil {
+		return "", fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
 	}
 	return root, nil
 }
 
+func (s *Store) layout() string { return filepath.Join(s.root, "v2") }
+
+func (s *Store) catalog(repository Repository) string {
+	return filepath.Join(s.layout(), repository.owner, repository.name)
+}
+
+func (s *Store) snapshot(repository Repository, id string) string {
+	return filepath.Join(s.catalog(repository), "snapshots", id)
+}
+
+func (s *Store) lock(ctx context.Context) (*catalogtransaction.Guard, error) {
+	if err := os.MkdirAll(s.layout(), 0o755); err != nil {
+		return nil, fmt.Errorf("prepare catalog store: %w", err)
+	}
+	guard, err := catalogtransaction.Acquire(ctx, s.layout())
+	if err != nil {
+		return nil, fmt.Errorf("lock catalog store: %w", err)
+	}
+	return guard, nil
+}
+
+func (s *Store) registration(repository Repository) (Registration, error) {
+	if repository == Official().Repository {
+		return Official(), nil
+	}
+	if repository == (Repository{}) {
+		return Registration{}, errors.New("catalog repository is required")
+	}
+	registration, err := readRegistration(filepath.Join(s.catalog(repository), registrationFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Registration{}, fmt.Errorf("catalog %s is not registered", repository)
+	}
+	if err != nil {
+		return Registration{}, err
+	}
+	if registration.Repository != repository {
+		return Registration{}, fmt.Errorf("catalog %s registration names %s", repository, registration.Repository)
+	}
+	return registration, nil
+}
+
+// earlierLayout explains a missing retained file when a catalog has no
+// current selection and the store still holds the layout that predates
+// catalog registrations.
+func (s *Store) earlierLayout(repository Repository, err error) error {
+	if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if _, statErr := os.Lstat(filepath.Join(s.root, selectionFile)); statErr != nil {
+		return err
+	}
+	if _, statErr := os.Lstat(filepath.Join(s.catalog(repository), selectionFile)); !errors.Is(statErr, fs.ErrNotExist) {
+		return err
+	}
+	return fmt.Errorf("%s: %w", s.root, ErrEarlierLayout)
+}
+
+// retainLatest validates the latest release of a catalog into its retained
+// snapshots without selecting it. created reports a newly retained snapshot.
+func (s *Store) retainLatest(ctx context.Context, registration Registration) (Snapshot, bool, error) {
+	if s.source == nil {
+		return Snapshot{}, false, errors.New("catalog Source is required")
+	}
+	repository := registration.Repository
+	release, err := s.source.Latest(ctx, registration)
+	if err != nil {
+		return Snapshot{}, false, fmt.Errorf("acquire latest release of catalog %s: %w", repository, err)
+	}
+	assets, err := validateRelease(registration, release)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, false, err
+	}
+	snapshots := filepath.Join(s.catalog(repository), "snapshots")
+	if err := os.MkdirAll(snapshots, 0o755); err != nil {
+		return Snapshot{}, false, fmt.Errorf("prepare catalog %s snapshots: %w", repository, err)
+	}
+	stage, err := os.MkdirTemp(snapshots, ".staging-")
+	if err != nil {
+		return Snapshot{}, false, fmt.Errorf("stage Catalog Snapshot: %w", err)
+	}
+	defer os.RemoveAll(stage)
+	if err := extractSnapshot(ctx, assets[archiveAsset].Data, stage); err != nil {
+		return Snapshot{}, false, err
+	}
+	index, err := validateSnapshot(stage, repository, release.Commit)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	if err := s.checkPackIDs(repository, index); err != nil {
+		return Snapshot{}, false, err
+	}
+	destination := s.snapshot(repository, release.Commit)
+	if _, err := os.Lstat(destination); err == nil {
+		// Never replace retained immutable bytes; revalidate them before selection.
+		if _, validationErr := validateSnapshot(destination, repository, release.Commit); validationErr != nil {
+			return Snapshot{}, false, fmt.Errorf("retained Catalog Snapshot %s of %s conflicts with release: %w", release.Commit, repository, validationErr)
+		}
+		return snapshotFrom(index, release.Tag, destination), false, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return Snapshot{}, false, fmt.Errorf("inspect retained Catalog Snapshot: %w", err)
+	}
+	if err := os.Rename(stage, destination); err != nil {
+		return Snapshot{}, false, fmt.Errorf("retain Catalog Snapshot: %w", err)
+	}
+	return snapshotFrom(index, release.Tag, destination), true, nil
+}
+
+// checkPackIDs rejects a snapshot of one catalog that introduces a Pack ID
+// already present in the selected snapshot of another registered catalog.
+func (s *Store) checkPackIDs(repository Repository, index cataloglayout.CatalogSnapshotIndex) error {
+	registrations, err := s.Registrations()
+	if err != nil {
+		return err
+	}
+	introduced := make(map[string]bool, len(index.Packs))
+	for _, pack := range index.Packs {
+		introduced[pack.ID] = true
+	}
+	for _, other := range registrations {
+		if other.Repository == repository {
+			continue
+		}
+		id, err := s.readSelection(other.Repository)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("check Pack IDs against catalog %s: %w", other.Repository, err)
+		}
+		selected, err := readIndex(s.snapshot(other.Repository, id))
+		if err != nil {
+			return fmt.Errorf("check Pack IDs against catalog %s: %w", other.Repository, err)
+		}
+		for _, pack := range selected.Packs {
+			if introduced[pack.ID] {
+				return fmt.Errorf("Catalog Snapshot %s of %s introduces Pack %q, which selected Catalog Snapshot %s of %s already provides", index.Source.Commit, repository, pack.ID, id, other.Repository)
+			}
+		}
+	}
+	return nil
+}
+
 type selectionDocument struct {
 	SchemaVersion int    `json:"schema_version"`
+	Repository    string `json:"repository"`
 	SnapshotID    string `json:"snapshot_id"`
 }
 
-func validateRelease(release Release) (map[string]Asset, error) {
-	if release.Repository != officialRepository || release.Publisher != officialPublisher {
-		return nil, errors.New("catalog release does not have the official publisher metadata")
+func newSelection(repository Repository, id string) selectionDocument {
+	return selectionDocument{SchemaVersion: 2, Repository: repository.String(), SnapshotID: id}
+}
+
+func (s *Store) readSelection(repository Repository) (string, error) {
+	data, err := os.ReadFile(filepath.Join(s.catalog(repository), selectionFile))
+	if err != nil {
+		return "", fmt.Errorf("read selected Catalog Snapshot of %s: %w", repository, err)
+	}
+	var selection selectionDocument
+	if err := strictDecode(data, &selection); err != nil {
+		return "", fmt.Errorf("decode selected Catalog Snapshot of %s: %w", repository, err)
+	}
+	if selection != newSelection(repository, selection.SnapshotID) || !commitPattern.MatchString(selection.SnapshotID) {
+		return "", fmt.Errorf("selected Catalog Snapshot of %s has invalid identity", repository)
+	}
+	return selection.SnapshotID, nil
+}
+
+func readRegistration(path string) (Registration, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Registration{}, fmt.Errorf("read catalog registration: %w", err)
+	}
+	var document registrationDocument
+	if err := strictDecode(data, &document); err != nil {
+		return Registration{}, fmt.Errorf("decode catalog registration %s: %w", path, err)
+	}
+	registration, err := decodeRegistration(document)
+	if err != nil {
+		return Registration{}, fmt.Errorf("decode catalog registration %s: %w", path, err)
+	}
+	return registration, nil
+}
+
+func validateRelease(registration Registration, release Release) (map[string]Asset, error) {
+	repository := registration.Repository
+	if release.Repository != repository.String() || release.Publisher != publisher {
+		return nil, fmt.Errorf("catalog %s release does not have the expected repository and publisher metadata", repository)
 	}
 	if !release.Published || release.Draft || release.Prerelease || !release.Immutable {
-		return nil, errors.New("official catalog release must be published, stable, and immutable")
+		return nil, fmt.Errorf("catalog %s release must be published, stable, and immutable", repository)
 	}
-	if !release.AttestationVerified {
-		return nil, errors.New("official catalog artifact attestation is not verified")
+	if _, attested := registration.Trust.(Attested); attested && !release.AttestationVerified {
+		return nil, fmt.Errorf("catalog %s artifact attestation is not verified", repository)
 	}
 	if !commitPattern.MatchString(release.Commit) || release.Tag != "catalog-"+release.Commit {
 		return nil, errors.New("catalog release tag and source commit do not match")
@@ -317,7 +551,7 @@ func safeArchivePath(name string) bool {
 	return name == "catalog-index.json" || strings.HasPrefix(name, "packs/")
 }
 
-func validateSnapshot(root string, release Release) (cataloglayout.CatalogSnapshotIndex, error) {
+func validateSnapshot(root string, repository Repository, commit string) (cataloglayout.CatalogSnapshotIndex, error) {
 	index, err := readIndex(root)
 	if err != nil {
 		return cataloglayout.CatalogSnapshotIndex{}, err
@@ -325,8 +559,8 @@ func validateSnapshot(root string, release Release) (cataloglayout.CatalogSnapsh
 	if index.SchemaVersion != 3 {
 		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index schema_version must be 3")
 	}
-	if index.Source.Repository != officialRepository || index.Source.Commit != release.Commit || release.Tag != "catalog-"+index.Source.Commit {
-		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index source, release tag, and commit identities do not match")
+	if indexed, err := ParseRepository(index.Source.Repository); err != nil || indexed != repository || index.Source.Commit != commit {
+		return cataloglayout.CatalogSnapshotIndex{}, fmt.Errorf("Catalog Snapshot index names %s@%s, not %s@%s", index.Source.Repository, index.Source.Commit, repository, commit)
 	}
 	if !builderPattern.MatchString(index.Builder) || len(index.Packs) == 0 {
 		return cataloglayout.CatalogSnapshotIndex{}, errors.New("Catalog Snapshot index has invalid builder or empty catalog identity")
@@ -452,18 +686,18 @@ func readIndex(root string) (cataloglayout.CatalogSnapshotIndex, error) {
 	return index, nil
 }
 
-func writeSelection(root, id string) error {
-	data, err := json.MarshalIndent(selectionDocument{SchemaVersion: 1, SnapshotID: id}, "", "  ")
+func writeDocument(directory, name string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	temporary, err := os.CreateTemp(root, ".selected-")
+	temporary, err := os.CreateTemp(directory, "."+name+"-")
 	if err != nil {
-		return fmt.Errorf("stage Catalog Snapshot selection: %w", err)
+		return err
 	}
-	name := temporary.Name()
-	defer os.Remove(name)
+	staged := temporary.Name()
+	defer os.Remove(staged)
 	if err := temporary.Chmod(0o644); err != nil {
 		temporary.Close()
 		return err
@@ -479,10 +713,7 @@ func writeSelection(root, id string) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(name, filepath.Join(root, "selected.json")); err != nil {
-		return fmt.Errorf("select Catalog Snapshot: %w", err)
-	}
-	return nil
+	return os.Rename(staged, filepath.Join(directory, name))
 }
 
 func strictDecode(data []byte, value any) error {
