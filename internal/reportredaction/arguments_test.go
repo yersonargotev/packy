@@ -20,10 +20,18 @@ func TestErrorRedactsSealedEnvironmentValuesAndPreservesCause(t *testing.T) {
 	}
 }
 
+func TestErrorKeepingLeavesEveryPublicTextIntact(t *testing.T) {
+	cause := errors.New(`capability pack "acme" comes from catalog acme/packs; run "packy catalog add acme/packs"`)
+	got := ErrorKeeping(cause, []string{"", "acme/packs"}, nil, []string{"acme"})
+	if got.Error() != `capability pack "<redacted>" comes from catalog acme/packs; run "packy catalog add acme/packs"` || !errors.Is(got, cause) {
+		t.Fatalf("ErrorKeeping() = %q", got)
+	}
+}
+
 func TestErrorKeepingLeavesPublicTextIntact(t *testing.T) {
 	const guide = "https://example.com/packy/guide.md"
 	cause := errors.New("packy failed; follow " + guide)
-	got := ErrorKeeping(cause, guide, nil, []string{"packy"})
+	got := ErrorKeeping(cause, []string{guide}, nil, []string{"packy"})
 	if !errors.Is(got, cause) || got.Error() != "<redacted> failed; follow "+guide {
 		t.Fatalf("ErrorKeeping() = %q", got)
 	}

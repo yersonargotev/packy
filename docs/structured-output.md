@@ -167,8 +167,10 @@ selected after the refresh, so a failed refresh reports the previous selection
 and an `error`. The command exits non-zero after it reports every catalog when
 any of them failed.
 
-Pack list v2 adds `catalog_repository` to each Pack: the catalog whose selected
-Catalog Snapshot provides it. Pack list v1 remains historical documentation.
+Pack list v2 adds `catalog_repository` to each Pack, which names the catalog
+whose selected Catalog Snapshot provides it. Pack list v1 forbids additional
+properties, so the field needs a new generation. Pack list v1 remains
+historical documentation.
 
 ## Catalog validation and executable identity
 

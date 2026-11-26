@@ -876,6 +876,48 @@ func testIssue929IncompatibleOtherSnapshot(t *testing.T, transport string) {
 }
 
 func testIssue929OtherCatalogLifecycle(t *testing.T, transport string) {
+	t.Run("own catalog", func(t *testing.T) { testIssue929OwnCatalogLifecycle(t, transport) })
+	t.Run("Pack ID moves to another registered catalog", func(t *testing.T) { testIssue929PackMovesBetweenCatalogs(t, transport) })
+}
+
+func testIssue929PackMovesBetweenCatalogs(t *testing.T, transport string) {
+	fixtures, environment := startIssue929Catalogs(t, transport)
+	project, outside := t.TempDir(), t.TempDir()
+	writeTestGitWorktree(t, project)
+	receipts, lock := filepath.Join(issue929Home(t, environment), ".packy", "packs.json"), filepath.Join(project, "packy.lock.json")
+	approveIssue929(t, transport, environment, outside, "activate", "acme", "--surface", "agents")
+	approveIssue929(t, transport, environment, project, "install", "acme", "--surface", "agents")
+
+	publishIssue929Portable(t, transport, fixtures, issue929Acme, strings.Repeat("d", 40), githubfake.Pack{ID: "acme-next", Version: "1.0.0"})
+	publishIssue929Portable(t, transport, fixtures, issue929OfficialCatalog, strings.Repeat("b", 40), githubfake.Pack{ID: "acme", Version: "5.0.0"}, githubfake.Pack{ID: "fixture", Version: "1.0.0"})
+	for _, repository := range []string{issue929Acme, issue929OfficialCatalog} {
+		if out, err := runIssue929(t, transport, environment, "catalog", "refresh", repository); err != nil {
+			t.Fatalf("catalog refresh %s: %v\n%s", repository, err, out)
+		}
+	}
+	out, err := runIssue929At(t, transport, environment, outside, "update", "acme", "--surface", "agents")
+	if !issue929Exit(err, 1) || !strings.Contains(out, "installed from catalog acme/packs, and updates look only in that catalog") || !strings.Contains(out, "packy deactivate acme --surface agents") {
+		t.Fatalf("update of a Pack ID that moved to another catalog: %v\n%s", err, out)
+	}
+	if out, err := runIssue929At(t, transport, environment, outside, "status"); err != nil || !regexp.MustCompile(`acme\s+acme/packs\s+agents\s+active at version 1\.0\.0.*none`).MatchString(out) {
+		t.Fatalf("status follows the Pack ID into another catalog: %v\n%s", err, out)
+	}
+	if out, err := runIssue929At(t, transport, environment, project, "install", "acme", "--surface", "agents", "--dry-run"); !issue929Exit(err, 1) || !strings.Contains(out, "catalog_conflict") {
+		t.Fatalf("install over a lock receipt from another catalog: %v\n%s", err, out)
+	}
+
+	approveIssue929(t, transport, environment, outside, "deactivate", "acme", "--surface", "agents")
+	approveIssue929(t, transport, environment, outside, "activate", "acme", "--surface", "agents")
+	approveIssue929(t, transport, environment, project, "uninstall", "acme", "--surface", "agents")
+	approveIssue929(t, transport, environment, project, "install", "acme", "--surface", "agents")
+	for _, path := range []string{receipts, lock} {
+		if version, repository, snapshot := issue929Receipt(t, path, "acme"); version != "5.0.0" || repository != issue929OfficialCatalog || snapshot != strings.Repeat("b", 40) {
+			t.Fatalf("%s receipt after the move = %s %s@%s", path, version, repository, snapshot)
+		}
+	}
+}
+
+func testIssue929OwnCatalogLifecycle(t *testing.T, transport string) {
 	fixtures, environment := startIssue929Catalogs(t, transport)
 	project, outside := t.TempDir(), t.TempDir()
 	writeTestGitWorktree(t, project)
@@ -907,6 +949,10 @@ func testIssue929OtherCatalogLifecycle(t *testing.T, transport string) {
 	out, err := runIssue929(t, transport, environment, "get", "skill", "acme:acme", "--surface", "agents", "--snapshot", first, "--json")
 	if err != nil || !strings.Contains(out, filepath.Join("skill-access", "v3", "acme", "packs", first)) {
 		t.Fatalf("get skill from the retained acme/packs snapshot: %v\n%s", err, out)
+	}
+	exported := filepath.Join(t.TempDir(), "plugin")
+	if out, err := runIssue929(t, transport, environment, "export", "acme", "--surface", "agents", "--snapshot", first, "--output", exported, "--json"); err != nil || !strings.Contains(out, `"snapshot_id":"`+first+`"`) {
+		t.Fatalf("export from the retained acme/packs snapshot: %v\n%s", err, out)
 	}
 
 	approveIssue929(t, transport, environment, outside, "deactivate", "acme", "--surface", "agents")
@@ -975,6 +1021,9 @@ func testIssue929UnregisteredLock(t *testing.T, transport string) {
 	elsewhere := testprocess.Env(t, issue929AddressEntry(t, environment))
 	if out, err := runIssue929(t, transport, elsewhere, "catalog", "refresh"); err != nil {
 		t.Fatalf("catalog refresh: %v\n%s", err, out)
+	}
+	if out, err := runIssue929At(t, transport, elsewhere, project, "install", "acme", "--surface", "agents", "--dry-run"); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs, which is not registered on this workstation") || !strings.Contains(out, "packy catalog add acme/packs") {
+		t.Fatalf("install of a Pack that only an unregistered lock catalog provides: %v\n%s", err, out)
 	}
 	out, err := runIssue929At(t, transport, elsewhere, project, "status", "--project")
 	if !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs, which is not registered on this workstation") || !strings.Contains(out, "packy catalog add acme/packs") {

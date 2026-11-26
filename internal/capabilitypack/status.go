@@ -452,8 +452,12 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
 			}
 			inspectionPack := pack
-			if !currentPacks[pack.ID] {
-				intent, installed := intentForPack(state, pack.ID, surface)
+			current := currentPacks[pack.ID]
+			intent, installed := intentForPack(state, pack.ID, surface)
+			if current && installed && intent.Active && intent.CatalogRef.Repository != "" && intent.CatalogRef.Repository != pack.CatalogRef.Repository {
+				current = false
+			}
+			if !current {
 				if !installed || !intent.Active {
 					continue
 				}
@@ -472,7 +476,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 			if err != nil {
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", inspectionPack.ID, surface, err)
 			}
-			entry.CatalogCurrent = currentPacks[pack.ID]
+			entry.CatalogCurrent = current
 			if !entry.CatalogCurrent {
 				entry.UpdateAvailable = false
 				entry.UpdateActionAvailable = false

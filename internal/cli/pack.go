@@ -1040,7 +1040,12 @@ func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err err
 }
 
 func projectLifecycleFailure(cmd *cobra.Command, jsonOutput bool, operation, stage string, err error) error {
-	err = reportredaction.ErrorKeeping(err, capabilitypack.CatalogAdoptionGuide, nil, projectLifecycleArgumentValues(cmd))
+	public := []string{capabilitypack.CatalogAdoptionGuide}
+	var unregistered capabilitypack.UnregisteredCatalogError
+	if errors.As(err, &unregistered) {
+		public = append(public, unregistered.Repository)
+	}
+	err = reportredaction.ErrorKeeping(err, public, nil, projectLifecycleArgumentValues(cmd))
 	if jsonOutput {
 		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.JSONProjectFailureFor(operation, stage, err))
 	}

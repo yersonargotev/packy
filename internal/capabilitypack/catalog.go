@@ -715,8 +715,19 @@ func (c Catalog) registers(repository string) bool {
 	return false
 }
 
+// UnregisteredCatalogError reports a Pack whose receipt or lock names a
+// catalog that the workstation has not registered.
+type UnregisteredCatalogError struct {
+	PackID     string
+	Repository string
+}
+
+func (e UnregisteredCatalogError) Error() string {
+	return fmt.Sprintf("capability pack %q comes from catalog %s, which is not registered on this workstation; register it with `packy catalog add %s`", e.PackID, e.Repository, e.Repository)
+}
+
 func unregisteredCatalogError(id, repository string) error {
-	return fmt.Errorf("capability pack %q comes from catalog %s, which is not registered on this workstation; register it with `packy catalog add %s`", id, repository, repository)
+	return UnregisteredCatalogError{PackID: id, Repository: repository}
 }
 
 // selects reports whether ref names one of the selected Catalog Snapshots.
