@@ -139,7 +139,7 @@ func TestDashboardListsEveryCatalogWithTrustSnapshotAndPackCatalog(t *testing.T)
 
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '?', Text: "?"}))
 	view = ansi.Strip(model.View().Content)
-	for _, want := range []string{"Trust: access-controlled (weaker). GitHub repository access stands in for build provenance.", "Selected snapshot: " + strings.Repeat("e", 40), "Inventory: 2 Packs"} {
+	for _, want := range []string{"Trust: access-controlled (weaker). Packy relies on GitHub access control instead of build provenance.", "Selected snapshot: " + strings.Repeat("e", 40), "Inventory: 2 Packs"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("catalog details missing %q:\n%s", want, view)
 		}
@@ -249,8 +249,6 @@ func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testin
 	}
 }
 
-// assertCatalogRow requires one dashboard line that lists the catalog's
-// repository, trust policy, and snapshot in that order.
 func assertCatalogRow(t *testing.T, view, repository, trust, snapshot string) {
 	t.Helper()
 	row := regexp.MustCompile("(?m)^[│ ]*" + regexp.QuoteMeta(repository) + " +" + trust + " +" + snapshot + "[│ ]*$")

@@ -16,8 +16,6 @@ import (
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
-// registeredCatalogSources serves one release or failure per catalog
-// repository.
 type registeredCatalogSources struct {
 	releases map[string]catalogstore.Release
 	errs     map[string]error

@@ -1375,7 +1375,7 @@ func (m Model) renderCatalogs(width int) string {
 	for _, catalog := range m.dashboard.Catalogs {
 		trust := "  Trust: " + trustStyle(catalog.Trust).Render(trustLabel(catalog.Trust))
 		if catalog.Trust == weakerTrust {
-			trust += ". GitHub repository access stands in for build provenance."
+			trust += ". Packy relies on GitHub access control instead of build provenance."
 		}
 		lines = append(lines, catalog.Repository, trust, "  Selected snapshot: "+catalog.SnapshotID, "  Inventory: "+packCount(catalog.Packs))
 		if catalog.Digest != "" {
@@ -1385,7 +1385,8 @@ func (m Model) renderCatalogs(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// weakerTrust is the trust policy that Packy shows as weaker than attested.
+// weakerTrust has no build-provenance attestation, so ADR 0046 shows it as
+// weaker than attested.
 const weakerTrust = "access-controlled"
 
 func trustLabel(trust string) string {
@@ -1402,8 +1403,6 @@ func trustStyle(trust string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(mochaGreen)
 }
 
-// catalogRows aligns one row per catalog. A short row shows the first 12
-// characters of each selected snapshot.
 func catalogRows(catalogs []Catalog, short bool) []string {
 	repositoryWidth, trustWidth := 0, 0
 	for _, catalog := range catalogs {

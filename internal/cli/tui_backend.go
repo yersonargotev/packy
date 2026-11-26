@@ -220,8 +220,6 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 	})
 }
 
-// catalogsForTUI lists every registration in store order with the snapshot
-// that sources selected for it.
 func catalogsForTUI(sources invocationSources) ([]tui.Catalog, error) {
 	registrations, err := sources.store.Registrations()
 	if err != nil {
@@ -253,8 +251,8 @@ func catalogsForTUI(sources invocationSources) ([]tui.Catalog, error) {
 	return catalogs, nil
 }
 
-// RefreshCatalog refreshes every registered catalog independently, as
-// `packy catalog refresh` does, and reports one result per catalog.
+// RefreshCatalog refreshes every registered catalog. A failed catalog does not
+// stop the refresh of the others.
 func (b *tuiBackend) RefreshCatalog(ctx context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
 	store, _, err := registryStore(b.opts, b.resolver)
 	if err != nil {
