@@ -96,12 +96,19 @@ func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobr
 				if err != nil {
 					return fmt.Errorf("check installed Pack receipts before removing catalog %s: %w", repository, err)
 				}
-				if len(installed) == 0 {
+				activated, err := capabilitypack.ProjectActivationsFromCatalog(station.PackyHome(), repository.String())
+				if err != nil {
+					return fmt.Errorf("check personal project activations before removing catalog %s: %w", repository, err)
+				}
+				if len(installed) == 0 && len(activated) == 0 {
 					return nil
 				}
-				names := make([]string, 0, len(installed))
+				names := make([]string, 0, len(installed)+len(activated))
 				for _, intent := range installed {
 					names = append(names, fmt.Sprintf("%s on %s", intent.PackID, intent.Surface))
+				}
+				for _, intent := range activated {
+					names = append(names, fmt.Sprintf("%s on %s in a project", intent.PackID, intent.Surface))
 				}
 				return fmt.Errorf("catalog %s is in use by installed Packs %s; deactivate them, then remove the catalog", repository, strings.Join(names, ", "))
 			}

@@ -549,6 +549,32 @@ func saveProjectActivationRecords(packyHome, projectRoot string, state projectAc
 	return writeProjectActivationRecord(filepath.Join(directory, projectActivationStateFile(state.PackID, state.Surface)), data)
 }
 
+// ProjectActivationsFromCatalog returns every active personal project
+// activation under packyHome whose state names the catalog repository.
+func ProjectActivationsFromCatalog(packyHome, repository string) ([]ActivationIntent, error) {
+	paths, err := filepath.Glob(filepath.Join(packyHome, "projects", "*", "state-*.json"))
+	if err != nil {
+		return nil, err
+	}
+	var activations []ActivationIntent
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		var document struct {
+			State projectActivationState `json:"state"`
+		}
+		if err := json.Unmarshal(data, &document); err != nil {
+			return nil, fmt.Errorf("decode personal project activation %s: %w", path, err)
+		}
+		if state := document.State; state.Active && state.CatalogRef.Repository == repository {
+			activations = append(activations, ActivationIntent{PackID: state.PackID, Surface: state.Surface, Version: state.Version, CatalogRef: state.CatalogRef, Active: true})
+		}
+	}
+	return activations, nil
+}
+
 func projectActivationStateFile(packID string, surface Surface) string {
 	return "state-" + packID + "-" + string(surface) + ".json"
 }
