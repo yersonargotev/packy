@@ -18,7 +18,9 @@ var structuredOutputFixtures = []struct {
 	version, fixture, schema string
 }{
 	{"v1", "pack-audit.json", "pack-audit.schema.json"},
-	{"v1", "pack-list.json", "pack-list.schema.json"},
+	{"v1", "catalog-list.json", "catalog-list.schema.json"},
+	{"v1", "catalog-refresh.json", "catalog-refresh.schema.json"},
+	{"v2", "pack-list.json", "pack-list.schema.json"},
 	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v7", "pack-show.json", "pack-show.schema.json"},
 	{"v13", "pack-status.json", "pack-status.schema.json"},

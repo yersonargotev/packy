@@ -178,6 +178,7 @@ type StatusReport struct {
 type ActiveIntentObservation struct {
 	Intents        []ActivationIntent
 	FailedSurfaces []Surface
+	Failure        string
 }
 
 // Facade is the single capability-pack use-case boundary consumed by the CLI.
@@ -229,6 +230,7 @@ func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveInte
 		state, err := store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			observation.FailedSurfaces = append(observation.FailedSurfaces, surface)
+			observation.Failure = err.Error()
 			continue
 		}
 		for _, intent := range activeIntents(state) {
@@ -301,7 +303,7 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 	})
 
 	for _, target := range targets {
-		pack, current := f.catalog.catalogMetadataIfPresent(target.intent.PackID)
+		pack, current := f.catalog.currentFor(target.intent.PackID, target.intent.CatalogRef)
 		var err error
 		if !current {
 			pack, err = f.catalog.resolveIntentPackAt(ctx, target.intent.PackID, target.intent.Version, target.intent.CatalogRef)
@@ -350,7 +352,7 @@ func activeOnlyStatusState(state ActivationState) ActivationState {
 
 func failedActiveStatusEntry(intent ActivationIntent, surface Surface) StatusEntry {
 	return StatusEntry{
-		Pack:             Pack{ID: intent.PackID, Version: intent.Version},
+		Pack:             Pack{ID: intent.PackID, Version: intent.Version, CatalogRef: intent.CatalogRef},
 		Surface:          surface,
 		Intent:           IntentStatus{Active: true, Revision: intent.Revision, Version: intent.Version},
 		IntentPresent:    true,

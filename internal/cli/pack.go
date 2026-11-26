@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -930,6 +931,30 @@ func projectExecutableResolver(opts Options, snapshot workstation.Snapshot) capa
 	return toolbin.NewPATHResolver(opts.Runner.LookPath)
 }
 
+// requireLockCatalogs fails when the project lock installs a Pack from a
+// catalog that this workstation has not registered. An unreadable lock is left
+// to project status, which reports it.
+func requireLockCatalogs(store *catalogstore.Store, projectRoot string) error {
+	installation, err := capabilitypack.LoadProjectInstallation(projectRoot)
+	if err != nil {
+		return nil
+	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		return err
+	}
+	registered := map[string]bool{}
+	for _, registration := range registrations {
+		registered[registration.Repository.String()] = true
+	}
+	for _, repository := range installation.Lock.CatalogRepositories() {
+		if !registered[repository] {
+			return fmt.Errorf("the project lock installs Packs from catalog %s, which is not registered on this workstation; register it with `packy catalog add %s`", repository, repository)
+		}
+	}
+	return nil
+}
+
 func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) capabilitypack.Facade {
 	adapters := projectStatusAdapters(ctx, opts, snapshot)
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
@@ -1585,6 +1610,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					}
 					facade = fullFacade
 				}
+				if err := requireLockCatalogs(catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), nil), projectRoot); err != nil {
+					return err
+				}
 				report, err := facade.InspectProjectStatus(cmd.Context(), statusRequest)
 				if err != nil {
 					return err
@@ -1810,7 +1838,7 @@ func renderProjectInstallBlockers(blockers []capabilitypack.ProjectInstallBlocke
 
 func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusReport) error {
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "PACK\tSURFACE\tINTENT\tCONFIGURED\tAUTHORIZED\tUSABLE\tACTION")
+	fmt.Fprintln(writer, "PACK\tCATALOG\tSURFACE\tINTENT\tCONFIGURED\tAUTHORIZED\tUSABLE\tACTION")
 	for _, entry := range report.Entries {
 		configured := readinessValue(entry.Readiness.Configured)
 		authorized := readinessValue(entry.Readiness.Authorized)
@@ -1819,13 +1847,13 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 		if entry.LifecycleState == capabilitypack.PackLifecycleInactiveWithResiduals {
 			intent = string(entry.LifecycleState)
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Pack.ID, entry.Surface, intent, configured, authorized, usable, renderStatusAction(entry))
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Pack.ID, packCatalog(entry.Pack.CatalogRef), entry.Surface, intent, configured, authorized, usable, renderStatusAction(entry))
 	}
 	return writer.Flush()
 }
 
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nCatalog: %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, packCatalog(entry.Pack.CatalogRef), renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
 	}
 	if entry.HistoricalEvidence.Available {
@@ -2011,6 +2039,13 @@ func statusSelectedResourceCount(entry capabilitypack.StatusEntry) int {
 	return len(entry.Resources)
 }
 
+func packCatalog(ref capabilitypack.CatalogRef) string {
+	if ref.Repository == "" {
+		return "-"
+	}
+	return ref.Repository
+}
+
 func renderStatusAction(entry capabilitypack.StatusEntry) string {
 	if entry.UpdateAvailable {
 		action := "update to " + entry.Pack.Version
@@ -2073,13 +2108,13 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 				return renderPackListJSON(cmd.OutOrStdout(), packs)
 			}
 			writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-			fmt.Fprintln(writer, "PACK\tVERSION\tDESCRIPTION\tAVAILABLE ON")
+			fmt.Fprintln(writer, "PACK\tVERSION\tCATALOG\tDESCRIPTION\tAVAILABLE ON")
 			for _, pack := range packs {
 				surfaces := make([]string, len(pack.Surfaces))
 				for i, surface := range pack.Surfaces {
 					surfaces[i] = string(surface)
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", pack.ID, pack.Version, pack.Description, strings.Join(surfaces, ", "))
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", pack.ID, pack.Version, packCatalog(pack.CatalogRef), pack.Description, strings.Join(surfaces, ", "))
 			}
 			return writer.Flush()
 		},
@@ -2207,6 +2242,44 @@ func snapshotCatalogRef(snapshot catalogstore.Snapshot) (capabilitypack.CatalogR
 		return capabilitypack.CatalogRef{}, err
 	}
 	return capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshot.Commit}, nil
+}
+
+// packSnapshot finds the Catalog Snapshot of a registered catalog that
+// provides packID: the selected snapshot, or the retained snapshot
+// snapshotID when one is given. Without a match it returns the official
+// catalog's snapshot, whose readers name the missing Pack or snapshot.
+func packSnapshot(store *catalogstore.Store, packID, snapshotID string) (string, capabilitypack.CatalogRef, error) {
+	registrations, err := store.Registrations()
+	if err != nil {
+		return "", capabilitypack.CatalogRef{}, err
+	}
+	for i, registration := range registrations {
+		root, ref, err := catalogSnapshot(store, registration.Repository, snapshotID)
+		if err != nil {
+			if snapshotID != "" || i == 0 {
+				continue
+			}
+			return "", capabilitypack.CatalogRef{}, fmt.Errorf("catalog %s: %w", registration.Repository, err)
+		}
+		if info, err := os.Stat(filepath.Join(root, "packs", packID)); err == nil && info.IsDir() {
+			return root, ref, nil
+		}
+	}
+	return catalogSnapshot(store, catalogstore.Official().Repository, snapshotID)
+}
+
+func catalogSnapshot(store *catalogstore.Store, repository catalogstore.Repository, snapshotID string) (string, capabilitypack.CatalogRef, error) {
+	if snapshotID != "" {
+		ref := capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshotID}
+		root, err := store.Resolve(repository, snapshotID)
+		return root, ref, err
+	}
+	selected, err := store.Selected(repository)
+	if err != nil {
+		return "", capabilitypack.CatalogRef{}, err
+	}
+	ref, err := snapshotCatalogRef(selected)
+	return selected.Root, ref, err
 }
 
 func resolveRetainedSnapshot(store *catalogstore.Store, ref capabilitypack.CatalogRef) (string, error) {

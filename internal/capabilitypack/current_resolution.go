@@ -22,6 +22,9 @@ func (c Catalog) IntentPackResolver() IntentPackResolver {
 			return Pack{}, unboundReceiptError(id)
 		}
 		if !c.selects(ref) {
+			if !c.registers(ref.Repository) {
+				return Pack{}, unregisteredCatalogError(id, ref.Repository)
+			}
 			pack, err := c.resolveIntentPackAt(ctx, id, version, ref)
 			if err != nil {
 				return Pack{}, err
@@ -57,6 +60,9 @@ func (c Catalog) resolveIntentPackAt(ctx context.Context, id, version string, re
 		return Pack{}, unboundReceiptError(id)
 	}
 	if !c.selects(ref) {
+		if !c.registers(ref.Repository) {
+			return Pack{}, unregisteredCatalogError(id, ref.Repository)
+		}
 		if c.resolveSnapshot == nil {
 			return Pack{}, fmt.Errorf("capability pack %q receipt references unavailable Catalog Snapshot %s", id, ref.label())
 		}

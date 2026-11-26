@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v1/catalog-list.schema.json",
+  "title": "Packy catalog list report v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report",
+    "catalogs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "catalog-list"
+    },
+    "catalogs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "repository",
+          "official",
+          "trust",
+          "snapshot_id"
+        ],
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*/[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*$"
+          },
+          "official": {
+            "type": "boolean"
+          },
+          "trust": {
+            "enum": [
+              "attested",
+              "access-controlled"
+            ]
+          },
+          "workflow": {
+            "type": "string",
+            "pattern": "^\\.github/workflows/[A-Za-z0-9_.-]+\\.ya?ml$"
+          },
+          "snapshot_id": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "trust": {
+              "const": "attested"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "workflow"
+          ]
+        },
+        "else": {
+          "not": {
+            "required": [
+              "workflow"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

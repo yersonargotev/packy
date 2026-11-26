@@ -700,6 +700,24 @@ func (c Catalog) bound() bool {
 	return false
 }
 
+// registers reports whether a Pack from repository can resolve here: the
+// repository has a selected Catalog Snapshot, or the Catalog names no catalog.
+func (c Catalog) registers(repository string) bool {
+	if !c.bound() {
+		return true
+	}
+	for _, snapshot := range c.snapshots {
+		if snapshot.Ref.Repository == repository {
+			return true
+		}
+	}
+	return false
+}
+
+func unregisteredCatalogError(id, repository string) error {
+	return fmt.Errorf("capability pack %q comes from catalog %s, which is not registered on this workstation; register it with `packy catalog add %s`", id, repository, repository)
+}
+
 // selects reports whether ref names one of the selected Catalog Snapshots.
 func (c Catalog) selects(ref CatalogRef) bool {
 	if len(c.snapshots) == 0 {
@@ -817,6 +835,17 @@ func (c Catalog) catalogMetadataIfPresent(id string) (Pack, bool) {
 		}
 	}
 	return Pack{}, false
+}
+
+// currentFor returns the catalog-current Pack only when it comes from the
+// catalog that ref names, so an installed Pack never follows its ID into
+// another catalog.
+func (c Catalog) currentFor(id string, ref CatalogRef) (Pack, bool) {
+	pack, ok := c.catalogMetadataIfPresent(id)
+	if !ok || ref.Repository != "" && pack.CatalogRef.Repository != ref.Repository {
+		return Pack{}, false
+	}
+	return pack, true
 }
 
 func clonePack(pack Pack) Pack {

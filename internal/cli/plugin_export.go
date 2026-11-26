@@ -61,18 +61,7 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 				root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
 			}
 		} else {
-			store := catalogstore.New(catalogstore.DefaultDataRoot(station.Home()), nil)
-			if snapshotID != "" {
-				identity = capabilitypack.CatalogRef{Repository: catalogstore.Official().Repository.String(), Commit: snapshotID}
-				root, err = resolveRetainedSnapshot(store, identity)
-			} else {
-				var snapshot catalogstore.Snapshot
-				snapshot, err = store.Selected(catalogstore.Official().Repository)
-				if err == nil {
-					root = snapshot.Root
-					identity, err = snapshotCatalogRef(snapshot)
-				}
-			}
+			root, identity, err = packSnapshot(catalogstore.New(catalogstore.DefaultDataRoot(station.Home()), nil), args[0], snapshotID)
 		}
 		if err != nil {
 			code := "catalog_unavailable"

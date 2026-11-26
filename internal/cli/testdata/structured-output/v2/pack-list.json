@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "report": "pack-list",
   "packs": [
     {
@@ -9,7 +9,8 @@
       "surfaces": [
         "agents",
         "claude"
-      ]
+      ],
+      "catalog_repository": "yersonargotev/packy-catalog"
     },
     {
       "id": "argote",
@@ -18,7 +19,8 @@
       "surfaces": [
         "agents",
         "claude"
-      ]
+      ],
+      "catalog_repository": "yersonargotev/packy-catalog"
     },
     {
       "id": "engram",
@@ -26,7 +28,8 @@
       "description": "Upstream Engram CLI memory workflows for agent work",
       "surfaces": [
         "agents"
-      ]
+      ],
+      "catalog_repository": "yersonargotev/packy-catalog"
     },
     {
       "id": "issue-delivery",
@@ -34,7 +37,8 @@
       "description": "Deliver issues through policy-driven or Matt-configured workflows",
       "surfaces": [
         "agents"
-      ]
+      ],
+      "catalog_repository": "yersonargotev/packy-catalog"
     },
     {
       "id": "matty",
@@ -43,7 +47,8 @@
       "surfaces": [
         "agents",
         "claude"
-      ]
+      ],
+      "catalog_repository": "yersonargotev/packy-catalog"
     },
     {
       "id": "orchestrate",
@@ -51,7 +56,8 @@
       "description": "Coordinate focused Agents subagents",
       "surfaces": [
         "agents"
-      ]
+      ],
+      "catalog_repository": "yersonargotev/packy-catalog"
     }
   ]
 }

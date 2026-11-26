@@ -220,7 +220,7 @@ func TestResolveIntentPackAtKeysRetainedSnapshotsByRepository(t *testing.T) {
 	writeCurrentPackFixture(t, bundle, "retained")
 	var requested []CatalogRef
 	catalog := Catalog{
-		snapshots: []SelectedSnapshot{{Ref: current}},
+		snapshots: []SelectedSnapshot{{Ref: current}, {Ref: CatalogRef{Repository: sameCommitElsewhere.Repository, Commit: strings.Repeat("b", 40)}}},
 		packs:     []Pack{{ID: "retained", Version: "2.0.0", CatalogRef: current}},
 		resolveSnapshot: func(_ context.Context, ref CatalogRef) (string, error) {
 			requested = append(requested, ref)

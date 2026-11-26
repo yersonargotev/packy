@@ -17,14 +17,22 @@ import (
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
 
-const (
-	officialRepository = "yersonargotev/packy-catalog"
-	officialCommit     = "1111111111111111111111111111111111111111"
-	fixtureBuilder     = "2222222222222222222222222222222222222222"
-)
+const fixtureBuilder = "2222222222222222222222222222222222222222"
+
+// seeds are the fixture catalogs of a new fixture directory: the official
+// catalog, a second public attested catalog, and a catalog whose snapshot
+// reuses an official Pack ID.
+var seeds = []struct {
+	repository, commit string
+	pack               githubfake.Pack
+}{
+	{"yersonargotev/packy-catalog", "1111111111111111111111111111111111111111", githubfake.Pack{ID: "fixture", Version: "1.0.0"}},
+	{"acme/packs", "3333333333333333333333333333333333333333", githubfake.Pack{ID: "acme", Version: "1.0.0"}},
+	{"evil/packs", "4444444444444444444444444444444444444444", githubfake.Pack{ID: "fixture", Version: "9.0.0"}},
+}
 
 func main() {
-	fixtures := flag.String("fixtures", "", "fixture directory; an absent directory is created with the official fixture catalog")
+	fixtures := flag.String("fixtures", "", "fixture directory; an absent directory is created with the official, acme/packs, and evil/packs fixture catalogs")
 	addressFile := flag.String("addr-file", "", "file that receives the server address for PACKY_GITHUBFAKE_ADDR_FILE")
 	flag.Parse()
 	if *fixtures == "" || *addressFile == "" {
@@ -41,8 +49,8 @@ func main() {
 
 func run(ctx context.Context, fixtures, addressFile string) error {
 	if _, err := os.Stat(fixtures); errors.Is(err, fs.ErrNotExist) {
-		if err := seedOfficial(ctx, fixtures); err != nil {
-			return fmt.Errorf("seed official fixture catalog: %w", err)
+		if err := seed(ctx, fixtures); err != nil {
+			return fmt.Errorf("seed fixture catalogs: %w", err)
 		}
 	} else if err != nil {
 		return err
@@ -57,24 +65,29 @@ func run(ctx context.Context, fixtures, addressFile string) error {
 	return nil
 }
 
-func seedOfficial(ctx context.Context, fixtures string) error {
+func seed(ctx context.Context, fixtures string) error {
 	work, err := os.MkdirTemp("", "githubfake-seed-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(work)
-	project, dist := filepath.Join(work, "project"), filepath.Join(work, "dist")
-	if err := githubfake.WriteCatalogProject(project, githubfake.Pack{ID: "fixture", Version: "1.0.0"}); err != nil {
-		return err
-	}
 	// Consumers accept only a snapshot built by a Packy commit, and go run stamps none.
 	if packyversion.SourceCommit == "unknown" {
 		packyversion.SourceCommit = fixtureBuilder
 	}
-	build := cli.NewRootCommand(cli.Options{})
-	build.SetArgs([]string{"catalog", "build", "--project", project, "--source-repository", officialRepository, "--source-commit", officialCommit, "--out-dir", dist})
-	if err := build.ExecuteContext(ctx); err != nil {
-		return err
+	for _, catalog := range seeds {
+		project, dist := filepath.Join(work, catalog.repository, "project"), filepath.Join(work, catalog.repository, "dist")
+		if err := githubfake.WriteCatalogProject(project, catalog.pack); err != nil {
+			return err
+		}
+		build := cli.NewRootCommand(cli.Options{})
+		build.SetArgs([]string{"catalog", "build", "--project", project, "--source-repository", catalog.repository, "--source-commit", catalog.commit, "--out-dir", dist})
+		if err := build.ExecuteContext(ctx); err != nil {
+			return err
+		}
+		if err := githubfake.Publish(fixtures, catalog.repository, catalog.commit, dist); err != nil {
+			return err
+		}
 	}
-	return githubfake.Publish(fixtures, officialRepository, officialCommit, dist)
+	return nil
 }

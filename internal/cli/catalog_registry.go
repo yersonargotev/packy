@@ -61,11 +61,11 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			default:
 				return fmt.Errorf("--trust must be attested or access-controlled, not %q", trust)
 			}
-			station, err := resolver.Resolve(workstation.Options{})
+			store, _, err := registryStore(opts, resolver)
 			if err != nil {
 				return err
 			}
-			snapshot, err := newCatalogStore(opts, station).Register(cmd.Context(), registration)
+			snapshot, err := store.Register(cmd.Context(), registration)
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,7 @@ func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobr
 			if err != nil {
 				return err
 			}
-			station, err := resolver.Resolve(workstation.Options{})
+			store, station, err := registryStore(opts, resolver)
 			if err != nil {
 				return err
 			}
@@ -105,7 +105,7 @@ func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobr
 				}
 				return fmt.Errorf("catalog %s is in use by installed Packs %s; deactivate them, then remove the catalog", repository, strings.Join(names, ", "))
 			}
-			if err := newCatalogStore(opts, station).Unregister(cmd.Context(), repository, inUse); err != nil {
+			if err := store.Unregister(cmd.Context(), repository, inUse); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog remove: removed catalog %s; its retained Catalog Snapshots stay on disk\n", repository)
@@ -119,11 +119,10 @@ func newCatalogListCommand(opts Options, resolver *workstation.Resolver) *cobra.
 	command := &cobra.Command{
 		Use: "list", Short: "List registered catalogs with their trust policy and selected Catalog Snapshot", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			station, err := resolver.Resolve(workstation.Options{})
+			store, _, err := registryStore(opts, resolver)
 			if err != nil {
 				return err
 			}
-			store := newCatalogStore(opts, station)
 			registrations, err := store.Registrations()
 			if err != nil {
 				return err
@@ -153,11 +152,10 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 	command := &cobra.Command{
 		Use: "refresh [<owner/repo>]", Short: "Acquire and select the latest Catalog Snapshot of every registered catalog, or of one", Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			station, err := resolver.Resolve(workstation.Options{})
+			store, _, err := registryStore(opts, resolver)
 			if err != nil {
 				return err
 			}
-			store := newCatalogStore(opts, station)
 			var repositories []catalogstore.Repository
 			if len(args) == 1 {
 				repository, err := catalogstore.ParseRepository(args[0])
@@ -206,6 +204,14 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit versioned catalog-refresh JSON")
 	return command
+}
+
+func registryStore(opts Options, resolver *workstation.Resolver) (*catalogstore.Store, workstation.Snapshot, error) {
+	station, err := resolver.Resolve(workstation.Options{})
+	if err != nil {
+		return nil, workstation.Snapshot{}, err
+	}
+	return newCatalogStore(opts, station), station, nil
 }
 
 func trustPolicy(trust catalogstore.TrustPolicy) (string, string) {

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "report": "catalog-refresh",
+  "catalogs": [
+    {
+      "repository": "yersonargotev/packy-catalog",
+      "result": "selected",
+      "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repository": "acme/packs",
+      "result": "failed",
+      "snapshot_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "error": "acquire latest release of catalog acme/packs: GitHub returned 500 Internal Server Error"
+    }
+  ]
+}

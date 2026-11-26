@@ -141,9 +141,9 @@ func checkIssue863Discovery(t *testing.T, binary string) {
 		t.Fatal(err)
 	}
 	wantPacks := []packListEntryJSON{
-		{ID: "other", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}},
-		{ID: "reviewed", Version: "1.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}},
-		{ID: "third", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}},
+		{ID: "other", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}, Catalog: "yersonargotev/packy-catalog"},
+		{ID: "reviewed", Version: "1.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}, Catalog: "yersonargotev/packy-catalog"},
+		{ID: "third", Version: "2.0.0", Description: "Synthetic reviewed Pack fixture", Surfaces: []capabilitypack.Surface{"agents", "claude"}, Catalog: "yersonargotev/packy-catalog"},
 	}
 	if !reflect.DeepEqual(listed.Packs, wantPacks) {
 		t.Fatalf("current Packs: %s", list)

@@ -9,13 +9,14 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const packListJSONSchemaVersion = 1
+const packListJSONSchemaVersion = 2
 
 type packListEntryJSON struct {
 	ID          string                   `json:"id"`
 	Version     string                   `json:"version"`
 	Description string                   `json:"description"`
 	Surfaces    []capabilitypack.Surface `json:"surfaces"`
+	Catalog     string                   `json:"catalog_repository,omitempty"`
 }
 
 type packListJSON struct {
@@ -34,7 +35,7 @@ func packListDocument(packs []capabilitypack.Pack) packListJSON {
 		surfaces := append([]capabilitypack.Surface{}, pack.Surfaces...)
 		slices.Sort(surfaces)
 		entries = append(entries, packListEntryJSON{
-			ID: pack.ID, Version: pack.Version, Description: pack.Description, Surfaces: surfaces,
+			ID: pack.ID, Version: pack.Version, Description: pack.Description, Surfaces: surfaces, Catalog: pack.CatalogRef.Repository,
 		})
 	}
 	return packListJSON{SchemaVersion: packListJSONSchemaVersion, Report: "pack-list", Packs: entries}

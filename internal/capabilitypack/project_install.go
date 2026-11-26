@@ -83,6 +83,19 @@ type ProjectSurfaceIntent struct {
 	Aliases   []SurfaceAlias    `json:"aliases"`
 }
 
+// CatalogRepositories returns the distinct catalog repositories that the lock
+// receipts name, in sorted order.
+func (l ProjectLockProposal) CatalogRepositories() []string {
+	repositories := []string{}
+	for _, receipt := range l.Receipts {
+		if receipt.Pack.CatalogRef.Repository != "" {
+			repositories = append(repositories, receipt.Pack.CatalogRef.Repository)
+		}
+	}
+	slices.Sort(repositories)
+	return slices.Compact(repositories)
+}
+
 type ProjectLockProposal struct {
 	Path                   string                       `json:"-"`
 	SchemaVersion          int                          `json:"schema_version"`
@@ -588,6 +601,18 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			existingLock = installation.Lock
 			existingInstallation, existingContract = installation, true
 		}
+	}
+	for _, receipt := range existingLock.Receipts {
+		installed := receipt.Pack.CatalogRef.Repository
+		if receipt.Pack.ID != pack.ID || installed == "" || installed == pack.CatalogRef.Repository {
+			continue
+		}
+		if !f.catalog.registers(installed) {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "unregistered_catalog", Target: "packy.lock.json", Detail: fmt.Sprintf("the project lock installs Pack %q from catalog %s, which is not registered on this workstation", pack.ID, installed), Remediation: fmt.Sprintf("register the catalog with `packy catalog add %s`, or uninstall the Pack from this project before you install it from %s", installed, pack.CatalogRef.Repository)})
+		} else {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "catalog_conflict", Target: "packy.lock.json", Detail: fmt.Sprintf("the project lock installs Pack %q from catalog %s, not %s", pack.ID, installed, pack.CatalogRef.Repository), Remediation: fmt.Sprintf("uninstall the Pack from this project with `packy uninstall %s --surface %s`, then install it again from %s", pack.ID, receipt.Surface, pack.CatalogRef.Repository)})
+		}
+		break
 	}
 	orphanBlockers, orphanErr := projectOrphanedActivationBlockers(request.PackyHome, request.ProjectRoot, pack.ID, existingInstallation, existingContract)
 	if orphanErr != nil {

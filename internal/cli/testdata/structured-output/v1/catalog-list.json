@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "report": "catalog-list",
+  "catalogs": [
+    {
+      "repository": "yersonargotev/packy-catalog",
+      "official": true,
+      "trust": "attested",
+      "workflow": ".github/workflows/publish.yml",
+      "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "repository": "acme/packs",
+      "official": false,
+      "trust": "attested",
+      "workflow": ".github/workflows/publish.yml",
+      "snapshot_id": null
+    }
+  ]
+}

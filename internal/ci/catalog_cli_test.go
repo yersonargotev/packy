@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -359,7 +360,13 @@ func catalogTreeState(t *testing.T, roots []string) map[string]string {
 
 func validateCatalogCLISchema(t *testing.T, name string, data []byte) {
 	t.Helper()
-	path := filepath.Join(repositoryRoot(t), "schemas", "cli", "v1", name+".schema.json")
+	var versioned struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &versioned); err != nil {
+		t.Fatalf("%s: %v\n%s", name, err, data)
+	}
+	path := filepath.Join(repositoryRoot(t), "schemas", "cli", fmt.Sprintf("v%d", versioned.SchemaVersion), name+".schema.json")
 	compiler := jsonschema.NewCompiler()
 	schema, err := compiler.Compile(path)
 	if err != nil {

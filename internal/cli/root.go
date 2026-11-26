@@ -420,6 +420,7 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 	for _, surface := range intentObservation.FailedSurfaces {
 		observation.FailedStateSurfaces = append(observation.FailedStateSurfaces, string(surface))
 	}
+	observation.StateFailure = intentObservation.Failure
 	if len(intentObservation.Intents) == 0 {
 		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}
