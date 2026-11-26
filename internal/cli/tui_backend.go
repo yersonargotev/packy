@@ -153,11 +153,14 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		Adapters:    projectStatusAdapters(ctx, b.opts, snapshot),
 		Resolver:    projectExecutableResolver(b.opts, snapshot),
 	}
-	statusFacade := projectStatusFacade(ctx, b.opts, snapshot)
-	if lifecycleErr == nil {
-		statusFacade = lifecycleFacade
+	statusFacade := lifecycleFacade
+	if lifecycleErr != nil {
+		statusFacade, err = projectStatusFacade(ctx, b.opts, snapshot)
 	}
-	status, err := statusFacade.InspectProjectStatus(ctx, request)
+	var status capabilitypack.JSONProjectStatusReport
+	if err == nil {
+		status, err = statusFacade.InspectProjectStatus(ctx, request)
+	}
 	if err != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 			Cause:           fmt.Sprintf("inspect current project: %v", err),

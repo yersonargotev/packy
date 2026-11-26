@@ -97,8 +97,8 @@ func TestCLISourceSelectionHasOneSharedProductionRoute(t *testing.T) {
 		}
 		catalogStoreResolutions += strings.Count(source.text, "newCatalogStore(")
 	}
-	if catalogStoreResolutions != 3 {
-		t.Fatalf("CLI has %d Catalog Store resolution routes, want constructor plus acquisition and one shared command route", catalogStoreResolutions)
+	if catalogStoreResolutions != 4 {
+		t.Fatalf("CLI has %d Catalog Store resolution routes, want constructor, init acquisition, one shared command route, and one catalog registry route", catalogStoreResolutions)
 	}
 }
 

@@ -42,17 +42,28 @@ func Error(err error, argumentSets [][]string, sealedPayloads []string) error {
 	return redactedError{message: Text(err.Error(), argumentSets, sealedPayloads), cause: err}
 }
 
-// ErrorKeeping is Error that leaves every occurrence of public intact, so a
-// sealed payload that also appears inside public text does not mangle it.
-func ErrorKeeping(err error, public string, argumentSets [][]string, sealedPayloads []string) error {
-	if err == nil || public == "" {
-		return Error(err, argumentSets, sealedPayloads)
+// ErrorKeeping is Error that leaves every occurrence of each public text
+// intact, so a sealed payload that also appears inside public text does not
+// mangle it.
+func ErrorKeeping(err error, public []string, argumentSets [][]string, sealedPayloads []string) error {
+	if err == nil {
+		return nil
 	}
-	parts := strings.Split(err.Error(), public)
+	return redactedError{message: textKeeping(err.Error(), public, argumentSets, sealedPayloads), cause: err}
+}
+
+func textKeeping(message string, public []string, argumentSets [][]string, sealedPayloads []string) string {
+	if len(public) == 0 {
+		return Text(message, argumentSets, sealedPayloads)
+	}
+	if public[0] == "" {
+		return textKeeping(message, public[1:], argumentSets, sealedPayloads)
+	}
+	parts := strings.Split(message, public[0])
 	for i := range parts {
-		parts[i] = Text(parts[i], argumentSets, sealedPayloads)
+		parts[i] = textKeeping(parts[i], public[1:], argumentSets, sealedPayloads)
 	}
-	return redactedError{message: strings.Join(parts, public), cause: err}
+	return strings.Join(parts, public[0])
 }
 
 // Text removes environment argument values and sealed payloads from arbitrary

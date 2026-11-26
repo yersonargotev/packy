@@ -242,6 +242,9 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 	if !installed {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project does not declare capability Pack %q", request.PackID)
 	}
+	if repository := projectReceiptCatalogRef(installation.Lock, request.PackID, request.Surface).Repository; repository != "" && !f.catalog.registers(repository) {
+		return JSONProjectInstallPreview{}, unregisteredCatalogError(request.PackID, repository)
+	}
 	targetPack, err := f.resolveProjectPackUnlocked(request.PackID)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
@@ -515,6 +518,13 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	pack, err := f.resolveProjectPackUnlocked(request.PackID)
 	if err != nil {
+		if lock, exists, lockErr := readExistingProjectLock(request.ProjectRoot); lockErr == nil && exists {
+			for _, receipt := range lock.Receipts {
+				if repository := receipt.Pack.CatalogRef.Repository; receipt.Pack.ID == request.PackID && !f.catalog.registers(repository) {
+					return JSONProjectInstallPreview{}, unregisteredCatalogError(request.PackID, repository)
+				}
+			}
+		}
 		return JSONProjectInstallPreview{}, err
 	}
 	if !projectSupportsSurface(pack.Surfaces, request.Surface) {
@@ -588,6 +598,18 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			existingLock = installation.Lock
 			existingInstallation, existingContract = installation, true
 		}
+	}
+	for _, receipt := range existingLock.Receipts {
+		installed := receipt.Pack.CatalogRef.Repository
+		if receipt.Pack.ID != pack.ID || installed == "" || installed == pack.CatalogRef.Repository {
+			continue
+		}
+		if !f.catalog.registers(installed) {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "unregistered_catalog", Target: "packy.lock.json", Detail: fmt.Sprintf("the project lock installs Pack %q from catalog %s, which is not registered on this workstation", pack.ID, installed), Remediation: fmt.Sprintf("register the catalog with `packy catalog add %s`, or uninstall the Pack from this project before you install it from %s", installed, pack.CatalogRef.Repository)})
+		} else {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "catalog_conflict", Target: "packy.lock.json", Detail: fmt.Sprintf("the project lock installs Pack %q from catalog %s, not %s", pack.ID, installed, pack.CatalogRef.Repository), Remediation: fmt.Sprintf("uninstall the Pack from this project with `packy uninstall %s --surface %s`, then install it again from %s", pack.ID, receipt.Surface, pack.CatalogRef.Repository)})
+		}
+		break
 	}
 	orphanBlockers, orphanErr := projectOrphanedActivationBlockers(request.PackyHome, request.ProjectRoot, pack.ID, existingInstallation, existingContract)
 	if orphanErr != nil {
@@ -676,7 +698,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	notices := make([]ProjectNoticeContribution, 0)
 	for _, resource := range intentPack.Resources {
 		if resource.Kind == "notice" {
-			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(f.catalog.catalogRoot), resource.Source))
+			content, err := os.ReadFile(filepath.Join(resource.CatalogRootOr(""), resource.Source))
 			if err != nil {
 				return JSONProjectInstallPreview{}, fmt.Errorf("read selected notice %q: %w", resource.ID, err)
 			}

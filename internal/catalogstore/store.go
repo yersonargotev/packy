@@ -110,6 +110,10 @@ func (s *Store) AcquireLatest(ctx context.Context, repository Repository) (Snaps
 		return Snapshot{}, err
 	}
 	defer guard.Release()
+	return s.selectLatest(ctx, repository)
+}
+
+func (s *Store) selectLatest(ctx context.Context, repository Repository) (Snapshot, error) {
 	registration, err := s.registration(repository)
 	if err != nil {
 		return Snapshot{}, err
@@ -125,8 +129,11 @@ func (s *Store) AcquireLatest(ctx context.Context, repository Repository) (Snaps
 }
 
 // Register acquires, validates, and selects the initial snapshot of a new
-// catalog, then records its registration. A failed registration leaves no
-// registration, selection, or newly retained snapshot behind.
+// catalog, then records its registration. When the official catalog has no
+// selection, Register first selects its latest snapshot, so the new catalog's
+// Pack IDs are always checked against it. A failed registration leaves no
+// registration, selection, or newly retained snapshot of the new catalog
+// behind.
 func (s *Store) Register(ctx context.Context, registration Registration) (Snapshot, error) {
 	if err := registration.validate(); err != nil {
 		return Snapshot{}, err
@@ -144,6 +151,13 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 		return Snapshot{}, fmt.Errorf("catalog %s is already registered", registration.Repository)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return Snapshot{}, fmt.Errorf("inspect catalog %s registration: %w", registration.Repository, err)
+	}
+	if _, err := s.readSelection(Official().Repository); errors.Is(err, fs.ErrNotExist) {
+		if _, err := s.selectLatest(ctx, Official().Repository); err != nil {
+			return Snapshot{}, fmt.Errorf("register catalog %s: select the official catalog first: %w", registration.Repository, err)
+		}
+	} else if err != nil {
+		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
 	}
 	_, statErr := os.Lstat(directory)
 	fresh := errors.Is(statErr, fs.ErrNotExist)
@@ -170,8 +184,9 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 }
 
 // Unregister removes a catalog registration and its selection. Retained
-// snapshots stay in place.
-func (s *Store) Unregister(ctx context.Context, repository Repository) error {
+// snapshots stay in place. inUse runs under the store lock and refuses the
+// removal with its error, as when an installed Pack receipt names the catalog.
+func (s *Store) Unregister(ctx context.Context, repository Repository, inUse func(context.Context, Repository) error) error {
 	if repository == Official().Repository {
 		return fmt.Errorf("catalog %s is built in and cannot be removed", repository)
 	}
@@ -181,6 +196,9 @@ func (s *Store) Unregister(ctx context.Context, repository Repository) error {
 	}
 	defer guard.Release()
 	if _, err := s.registration(repository); err != nil {
+		return err
+	}
+	if err := inUse(ctx, repository); err != nil {
 		return err
 	}
 	directory := s.catalog(repository)
@@ -236,17 +254,77 @@ func (s *Store) Selected(repository Repository) (Snapshot, error) {
 // Resolve returns one retained snapshot root of a registered catalog without
 // using Source.
 func (s *Store) Resolve(repository Repository, snapshotID string) (string, error) {
+	snapshot, err := s.retained(repository, snapshotID)
+	return snapshot.Root, err
+}
+
+// ErrAmbiguousPack reports a Pack that more than one registered catalog
+// provides at the requested Catalog Snapshot.
+var ErrAmbiguousPack = errors.New("several registered catalogs provide the Pack")
+
+// Providing returns the Catalog Snapshot of a registered catalog whose index
+// lists packID, reading each catalog's selected snapshot, or its retained
+// snapshot snapshotID when one is given. It fails with ErrAmbiguousPack when
+// several catalogs provide the Pack there, as forks that share a commit can.
+// When no catalog provides the Pack it returns the official catalog's
+// snapshot, or the error from reading it, so the caller reports the unknown
+// Pack against the official catalog.
+func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
+	registrations, err := s.Registrations()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	var official Snapshot
+	var officialErr error
+	var providing []Snapshot
+	for _, registration := range registrations {
+		var snapshot Snapshot
+		var err error
+		if snapshotID == "" {
+			snapshot, err = s.Selected(registration.Repository)
+		} else {
+			snapshot, err = s.retained(registration.Repository, snapshotID)
+		}
+		if registration.Repository == Official().Repository {
+			official, officialErr = snapshot, err
+		} else if err != nil && snapshotID == "" {
+			return Snapshot{}, fmt.Errorf("catalog %s: %w", registration.Repository, err)
+		}
+		if err != nil {
+			continue
+		}
+		for _, pack := range snapshot.Index.Packs {
+			if pack.ID == packID {
+				providing = append(providing, snapshot)
+			}
+		}
+	}
+	switch len(providing) {
+	case 0:
+		return official, officialErr
+	case 1:
+		return providing[0], nil
+	}
+	catalogs := make([]string, len(providing))
+	for i, snapshot := range providing {
+		catalogs[i] = snapshot.Index.Source.Repository + "@" + snapshot.ID
+	}
+	return Snapshot{}, fmt.Errorf("Pack %q is ambiguous: %w: %s; remove the catalog you do not use with `packy catalog remove <owner/repo>`", packID, ErrAmbiguousPack, strings.Join(catalogs, ", "))
+}
+
+func (s *Store) retained(repository Repository, snapshotID string) (Snapshot, error) {
 	if !commitPattern.MatchString(snapshotID) {
-		return "", fmt.Errorf("invalid Catalog Snapshot identity %q", snapshotID)
+		return Snapshot{}, fmt.Errorf("invalid Catalog Snapshot identity %q", snapshotID)
 	}
 	if _, err := s.registration(repository); err != nil {
-		return "", err
+		return Snapshot{}, err
 	}
 	root := s.snapshot(repository, snapshotID)
-	if _, err := validateSnapshot(root, repository, snapshotID); err != nil {
-		return "", fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
+	index, err := validateSnapshot(root, repository, snapshotID)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
 	}
-	return root, nil
+	return snapshotFrom(index, "catalog-"+snapshotID, root), nil
 }
 
 func (s *Store) layout() string { return filepath.Join(s.root, "v2") }
@@ -386,9 +464,14 @@ func (s *Store) checkPackIDs(repository Repository, index cataloglayout.CatalogS
 			return fmt.Errorf("check Pack IDs against catalog %s: %w", other.Repository, err)
 		}
 		for _, pack := range selected.Packs {
-			if introduced[pack.ID] {
-				return fmt.Errorf("Catalog Snapshot %s of %s introduces Pack %q, which selected Catalog Snapshot %s of %s already provides", index.Source.Commit, repository, pack.ID, id, other.Repository)
+			if !introduced[pack.ID] {
+				continue
 			}
+			err := fmt.Errorf("Catalog Snapshot %s of %s introduces Pack %q, which selected Catalog Snapshot %s of %s already provides", index.Source.Commit, repository, pack.ID, id, other.Repository)
+			if repository == Official().Repository {
+				err = fmt.Errorf("%w; run `packy catalog remove %s` so the official catalog can be selected", err, other.Repository)
+			}
+			return err
 		}
 	}
 	return nil

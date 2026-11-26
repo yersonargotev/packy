@@ -411,6 +411,19 @@ func WithControlledCheckEvidence(store ControlledCheckEvidenceStore) FacadeOptio
 	return func(f *Facade) { f.controlledChecks = store }
 }
 
+// WithRegisteredCatalogs names the registered catalog repositories for a
+// Facade that inspects receipts without loading any Catalog Snapshot.
+func WithRegisteredCatalogs(repositories []string) FacadeOption {
+	return func(f *Facade) { f.registeredCatalogs = append([]string{}, repositories...) }
+}
+
+func (f Facade) catalogRegistered(repository string) bool {
+	if f.registeredCatalogs == nil || repository == "" {
+		return f.catalog.registers(repository)
+	}
+	return slices.Contains(f.registeredCatalogs, repository)
+}
+
 type PlanPhase struct {
 	Kind             ConsentKind
 	Digest           string
@@ -1674,8 +1687,11 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if !current {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("unknown capability pack %q in the current catalog; run `packy list` to see available packs", request.PackID)
 	}
+	if hasIntent && intent.Active && f.catalog.bound() && intent.CatalogRef == (CatalogRef{}) {
+		return Pack{}, nil, ActivationState{}, unboundReceiptError(request.PackID)
+	}
 	if hasIntent && intent.Active && intent.CatalogRef.Repository != "" && pack.CatalogRef.Repository != "" && intent.CatalogRef.Repository != pack.CatalogRef.Repository {
-		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q on %s is installed from catalog %s, not %s; deactivate it before you activate it from another catalog", request.PackID, request.Surface, intent.CatalogRef.Repository, pack.CatalogRef.Repository)
+		return Pack{}, nil, ActivationState{}, crossCatalogError(operation, request.PackID, request.Surface, intent.CatalogRef.Repository, pack.CatalogRef.Repository)
 	}
 	if operation == OperationActivate && hasIntent && intent.Active && intent.Version != pack.Version {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q is active at %s on %s; use explicit pack update to target catalog current %s", request.PackID, intent.Version, request.Surface, pack.Version)
@@ -1685,6 +1701,16 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 		return Pack{}, nil, ActivationState{}, err
 	}
 	return pack, adapter, state, nil
+}
+
+// crossCatalogError explains how to move a Pack ID to the catalog that now
+// provides it. The move is an explicit deactivation and a new activation.
+func crossCatalogError(operation Operation, id string, surface Surface, installed, current string) error {
+	move := fmt.Sprintf("to install it from %s, run `packy deactivate %s --surface %s` and then activate it again", current, id, surface)
+	if operation == OperationUpdate {
+		return fmt.Errorf("capability pack %q on %s is installed from catalog %s, and updates look only in that catalog, which no longer provides it; %s", id, surface, installed, move)
+	}
+	return fmt.Errorf("capability pack %q on %s is installed from catalog %s, not %s; %s", id, surface, installed, current, move)
 }
 
 func (p *ReconciliationPlan) seal() {

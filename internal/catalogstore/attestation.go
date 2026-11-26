@@ -20,6 +20,11 @@ import (
 
 const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
 
+// ErrNoAttestationVerified reports that a verifier read the catalog's
+// attestations and none verified for the expected signer workflow. Transport
+// and Sigstore trust-root failures do not wrap it.
+var ErrNoAttestationVerified = errors.New("no catalog attestation verified")
+
 // NewGitHubAttestationVerifier constructs the production verifier for GitHub
 // build provenance. Trust roots are refreshed from Sigstore for this explicit
 // network operation and are not written into the user's configuration paths.
@@ -87,7 +92,7 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 	if lastErr == nil {
 		lastErr = errors.New("no build-provenance attestations were returned")
 	}
-	return fmt.Errorf("no catalog attestation verified: %w", lastErr)
+	return fmt.Errorf("%w: %w", ErrNoAttestationVerified, lastErr)
 }
 
 func (v *githubAttestationVerifier) fetch(ctx context.Context, repository, digest string) ([]*bundle.Bundle, error) {

@@ -178,14 +178,16 @@ type StatusReport struct {
 type ActiveIntentObservation struct {
 	Intents        []ActivationIntent
 	FailedSurfaces []Surface
+	Failures       map[Surface]string
 }
 
 // Facade is the single capability-pack use-case boundary consumed by the CLI.
 type Facade struct {
-	catalog          Catalog
-	activation       *activationDependencies
-	controlledChecks ControlledCheckEvidenceStore
-	clock            func() time.Time
+	catalog            Catalog
+	activation         *activationDependencies
+	controlledChecks   ControlledCheckEvidenceStore
+	clock              func() time.Time
+	registeredCatalogs []string
 }
 
 func NewFacade(catalog Catalog, options ...FacadeOption) Facade {
@@ -229,6 +231,10 @@ func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveInte
 		state, err := store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			observation.FailedSurfaces = append(observation.FailedSurfaces, surface)
+			if observation.Failures == nil {
+				observation.Failures = map[Surface]string{}
+			}
+			observation.Failures[surface] = err.Error()
 			continue
 		}
 		for _, intent := range activeIntents(state) {
@@ -244,6 +250,25 @@ func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveInte
 		return observation.Intents[i].Surface < observation.Intents[j].Surface
 	})
 	return observation
+}
+
+// InstalledFromCatalog returns every active installed Pack receipt that names
+// the catalog repository. It fails when any surface's receipts cannot be read,
+// so a caller never mistakes unreadable state for an unused catalog.
+func InstalledFromCatalog(ctx context.Context, store ActivationStore, repository string) ([]ActivationIntent, error) {
+	var installed []ActivationIntent
+	for _, surface := range statusSurfaces() {
+		state, err := store.LoadSnapshot(ctx, surface)
+		if err != nil {
+			return nil, err
+		}
+		for _, intent := range activeIntents(state) {
+			if intent.Surface == surface && intent.CatalogRef.Repository == repository {
+				installed = append(installed, intent)
+			}
+		}
+	}
+	return installed, nil
 }
 
 func statusSurfaces() []Surface {
@@ -282,7 +307,7 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 	})
 
 	for _, target := range targets {
-		pack, current := f.catalog.catalogMetadataIfPresent(target.intent.PackID)
+		pack, current := f.catalog.currentFor(target.intent.PackID, target.intent.CatalogRef)
 		var err error
 		if !current {
 			pack, err = f.catalog.resolveIntentPackAt(ctx, target.intent.PackID, target.intent.Version, target.intent.CatalogRef)
@@ -331,7 +356,7 @@ func activeOnlyStatusState(state ActivationState) ActivationState {
 
 func failedActiveStatusEntry(intent ActivationIntent, surface Surface) StatusEntry {
 	return StatusEntry{
-		Pack:             Pack{ID: intent.PackID, Version: intent.Version},
+		Pack:             Pack{ID: intent.PackID, Version: intent.Version, CatalogRef: intent.CatalogRef},
 		Surface:          surface,
 		Intent:           IntentStatus{Active: true, Revision: intent.Revision, Version: intent.Version},
 		IntentPresent:    true,
@@ -431,8 +456,12 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
 			}
 			inspectionPack := pack
-			if !currentPacks[pack.ID] {
-				intent, installed := intentForPack(state, pack.ID, surface)
+			current := currentPacks[pack.ID]
+			intent, installed := intentForPack(state, pack.ID, surface)
+			if current && installed && intent.Active && intent.CatalogRef.Repository != "" && intent.CatalogRef.Repository != pack.CatalogRef.Repository {
+				current = false
+			}
+			if !current {
 				if !installed || !intent.Active {
 					continue
 				}
@@ -451,7 +480,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 			if err != nil {
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", inspectionPack.ID, surface, err)
 			}
-			entry.CatalogCurrent = currentPacks[pack.ID]
+			entry.CatalogCurrent = current
 			if !entry.CatalogCurrent {
 				entry.UpdateAvailable = false
 				entry.UpdateActionAvailable = false

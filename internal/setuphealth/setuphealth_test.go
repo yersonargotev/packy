@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestDiagnoseNamesEachSurfaceStateFailure(t *testing.T) {
+	report := Diagnose("home", "config", Observation{
+		FailedStateSurfaces: []string{"agents", "claude"},
+		StateFailures:       map[string]string{"agents": "agents receipts are unreadable"},
+	})
+	details := map[string]string{}
+	for _, check := range report.Checks {
+		details[check.Name] = check.Detail
+	}
+	if details["pack-state-agents"] != "capability-pack activation state for agents could not be observed: agents receipts are unreadable" || details["pack-state-claude"] != "capability-pack activation state for claude could not be observed; run packy status" {
+		t.Fatalf("state failure details = %#v", details)
+	}
+}
+
 func TestDiagnoseWithNoActivePacksIsHealthy(t *testing.T) {
 	want := Report{
 		SchemaVersion: 3,

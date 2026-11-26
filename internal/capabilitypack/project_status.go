@@ -617,12 +617,15 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 	for i := range report.Packs {
 		status := &report.Packs[i]
 		var pack Pack
+		ref := status.Pack.CatalogRef
 		if status.Pack.Version != "" {
-			ref := status.Pack.CatalogRef
 			if installationErr == nil {
 				if installed := projectReceiptCatalogRef(installation.Lock, status.Pack.ID, status.Surface); installed != (CatalogRef{}) {
 					ref = installed
 				}
+			}
+			if !f.catalogRegistered(ref.Repository) {
+				return report, unregisteredCatalogError(status.Pack.ID, ref.Repository)
 			}
 			pack, err = f.catalog.resolveIntentPackAt(ctx, status.Pack.ID, status.Pack.Version, ref)
 		} else {

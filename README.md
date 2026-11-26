@@ -123,7 +123,10 @@ packy activate <pack> --surface agents \
 
 ```text
 packy init
-packy catalog refresh
+packy catalog add <owner/repo>
+packy catalog list
+packy catalog refresh [<owner/repo>]
+packy catalog remove <owner/repo>
 packy doctor
 packy audit
 packy list
@@ -139,10 +142,20 @@ packy uninstall <pack> [--surface <surface>]
 ```
 
 Inspection and `--dry-run` do not mutate Pack state or CLI surfaces. Lifecycle
-commands operate on one Pack and receipt at a time. `packy catalog refresh`
-explicitly downloads and selects the newest compatible immutable snapshot;
-ordinary inspection and lifecycle commands stay offline. Update targets the
-selected snapshot's Pack version; arbitrary versions and downgrades are unsupported.
+commands operate on one Pack and receipt at a time. `packy catalog add`
+registers another GitHub catalog next to the official one and selects its first
+snapshot. When the official catalog has no selected snapshot yet, it selects the
+official catalog first and fails if it cannot, so every new catalog is checked
+against the official Pack IDs. `packy catalog refresh` explicitly downloads and
+selects the newest compatible immutable snapshot of every registered catalog, or
+of one; ordinary inspection and lifecycle commands stay offline.
+`packy catalog remove` refuses while a workstation receipt in
+`~/.packy/packs.json` or an active personal project activation names the
+catalog, and keeps its retained snapshots. It does not see project locks. A
+project whose lock names a removed catalog fails later with an error that names
+the catalog and `packy catalog add`. Update targets the selected snapshot's Pack
+version in the catalog that the receipt names; arbitrary versions and downgrades
+are unsupported.
 
 From a Git worktree, `packy verify` is the portable CI gate for the committed
 project Pack contract. It checks `packy.json`, `packy.lock.json`, required

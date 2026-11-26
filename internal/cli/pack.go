@@ -808,7 +808,11 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				if err != nil {
 					return err
 				}
-				facade := capabilitypack.NewFacade(capabilitypack.Catalog{}, capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil))
+				repositories, err := registeredCatalogRepositories(snapshot)
+				if err != nil {
+					return err
+				}
+				facade := capabilitypack.NewFacade(capabilitypack.Catalog{}, capabilitypack.WithRegisteredCatalogs(repositories), capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil))
 				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
 				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
 				globalRelevant := slices.Contains(global.FailedSurfaces, capabilitypack.Surface(surface))
@@ -930,13 +934,30 @@ func projectExecutableResolver(opts Options, snapshot workstation.Snapshot) capa
 	return toolbin.NewPATHResolver(opts.Runner.LookPath)
 }
 
-func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) capabilitypack.Facade {
+func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) (capabilitypack.Facade, error) {
+	repositories, err := registeredCatalogRepositories(snapshot)
+	if err != nil {
+		return capabilitypack.Facade{}, err
+	}
 	adapters := projectStatusAdapters(ctx, opts, snapshot)
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
+		capabilitypack.WithRegisteredCatalogs(repositories),
 		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File()), adapters),
 		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
-	)
+	), nil
+}
+
+func registeredCatalogRepositories(snapshot workstation.Snapshot) ([]string, error) {
+	registrations, err := catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), nil).Registrations()
+	if err != nil {
+		return nil, err
+	}
+	repositories := make([]string, 0, len(registrations))
+	for _, registration := range registrations {
+		repositories = append(repositories, registration.Repository.String())
+	}
+	return repositories, nil
 }
 
 func approveAndApplyProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, preview capabilitypack.JSONProjectActivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool, cancellation string) error {
@@ -1015,7 +1036,12 @@ func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err err
 }
 
 func projectLifecycleFailure(cmd *cobra.Command, jsonOutput bool, operation, stage string, err error) error {
-	err = reportredaction.ErrorKeeping(err, capabilitypack.CatalogAdoptionGuide, nil, projectLifecycleArgumentValues(cmd))
+	public := []string{capabilitypack.CatalogAdoptionGuide}
+	var unregistered capabilitypack.UnregisteredCatalogError
+	if errors.As(err, &unregistered) {
+		public = append(public, unregistered.Repository)
+	}
+	err = reportredaction.ErrorKeeping(err, public, nil, projectLifecycleArgumentValues(cmd))
 	if jsonOutput {
 		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.JSONProjectFailureFor(operation, stage, err))
 	}
@@ -1568,7 +1594,10 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: projectStatusAdapters(cmd.Context(), opts, snapshot), Resolver: projectExecutableResolver(opts, snapshot),
 				}
-				facade := projectStatusFacade(cmd.Context(), opts, snapshot)
+				facade, err := projectStatusFacade(cmd.Context(), opts, snapshot)
+				if err != nil {
+					return err
+				}
 				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
 				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
 				globalRelevant := packID == "" && (len(global.FailedSurfaces) > 0 || len(global.Intents) > 0)
@@ -1810,7 +1839,7 @@ func renderProjectInstallBlockers(blockers []capabilitypack.ProjectInstallBlocke
 
 func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusReport) error {
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "PACK\tSURFACE\tINTENT\tCONFIGURED\tAUTHORIZED\tUSABLE\tACTION")
+	fmt.Fprintln(writer, "PACK\tCATALOG\tSURFACE\tINTENT\tCONFIGURED\tAUTHORIZED\tUSABLE\tACTION")
 	for _, entry := range report.Entries {
 		configured := readinessValue(entry.Readiness.Configured)
 		authorized := readinessValue(entry.Readiness.Authorized)
@@ -1819,13 +1848,13 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 		if entry.LifecycleState == capabilitypack.PackLifecycleInactiveWithResiduals {
 			intent = string(entry.LifecycleState)
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Pack.ID, entry.Surface, intent, configured, authorized, usable, renderStatusAction(entry))
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Pack.ID, packCatalog(entry.Pack.CatalogRef), entry.Surface, intent, configured, authorized, usable, renderStatusAction(entry))
 	}
 	return writer.Flush()
 }
 
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nCatalog: %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, packCatalog(entry.Pack.CatalogRef), renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
 	}
 	if entry.HistoricalEvidence.Available {
@@ -2011,6 +2040,13 @@ func statusSelectedResourceCount(entry capabilitypack.StatusEntry) int {
 	return len(entry.Resources)
 }
 
+func packCatalog(ref capabilitypack.CatalogRef) string {
+	if ref.Repository == "" {
+		return "-"
+	}
+	return ref.Repository
+}
+
 func renderStatusAction(entry capabilitypack.StatusEntry) string {
 	if entry.UpdateAvailable {
 		action := "update to " + entry.Pack.Version
@@ -2073,13 +2109,13 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 				return renderPackListJSON(cmd.OutOrStdout(), packs)
 			}
 			writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-			fmt.Fprintln(writer, "PACK\tVERSION\tDESCRIPTION\tAVAILABLE ON")
+			fmt.Fprintln(writer, "PACK\tVERSION\tCATALOG\tDESCRIPTION\tAVAILABLE ON")
 			for _, pack := range packs {
 				surfaces := make([]string, len(pack.Surfaces))
 				for i, surface := range pack.Surfaces {
 					surfaces[i] = string(surface)
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", pack.ID, pack.Version, pack.Description, strings.Join(surfaces, ", "))
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", pack.ID, pack.Version, packCatalog(pack.CatalogRef), pack.Description, strings.Join(surfaces, ", "))
 			}
 			return writer.Flush()
 		},
@@ -2180,19 +2216,23 @@ func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capa
 	if !sources.isDefault && sources.candidate == nil {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
-	selected, err := snapshotCatalogRef(sources.snapshot)
-	if err != nil {
-		return capabilitypack.Catalog{}, err
+	var selected []capabilitypack.SelectedSnapshot
+	for _, snapshot := range append([]catalogstore.Snapshot{sources.snapshot}, sources.others...) {
+		ref, err := snapshotCatalogRef(snapshot)
+		if err != nil {
+			return capabilitypack.Catalog{}, err
+		}
+		selected = append(selected, capabilitypack.SelectedSnapshot{Root: snapshot.Root, Ref: ref})
 	}
 	if sources.candidate != nil {
-		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
-			if ref.Repository != selected.Repository {
+		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
+			if ref.Repository != selected[0].Ref.Repository {
 				return "", fmt.Errorf("catalog %s is outside this candidate workspace", ref.Repository)
 			}
 			return sources.candidate.Resolve(ctx, ref.Commit)
 		})
 	}
-	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(_ context.Context, ref capabilitypack.CatalogRef) (string, error) {
+	return capabilitypack.DiscoverRetainedForDurableIntents(ctx, selected, func(_ context.Context, ref capabilitypack.CatalogRef) (string, error) {
 		return resolveRetainedSnapshot(sources.store, ref)
 	})
 }
@@ -2203,6 +2243,17 @@ func snapshotCatalogRef(snapshot catalogstore.Snapshot) (capabilitypack.CatalogR
 		return capabilitypack.CatalogRef{}, err
 	}
 	return capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshot.Commit}, nil
+}
+
+// packSnapshot returns the root and catalog identity of the Catalog Snapshot
+// that provides packID.
+func packSnapshot(store *catalogstore.Store, packID, snapshotID string) (string, capabilitypack.CatalogRef, error) {
+	snapshot, err := store.Providing(packID, snapshotID)
+	if err != nil {
+		return "", capabilitypack.CatalogRef{}, err
+	}
+	ref, err := snapshotCatalogRef(snapshot)
+	return snapshot.Root, ref, err
 }
 
 func resolveRetainedSnapshot(store *catalogstore.Store, ref capabilitypack.CatalogRef) (string, error) {

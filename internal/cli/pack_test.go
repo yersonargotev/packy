@@ -667,21 +667,21 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("status failed: %v\n%s", err, overview)
 	}
 	lines := strings.Split(strings.TrimSpace(overview), "\n")
-	if len(lines) == 0 || !reflect.DeepEqual(strings.Fields(lines[0]), []string{"PACK", "SURFACE", "INTENT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION"}) {
+	if len(lines) == 0 || !reflect.DeepEqual(strings.Fields(lines[0]), []string{"PACK", "CATALOG", "SURFACE", "INTENT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION"}) {
 		t.Fatalf("status header is not semantic:\n%s", overview)
 	}
 	wantRows := expectedPackSurfaceRows(t, fixture.catalogRoot)
 	for _, line := range lines[1:] {
 		fields := strings.Fields(line)
-		if len(fields) != 7 {
+		if len(fields) != 8 {
 			t.Fatalf("malformed status row %q", line)
 		}
-		key := fields[0] + "/" + fields[1]
+		key := fields[0] + "/" + fields[2]
 		if !wantRows[key] {
 			t.Fatalf("unexpected or duplicate status row %q", line)
 		}
 		delete(wantRows, key)
-		if fields[2] != "inactive" || fields[3] != "false" || !isReadinessValue(fields[4]) || !isReadinessValue(fields[5]) || fields[6] != "none" {
+		if fields[1] != "-" || fields[3] != "inactive" || fields[4] != "false" || !isReadinessValue(fields[5]) || !isReadinessValue(fields[6]) || fields[7] != "none" {
 			t.Fatalf("status row changed semantics: %q", line)
 		}
 	}

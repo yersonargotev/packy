@@ -21,7 +21,7 @@ func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pack list --json: %v\n%s", err, output)
 	}
-	if output != "{\"schema_version\":1,\"report\":\"pack-list\",\"packs\":[]}\n" {
+	if output != "{\"schema_version\":2,\"report\":\"pack-list\",\"packs\":[]}\n" {
 		t.Fatalf("empty report = %q", output)
 	}
 }

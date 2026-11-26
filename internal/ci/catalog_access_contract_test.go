@@ -136,7 +136,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 		t.Fatalf("complete list: %s", list)
 	}
 	readableList := mustRun("list")
-	wantReadableList := "PACK VERSION DESCRIPTION AVAILABLE ON alpha 1.0.0 Access contract alpha agents, claude beta 2.0.0 Access contract beta agents, claude zulu 2.0.0 Access contract zulu agents, claude"
+	wantReadableList := "PACK VERSION CATALOG DESCRIPTION AVAILABLE ON alpha 1.0.0 yersonargotev/packy-catalog Access contract alpha agents, claude beta 2.0.0 yersonargotev/packy-catalog Access contract beta agents, claude zulu 2.0.0 yersonargotev/packy-catalog Access contract zulu agents, claude"
 	if strings.Join(strings.Fields(string(readableList)), " ") != wantReadableList {
 		t.Fatalf("complete readable list: %s", readableList)
 	}

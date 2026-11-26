@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -62,21 +63,11 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 					root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
 				}
 			} else {
-				store := catalogstore.New(dataRoot, nil)
-				if snapshotID != "" {
-					identity = capabilitypack.CatalogRef{Repository: catalogstore.Official().Repository.String(), Commit: snapshotID}
-					root, err = resolveRetainedSnapshot(store, identity)
-				} else {
-					var selected catalogstore.Snapshot
-					selected, err = store.Selected(catalogstore.Official().Repository)
-					if err == nil {
-						root = selected.Root
-						identity, err = snapshotCatalogRef(selected)
-					}
-				}
+				packID, _, _ := strings.Cut(args[0], ":")
+				root, identity, err = packSnapshot(catalogstore.New(dataRoot, nil), packID, snapshotID)
 			}
 			if err != nil {
-				if errors.Is(err, catalogstore.ErrEarlierLayout) {
+				if errors.Is(err, catalogstore.ErrEarlierLayout) || errors.Is(err, catalogstore.ErrAmbiguousPack) {
 					return failure(cmd, "catalog_unavailable", err)
 				}
 				if snapshotID != "" {

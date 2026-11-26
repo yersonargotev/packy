@@ -19,8 +19,8 @@ func testCatalogRef(commit string) CatalogRef {
 func TestResolveIntentPackAtUsesExactCurrentSnapshotContract(t *testing.T) {
 	ref := testCatalogRef("a")
 	catalog := Catalog{
-		ref:   ref,
-		packs: []Pack{{ID: "current", Version: "2.0.0", CatalogRef: ref}},
+		snapshots: []SelectedSnapshot{{Ref: ref}},
+		packs:     []Pack{{ID: "current", Version: "2.0.0", CatalogRef: ref}},
 	}
 
 	pack, err := catalog.ResolveIntentPackAt(context.Background(), "current", "2.0.0", ref)
@@ -40,8 +40,8 @@ func TestResolveIntentPackAtUsesExactCurrentSnapshotContract(t *testing.T) {
 func TestIntentPackResolverUsesLoadedCurrentContractWithoutCatalogObservation(t *testing.T) {
 	ref := testCatalogRef("a")
 	catalog := Catalog{
-		ref:   ref,
-		packs: []Pack{{ID: "current", Version: "2.0.0", CatalogRef: ref}},
+		snapshots: []SelectedSnapshot{{Ref: ref}},
+		packs:     []Pack{{ID: "current", Version: "2.0.0", CatalogRef: ref}},
 		validateSource: func(context.Context) error {
 			t.Fatal("current ownership resolution re-observed the catalog")
 			return nil
@@ -61,8 +61,8 @@ func TestIntentPackResolverUsesLoadedCurrentContractWithoutCatalogObservation(t 
 func TestIntentPackResolverRequiresExactCurrentContract(t *testing.T) {
 	ref := testCatalogRef("a")
 	resolver := (Catalog{
-		ref:   ref,
-		packs: []Pack{{ID: "current", Version: "2.0.0", CatalogRef: ref}},
+		snapshots: []SelectedSnapshot{{Ref: ref}},
+		packs:     []Pack{{ID: "current", Version: "2.0.0", CatalogRef: ref}},
 	}).IntentPackResolver()
 
 	type contract struct {
@@ -125,11 +125,11 @@ func TestIntentPackResolversDoNotNestLocksAcrossRetainedSnapshots(t *testing.T) 
 			}
 		}
 	}
-	catalogA, err := DiscoverRetainedForDurableIntents(context.Background(), bundleA, snapshotA, resolver(snapshotB, bundleB))
+	catalogA, err := DiscoverRetainedForDurableIntents(context.Background(), []SelectedSnapshot{{Root: bundleA, Ref: snapshotA}}, resolver(snapshotB, bundleB))
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalogB, err := DiscoverRetainedForDurableIntents(context.Background(), bundleB, snapshotB, resolver(snapshotA, bundleA))
+	catalogB, err := DiscoverRetainedForDurableIntents(context.Background(), []SelectedSnapshot{{Root: bundleB, Ref: snapshotB}}, resolver(snapshotA, bundleA))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,8 +180,8 @@ func TestResolveIntentPackAtLoadsExactRetainedSnapshot(t *testing.T) {
 	retainedBundle := filepath.Join(t.TempDir(), "bundle")
 	writeCurrentPackFixture(t, retainedBundle, "retained")
 	catalog := Catalog{
-		ref:   currentSnapshot,
-		packs: []Pack{{ID: "retained", Version: "2.0.0", CatalogRef: currentSnapshot}},
+		snapshots: []SelectedSnapshot{{Ref: currentSnapshot}},
+		packs:     []Pack{{ID: "retained", Version: "2.0.0", CatalogRef: currentSnapshot}},
 		resolveSnapshot: func(_ context.Context, ref CatalogRef) (string, error) {
 			if ref != retainedSnapshot {
 				t.Fatalf("ref = %+v; want %+v", ref, retainedSnapshot)
@@ -220,8 +220,8 @@ func TestResolveIntentPackAtKeysRetainedSnapshotsByRepository(t *testing.T) {
 	writeCurrentPackFixture(t, bundle, "retained")
 	var requested []CatalogRef
 	catalog := Catalog{
-		ref:   current,
-		packs: []Pack{{ID: "retained", Version: "2.0.0", CatalogRef: current}},
+		snapshots: []SelectedSnapshot{{Ref: current}, {Ref: CatalogRef{Repository: sameCommitElsewhere.Repository, Commit: strings.Repeat("b", 40)}}},
+		packs:     []Pack{{ID: "retained", Version: "2.0.0", CatalogRef: current}},
 		resolveSnapshot: func(_ context.Context, ref CatalogRef) (string, error) {
 			requested = append(requested, ref)
 			return bundle, nil
@@ -238,7 +238,7 @@ func TestResolveIntentPackAtKeysRetainedSnapshotsByRepository(t *testing.T) {
 }
 
 func TestRetainedCatalogRejectsReceiptWithoutCatalogRef(t *testing.T) {
-	catalog := Catalog{ref: testCatalogRef("a")}
+	catalog := Catalog{snapshots: []SelectedSnapshot{{Ref: testCatalogRef("a")}}}
 	_, err := catalog.resolveIntentPackAt(context.Background(), "legacy", "1.0.0", CatalogRef{})
 	if err == nil || !strings.Contains(err.Error(), "names no catalog") || !strings.Contains(err.Error(), "docs/catalog-adoption.md") || strings.Contains(err.Error(), "reset") {
 		t.Fatalf("resolveIntentPackAt() error = %v", err)
@@ -256,7 +256,7 @@ func TestActivationRefusesAReceiptFromAnotherCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	pack := Pack{ID: "app", Version: "1.0.0", CatalogRef: official, Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
-	facade := NewFacade(Catalog{ref: official, packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}))
+	facade := NewFacade(Catalog{snapshots: []SelectedSnapshot{{Ref: official}}, packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}))
 
 	if _, err := facade.Preview(ctx, ActivationRequest{PackID: "app", Surface: SurfaceAgents}); err == nil || !strings.Contains(err.Error(), "installed from catalog someone/catalog") {
 		t.Fatalf("activate over a receipt from another catalog = %v", err)

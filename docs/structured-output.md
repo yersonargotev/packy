@@ -14,7 +14,9 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy version --json` | `schemas/cli/v1/packy-version.schema.json` |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy show PACK --surface HOST --json` | `schemas/cli/v1/skill-discovery.schema.json` |
-| `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
+| `packy catalog list --json` | `schemas/cli/v1/catalog-list.schema.json` |
+| `packy catalog refresh --json` | `schemas/cli/v1/catalog-refresh.schema.json` |
+| `packy list --json` | `schemas/cli/v2/pack-list.schema.json` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `schemas/cli/v1/skill-access.schema.json` |
 | `packy export PACK --surface agents|claude --output DIR --json` | `schemas/cli/v1/plugin-export.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
@@ -37,6 +39,8 @@ live producer examples, and reject the checked-in negative project fixtures.
 | `packy catalog publish --json` | `catalog-publication` |
 | `packy version --json` | `packy-version` |
 | `packy audit --json` | `packy-audit` |
+| `packy catalog list --json` | `catalog-list` |
+| `packy catalog refresh --json` | `catalog-refresh` |
 | `packy list --json` | `pack-list` |
 | `packy show PACK --surface HOST --json` | `skill-discovery` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `skill-access` |
@@ -149,6 +153,26 @@ carries `catalog_repository`, the catalog's GitHub `owner/repo`, next to
 lock. Packy rejects each earlier version with an error that names
 [catalog adoption](catalog-adoption.md) and leaves the file unchanged. An
 earlier `packs.json` with no receipts loads as empty.
+
+## Catalog registrations
+
+Catalog list v1 reports every registered catalog, the official catalog first
+and the others in repository order. Each entry has `repository`, `official`,
+`trust` (`attested` or `access-controlled`), `workflow` for an `attested`
+catalog, and `snapshot_id`, which is `null` before the first selection.
+
+Catalog refresh v1 reports one entry for each refreshed catalog. `result` is
+`selected` or `failed`. `snapshot_id` is the snapshot that the catalog has
+selected after the refresh, so a failed refresh reports the previous selection
+and an `error`. `snapshot_id` is `null` when the catalog has no readable
+selection, and the `error` then says why. When any catalog fails, the command
+exits non-zero after it reports every catalog.
+
+Pack list v2 adds `catalog_repository` to each Pack, which names the catalog
+whose selected Catalog Snapshot provides it. The field is absent only when
+Packy reads a catalog root in place instead of a downloaded snapshot. Pack list
+v1 forbids additional properties, so the field needs a new generation. Pack
+list v1 remains historical documentation.
 
 ## Catalog validation and executable identity
 

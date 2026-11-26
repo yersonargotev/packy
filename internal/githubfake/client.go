@@ -152,5 +152,5 @@ func (v *AttestationVerifier) Verify(ctx context.Context, repository, subjectSHA
 			return nil
 		}
 	}
-	return fmt.Errorf("no fixture attestation for %s was signed by %s", repository, signerWorkflow)
+	return fmt.Errorf("%w: no fixture attestation for %s was signed by %s", catalogstore.ErrNoAttestationVerified, repository, signerWorkflow)
 }
