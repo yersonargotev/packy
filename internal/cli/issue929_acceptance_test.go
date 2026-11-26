@@ -867,7 +867,7 @@ func testIssue929FailedAttestation(t *testing.T, transport string) {
 	if err := githubfake.WriteRepository(fixtures, issue929Acme, githubfake.Repository{AttestationWorkflow: "acme/packs/.github/workflows/other.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "attestation")
+	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "attestation", "if acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`")
 }
 
 func testIssue929RefreshAllAndOne(t *testing.T, transport string) {

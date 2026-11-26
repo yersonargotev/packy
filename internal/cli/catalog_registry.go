@@ -66,6 +66,10 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 				return err
 			}
 			snapshot, err := store.Register(cmd.Context(), registration)
+			var rejected attestationRejection
+			if errors.As(err, &rejected) {
+				return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
+			}
 			if err != nil {
 				return err
 			}
@@ -76,6 +80,25 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog, which is attested")
 	command.Flags().StringVar(&workflow, "workflow", catalogstore.DefaultWorkflow, "publication workflow that must sign attested Catalog Snapshots")
 	return command
+}
+
+// attestationRejection marks a failed attestation verification, so catalog
+// add can name the --workflow flag that fixes a mismatched publication
+// workflow.
+type attestationRejection struct{ err error }
+
+func (r attestationRejection) Error() string { return r.err.Error() }
+func (r attestationRejection) Unwrap() error { return r.err }
+
+type rejectionMarkingVerifier struct {
+	catalogstore.AttestationVerifier
+}
+
+func (v rejectionMarkingVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
+	if err := v.AttestationVerifier.Verify(ctx, repository, subjectSHA256, signerWorkflow); err != nil {
+		return attestationRejection{err}
+	}
+	return nil
 }
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {

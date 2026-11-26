@@ -357,7 +357,7 @@ func newCatalogStore(opts Options, snapshot workstation.Snapshot) *catalogstore.
 		if verifier == nil {
 			verifier = catalogstore.NewGitHubAttestationVerifier(client)
 		}
-		source = catalogstore.NewGitHubSource(client, verifier)
+		source = catalogstore.NewGitHubSource(client, rejectionMarkingVerifier{verifier})
 	}
 	return catalogstore.New(catalogstore.DefaultDataRoot(snapshot.Home()), source)
 }
