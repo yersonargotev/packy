@@ -115,7 +115,7 @@ func WriteRepository(root, repository string, value Repository) error {
 }
 
 // Handler serves the fixture repositories below root for the api.github.com
-// and github.com hosts. Every other request gets 404.
+// and github.com hosts.
 func Handler(root string) http.Handler {
 	fixtures := fixtureRoot(root)
 	mux := http.NewServeMux()
@@ -123,7 +123,6 @@ func Handler(root string) http.Handler {
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/releases/latest", fixtures.latestRelease)
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/attestations/{subject}", fixtures.attestations)
 	mux.HandleFunc("GET github.com/{owner}/{repo}/releases/download/{tag}/{asset}", fixtures.download)
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { writeStatus(w, http.StatusNotFound) })
 	return mux
 }
 
