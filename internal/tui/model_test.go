@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ type fakeBackend struct {
 	initializations int
 	initialize      func(func(string)) error
 	refreshes       int
-	refresh         func(func(string)) error
+	refresh         func(func(string)) ([]tui.CatalogRefresh, error)
 	preview         tui.Preview
 	previewErr      error
 	previewFor      func(tui.PreviewRequest) (tui.Preview, error)
@@ -35,12 +36,12 @@ type fakeBackend struct {
 	applyFor        func(tui.ApplyRequest, func(tui.ApplyProgress)) (tui.ApplyResult, error)
 }
 
-func (b *fakeBackend) RefreshCatalog(_ context.Context, progress func(string)) error {
+func (b *fakeBackend) RefreshCatalog(_ context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
 	b.refreshes++
 	if b.refresh != nil {
 		return b.refresh(progress)
 	}
-	return nil
+	return nil, nil
 }
 
 func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error {
@@ -51,30 +52,36 @@ func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error
 	return nil
 }
 
+const (
+	officialCatalog = "yersonargotev/packy-catalog"
+	acmeCatalog     = "acme/packs"
+	teamCatalog     = "team/private-packs"
+)
+
 func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testing.T) {
 	initial := tui.Dashboard{
-		Health:  tui.Health{Status: "healthy"},
-		Catalog: tui.Catalog{SnapshotID: strings.Repeat("a", 40), Repository: "yersonargotev/packy-catalog", Digest: strings.Repeat("b", 64), Packs: 1, RefreshAvailable: true},
-		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"agents"}}}},
+		Health:   tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Digest: strings.Repeat("b", 64), Packs: 1}},
+		Global:   tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Catalog: officialCatalog, Surfaces: []string{"agents"}}}},
 	}
 	refreshed := initial
-	refreshed.Catalog.SnapshotID = strings.Repeat("c", 40)
-	refreshed.Global.Packs = []tui.Pack{{ID: "argote", Version: "2.0.0", Surfaces: []string{"agents"}}}
+	refreshed.Catalogs = []tui.Catalog{{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Digest: strings.Repeat("b", 64), Packs: 1}}
+	refreshed.Global.Packs = []tui.Pack{{ID: "argote", Version: "2.0.0", Catalog: officialCatalog, Surfaces: []string{"agents"}}}
 	backend := &fakeBackend{dashboard: initial}
-	backend.refresh = func(progress func(string)) error {
-		progress("selected official Catalog Snapshot " + refreshed.Catalog.SnapshotID)
+	backend.refresh = func(func(string)) ([]tui.CatalogRefresh, error) {
 		backend.dashboard = refreshed
-		return nil
+		return []tui.CatalogRefresh{{Repository: officialCatalog, SnapshotID: refreshed.Catalogs[0].SnapshotID}}, nil
 	}
 
 	model := loadModel(t, backend)
 	view := ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "Reviewed Pack catalog: 1 Pack") || strings.Contains(view, initial.Catalog.SnapshotID) {
-		t.Fatalf("catalog summary is not compact:\n%s", view)
+	assertCatalogRow(t, view, officialCatalog, "attested", initial.Catalogs[0].SnapshotID)
+	if strings.Contains(view, initial.Catalogs[0].Digest) {
+		t.Fatalf("catalog summary shows the digest before details:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '?', Text: "?"}))
 	view = ansi.Strip(model.View().Content)
-	for _, want := range []string{"Reviewed Pack catalog", "yersonargotev/packy-catalog", initial.Catalog.SnapshotID, "1 Pack", "c refresh"} {
+	for _, want := range []string{"Reviewed Pack catalogs", officialCatalog, "Trust: attested", "Selected snapshot: " + initial.Catalogs[0].SnapshotID, "Inventory: 1 Pack", "Catalog digest: " + initial.Catalogs[0].Digest, "c refresh"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("catalog inspection missing %q:\n%s", want, view)
 		}
@@ -86,7 +93,7 @@ func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testi
 		t.Fatalf("catalog refresh calls = %d, want 1", backend.refreshes)
 	}
 	view = ansi.Strip(model.View().Content)
-	for _, want := range []string{"Catalog refresh succeeded", refreshed.Catalog.SnapshotID, "Enter dashboard"} {
+	for _, want := range []string{"Catalog refresh succeeded", "[OK] " + officialCatalog, "  selected Catalog Snapshot " + refreshed.Catalogs[0].SnapshotID, "Enter dashboard"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("catalog refresh result missing %q:\n%s", want, view)
 		}
@@ -94,7 +101,7 @@ func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testi
 
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view = ansi.Strip(model.View().Content)
-	if !strings.Contains(view, refreshed.Catalog.SnapshotID) || !strings.Contains(view, "argote  2.0.0") {
+	if !strings.Contains(view, refreshed.Catalogs[0].SnapshotID) || !strings.Contains(view, "argote  2.0.0") {
 		t.Fatalf("refreshed availability was not reloaded:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -103,22 +110,133 @@ func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testi
 	}
 }
 
-func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testing.T) {
-	snapshotID := strings.Repeat("d", 40)
+func TestDashboardListsEveryCatalogWithTrustSnapshotAndPackCatalog(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
-		Health:  tui.Health{Status: "healthy"},
-		Catalog: tui.Catalog{SnapshotID: snapshotID, Repository: "yersonargotev/packy-catalog", Packs: 1, RefreshAvailable: true},
-		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"agents"}}}},
+		Health: tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{
+			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
+			{Repository: acmeCatalog, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 2},
+			{Repository: teamCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{
+			{ID: "acme", Version: "1.0.0", Catalog: acmeCatalog},
+			{ID: "acme-tools", Version: "1.2.0", Catalog: acmeCatalog},
+			{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog},
+			{ID: "team", Version: "0.1.0", Catalog: teamCatalog},
+		}},
 	}}
-	backend.refresh = func(func(string)) error {
-		return errors.New("Catalog Snapshot requires Packy engine 2; update Packy and retry catalog refresh")
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	view := ansi.Strip(model.View().Content)
+	assertCatalogRow(t, view, officialCatalog, "attested", strings.Repeat("a", 40))
+	assertCatalogRow(t, view, acmeCatalog, "attested", strings.Repeat("c", 40))
+	assertCatalogRow(t, view, teamCatalog, "access-controlled \\(weaker\\)", strings.Repeat("e", 40))
+	for _, want := range []string{"acme  1.0.0  " + acmeCatalog, "acme-tools  1.2.0  " + acmeCatalog, "fixture  1.0.0  " + officialCatalog, "team  0.1.0  " + teamCatalog} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Pack row missing its catalog %q:\n%s", want, view)
+		}
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '?', Text: "?"}))
+	view = ansi.Strip(model.View().Content)
+	for _, want := range []string{"Trust: access-controlled (weaker). GitHub repository access stands in for build provenance.", "Selected snapshot: " + strings.Repeat("e", 40), "Inventory: 2 Packs"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("catalog details missing %q:\n%s", want, view)
+		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '?', Text: "?"}))
+
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	view = ansi.Strip(model.View().Content)
+	assertCatalogRow(t, view, officialCatalog, "attested", strings.Repeat("a", 12))
+	assertCatalogRow(t, view, teamCatalog, "access-controlled \\(weaker\\)", strings.Repeat("e", 12))
+	for _, line := range strings.Split(view, "\n") {
+		if width := ansi.StringWidth(line); width > 80 {
+			t.Fatalf("80-column dashboard line width = %d:\n%s", width, view)
+		}
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '/', Text: "/"}))
+	for _, key := range "acme/" {
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: key, Text: string(key)}))
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "2 matches") || strings.Contains(view, "fixture  1.0.0") {
+		t.Fatalf("catalog filter did not select the acme/packs Packs:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 'i', Text: "i"}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Catalog: "+acmeCatalog) {
+		t.Fatalf("Pack details omit the catalog:\n%s", view)
+	}
+}
+
+func TestPartialCatalogRefreshReportsEachCatalogAndKeepsFailedSelection(t *testing.T) {
+	previous, failed := strings.Repeat("a", 40), strings.Repeat("c", 40)
+	refreshed := strings.Repeat("b", 40)
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{
+			{Repository: officialCatalog, Trust: "attested", SnapshotID: previous, Packs: 1},
+			{Repository: acmeCatalog, Trust: "attested", SnapshotID: failed, Packs: 1},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "acme", Version: "1.0.0", Catalog: acmeCatalog}}},
+	}}
+	backend.refresh = func(func(string)) ([]tui.CatalogRefresh, error) {
+		backend.dashboard.Catalogs[0].SnapshotID = refreshed
+		return []tui.CatalogRefresh{
+			{Repository: officialCatalog, SnapshotID: refreshed},
+			{Repository: acmeCatalog, SnapshotID: failed, Err: errors.New("latest release of acme/packs returned HTTP 500")},
+		}, nil
 	}
 
 	model := loadModel(t, backend)
 	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
 	model = runModelCommand(t, model, command)
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Catalog refresh failed", "requires Packy engine 2", "previous selected Catalog Snapshot remains available"} {
+	for _, want := range []string{
+		"Catalog refresh failed for 1 of 2 catalogs",
+		"[OK] " + officialCatalog,
+		"  selected Catalog Snapshot " + refreshed,
+		"[FAIL] " + acmeCatalog,
+		"  failed and keeps Catalog Snapshot " + failed,
+		"latest release of acme/packs returned HTTP 500",
+		"Enter retry",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("partial refresh result missing %q:\n%s", want, view)
+		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	view = ansi.Strip(model.View().Content)
+	assertCatalogRow(t, view, officialCatalog, "attested", refreshed)
+	assertCatalogRow(t, view, acmeCatalog, "attested", failed)
+
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+	model = runModelCommand(t, model, command)
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	runModelCommand(t, model, command)
+	if backend.refreshes != 3 {
+		t.Fatalf("catalog refresh calls after retry = %d, want 3", backend.refreshes)
+	}
+}
+
+func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testing.T) {
+	snapshotID := strings.Repeat("d", 40)
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health:   tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{{Repository: officialCatalog, Trust: "attested", SnapshotID: snapshotID, Packs: 1}},
+		Global:   tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Surfaces: []string{"agents"}}}},
+	}}
+	backend.refresh = func(func(string)) ([]tui.CatalogRefresh, error) {
+		return []tui.CatalogRefresh{{Repository: officialCatalog, SnapshotID: snapshotID, Err: errors.New("Catalog Snapshot requires Packy engine 2; update Packy and retry catalog refresh")}}, nil
+	}
+
+	model := loadModel(t, backend)
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+	model = runModelCommand(t, model, command)
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Catalog refresh failed for 1 of 1 catalogs", "requires Packy engine 2", "keeps Catalog Snapshot " + snapshotID} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("failed refresh missing %q:\n%s", want, view)
 		}
@@ -128,6 +246,16 @@ func TestFailedCatalogRefreshRetainsPreviousCatalogAndExplainsRecovery(t *testin
 	view = ansi.Strip(model.View().Content)
 	if !strings.Contains(view, snapshotID) || !strings.Contains(view, "argote") {
 		t.Fatalf("failed refresh did not retain prior catalog:\n%s", view)
+	}
+}
+
+// assertCatalogRow requires one dashboard line that lists the catalog's
+// repository, trust policy, and snapshot in that order.
+func assertCatalogRow(t *testing.T, view, repository, trust, snapshot string) {
+	t.Helper()
+	row := regexp.MustCompile("(?m)^[│ ]*" + regexp.QuoteMeta(repository) + " +" + trust + " +" + snapshot + "[│ ]*$")
+	if !row.MatchString(view) {
+		t.Fatalf("dashboard has no catalog row %s %s %s:\n%s", repository, trust, snapshot, view)
 	}
 }
 
@@ -2077,10 +2205,10 @@ func TestDashboardCatalogPagingFitsNarrowTerminal(t *testing.T) {
 	const snapshot = "0123456789abcdefABCDEFGHIJKLMNOPQRSTUVWX"
 	const digest = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
 	backend := &fakeBackend{dashboard: tui.Dashboard{
-		Health:  tui.Health{Status: "healthy"},
-		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "focused", Version: "1.0.0"}}},
-		Project: tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{{ID: "focused", Version: "1.0.0"}}},
-		Catalog: tui.Catalog{SnapshotID: snapshot, Repository: "yersonargotev/packy-catalog", Digest: "sha256:" + digest, Packs: 1},
+		Health:   tui.Health{Status: "healthy"},
+		Global:   tui.Scope{Available: true, Packs: []tui.Pack{{ID: "focused", Version: "1.0.0"}}},
+		Project:  tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{{ID: "focused", Version: "1.0.0"}}},
+		Catalogs: []tui.Catalog{{Repository: officialCatalog, Trust: "attested", SnapshotID: snapshot, Digest: "sha256:" + digest, Packs: 1}},
 	}}
 	for _, expanded := range []bool{false, true} {
 		t.Run(fmt.Sprintf("expanded=%t", expanded), func(t *testing.T) {

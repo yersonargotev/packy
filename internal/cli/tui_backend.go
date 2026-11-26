@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/tui"
 	"github.com/yersonargotev/packy/internal/workstation"
@@ -79,12 +80,12 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		return dashboard, nil
 	}
 	if sources.isDefault {
-		dashboard.Catalog = tui.Catalog{
-			SnapshotID:       sources.snapshot.ID,
-			Repository:       sources.snapshot.Index.Source.Repository,
-			Digest:           sources.snapshot.Index.CatalogSHA256,
-			Packs:            len(sources.snapshot.Index.Packs),
-			RefreshAvailable: true,
+		dashboard.Catalogs, err = catalogsForTUI(sources)
+		if err != nil {
+			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+				Cause:           fmt.Sprintf("inspect registered catalogs: %v", err),
+				AffectedActions: []string{"Catalog inspection", "Catalog refresh"},
+			})
 		}
 	}
 	currentDetails := append([]capabilitypack.CatalogDetail(nil), details...)
@@ -219,8 +220,72 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 	})
 }
 
-func (b *tuiBackend) RefreshCatalog(ctx context.Context, progress func(string)) error {
-	return b.Initialize(ctx, progress)
+// catalogsForTUI lists every registration in store order with the snapshot
+// that sources selected for it.
+func catalogsForTUI(sources invocationSources) ([]tui.Catalog, error) {
+	registrations, err := sources.store.Registrations()
+	if err != nil {
+		return nil, err
+	}
+	selected := make(map[string]catalogstore.Snapshot, len(registrations))
+	for _, snapshot := range append([]catalogstore.Snapshot{sources.snapshot}, sources.others...) {
+		ref, err := snapshotCatalogRef(snapshot)
+		if err != nil {
+			return nil, err
+		}
+		selected[ref.Repository] = snapshot
+	}
+	catalogs := make([]tui.Catalog, 0, len(registrations))
+	for _, registration := range registrations {
+		snapshot, ok := selected[registration.Repository.String()]
+		if !ok {
+			return nil, fmt.Errorf("catalog %s has no selected Catalog Snapshot", registration.Repository)
+		}
+		trust, _ := catalogstore.TrustPolicyName(registration.Trust)
+		catalogs = append(catalogs, tui.Catalog{
+			Repository: registration.Repository.String(),
+			Trust:      trust,
+			SnapshotID: snapshot.ID,
+			Digest:     snapshot.Index.CatalogSHA256,
+			Packs:      len(snapshot.Index.Packs),
+		})
+	}
+	return catalogs, nil
+}
+
+// RefreshCatalog refreshes every registered catalog independently, as
+// `packy catalog refresh` does, and reports one result per catalog.
+func (b *tuiBackend) RefreshCatalog(ctx context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
+	store, _, err := registryStore(b.opts, b.resolver)
+	if err != nil {
+		return nil, err
+	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		return nil, err
+	}
+	refreshes := make([]tui.CatalogRefresh, 0, len(registrations))
+	for _, registration := range registrations {
+		if err := ctx.Err(); err != nil {
+			return refreshes, err
+		}
+		refresh := tui.CatalogRefresh{Repository: registration.Repository.String()}
+		progress("Acquiring the latest Catalog Snapshot of " + refresh.Repository)
+		snapshot, err := store.AcquireLatest(ctx, registration.Repository)
+		if err == nil {
+			refresh.SnapshotID = snapshot.ID
+		} else {
+			refresh.Err = err
+			previous, selectionErr := selectedSnapshotID(store, registration.Repository)
+			if selectionErr != nil {
+				refresh.Err = fmt.Errorf("%w; the previous selection is unreadable: %v", err, selectionErr)
+			} else if previous != nil {
+				refresh.SnapshotID = *previous
+			}
+		}
+		refreshes = append(refreshes, refresh)
+	}
+	return refreshes, nil
 }
 
 func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (tui.Preview, error) {
@@ -997,6 +1062,7 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 		pack := detail.Pack
 		view := tui.Pack{
 			ID: pack.ID, Version: pack.Version, Description: pack.Description,
+			Catalog:      pack.CatalogRef.Repository,
 			CatalogState: "current",
 			Requirements: append([]string(nil), pack.Requires.Tools...),
 			Resources:    resourcesForTUI(detail),

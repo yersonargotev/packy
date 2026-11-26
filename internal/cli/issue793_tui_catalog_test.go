@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -47,12 +48,12 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	updated := pack.Candidate().WithExactCopyBytes("skill:guide", "SKILL.md", []byte("---\nname: guide\ndescription: Updated guide.\n---\n\nTUI refreshed catalog guidance\n"))
 	newPack := testsupport.SkillVariants("catalog-tui-new")
 	source.release = catalogReleaseFixture(t, updatedCommit, updated, newPack)
-	var progress []string
-	if err := backend.RefreshCatalog(context.Background(), func(message string) { progress = append(progress, message) }); err != nil {
+	refreshes, err := backend.RefreshCatalog(context.Background(), func(string) {})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(progress) != 1 || !strings.Contains(progress[0], updatedCommit) {
-		t.Fatalf("RefreshCatalog() progress = %v", progress)
+	if want := []tui.CatalogRefresh{{Repository: "yersonargotev/packy-catalog", SnapshotID: updatedCommit}}; !reflect.DeepEqual(refreshes, want) {
+		t.Fatalf("RefreshCatalog() = %#v, want %#v", refreshes, want)
 	}
 	afterReceipts, err := os.ReadFile(filepath.Join(env["HOME"], ".packy", "packs.json"))
 	if err != nil {
@@ -67,8 +68,8 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	}
 	current := findTUIPack(dashboard.Global.Packs, pack.ID())
 	added := findTUIPack(dashboard.Global.Packs, newPack.ID())
-	if dashboard.Catalog.SnapshotID != updatedCommit || dashboard.Catalog.Packs != 2 || current == nil || current.Version != updated.CurrentVersion() || added == nil {
-		t.Fatalf("refreshed TUI availability = catalog %#v, packs %#v", dashboard.Catalog, dashboard.Global.Packs)
+	if len(dashboard.Catalogs) != 1 || dashboard.Catalogs[0].SnapshotID != updatedCommit || dashboard.Catalogs[0].Packs != 2 || current == nil || current.Version != updated.CurrentVersion() || added == nil {
+		t.Fatalf("refreshed TUI availability = catalogs %#v, packs %#v", dashboard.Catalogs, dashboard.Global.Packs)
 	}
 	statusIndex := slices.IndexFunc(current.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "agents" })
 	if statusIndex < 0 {
@@ -80,11 +81,12 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	}
 
 	source.err = errors.New("Catalog Snapshot requires a newer Packy engine; update Packy and retry")
-	if err := backend.RefreshCatalog(context.Background(), func(string) {}); err == nil || !strings.Contains(err.Error(), "update Packy and retry") {
-		t.Fatalf("incompatible refresh error = %v", err)
+	refreshes, err = backend.RefreshCatalog(context.Background(), func(string) {})
+	if err != nil || len(refreshes) != 1 || refreshes[0].SnapshotID != updatedCommit || refreshes[0].Err == nil || !strings.Contains(refreshes[0].Err.Error(), "update Packy and retry") {
+		t.Fatalf("incompatible refresh = %#v, %v", refreshes, err)
 	}
 	dashboard, err = backend.Load(context.Background())
-	if err != nil || dashboard.Catalog.SnapshotID != updatedCommit || findTUIPack(dashboard.Global.Packs, newPack.ID()) == nil {
-		t.Fatalf("failed refresh replaced usable catalog: catalog=%#v err=%v", dashboard.Catalog, err)
+	if err != nil || len(dashboard.Catalogs) != 1 || dashboard.Catalogs[0].SnapshotID != updatedCommit || findTUIPack(dashboard.Global.Packs, newPack.ID()) == nil {
+		t.Fatalf("failed refresh replaced usable catalog: catalogs=%#v err=%v", dashboard.Catalogs, err)
 	}
 }
