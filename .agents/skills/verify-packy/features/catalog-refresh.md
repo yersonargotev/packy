@@ -1,10 +1,10 @@
 # Catalog refresh
 
-Users acquire and select the latest Catalog Snapshot of a catalog. Packy keeps each catalog below `~/.local/share/packy/catalog/v2/<owner>/<repo>`.
+Users acquire and select the latest Catalog Snapshot of every registered catalog, or of one. Packy keeps each catalog below `~/.local/share/packy/catalog/v2/<owner>/<repo>`.
 
 ## Sub-features
 
-- Refresh downloads, verifies, retains, and selects the latest official snapshot.
+- Refresh downloads, verifies, retains, and selects the latest snapshot of each catalog. [Catalog registration](catalog-registration.md) covers several catalogs.
 - A refused refresh keeps the previous selection.
 - A store that has only the earlier `catalog/selected.json` layout fails reads and names `docs/catalog-adoption.md`.
 

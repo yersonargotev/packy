@@ -497,6 +497,34 @@ The former source-only publisher script is removed after migrating its Packy
 callers; the Catalog Project continues using its previous immutable release
 until adoption.
 
+## Publish a third-party catalog
+
+Any GitHub repository that follows the Catalog Publication contract is a
+catalog. A user registers it with `packy catalog add <owner/repo>` and its Packs
+then appear next to the official ones. Packy does not generate the repository.
+The reference workflow is the official
+[`publish.yml`](https://github.com/yersonargotev/packy-catalog/blob/main/.github/workflows/publish.yml).
+
+1. Lay out each Pack below `packs/<pack-id>/` and run `packy catalog validate`.
+   Choose Pack IDs that no other catalog provides. Packy refuses a whole
+   Catalog Snapshot when it introduces a Pack ID that the selected snapshot of
+   another registered catalog already provides.
+2. Copy the reference workflow to `.github/workflows/publish.yml` and change its
+   repository guard to your `owner/repo`. Keep it on a GitHub-hosted runner and
+   keep it triggered only by validated pushes to `main`.
+3. Keep the two jobs of the reference workflow. The first job runs
+   `packy catalog build --project . --source-repository "$GITHUB_REPOSITORY"
+   --source-commit <commit> --out-dir dist` with a released Packy executable.
+   The second job attests `catalog-snapshot.tar.gz` with
+   `actions/attest-build-provenance` and then runs `packy catalog publish`.
+4. Turn on release immutability for the repository.
+
+`packy catalog add` downloads the latest release, verifies every check that the
+official catalog receives, and requires an attestation that the registered
+workflow signed on `refs/heads/main`. The default workflow is
+`.github/workflows/publish.yml`. Give another path with `--workflow` when you
+register the catalog. The path is fixed for the life of the registration.
+
 ## Origin download reuse
 
 Authoring commands retain verified upstream checkouts under the operating
