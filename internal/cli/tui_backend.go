@@ -239,10 +239,11 @@ func catalogsForTUI(sources invocationSources) ([]tui.Catalog, error) {
 		if !ok {
 			return nil, fmt.Errorf("catalog %s has no selected Catalog Snapshot", registration.Repository)
 		}
-		trust, _ := catalogstore.TrustPolicyName(registration.Trust)
+		trust, workflow := catalogstore.TrustPolicyName(registration.Trust)
 		catalogs = append(catalogs, tui.Catalog{
 			Repository: registration.Repository.String(),
 			Trust:      trust,
+			Workflow:   workflow,
 			SnapshotID: snapshot.ID,
 			Digest:     snapshot.Index.CatalogSHA256,
 			Packs:      len(snapshot.Index.Packs),

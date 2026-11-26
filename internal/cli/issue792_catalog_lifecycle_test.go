@@ -170,7 +170,7 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	if source.calls != callsAfterInitialization {
 		t.Fatalf("TUI load discovered catalog updates online: calls %d -> %d", callsAfterInitialization, source.calls)
 	}
-	if len(dashboard.Catalogs) != 1 || dashboard.Catalogs[0].Digest == "" || dashboard.Catalogs[0] != (tui.Catalog{Repository: "yersonargotev/packy-catalog", Trust: "attested", SnapshotID: commit, Digest: dashboard.Catalogs[0].Digest, Packs: 1}) {
+	if len(dashboard.Catalogs) != 1 || dashboard.Catalogs[0].Digest == "" || dashboard.Catalogs[0] != (tui.Catalog{Repository: "yersonargotev/packy-catalog", Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: commit, Digest: dashboard.Catalogs[0].Digest, Packs: 1}) {
 		t.Fatalf("TUI catalog inspection = %#v", dashboard.Catalogs)
 	}
 }

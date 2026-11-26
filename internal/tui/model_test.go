@@ -61,7 +61,7 @@ const (
 func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testing.T) {
 	initial := tui.Dashboard{
 		Health:   tui.Health{Status: "healthy"},
-		Catalogs: []tui.Catalog{{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Digest: strings.Repeat("b", 64), Packs: 1}},
+		Catalogs: []tui.Catalog{{Repository: officialCatalog, Trust: "attested", Workflow: ".github/workflows/publish.yml", SnapshotID: strings.Repeat("a", 40), Digest: strings.Repeat("b", 64), Packs: 1}},
 		Global:   tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Catalog: officialCatalog, Surfaces: []string{"agents"}}}},
 	}
 	refreshed := initial
@@ -81,7 +81,7 @@ func TestCatalogInspectionAndExplicitRefreshRemainSeparateFromLifecycle(t *testi
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '?', Text: "?"}))
 	view = ansi.Strip(model.View().Content)
-	for _, want := range []string{"Reviewed Pack catalogs", officialCatalog, "Trust: attested", "Selected snapshot: " + initial.Catalogs[0].SnapshotID, "Inventory: 1 Pack", "Catalog digest: " + initial.Catalogs[0].Digest, "c refresh"} {
+	for _, want := range []string{"Reviewed Pack catalogs", officialCatalog, "Trust: attested by .github/workflows/publish.yml", "Selected snapshot: " + initial.Catalogs[0].SnapshotID, "Inventory: 1 Pack", "Catalog digest: " + initial.Catalogs[0].Digest, "c refresh"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("catalog inspection missing %q:\n%s", want, view)
 		}

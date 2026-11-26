@@ -81,8 +81,8 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 		return dashboard.Catalogs
 	}
 	if got, want := catalogs(), []tui.Catalog{
-		{Repository: official, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
-		{Repository: acme, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 1},
+		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("a", 40), Packs: 1},
+		{Repository: acme, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("c", 40), Packs: 1},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() catalogs = %#v, want %#v", got, want)
 	}
@@ -102,8 +102,8 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 		t.Fatalf("RefreshCatalog() = %#v", refreshes)
 	}
 	if got, want := catalogs(), []tui.Catalog{
-		{Repository: official, Trust: "attested", SnapshotID: strings.Repeat("b", 40), Packs: 1},
-		{Repository: acme, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 1},
+		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("b", 40), Packs: 1},
+		{Repository: acme, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("c", 40), Packs: 1},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() after a partial refresh = %#v, want %#v", got, want)
 	}

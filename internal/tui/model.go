@@ -223,11 +223,10 @@ type Dashboard struct {
 	Project  Scope
 }
 
-// Catalog is one registered catalog with its trust policy and selected
-// Catalog Snapshot.
 type Catalog struct {
 	Repository string
 	Trust      string
+	Workflow   string
 	SnapshotID string
 	Digest     string
 	Packs      int
@@ -1374,6 +1373,9 @@ func (m Model) renderCatalogs(width int) string {
 	lines := []string{sectionTitleStyle.Render("◇ Reviewed Pack catalogs") + "  " + dimStyle.Render("· c refresh")}
 	for _, catalog := range m.dashboard.Catalogs {
 		trust := "  Trust: " + trustStyle(catalog.Trust).Render(trustLabel(catalog.Trust))
+		if catalog.Workflow != "" {
+			trust += " by " + catalog.Workflow
+		}
 		if catalog.Trust == weakerTrust {
 			trust += ". Packy relies on GitHub access control instead of build provenance."
 		}
