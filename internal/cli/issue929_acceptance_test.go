@@ -145,7 +145,7 @@ func testIssue929EarlierStoreLayout(t *testing.T, transport string) {
 	}
 
 	for _, args := range [][]string{{"list", "--json"}, {"get", "skill", "fixture:fixture", "--surface", "agents"}, {"export", "fixture", "--surface", "agents", "--output", t.TempDir()}} {
-		if out, err := runIssue929(t, transport, environment, args...); !issue929Exit(err, 1) || !strings.Contains(out, "docs/catalog-adoption.md") || strings.Contains(out, "packy init") {
+		if out, err := runIssue929(t, transport, environment, args...); !issue929Exit(err, 1) || !strings.Contains(out, "https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md") || strings.Contains(out, "packy init") {
 			t.Fatalf("%v over the earlier store layout: %v\n%s", args, err, out)
 		}
 	}

@@ -59,8 +59,9 @@ Snapshots in its own directory,
 `~/.local/share/packy/catalog/v2/<owner>/<repo>`. The official catalog is
 `catalog/v2/yersonargotev/packy-catalog`. Packy does not read the earlier
 single-catalog layout, `catalog/selected.json` and `catalog/snapshots`,
-and never treats it as the official catalog. A command that finds only the
-earlier layout fails and names this guide.
+and never treats it as the official catalog. A command that reads the catalog
+and finds only the earlier layout fails and names this guide; `packy init` and
+`packy catalog refresh` write the current layout and succeed.
 
 Complete steps 1 and 2 with the previous Packy, which still reads the earlier
 layout. In step 3, `packy init` writes the current layout next to the earlier

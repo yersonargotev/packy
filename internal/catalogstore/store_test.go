@@ -443,7 +443,7 @@ func TestParseRepositoryCanonicalizesGitHubNames(t *testing.T) {
 	if err != nil || repository.String() != "acme/packs.v2" {
 		t.Fatalf("ParseRepository() = %v, %v", repository, err)
 	}
-	for _, value := range []string{"", "acme", "acme/", "/packs", "acme/packs/extra", "../packs", "acme/..", "acme/pa cks", "https://github.com/acme/packs"} {
+	for _, value := range []string{"", "acme", "acme/", "/packs", "acme/packs/extra", "../packs", "acme/..", "acme/pa cks", "https://github.com/acme/packs", "acme/\u212Ait"} {
 		if _, err := catalogstore.ParseRepository(value); err == nil {
 			t.Errorf("ParseRepository(%q) succeeded", value)
 		}

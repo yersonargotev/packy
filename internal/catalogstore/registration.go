@@ -10,7 +10,7 @@ import (
 const officialPublicationWorkflow = ".github/workflows/publish.yml"
 
 var (
-	repositoryPattern = regexp.MustCompile(`^[a-z0-9_.-]+/[a-z0-9_.-]+$`)
+	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	workflowPattern   = regexp.MustCompile(`^\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml$`)
 )
 
@@ -18,15 +18,14 @@ var (
 // owner/name form. GitHub resolves repository names case-insensitively.
 type Repository struct{ owner, name string }
 
-// ParseRepository lowercases a GitHub owner/name to its canonical form and
-// rejects any other value.
+// ParseRepository lowercases an ASCII GitHub owner/name to its canonical form
+// and rejects any other value.
 func ParseRepository(value string) (Repository, error) {
-	canonical := strings.ToLower(value)
-	owner, name, _ := strings.Cut(canonical, "/")
-	if !repositoryPattern.MatchString(canonical) || strings.Trim(owner, ".") == "" || strings.Trim(name, ".") == "" {
+	owner, name, _ := strings.Cut(value, "/")
+	if !repositoryPattern.MatchString(value) || strings.Trim(owner, ".") == "" || strings.Trim(name, ".") == "" {
 		return Repository{}, fmt.Errorf("catalog repository %q is not a GitHub owner/repo", value)
 	}
-	return Repository{owner: owner, name: name}, nil
+	return Repository{owner: strings.ToLower(owner), name: strings.ToLower(name)}, nil
 }
 
 func (r Repository) String() string { return r.owner + "/" + r.name }
