@@ -4,6 +4,7 @@ Start with [verify-packy](../SKILL.md). Each listed entry point needs its own pr
 
 - [CLI inspection](inspection.md) covers version, catalog list, and Pack details.
 - [Catalog refresh](catalog-refresh.md) covers acquisition, selection, and the per-catalog store layout.
+- [Catalog-bound receipts](catalog-bound-receipts.md) covers receipts and locks that name their catalog, earlier-schema rejection, and offline use.
 - [Project verification](project-verification.md) covers the portable project contract check.
 - [Lifecycle preview](lifecycle-preview.md) covers project installation and global activation previews.
 - [Projection lifecycle and rollback](projection-lifecycle.md) covers project and global Apply, rejection, and restoration.
