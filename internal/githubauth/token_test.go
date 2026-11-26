@@ -81,6 +81,16 @@ func TestTokenFormatsAsItsSource(t *testing.T) {
 	}
 }
 
+func TestTokenRenewalNamesItsSource(t *testing.T) {
+	bin, _ := stubGH(t, "echo gh-value")
+	for env, want := range map[string]string{"GITHUB_TOKEN": "replace or unset GITHUB_TOKEN", "": "sign in again with `gh auth login`"} {
+		token, err := Lookup(context.Background(), mapEnv(map[string]string{env: "value", "PATH": bin}))
+		if err != nil || token.Renewal() != want {
+			t.Fatalf("Renewal() of %s = %q, %v; want %q", token, token.Renewal(), err, want)
+		}
+	}
+}
+
 func stubGH(t *testing.T, body string) (bin, record string) {
 	t.Helper()
 	bin, record = t.TempDir(), t.TempDir()

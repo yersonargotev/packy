@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const ghSource = "gh auth token"
+
 // ErrMissing reports that no source holds a GitHub token.
 var ErrMissing = errors.New("no GitHub token is available; set GH_TOKEN or GITHUB_TOKEN, or sign in with `gh auth login`")
 
@@ -29,6 +31,14 @@ type Token struct{ value, source string }
 func (t Token) String() string { return t.source }
 
 func (t Token) GoString() string { return "githubauth.Token(" + t.source + ")" }
+
+// Renewal says how to replace the token after GitHub rejects it.
+func (t Token) Renewal() string {
+	if t.source == ghSource {
+		return "sign in again with `gh auth login`"
+	}
+	return "replace or unset " + t.source
+}
 
 // Authorize sends the token as the bearer credential of request.
 func (t Token) Authorize(request *http.Request) {
@@ -65,9 +75,11 @@ func Lookup(ctx context.Context, getenv func(string) string) (Token, error) {
 	if value == "" || strings.ContainsAny(value, " \t\r\n") {
 		return Token{}, fmt.Errorf("%w; gh auth token printed no single token", ErrMissing)
 	}
-	return Token{value: value, source: "gh auth token"}, nil
+	return Token{value: value, source: ghSource}, nil
 }
 
+// lookPath searches the PATH from getenv, not the process PATH, and skips
+// relative entries so that a gh in the working directory never runs.
 func lookPath(path, name string) (string, error) {
 	for _, directory := range filepath.SplitList(path) {
 		if !filepath.IsAbs(directory) {

@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/yersonargotev/packy/internal/githubauth"
 )
 
 const privateCatalogGuide = "https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md"
+
+// assetHosts are the hosts that GitHub's release asset API redirects to.
+var assetHosts = map[string]bool{"release-assets.githubusercontent.com": true, "objects.githubusercontent.com": true}
 
 // AttestationVerifier verifies GitHub build-provenance cryptography and binds
 // the subject digest to the expected repository and signer workflow.
@@ -57,6 +59,8 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 			return Release{}, err
 		}
 		token = &found
+	default:
+		return Release{}, fmt.Errorf("catalog %s has no supported trust policy", repository)
 	}
 	var wire struct {
 		Tag        string `json:"tag_name"`
@@ -110,7 +114,7 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 
 func (source *gitHubSource) privateAccess(ctx context.Context, repository string) (githubauth.Token, error) {
 	if source.credential == nil {
-		return githubauth.Token{}, fmt.Errorf("catalog %s is access-controlled, and this Packy reads no GitHub token", repository)
+		return githubauth.Token{}, errors.New("an access-controlled catalog needs a GitHub token, and this Packy reads none")
 	}
 	token, err := source.credential(ctx)
 	if err != nil {
@@ -210,7 +214,7 @@ func (source *gitHubSource) download(ctx context.Context, assetURL string, token
 }
 
 func trustedAssetHost(location *url.URL) bool {
-	return location.Scheme == "https" && location.User == nil && location.Port() == "" && strings.HasSuffix(location.Hostname(), ".githubusercontent.com")
+	return location.Scheme == "https" && location.User == nil && assetHosts[location.Host]
 }
 
 func readAsset(response *http.Response) ([]byte, error) {
@@ -228,17 +232,20 @@ func readAsset(response *http.Response) ([]byte, error) {
 // GitHub answers 404, not 403, for a private repository the caller cannot see.
 func statusError(response *http.Response, token *githubauth.Token) error {
 	err := fmt.Errorf("GitHub returned %s", response.Status)
+	if response.Header.Get("X-RateLimit-Remaining") == "0" {
+		return fmt.Errorf("%w; the GitHub API rate limit is exhausted, so try again later", err)
+	}
 	if token == nil {
 		if response.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("%w; a private catalog needs --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
+			return fmt.Errorf("%w; if the repository is private, register it with --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
 		}
 		return err
 	}
 	switch response.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%w; GitHub rejected the token from %s, so renew it or sign in again with `gh auth login`", err, token)
+		return fmt.Errorf("%w; GitHub rejected the token from %s, so %s", err, token, token.Renewal())
 	case http.StatusForbidden, http.StatusNotFound:
-		return fmt.Errorf("%w; the token from %s needs read access to the repository and its contents", err, token)
+		return fmt.Errorf("%w; the token from %s needs read access to the repository and its contents; see %s", err, token, privateCatalogGuide)
 	}
 	return err
 }

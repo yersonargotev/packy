@@ -1303,6 +1303,7 @@ func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
 
 func testIssue929PublicAccessControlled(t *testing.T, transport string) {
 	withToken := issue929Setenv(startIssue929Private(t, transport), "GH_TOKEN="+issue929PrivateToken)
+	assertIssue929RefusedAdd(t, transport, withToken, append(issue929AddPrivate, "--workflow", ".github/workflows/publish.yml"), "an access-controlled catalog names no publication workflow")
 	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "register catalog acme/packs", "the repository is public, and access-controlled is only for private repositories; use --trust attested")
 }
 
