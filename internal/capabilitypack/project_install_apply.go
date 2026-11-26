@@ -343,10 +343,15 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 	if !supportedProjectLockVersion(lock) {
 		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
 	}
-	for _, receipt := range lock.Receipts {
+	for i, receipt := range lock.Receipts {
 		if !receipt.Pack.CatalogRef.paired() {
 			return ProjectLockProposal{}, false, fmt.Errorf("project lock receipt for capability pack %q has an incomplete catalog reference", receipt.Pack.ID)
 		}
+		ref, err := receipt.Pack.CatalogRef.canonical()
+		if err != nil {
+			return ProjectLockProposal{}, false, fmt.Errorf("project lock receipt for capability pack %q: %w", receipt.Pack.ID, err)
+		}
+		lock.Receipts[i].Pack.CatalogRef = ref
 	}
 	lock, err = hydrateProjectLock(lock)
 	if err != nil {

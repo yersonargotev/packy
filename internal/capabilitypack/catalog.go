@@ -416,6 +416,33 @@ func (r CatalogRef) label() string { return r.Repository + "@" + r.Commit }
 
 func (r CatalogRef) paired() bool { return (r.Repository == "") == (r.Commit == "") }
 
+var catalogRepositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+// CanonicalCatalogRepository lowercases an ASCII GitHub owner/name to its
+// canonical form and rejects any other value. GitHub resolves repository
+// names case-insensitively.
+func CanonicalCatalogRepository(value string) (string, error) {
+	owner, name, _ := strings.Cut(value, "/")
+	if !catalogRepositoryPattern.MatchString(value) || strings.Trim(owner, ".") == "" || strings.Trim(name, ".") == "" {
+		return "", fmt.Errorf("catalog repository %q is not a GitHub owner/repo", value)
+	}
+	return strings.ToLower(value), nil
+}
+
+// canonical returns r with its repository in canonical form. The zero value
+// names no catalog and stays as it is.
+func (r CatalogRef) canonical() (CatalogRef, error) {
+	if r.Repository == "" {
+		return r, nil
+	}
+	repository, err := CanonicalCatalogRepository(r.Repository)
+	if err != nil {
+		return CatalogRef{}, err
+	}
+	r.Repository = repository
+	return r, nil
+}
+
 type Pack struct {
 	Origins              []PackOrigin
 	ID                   string

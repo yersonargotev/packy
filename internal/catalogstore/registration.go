@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
 const officialPublicationWorkflow = ".github/workflows/publish.yml"
 
 var (
-	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	workflowPattern   = regexp.MustCompile(`^\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml$`)
+	workflowPattern = regexp.MustCompile(`^\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml$`)
 )
 
 // Repository is a GitHub catalog repository in canonical lowercase
@@ -21,11 +22,12 @@ type Repository struct{ owner, name string }
 // ParseRepository lowercases an ASCII GitHub owner/name to its canonical form
 // and rejects any other value.
 func ParseRepository(value string) (Repository, error) {
-	owner, name, _ := strings.Cut(value, "/")
-	if !repositoryPattern.MatchString(value) || strings.Trim(owner, ".") == "" || strings.Trim(name, ".") == "" {
-		return Repository{}, fmt.Errorf("catalog repository %q is not a GitHub owner/repo", value)
+	canonical, err := capabilitypack.CanonicalCatalogRepository(value)
+	if err != nil {
+		return Repository{}, err
 	}
-	return Repository{owner: strings.ToLower(owner), name: strings.ToLower(name)}, nil
+	owner, name, _ := strings.Cut(canonical, "/")
+	return Repository{owner: owner, name: name}, nil
 }
 
 func (r Repository) String() string { return r.owner + "/" + r.name }

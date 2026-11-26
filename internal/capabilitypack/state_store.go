@@ -244,13 +244,17 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" || !receipt.Pack.CatalogRef.paired() {
 			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, surface, and a paired catalog repository and snapshot")
 		}
+		ref, err := receipt.Pack.CatalogRef.canonical()
+		if err != nil {
+			return activationDocument{}, fmt.Errorf("installed receipt for capability pack %q: %w", receipt.Pack.ID, err)
+		}
 		state := bySurface[receipt.Surface]
 		if state == nil {
 			state = &ActivationState{SchemaVersion: 3}
 			bySurface[receipt.Surface] = state
 		}
 		explicit := true
-		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, CatalogRef: receipt.Pack.CatalogRef, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
+		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, CatalogRef: ref, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
 		state.Intents = append(state.Intents, intent)
 		state.Intent = intent
 		for _, projection := range receipt.Projections {

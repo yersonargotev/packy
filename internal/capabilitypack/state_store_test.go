@@ -49,6 +49,23 @@ func TestFileActivationStoreBindsReceiptsToTheirCatalog(t *testing.T) {
 	}
 }
 
+func TestFileActivationStoreParsesTheCatalogRepository(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "packs.json")
+	if err := os.WriteFile(path, []byte(strings.Replace(catalogBoundReceipt, "yersonargotev/packy-catalog", "YersonArgotev/Packy-Catalog", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := capabilitypack.NewFileActivationStore(path).LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents)
+	if err != nil || state.Intent.CatalogRef.Repository != "yersonargotev/packy-catalog" {
+		t.Fatalf("loaded mixed-case catalog = %+v, %v", state.Intent.CatalogRef, err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(catalogBoundReceipt, "yersonargotev/packy-catalog", "yersonargotev/../catalog", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capabilitypack.NewFileActivationStore(path).LoadSnapshot(context.Background(), capabilitypack.SurfaceAgents); err == nil || !strings.Contains(err.Error(), "is not a GitHub owner/repo") {
+		t.Fatalf("store accepted an invalid catalog repository: %v", err)
+	}
+}
+
 func TestFileActivationStoreRejectsEarlierReceiptsWithAdoptionGuidance(t *testing.T) {
 	for name, test := range map[string]struct {
 		document     string
