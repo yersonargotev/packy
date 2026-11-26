@@ -528,6 +528,13 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	pack, err := f.resolveProjectPackUnlocked(request.PackID)
 	if err != nil {
+		if lock, exists, lockErr := readExistingProjectLock(request.ProjectRoot); lockErr == nil && exists {
+			for _, receipt := range lock.Receipts {
+				if repository := receipt.Pack.CatalogRef.Repository; receipt.Pack.ID == request.PackID && !f.catalog.registers(repository) {
+					return JSONProjectInstallPreview{}, unregisteredCatalogError(request.PackID, repository)
+				}
+			}
+		}
 		return JSONProjectInstallPreview{}, err
 	}
 	if !projectSupportsSurface(pack.Surfaces, request.Surface) {
