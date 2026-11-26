@@ -7,8 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/yersonargotev/packy/internal/githubauth"
 )
+
+const privateCatalogGuide = "https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md"
 
 // AttestationVerifier verifies GitHub build-provenance cryptography and binds
 // the subject digest to the expected repository and signer workflow.
@@ -16,29 +22,41 @@ type AttestationVerifier interface {
 	Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error
 }
 
+// Credential returns the GitHub token that reads an access-controlled catalog.
+type Credential func(context.Context) (githubauth.Token, error)
+
 // NewGitHubSource constructs the production GitHub release source. The caller
-// owns HTTP timeouts and authentication. Acquisition fails closed when verifier
-// is nil or cannot verify the archive's build-provenance attestation.
-func NewGitHubSource(client *http.Client, verifier AttestationVerifier) Source {
+// owns HTTP timeouts. Acquisition of an attested catalog fails closed when
+// verifier is nil or cannot verify the archive's build-provenance attestation.
+// Only acquisition of an access-controlled catalog calls credential, and only
+// requests to api.github.com carry its token.
+func NewGitHubSource(client *http.Client, verifier AttestationVerifier, credential Credential) Source {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &gitHubSource{client: client, verifier: verifier}
+	return &gitHubSource{client: client, verifier: verifier, credential: credential}
 }
 
 type gitHubSource struct {
-	client   *http.Client
-	verifier AttestationVerifier
+	client     *http.Client
+	verifier   AttestationVerifier
+	credential Credential
 }
 
 func (source *gitHubSource) Latest(ctx context.Context, registration Registration) (Release, error) {
-	attested, ok := registration.Trust.(Attested)
-	if !ok {
-		return Release{}, fmt.Errorf("GitHub catalog Source supports only attested catalogs, not %s", registration.Repository)
-	}
 	repository := registration.Repository.String()
-	if source.verifier == nil {
-		return Release{}, errors.New("GitHub catalog Source requires an artifact attestation verifier")
+	var token *githubauth.Token
+	switch registration.Trust.(type) {
+	case Attested:
+		if source.verifier == nil {
+			return Release{}, errors.New("GitHub catalog Source requires an artifact attestation verifier")
+		}
+	case AccessControlled:
+		found, err := source.privateAccess(ctx, repository)
+		if err != nil {
+			return Release{}, err
+		}
+		token = &found
 	}
 	var wire struct {
 		Tag        string `json:"tag_name"`
@@ -51,13 +69,13 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 			Login string `json:"login"`
 		} `json:"author"`
 		Assets []struct {
+			ID     int64  `json:"id"`
 			Name   string `json:"name"`
 			Digest string `json:"digest"`
-			URL    string `json:"browser_download_url"`
 			Size   int64  `json:"size"`
 		} `json:"assets"`
 	}
-	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", &wire); err != nil {
+	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", token, &wire); err != nil {
 		return Release{}, fmt.Errorf("read latest catalog release of %s: %w", repository, err)
 	}
 	release := Release{
@@ -69,25 +87,53 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 		if candidate.Size < 0 || candidate.Size > maxArchiveBytes {
 			return Release{}, fmt.Errorf("catalog asset %q exceeds size limit", candidate.Name)
 		}
-		data, err := source.download(ctx, candidate.URL)
+		data, err := source.download(ctx, "https://api.github.com/repos/"+repository+"/releases/assets/"+strconv.FormatInt(candidate.ID, 10), token)
 		if err != nil {
 			return Release{}, fmt.Errorf("download catalog asset %q: %w", candidate.Name, err)
 		}
 		release.Assets = append(release.Assets, Asset{Name: candidate.Name, SHA256: candidate.Digest, Data: data})
 	}
+	attested, ok := registration.Trust.(Attested)
+	if !ok {
+		return release, nil
+	}
 	assets, err := validateReleaseWithoutAttestation(registration, release)
 	if err != nil {
 		return Release{}, err
 	}
-	archiveDigest := digest(assets[archiveAsset].Data)
-	if err := source.verifier.Verify(ctx, repository, archiveDigest, repository+"/"+attested.Workflow); err != nil {
+	if err := source.verifier.Verify(ctx, repository, digest(assets[archiveAsset].Data), repository+"/"+attested.Workflow); err != nil {
 		return Release{}, fmt.Errorf("verify catalog %s artifact attestation: %w", repository, err)
 	}
 	release.AttestationVerified = true
 	return release, nil
 }
 
-func (source *gitHubSource) getJSON(ctx context.Context, url string, result any) error {
+// privateAccess finds the token for an access-controlled catalog and accepts
+// it only when GitHub reports the repository as private to that token.
+func (source *gitHubSource) privateAccess(ctx context.Context, repository string) (githubauth.Token, error) {
+	if source.credential == nil {
+		return githubauth.Token{}, fmt.Errorf("catalog %s is access-controlled, and this Packy reads no GitHub token", repository)
+	}
+	token, err := source.credential(ctx)
+	if err != nil {
+		return githubauth.Token{}, fmt.Errorf("catalog %s is access-controlled and needs a GitHub token that can read it: %w; see %s", repository, err, privateCatalogGuide)
+	}
+	var visibility struct {
+		Private *bool `json:"private"`
+	}
+	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository, &token, &visibility); err != nil {
+		return githubauth.Token{}, fmt.Errorf("read visibility of catalog %s: %w; see %s", repository, err, privateCatalogGuide)
+	}
+	if visibility.Private == nil {
+		return githubauth.Token{}, fmt.Errorf("GitHub did not report whether catalog %s is private", repository)
+	}
+	if !*visibility.Private {
+		return githubauth.Token{}, fmt.Errorf("catalog %s is a public repository, and access-controlled is only for private repositories; use --trust attested", repository)
+	}
+	return token, nil
+}
+
+func (source *gitHubSource) getJSON(ctx context.Context, url string, token *githubauth.Token, result any) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -95,6 +141,9 @@ func (source *gitHubSource) getJSON(ctx context.Context, url string, result any)
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	request.Header.Set("User-Agent", "packy-catalog-consumer")
+	if token != nil {
+		token.Authorize(request)
+	}
 	response, err := source.client.Do(request)
 	if err != nil {
 		return err
@@ -102,7 +151,7 @@ func (source *gitHubSource) getJSON(ctx context.Context, url string, result any)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
-		return fmt.Errorf("GitHub returned %s", response.Status)
+		return statusError(response, token)
 	}
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
 	if err := decoder.Decode(result); err != nil {
@@ -111,23 +160,62 @@ func (source *gitHubSource) getJSON(ctx context.Context, url string, result any)
 	return nil
 }
 
-func (source *gitHubSource) download(ctx context.Context, url string) ([]byte, error) {
-	if !strings.HasPrefix(url, "https://github.com/") && !strings.HasPrefix(url, "https://objects.githubusercontent.com/") {
-		return nil, errors.New("GitHub asset URL is not trusted")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// download reads a release asset through the GitHub API. GitHub answers with a
+// redirect to a signed URL on its asset host, which download follows without
+// the token.
+func (source *gitHubSource) download(ctx context.Context, assetURL string, token *githubauth.Token) ([]byte, error) {
+	client := *source.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	request.Header.Set("Accept", "application/octet-stream")
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	request.Header.Set("User-Agent", "packy-catalog-consumer")
-	response, err := source.client.Do(request)
+	if token != nil {
+		token.Authorize(request)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub returned %s", response.Status)
+	switch response.StatusCode {
+	case http.StatusOK:
+		return readAsset(response)
+	case http.StatusFound, http.StatusMovedPermanently, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+	default:
+		return nil, statusError(response, token)
 	}
+	location, err := response.Location()
+	if err != nil {
+		return nil, fmt.Errorf("GitHub redirected the asset download without a location: %w", err)
+	}
+	if !trustedAssetHost(location) {
+		return nil, fmt.Errorf("GitHub redirected the asset download to untrusted host %q", location.Host)
+	}
+	request, err = http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", "packy-catalog-consumer")
+	redirected, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("download from %s: %w", location.Host, err)
+	}
+	defer redirected.Body.Close()
+	if redirected.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s returned %s", location.Host, redirected.Status)
+	}
+	return readAsset(redirected)
+}
+
+func trustedAssetHost(location *url.URL) bool {
+	return location.Scheme == "https" && location.User == nil && location.Port() == "" && strings.HasSuffix(location.Hostname(), ".githubusercontent.com")
+}
+
+func readAsset(response *http.Response) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxArchiveBytes+1))
 	if err != nil {
 		return nil, err
@@ -136,6 +224,26 @@ func (source *gitHubSource) download(ctx context.Context, url string) ([]byte, e
 		return nil, errors.New("download exceeds size limit")
 	}
 	return data, nil
+}
+
+// statusError explains a failed GitHub API response. A response to a request
+// that carried a token names the token's source and how to fix its access, and
+// an anonymous 404 points to private catalog registration.
+func statusError(response *http.Response, token *githubauth.Token) error {
+	err := fmt.Errorf("GitHub returned %s", response.Status)
+	if token == nil {
+		if response.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w; a private catalog needs --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
+		}
+		return err
+	}
+	switch response.StatusCode {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%w; GitHub rejected the token from %s, so renew it or sign in again with `gh auth login`", err, token)
+	case http.StatusForbidden, http.StatusNotFound:
+		return fmt.Errorf("%w; the token from %s needs read access to the repository and its contents", err, token)
+	}
+	return err
 }
 
 func validateReleaseWithoutAttestation(registration Registration, release Release) (map[string]Asset, error) {
