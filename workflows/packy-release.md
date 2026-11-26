@@ -174,7 +174,7 @@ cover the observed release delta and note contracts. The bounded pre-tag
 release-note correction requires no additional scope confirmation.
 
 Prepare the approved correction through
-[poteto-mode](../.agents/skills/poteto-mode/SKILL.md) under the
+the `poteto-mode` skill (pstack, installed in the home repo) under the
 [Packy development policy](../docs/agents/development.md). Use its verification
 and independent review requirements, then open or update the correction PR.
 Stop publication at that PR. Opening the PR does not start Babysit. Human merge
