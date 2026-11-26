@@ -90,7 +90,7 @@ It rejects an earlier `packs.json` that still holds receipts, an earlier
 `packy.lock.json`, or an earlier personal project activation with an error that
 names this guide. An earlier `packs.json` with no receipts, which the previous
 Packy leaves after the last deactivation, loads as empty, and the next change
-rewrites it at `schema_version` 2. It leaves the rejected file
+rewrites it at `schema_version` 2. Packy leaves the rejected file
 unchanged and never reads an earlier receipt as official-catalog state. No
 converter exists.
 

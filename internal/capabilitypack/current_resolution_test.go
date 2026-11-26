@@ -106,14 +106,14 @@ func TestIntentPackResolversDoNotNestLocksAcrossRetainedSnapshots(t *testing.T) 
 	ready := make(chan struct{}, 2)
 	release := make(chan struct{})
 	resolver := func(expectedID CatalogRef, targetBundle string) SnapshotResolver {
-		return func(ctx context.Context, snapshotID CatalogRef) (string, error) {
-			if snapshotID == snapshotA && expectedID == snapshotB {
+		return func(ctx context.Context, ref CatalogRef) (string, error) {
+			if ref == snapshotA && expectedID == snapshotB {
 				return bundleA, nil
 			}
-			if snapshotID == snapshotB && expectedID == snapshotA {
+			if ref == snapshotB && expectedID == snapshotA {
 				return bundleB, nil
 			}
-			if snapshotID != expectedID {
+			if ref != expectedID {
 				return "", errors.New("unexpected snapshot identity")
 			}
 			ready <- struct{}{}
@@ -151,14 +151,14 @@ func TestIntentPackResolversDoNotNestLocksAcrossRetainedSnapshots(t *testing.T) 
 	var started sync.WaitGroup
 	started.Add(2)
 	for _, request := range []struct {
-		catalog    Catalog
-		snapshotID CatalogRef
+		catalog Catalog
+		ref     CatalogRef
 	}{{catalogA, snapshotB}, {catalogB, snapshotA}} {
 		go func() {
 			started.Done()
 			started.Wait()
-			pack, resolveErr := request.catalog.IntentPackResolver()(ctx, "retained", "1.0.0", request.snapshotID)
-			if resolveErr == nil && pack.CatalogRef != request.snapshotID {
+			pack, resolveErr := request.catalog.IntentPackResolver()(ctx, "retained", "1.0.0", request.ref)
+			if resolveErr == nil && pack.CatalogRef != request.ref {
 				resolveErr = errors.New("resolved the wrong retained snapshot")
 			}
 			errorsBySnapshot <- resolveErr

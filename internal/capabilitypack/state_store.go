@@ -241,7 +241,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 		if err := ValidateSurface(receipt.Surface); err != nil {
 			return activationDocument{}, err
 		}
-		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" || !receipt.Pack.CatalogRef.complete() {
+		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" || !receipt.Pack.CatalogRef.paired() {
 			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, surface, and a complete catalog reference")
 		}
 		state := bySurface[receipt.Surface]

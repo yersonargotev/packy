@@ -410,7 +410,7 @@ type CatalogRef struct {
 
 func (r CatalogRef) label() string { return r.Repository + "@" + r.Commit }
 
-func (r CatalogRef) complete() bool { return (r.Repository == "") == (r.Commit == "") }
+func (r CatalogRef) paired() bool { return (r.Repository == "") == (r.Commit == "") }
 
 type Pack struct {
 	Origins              []PackOrigin

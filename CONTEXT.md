@@ -238,7 +238,7 @@ evidence.
 ### Project Pack lock
 
 The generated `packy.lock.json` containing one installed Pack receipt per Pack
-and surface. It is committed with the project Pack manifest.
+and surface, so it records the catalog of each Pack. It is committed with the project Pack manifest.
 
 ### Pack ownership
 

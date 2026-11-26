@@ -251,7 +251,8 @@ func declaredFiles(snapshotRoot string, ref capabilitypack.CatalogRef, packID st
 	if err := json.Unmarshal(data, &index); err != nil {
 		return nil, err
 	}
-	if index.SchemaVersion != 3 || index.Source.Repository != ref.Repository || index.Source.Commit != ref.Commit {
+	repository, err := catalogstore.ParseRepository(index.Source.Repository)
+	if err != nil || index.SchemaVersion != 3 || repository.String() != ref.Repository || index.Source.Commit != ref.Commit {
 		return nil, fmt.Errorf("retained index does not match Catalog Snapshot %s@%s", ref.Repository, ref.Commit)
 	}
 	for _, pack := range index.Packs {
