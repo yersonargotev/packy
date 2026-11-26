@@ -117,6 +117,7 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 		{"insufficient token", true, func(g *fakeGitHub) { g.status = http.StatusNotFound }, []string{"404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
 		{"contents hidden from the token", true, func(g *fakeGitHub) { g.releaseStatus = http.StatusNotFound }, []string{"read latest catalog release", "404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
 		{"rate limited", true, func(g *fakeGitHub) { g.status, g.rateLimited = http.StatusForbidden, true }, []string{"403", "rate limit is exhausted"}},
+		{"asset host unreachable", true, func(g *fakeGitHub) { g.assetHostDown = true }, []string{"download from release-assets.githubusercontent.com: asset host is down"}},
 		{"public repository", false, func(*fakeGitHub) {}, []string{"the repository is public", "use --trust attested"}},
 		{"redirect outside GitHub", true, func(g *fakeGitHub) { g.redirectHost = "example.com" }, []string{"untrusted host \"example.com\""}},
 		{"redirect to user content", true, func(g *fakeGitHub) { g.redirectHost = "raw.githubusercontent.com" }, []string{"untrusted host \"raw.githubusercontent.com\""}},
@@ -133,8 +134,11 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 					t.Errorf("Latest() error = %v, want %q", err, want)
 				}
 			}
-			if strings.Contains(err.Error(), testToken) {
-				t.Fatalf("Latest() error reveals the token: %v", err)
+			if strings.Contains(err.Error(), testToken) || strings.Contains(err.Error(), "sig=") {
+				t.Fatalf("Latest() error reveals a credential: %v", err)
+			}
+			if strings.Count(err.Error(), privateCatalogGuide) > 1 {
+				t.Fatalf("Latest() error repeats the guide: %v", err)
 			}
 			for _, request := range github.requests {
 				if strings.Contains(request.url, "example.com") || strings.Contains(request.url, "raw.githubusercontent.com") {
@@ -142,6 +146,14 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGitHubSourceWithoutACredentialRefusesAccessControlledCatalogs(t *testing.T) {
+	github := newFakeGitHub(t, "team/private", true)
+	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, nil).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: AccessControlled{}})
+	if err == nil || !strings.Contains(err.Error(), "this Packy reads none") || len(github.requests) != 0 {
+		t.Fatalf("Latest() error = %v after %d requests", err, len(github.requests))
 	}
 }
 
@@ -174,6 +186,7 @@ type fakeGitHub struct {
 	status          int
 	releaseStatus   int
 	rateLimited     bool
+	assetHostDown   bool
 	redirectHost    string
 	credentialErr   error
 	credentialCalls int
@@ -238,6 +251,9 @@ func (g *fakeGitHub) roundTrip(request *http.Request) (*http.Response, error) {
 		return response(http.StatusFound, http.Header{"Location": {"https://" + g.redirectHost + "/signed/" + id + "?sig=x"}}, ""), nil
 	}
 	if id, ok := strings.CutPrefix(request.URL.Path, "/signed"); ok && request.URL.Host == "release-assets.githubusercontent.com" {
+		if g.assetHostDown {
+			return nil, errors.New("asset host is down")
+		}
 		if request.Header.Get("Authorization") != "" {
 			return response(http.StatusBadRequest, nil, ""), nil
 		}

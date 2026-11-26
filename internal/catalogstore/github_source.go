@@ -124,7 +124,7 @@ func (source *gitHubSource) privateAccess(ctx context.Context, repository string
 		Private *bool `json:"private"`
 	}
 	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository, &token, &visibility); err != nil {
-		return githubauth.Token{}, fmt.Errorf("read repository visibility: %w; see %s", err, privateCatalogGuide)
+		return githubauth.Token{}, fmt.Errorf("read repository visibility: %w", err)
 	}
 	if visibility.Private == nil {
 		return githubauth.Token{}, errors.New("GitHub did not report whether the repository is private")
@@ -204,6 +204,10 @@ func (source *gitHubSource) download(ctx context.Context, assetURL string, token
 	request.Header.Set("User-Agent", "packy-catalog-consumer")
 	redirected, err := client.Do(request)
 	if err != nil {
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			err = requestErr.Err
+		}
 		return nil, fmt.Errorf("download from %s: %w", location.Host, err)
 	}
 	defer redirected.Body.Close()
@@ -243,7 +247,7 @@ func statusError(response *http.Response, token *githubauth.Token) error {
 	}
 	switch response.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%w; GitHub rejected the token from %s, so %s", err, token, token.Renewal())
+		return fmt.Errorf("%w; GitHub rejected the token from %s, so %s; see %s", err, token, token.Renewal(), privateCatalogGuide)
 	case http.StatusForbidden, http.StatusNotFound:
 		return fmt.Errorf("%w; the token from %s needs read access to the repository and its contents; see %s", err, token, privateCatalogGuide)
 	}

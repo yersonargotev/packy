@@ -70,9 +70,11 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			if err != nil {
 				return err
 			}
-			_, signer := catalogstore.TrustPolicyName(policy)
-			evidence := "attested by " + signer
-			if _, ok := policy.(catalogstore.AccessControlled); ok {
+			var evidence string
+			switch policy := policy.(type) {
+			case catalogstore.Attested:
+				evidence = "attested by " + policy.Workflow
+			case catalogstore.AccessControlled:
 				evidence = accessControlledName + ", " + accessControlledNote
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (%s) and selected Catalog Snapshot %s\n", repository, evidence, snapshot.ID)

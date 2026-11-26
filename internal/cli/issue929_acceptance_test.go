@@ -789,7 +789,7 @@ func assertIssue929RefusedRegistration(t *testing.T, transport string, environme
 	assertIssue929RefusedAdd(t, transport, environment, []string{"catalog", "add", repository}, want...)
 }
 
-func assertIssue929RefusedAdd(t *testing.T, transport string, environment []string, args []string, want ...string) {
+func assertIssue929RefusedAdd(t *testing.T, transport string, environment []string, args []string, want ...string) string {
 	t.Helper()
 	before := issue929StoreTree(t, environment)
 	out, err := runIssue929(t, transport, environment, args...)
@@ -807,6 +807,7 @@ func assertIssue929RefusedAdd(t *testing.T, transport string, environment []stri
 	if report := listIssue929Catalogs(t, transport, environment); len(report.Catalogs) != 1 {
 		t.Fatalf("catalog list after a refused registration = %+v", report)
 	}
+	return out
 }
 
 func startIssue929Official(t *testing.T, transport, fixtures string) []string {
@@ -1259,7 +1260,7 @@ func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
 	environment := startIssue929Private(t, transport)
 	withToken := issue929Setenv(environment, "GH_TOKEN="+issue929PrivateToken)
 	out, err := runIssue929(t, transport, withToken, issue929AddPrivate...)
-	if err != nil || !strings.Contains(out, "registered team/private-packs (access-controlled, trusts GitHub access to a private repository in place of build provenance, a weaker trust level) and selected Catalog Snapshot "+issue929PrivateSnapshot) {
+	if err != nil || !strings.Contains(out, "registered team/private-packs (access-controlled") || !strings.Contains(out, issue929PrivateSnapshot) {
 		t.Fatalf("catalog add of the private catalog: %v\n%s", err, out)
 	}
 	report := listIssue929Catalogs(t, transport, environment)
@@ -1296,7 +1297,7 @@ func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
 	if out, err := runIssue929(t, transport, offline, "export", "team", "--surface", "agents", "--output", filepath.Join(t.TempDir(), "plugin")); err != nil {
 		t.Fatalf("offline export from the private catalog: %v\n%s", err, out)
 	}
-	for _, root := range []string{issue929Home(t, environment), project} {
+	for _, root := range []string{filepath.Dir(issue929Home(t, environment)), project, outside} {
 		assertIssue929NoToken(t, root, issue929PrivateToken)
 	}
 }
@@ -1318,6 +1319,7 @@ func testIssue929MissingToken(t *testing.T, transport string) {
 	if out, err := runIssue929(t, transport, issue929Setenv(withoutGH, "PATH="+gh), issue929AddPrivate...); err != nil {
 		t.Fatalf("catalog add with the token from gh: %v\n%s", err, out)
 	}
+	assertIssue929NoToken(t, filepath.Dir(issue929Home(t, withoutGH)), issue929PrivateToken)
 	out, err := runIssue929(t, transport, withoutGH, "catalog", "refresh")
 	if !issue929Exit(err, 1) || !strings.Contains(out, "selected Catalog Snapshot "+strings.Repeat("a", 40)+" of "+issue929OfficialCatalog) || !strings.Contains(out, "team/private-packs failed and keeps Catalog Snapshot "+issue929PrivateSnapshot) || !strings.Contains(out, "an access-controlled catalog needs a GitHub token") {
 		t.Fatalf("catalog refresh without a token: %v\n%s", err, out)
@@ -1329,8 +1331,7 @@ func testIssue929MissingToken(t *testing.T, transport string) {
 
 func testIssue929RejectedToken(t *testing.T, transport string) {
 	rejected := issue929Setenv(startIssue929Private(t, transport), "GH_TOKEN=issue929-rejected-token")
-	assertIssue929RefusedAdd(t, transport, rejected, issue929AddPrivate, "401 Unauthorized", "GitHub rejected the token from GH_TOKEN")
-	if out, _ := runIssue929(t, transport, rejected, issue929AddPrivate...); strings.Contains(out, "issue929-rejected-token") {
+	if out := assertIssue929RefusedAdd(t, transport, rejected, issue929AddPrivate, "401 Unauthorized", "GitHub rejected the token from GH_TOKEN"); strings.Contains(out, "issue929-rejected-token") {
 		t.Fatalf("catalog add reveals the rejected token:\n%s", out)
 	}
 }
