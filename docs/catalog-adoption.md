@@ -86,8 +86,11 @@ in `~/.packy/packs.json` and in each project's `packy.lock.json` records
 
 Packy reads only receipts at `schema_version` 2, project locks at
 `schema_version` 2, and personal project activations at `schema_version` 2.
-It rejects an earlier `packs.json`, `packy.lock.json`, or personal project
-activation with an error that names this guide. It leaves the rejected file
+It rejects an earlier `packs.json` that still holds receipts, an earlier
+`packy.lock.json`, or an earlier personal project activation with an error that
+names this guide. An earlier `packs.json` with no receipts, which the previous
+Packy leaves after the last deactivation, loads as empty, and the next change
+rewrites it at `schema_version` 2. It leaves the rejected file
 unchanged and never reads an earlier receipt as official-catalog state. No
 converter exists.
 

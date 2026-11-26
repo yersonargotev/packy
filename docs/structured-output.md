@@ -147,7 +147,8 @@ carries `catalog_repository`, the catalog's GitHub `owner/repo`, next to
 `packy.json` at `schema_version` 1. Personal project activation state uses
 `schema_version` 2. Project installation/update preview v5 embeds the v2
 lock. Packy rejects each earlier version with an error that names
-[catalog adoption](catalog-adoption.md) and leaves the file unchanged.
+[catalog adoption](catalog-adoption.md) and leaves the file unchanged. An
+earlier `packs.json` with no receipts loads as empty.
 
 ## Catalog validation and executable identity
 
