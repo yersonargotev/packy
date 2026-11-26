@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,12 +26,25 @@ var ErrMissing = errors.New("no GitHub token is available; set GH_TOKEN or GITHU
 var ghEnvironment = []string{"PATH", "HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"}
 
 // Token is a GitHub credential. It formats as the name of its source, never as
-// its value.
-type Token struct{ value, source string }
+// its value. The value sits behind a pointer because fmt prints the fields of
+// a Token held in an unexported field without calling its methods.
+type Token struct {
+	value  *string
+	source string
+}
 
 func (t Token) String() string { return t.source }
 
 func (t Token) GoString() string { return "githubauth.Token(" + t.source + ")" }
+
+// Format writes the source for every verb, so no verb reaches the value.
+func (t Token) Format(state fmt.State, verb rune) {
+	if verb == 'v' && state.Flag('#') {
+		io.WriteString(state, t.GoString())
+		return
+	}
+	io.WriteString(state, t.source)
+}
 
 // Renewal says how to replace the token after GitHub rejects it.
 func (t Token) Renewal() string {
@@ -42,7 +56,7 @@ func (t Token) Renewal() string {
 
 // Authorize sends the token as the bearer credential of request.
 func (t Token) Authorize(request *http.Request) {
-	request.Header.Set("Authorization", "Bearer "+t.value)
+	request.Header.Set("Authorization", "Bearer "+*t.value)
 }
 
 // Lookup returns the token from GH_TOKEN, then GITHUB_TOKEN, then
@@ -51,7 +65,7 @@ func (t Token) Authorize(request *http.Request) {
 func Lookup(ctx context.Context, getenv func(string) string) (Token, error) {
 	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
 		if value := strings.TrimSpace(getenv(name)); value != "" {
-			return Token{value: value, source: name}, nil
+			return Token{value: &value, source: name}, nil
 		}
 	}
 	gh, err := lookPath(getenv("PATH"), "gh")
@@ -76,7 +90,7 @@ func Lookup(ctx context.Context, getenv func(string) string) (Token, error) {
 	if value == "" || strings.ContainsAny(value, " \t\r\n") {
 		return Token{}, fmt.Errorf("%w; gh auth token printed no single token", ErrMissing)
 	}
-	return Token{value: value, source: ghSource}, nil
+	return Token{value: &value, source: ghSource}, nil
 }
 
 // lookPath searches the PATH from getenv, not the process PATH, and skips

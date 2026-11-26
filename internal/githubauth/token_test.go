@@ -75,9 +75,26 @@ func TestTokenFormatsAsItsSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	formatted := fmt.Sprintf("%v %+v %#v %s %q", token, token, token, token, token)
-	if strings.Contains(formatted, "secret-value") || !strings.Contains(formatted, "GH_TOKEN") {
-		t.Fatalf("formatted token = %s", formatted)
+	type holder struct {
+		Exported Token
+		Pointer  *Token
+		hidden   Token
+	}
+	held := holder{token, &token, token}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X", "%d", "%10s"} {
+		want := "GH_TOKEN"
+		if verb == "%#v" {
+			want = "githubauth.Token(GH_TOKEN)"
+		}
+		if got := fmt.Sprintf(verb+" "+verb, token, &token); got != want+" "+want {
+			t.Errorf("Sprintf(%q) of a token = %q, want %q", verb, got, want)
+		}
+		formatted := fmt.Sprintf(verb+" "+verb, held, []Token{token})
+		for _, secret := range []string{"secret-value", fmt.Sprintf("%x", "secret-value"), fmt.Sprintf("%X", "secret-value")} {
+			if strings.Contains(formatted, secret) {
+				t.Errorf("Sprintf(%q) of a held token carries its value: %s", verb, formatted)
+			}
+		}
 	}
 }
 
