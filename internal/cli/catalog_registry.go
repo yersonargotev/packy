@@ -53,9 +53,6 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			if err != nil {
 				return err
 			}
-			if trust == "access-controlled" {
-				return fmt.Errorf("catalog %s: --trust access-controlled arrives with private catalog support; this Packy registers only --trust attested catalogs", repository)
-			}
 			policy, err := catalogstore.ParseTrustPolicy(trust, workflow)
 			if err != nil {
 				return err
@@ -73,12 +70,17 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (attested by %s) and selected Catalog Snapshot %s\n", repository, workflow, snapshot.ID)
+			name, signer := catalogstore.TrustPolicyName(policy)
+			evidence := "attested by " + signer
+			if _, ok := policy.(catalogstore.AccessControlled); ok {
+				evidence = name + ", " + accessControlledNote
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (%s) and selected Catalog Snapshot %s\n", repository, evidence, snapshot.ID)
 			return err
 		},
 	}
-	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog, which is attested")
-	command.Flags().StringVar(&workflow, "workflow", catalogstore.DefaultWorkflow, "publication workflow that must sign attested Catalog Snapshots")
+	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested, or access-controlled for a private repository read with a GitHub token")
+	command.Flags().StringVar(&workflow, "workflow", "", "publication workflow that must sign attested Catalog Snapshots (default "+catalogstore.DefaultWorkflow+")")
 	return command
 }
 
@@ -253,6 +255,26 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 	return command
 }
 
+// accessControlledCatalogs maps each access-controlled catalog repository to
+// the name of its trust policy.
+func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map[string]string, error) {
+	store, _, err := registryStore(opts, resolver)
+	if err != nil {
+		return nil, err
+	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]string{}
+	for _, registration := range registrations {
+		if _, ok := registration.Trust.(catalogstore.AccessControlled); ok {
+			result[registration.Repository.String()], _ = catalogstore.TrustPolicyName(registration.Trust)
+		}
+	}
+	return result, nil
+}
+
 func registryStore(opts Options, resolver *workstation.Resolver) (*catalogstore.Store, workstation.Snapshot, error) {
 	station, err := resolver.Resolve(workstation.Options{})
 	if err != nil {
@@ -274,10 +296,17 @@ func selectedSnapshotID(store *catalogstore.Store, repository catalogstore.Repos
 	return &snapshot.ID, nil
 }
 
+// accessControlledNote marks access-controlled as the weaker trust level
+// wherever Packy names it.
+const accessControlledNote = "trusts GitHub access to a private repository in place of build provenance, a weaker trust level"
+
 func renderCatalogList(w io.Writer, report catalogListReport) error {
 	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(writer, "CATALOG\tTRUST\tWORKFLOW\tSNAPSHOT")
+	accessControlled, _ := catalogstore.TrustPolicyName(catalogstore.AccessControlled{})
+	weaker := false
 	for _, entry := range report.Catalogs {
+		weaker = weaker || entry.Trust == accessControlled
 		workflow, snapshot := entry.Workflow, "none"
 		if workflow == "" {
 			workflow = "-"
@@ -287,7 +316,19 @@ func renderCatalogList(w io.Writer, report catalogListReport) error {
 		}
 		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", entry.Repository, entry.Trust, workflow, snapshot)
 	}
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	return renderAccessControlledNote(w, weaker)
+}
+
+func renderAccessControlledNote(w io.Writer, shown bool) error {
+	if !shown {
+		return nil
+	}
+	name, _ := catalogstore.TrustPolicyName(catalogstore.AccessControlled{})
+	_, err := fmt.Fprintf(w, "\n%s %s.\n", name, accessControlledNote)
+	return err
 }
 
 func renderCatalogRefresh(w io.Writer, entry catalogRefreshEntry) error {

@@ -2108,16 +2108,29 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 			if jsonOutput {
 				return renderPackListJSON(cmd.OutOrStdout(), packs)
 			}
+			accessControlled, err := accessControlledCatalogs(opts, workstationResolver)
+			if err != nil {
+				return err
+			}
 			writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 			fmt.Fprintln(writer, "PACK\tVERSION\tCATALOG\tDESCRIPTION\tAVAILABLE ON")
+			weaker := false
 			for _, pack := range packs {
 				surfaces := make([]string, len(pack.Surfaces))
 				for i, surface := range pack.Surfaces {
 					surfaces[i] = string(surface)
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", pack.ID, pack.Version, packCatalog(pack.CatalogRef), pack.Description, strings.Join(surfaces, ", "))
+				catalog := packCatalog(pack.CatalogRef)
+				if name, ok := accessControlled[pack.CatalogRef.Repository]; ok {
+					catalog += " (" + name + ")"
+					weaker = true
+				}
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", pack.ID, pack.Version, catalog, pack.Description, strings.Join(surfaces, ", "))
 			}
-			return writer.Flush()
+			if err := writer.Flush(); err != nil {
+				return err
+			}
+			return renderAccessControlledNote(cmd.OutOrStdout(), weaker)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
