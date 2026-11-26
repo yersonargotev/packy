@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,8 +30,8 @@ import (
 const issue929OfficialCatalog = "yersonargotev/packy-catalog"
 
 func TestIssue929(t *testing.T) {
-	var transport string
-	binaries := t.TempDir()
+	transport := buildIssue929Transport(t, t.TempDir())
+	issue929Dists.root = t.TempDir()
 	for _, scenario := range []struct {
 		id, name, greenIn string
 		run               func(*testing.T, string)
@@ -58,9 +59,7 @@ func TestIssue929(t *testing.T) {
 			if scenario.run == nil {
 				t.Skipf("%s turns green in %s", scenario.name, scenario.greenIn)
 			}
-			if transport == "" {
-				transport = buildIssue929Transport(t, binaries)
-			}
+			t.Parallel()
 			scenario.run(t, transport)
 		})
 	}
@@ -91,8 +90,14 @@ func testIssue929OfficialRefresh(t *testing.T, transport string) {
 }
 
 func testIssue929IncompatibleSnapshots(t *testing.T, transport string) {
-	t.Run("official", func(t *testing.T) { testIssue929IncompatibleOfficialSnapshot(t, transport) })
-	t.Run("other catalog", func(t *testing.T) { testIssue929IncompatibleOtherSnapshot(t, transport) })
+	t.Run("official", func(t *testing.T) {
+		t.Parallel()
+		testIssue929IncompatibleOfficialSnapshot(t, transport)
+	})
+	t.Run("other catalog", func(t *testing.T) {
+		t.Parallel()
+		testIssue929IncompatibleOtherSnapshot(t, transport)
+	})
 }
 
 func testIssue929IncompatibleOfficialSnapshot(t *testing.T, transport string) {
@@ -132,13 +137,29 @@ func testIssue929IncompatibleOfficialSnapshot(t *testing.T, transport string) {
 }
 
 func testIssue929Offline(t *testing.T, transport string) {
-	t.Run("official", func(t *testing.T) { testIssue929OfficialOffline(t, transport) })
-	t.Run("other catalog", func(t *testing.T) { testIssue929OtherCatalogOffline(t, transport) })
+	t.Run("official", func(t *testing.T) {
+		t.Parallel()
+		testIssue929OfficialOffline(t, transport)
+	})
+	t.Run("other catalog", func(t *testing.T) {
+		t.Parallel()
+		testIssue929OtherCatalogOffline(t, transport)
+	})
 }
 
 // publishIssue929Portable publishes Packs whose skill also declares on-demand
 // access and a plugin export, so get skill and export can read them.
 func publishIssue929Portable(t *testing.T, transport, fixtures, repository, commit string, packs ...githubfake.Pack) {
+	t.Helper()
+	dist := cachedIssue929Dist(t, fmt.Sprint("portable", repository, commit, packs), func() string {
+		return buildIssue929PortableDist(t, transport, repository, commit, packs...)
+	})
+	if err := githubfake.Publish(fixtures, repository, commit, dist); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func buildIssue929PortableDist(t *testing.T, transport, repository, commit string, packs ...githubfake.Pack) string {
 	t.Helper()
 	project := t.TempDir()
 	if err := githubfake.WriteCatalogProject(project, packs...); err != nil {
@@ -158,9 +179,7 @@ func publishIssue929Portable(t *testing.T, transport, fixtures, repository, comm
 			t.Fatal(err)
 		}
 	}
-	if err := githubfake.Publish(fixtures, repository, commit, buildIssue929DistFrom(t, transport, project, repository, commit)); err != nil {
-		t.Fatal(err)
-	}
+	return buildIssue929DistFrom(t, transport, project, repository, commit)
 }
 
 func testIssue929OfficialOffline(t *testing.T, transport string) {
@@ -237,8 +256,14 @@ func testIssue929OfficialOffline(t *testing.T, transport string) {
 }
 
 func testIssue929EarlierSchemas(t *testing.T, transport string) {
-	t.Run("store", func(t *testing.T) { testIssue929EarlierStoreLayout(t, transport) })
-	t.Run("receipts and locks", func(t *testing.T) { testIssue929EarlierReceiptsAndLocks(t, transport) })
+	t.Run("store", func(t *testing.T) {
+		t.Parallel()
+		testIssue929EarlierStoreLayout(t, transport)
+	})
+	t.Run("receipts and locks", func(t *testing.T) {
+		t.Parallel()
+		testIssue929EarlierReceiptsAndLocks(t, transport)
+	})
 }
 
 func testIssue929EarlierReceiptsAndLocks(t *testing.T, transport string) {
@@ -481,9 +506,52 @@ func buildIssue929Transport(t *testing.T, directory string) string {
 
 func publishIssue929Fixture(t *testing.T, transport, fixtures, repository, commit string, packs ...githubfake.Pack) {
 	t.Helper()
-	if err := githubfake.Publish(fixtures, repository, commit, buildIssue929Dist(t, transport, repository, commit, packs...)); err != nil {
+	dist := cachedIssue929Dist(t, fmt.Sprint("fixture", repository, commit, packs), func() string {
+		return buildIssue929Dist(t, transport, repository, commit, packs...)
+	})
+	if err := githubfake.Publish(fixtures, repository, commit, dist); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// issue929Dists keeps each built Catalog Publication for the whole test, so
+// parallel subtests that publish the same catalog build it once.
+var issue929Dists struct {
+	root  string
+	built sync.Map
+}
+
+func cachedIssue929Dist(t *testing.T, key string, build func() string) string {
+	t.Helper()
+	entry, _ := issue929Dists.built.LoadOrStore(key, &struct {
+		once sync.Once
+		dist string
+	}{})
+	cached := entry.(*struct {
+		once sync.Once
+		dist string
+	})
+	cached.once.Do(func() {
+		dist, err := os.MkdirTemp(issue929Dists.root, "dist-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		built := build()
+		for _, name := range []string{"catalog-snapshot.tar.gz", "SHA256SUMS"} {
+			data, err := os.ReadFile(filepath.Join(built, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dist, name), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cached.dist = dist
+	})
+	if cached.dist == "" {
+		t.Fatalf("Catalog Publication %s was not built", key)
+	}
+	return cached.dist
 }
 
 func buildIssue929Dist(t *testing.T, transport, repository, commit string, packs ...githubfake.Pack) string {
@@ -876,8 +944,14 @@ func testIssue929IncompatibleOtherSnapshot(t *testing.T, transport string) {
 }
 
 func testIssue929OtherCatalogLifecycle(t *testing.T, transport string) {
-	t.Run("own catalog", func(t *testing.T) { testIssue929OwnCatalogLifecycle(t, transport) })
-	t.Run("Pack ID moves to another registered catalog", func(t *testing.T) { testIssue929PackMovesBetweenCatalogs(t, transport) })
+	t.Run("own catalog", func(t *testing.T) {
+		t.Parallel()
+		testIssue929OwnCatalogLifecycle(t, transport)
+	})
+	t.Run("Pack ID moves to another registered catalog", func(t *testing.T) {
+		t.Parallel()
+		testIssue929PackMovesBetweenCatalogs(t, transport)
+	})
 }
 
 func testIssue929PackMovesBetweenCatalogs(t *testing.T, transport string) {
