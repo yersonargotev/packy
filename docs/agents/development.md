@@ -1,6 +1,6 @@
 # Packy development policy
 
-Use the existing [poteto-mode playbooks](../../.agents/skills/poteto-mode/SKILL.md)
+Use the existing poteto-mode playbooks (pstack, installed in the home repo)
 for development. This policy supplies repository obligations at their existing
 verification, review, and PR stages. It adds no development phase sequence.
 
