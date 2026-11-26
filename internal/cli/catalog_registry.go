@@ -67,7 +67,7 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			}
 			snapshot, err := store.Register(cmd.Context(), registration)
 			var rejected attestationRejection
-			if errors.As(err, &rejected) {
+			if errors.As(err, &rejected) && rejected.repository == repository.String() {
 				return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
 			}
 			if err != nil {
@@ -82,10 +82,13 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 	return command
 }
 
-// attestationRejection marks a failed attestation verification, so catalog
-// add can name the --workflow flag that fixes a mismatched publication
-// workflow.
-type attestationRejection struct{ err error }
+// attestationRejection marks a catalog whose attestations were read and none
+// verified for the signer workflow, so catalog add can name the --workflow
+// flag for that catalog. A transport or Sigstore failure is not marked.
+type attestationRejection struct {
+	repository string
+	err        error
+}
 
 func (r attestationRejection) Error() string { return r.err.Error() }
 func (r attestationRejection) Unwrap() error { return r.err }
@@ -95,10 +98,11 @@ type rejectionMarkingVerifier struct {
 }
 
 func (v rejectionMarkingVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
-	if err := v.AttestationVerifier.Verify(ctx, repository, subjectSHA256, signerWorkflow); err != nil {
-		return attestationRejection{err}
+	err := v.AttestationVerifier.Verify(ctx, repository, subjectSHA256, signerWorkflow)
+	if errors.Is(err, catalogstore.ErrNoAttestationVerified) {
+		return attestationRejection{repository: repository, err: err}
 	}
-	return nil
+	return err
 }
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {

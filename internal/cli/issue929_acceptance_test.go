@@ -894,6 +894,19 @@ func testIssue929FailedAttestation(t *testing.T, transport string) {
 		t.Fatal(err)
 	}
 	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "attestation", "if acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`")
+
+	// catalog add selects the official catalog first on a fresh store, and
+	// --workflow cannot fix the official catalog's attestation.
+	fresh := t.TempDir()
+	publishIssue929Fixture(t, transport, fresh, issue929OfficialCatalog, strings.Repeat("a", 40), githubfake.Pack{ID: "fixture", Version: "1.0.0"})
+	publishIssue929Fixture(t, transport, fresh, issue929Acme, strings.Repeat("c", 40), githubfake.Pack{ID: "acme", Version: "1.0.0"})
+	if err := githubfake.WriteRepository(fresh, issue929OfficialCatalog, githubfake.Repository{AttestationWorkflow: issue929OfficialCatalog + "/.github/workflows/other.yml"}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runIssue929(t, transport, startIssue929GitHub(t, fresh), "catalog", "add", issue929Acme)
+	if !issue929Exit(err, 1) || !strings.Contains(out, "verify catalog yersonargotev/packy-catalog artifact attestation") || strings.Contains(out, "--workflow") {
+		t.Fatalf("catalog add when the official attestation fails: %v\n%s", err, out)
+	}
 }
 
 func testIssue929RefreshAllAndOne(t *testing.T, transport string) {
