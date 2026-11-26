@@ -6,8 +6,8 @@ Users inspect workstation health, project state, and registered catalogs, refres
 
 - Display the dashboard in a terminal.
 - List every registered catalog with its trust policy and selected Catalog Snapshot. `access-controlled` shows as weaker trust. `?` adds each catalog's Pack count and digest.
-- Name the catalog of each Pack row and Pack detail. The `/` filter matches the catalog.
-- Refresh every catalog with `c`. The result lists each catalog. A failed catalog shows its error and the snapshot it keeps. Catalog add and remove have no TUI action.
+- Name the catalog of each Pack row and Pack detail. A repository name that does not fit its row elides the owner as `…/name` or moves to Pack details, and never wraps. The `/` filter matches the catalog.
+- Refresh every catalog with `c`. The result lists each catalog. A failed catalog shows its error and the snapshot it keeps. The badge reads `partial` when some catalogs succeeded. Catalog add and remove have no TUI action.
 - Reveal keyboard help and quit.
 
 ## How to get to it (user POV)
@@ -21,7 +21,7 @@ Preconditions: Doctor passed. Python 3, a private PTY, and a terminal of at leas
 - Run the PTY command in verify-packy's Drive section from the disposable project directory. Capture its status and messages. Confirm the transcript shows the dashboard and expanded help, followed by a clean exit.
 - Drive the transport binary with `--step acme/packs q`. Confirm one catalog row per registration with repository, trust policy, and snapshot, and Pack rows such as `acme  1.0.0  acme/packs`.
 - Set `release_status` to 500 in `fixtures/acme/packs/repository.json` and publish a newer official snapshot. Drive `--step acme/packs c --step 'Internal Server Error' q`. Confirm the official catalog selected the new snapshot, `acme/packs` failed and keeps its snapshot, and `selected.json` of each catalog agrees.
-- To check an 80-column terminal, start Packy through a wrapper script that runs `stty cols 80 rows 40` and then executes the binary. Confirm short snapshots and whole repository names.
+- To check terminal widths, start Packy through a wrapper script that runs `stty cols <N> rows 40` and then executes the binary. At 80, 100, 110, and 160 columns, register a catalog with a name over 52 characters as well. Confirm that no repository name wraps or is cut, that long names elide the owner as `…/name`, and that 80 columns shows short snapshots.
 - Compare the sandbox home, configuration, and project trees before and after. Confirm inspection and exit did not create Pack receipts or projections.
 
 ## Gotchas
