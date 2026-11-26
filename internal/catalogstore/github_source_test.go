@@ -160,7 +160,7 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 func TestGitHubSourceWithoutACredentialRefusesAccessControlledCatalogs(t *testing.T) {
 	github := newFakeGitHub(t, "team/private", true)
 	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, nil).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: AccessControlled{}})
-	if err == nil || !strings.Contains(err.Error(), "this Packy reads none") || len(github.requests) != 0 {
+	if err == nil || !strings.Contains(err.Error(), "requires a credential for access-controlled catalogs") || len(github.requests) != 0 {
 		t.Fatalf("Latest() error = %v after %d requests", err, len(github.requests))
 	}
 }

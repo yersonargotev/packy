@@ -126,7 +126,7 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 
 func (source *gitHubSource) privateAccess(ctx context.Context, repository string) (githubauth.Token, error) {
 	if source.credential == nil {
-		return githubauth.Token{}, errors.New("an access-controlled catalog needs a GitHub token, and this Packy reads none")
+		return githubauth.Token{}, errors.New("GitHub catalog Source requires a credential for access-controlled catalogs")
 	}
 	token, err := source.credential(ctx)
 	if err != nil {
@@ -204,7 +204,7 @@ func (source *gitHubSource) download(ctx context.Context, assetURL string, token
 	}
 	location, err := response.Location()
 	if err != nil {
-		return nil, fmt.Errorf("GitHub redirected the asset download without a location: %w", err)
+		return nil, errors.New("GitHub redirected the asset download to an invalid location")
 	}
 	if !trustedAssetHost(location) {
 		return nil, fmt.Errorf("GitHub redirected the asset download to untrusted host %q", location.Host)
