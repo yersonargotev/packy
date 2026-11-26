@@ -1319,7 +1319,7 @@ func (m Model) dashboardContent() (string, string) {
 	if width <= 0 {
 		width = 100
 	}
-	contentWidth := max(width-4, 44)
+	contentWidth := m.contentWidth()
 	header := m.renderDashboardHeader(contentWidth)
 	health := panel(m.renderHealth(), contentWidth, false)
 	setup := m.renderSetup()

@@ -297,6 +297,41 @@ func TestNarrowCatalogRefreshResultElidesLongRepositoryNames(t *testing.T) {
 			}
 		}
 	}
+	// The framed panel at 80 columns holds 68 text cells, so headers of 66-68
+	// cells stay whole and wider ones are elided rather than wrapped.
+	const panelText = 68
+	for _, severity := range []string{"[OK]", "[FAIL]"} {
+		for headerWidth := 66; headerWidth <= 72; headerWidth++ {
+			repository := "zz/" + strings.Repeat("n", headerWidth-len(severity)-1-len("zz/"))
+			refresh := tui.CatalogRefresh{Repository: repository, SnapshotID: strings.Repeat("e", 40)}
+			if severity == "[FAIL]" {
+				refresh.Err = errors.New("latest release returned HTTP 500")
+			}
+			backend := &fakeBackend{dashboard: tui.Dashboard{
+				Health:   tui.Health{Status: "healthy"},
+				Catalogs: []tui.Catalog{{Repository: repository, Trust: "attested", SnapshotID: strings.Repeat("e", 40), Packs: 1}},
+				Global:   tui.Scope{Available: true, Packs: []tui.Pack{{ID: "fixture", Version: "1.0.0", Catalog: repository}}},
+			}}
+			backend.refresh = func(func(string)) ([]tui.CatalogRefresh, error) { return []tui.CatalogRefresh{refresh}, nil }
+			model := loadModel(t, backend)
+			model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 60})
+			model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Text: "c"}))
+			model = runModelCommand(t, model, command)
+			view := ansi.Strip(model.View().Content)
+			for _, line := range strings.Split(view, "\n") {
+				if width := ansi.StringWidth(line); width > 80 {
+					t.Fatalf("%s %d-cell header line width = %d:\n%s", severity, headerWidth, width, view)
+				}
+			}
+			header := regexp.QuoteMeta(severity) + ` (…/)?n+…? *│`
+			if headerWidth <= panelText {
+				header = regexp.QuoteMeta(severity+" "+repository) + ` *│`
+			}
+			if !regexp.MustCompile(header).MatchString(view) {
+				t.Fatalf("%s %d-cell header is not whole on one panel line:\n%s", severity, headerWidth, view)
+			}
+		}
+	}
 }
 
 func TestPartialCatalogRefreshReportsEachCatalogAndKeepsFailedSelection(t *testing.T) {
@@ -1558,7 +1593,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Pack details · Workstation · global", "About this Pack", "orchestrate 1.0.0", "Coordination workflow",
 		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
 		"Requirements: git", "windows — POSIX shell required",
-		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported)", "Agents only",
+		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported) — Agents",
 		"claude: unsupported", "agents: supported", "configured=yes authorized=yes usable=no",
 		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
