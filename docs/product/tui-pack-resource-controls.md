@@ -40,7 +40,8 @@ If no lifecycle action is available, Enter shows Pack diagnostics and blockers.
 The catalog panel lists every registered catalog with its repository, trust
 policy, and selected snapshot. `access-controlled` shows as weaker trust. Each
 Pack row names its catalog. When a repository name does not fit, Packy elides
-its owner or leaves it to Pack details. Press `?` to add each catalog's
+its owner first or leaves it to Pack details, and truncates the name with an
+ellipsis only as a last resort. Press `?` to add each catalog's full name,
 signing workflow, Pack count, and digest. Press `c` to refresh every
 registered catalog. The result lists each catalog, and a catalog that fails
 keeps its previous snapshot.
