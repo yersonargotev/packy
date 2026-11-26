@@ -108,8 +108,6 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 	return release, nil
 }
 
-// privateAccess finds the token for an access-controlled catalog and accepts
-// it only when GitHub reports the repository as private to that token.
 func (source *gitHubSource) privateAccess(ctx context.Context, repository string) (githubauth.Token, error) {
 	if source.credential == nil {
 		return githubauth.Token{}, fmt.Errorf("catalog %s is access-controlled, and this Packy reads no GitHub token", repository)
@@ -160,9 +158,9 @@ func (source *gitHubSource) getJSON(ctx context.Context, url string, token *gith
 	return nil
 }
 
-// download reads a release asset through the GitHub API. GitHub answers with a
-// redirect to a signed URL on its asset host, which download follows without
-// the token.
+// download follows the asset API redirect without the token, because the
+// token must not leave api.github.com and GitHub's signed asset host refuses a
+// request that carries one.
 func (source *gitHubSource) download(ctx context.Context, assetURL string, token *githubauth.Token) ([]byte, error) {
 	client := *source.client
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -226,9 +224,8 @@ func readAsset(response *http.Response) ([]byte, error) {
 	return data, nil
 }
 
-// statusError explains a failed GitHub API response. A response to a request
-// that carried a token names the token's source and how to fix its access, and
-// an anonymous 404 points to private catalog registration.
+// statusError points an anonymous 404 to private catalog registration, because
+// GitHub answers 404, not 403, for a private repository the caller cannot see.
 func statusError(response *http.Response, token *githubauth.Token) error {
 	err := fmt.Errorf("GitHub returned %s", response.Status)
 	if token == nil {

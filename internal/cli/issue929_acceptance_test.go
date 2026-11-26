@@ -1224,9 +1224,8 @@ const (
 
 var issue929PrivateSnapshot = strings.Repeat("e", 40)
 
-// startIssue929Private serves the official catalog, the public acme/packs, and
-// team/private-packs with Pack team, which only issue929PrivateToken reads, and
-// refreshes the official catalog. The environment carries no token.
+// startIssue929Private returns an environment that carries no token. Only
+// issue929PrivateToken reads team/private-packs.
 func startIssue929Private(t *testing.T, transport string) []string {
 	t.Helper()
 	fixtures := t.TempDir()
@@ -1243,7 +1242,6 @@ func startIssue929Private(t *testing.T, transport string) []string {
 	return environment
 }
 
-// issue929Setenv returns environment with each NAME=value entry set.
 func issue929Setenv(environment []string, entries ...string) []string {
 	result := []string{}
 	for _, entry := range environment {
@@ -1255,7 +1253,6 @@ func issue929Setenv(environment []string, entries ...string) []string {
 	return append(result, entries...)
 }
 
-// issue929AddPrivate is catalog add of team/private-packs as access-controlled.
 var issue929AddPrivate = []string{"catalog", "add", issue929Private, "--trust", "access-controlled"}
 
 func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
@@ -1337,7 +1334,6 @@ func testIssue929RejectedToken(t *testing.T, transport string) {
 	}
 }
 
-// assertIssue929NoToken fails when any file below root holds token.
 func assertIssue929NoToken(t *testing.T, root, token string) {
 	t.Helper()
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {

@@ -70,10 +70,10 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			if err != nil {
 				return err
 			}
-			name, signer := catalogstore.TrustPolicyName(policy)
+			_, signer := catalogstore.TrustPolicyName(policy)
 			evidence := "attested by " + signer
 			if _, ok := policy.(catalogstore.AccessControlled); ok {
-				evidence = name + ", " + accessControlledNote
+				evidence = accessControlledName + ", " + accessControlledNote
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (%s) and selected Catalog Snapshot %s\n", repository, evidence, snapshot.ID)
 			return err
@@ -255,9 +255,7 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 	return command
 }
 
-// accessControlledCatalogs maps each access-controlled catalog repository to
-// the name of its trust policy.
-func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map[string]string, error) {
+func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map[string]bool, error) {
 	store, _, err := registryStore(opts, resolver)
 	if err != nil {
 		return nil, err
@@ -266,10 +264,10 @@ func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map
 	if err != nil {
 		return nil, err
 	}
-	result := map[string]string{}
+	result := map[string]bool{}
 	for _, registration := range registrations {
 		if _, ok := registration.Trust.(catalogstore.AccessControlled); ok {
-			result[registration.Repository.String()], _ = catalogstore.TrustPolicyName(registration.Trust)
+			result[registration.Repository.String()] = true
 		}
 	}
 	return result, nil
@@ -296,17 +294,16 @@ func selectedSnapshotID(store *catalogstore.Store, repository catalogstore.Repos
 	return &snapshot.ID, nil
 }
 
-// accessControlledNote marks access-controlled as the weaker trust level
-// wherever Packy names it.
 const accessControlledNote = "trusts GitHub access to a private repository in place of build provenance, a weaker trust level"
+
+var accessControlledName, _ = catalogstore.TrustPolicyName(catalogstore.AccessControlled{})
 
 func renderCatalogList(w io.Writer, report catalogListReport) error {
 	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(writer, "CATALOG\tTRUST\tWORKFLOW\tSNAPSHOT")
-	accessControlled, _ := catalogstore.TrustPolicyName(catalogstore.AccessControlled{})
 	weaker := false
 	for _, entry := range report.Catalogs {
-		weaker = weaker || entry.Trust == accessControlled
+		weaker = weaker || entry.Trust == accessControlledName
 		workflow, snapshot := entry.Workflow, "none"
 		if workflow == "" {
 			workflow = "-"
@@ -326,8 +323,7 @@ func renderAccessControlledNote(w io.Writer, shown bool) error {
 	if !shown {
 		return nil
 	}
-	name, _ := catalogstore.TrustPolicyName(catalogstore.AccessControlled{})
-	_, err := fmt.Fprintf(w, "\n%s %s.\n", name, accessControlledNote)
+	_, err := fmt.Fprintf(w, "\n%s %s.\n", accessControlledName, accessControlledNote)
 	return err
 }
 

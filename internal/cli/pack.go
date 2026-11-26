@@ -2121,8 +2121,8 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 					surfaces[i] = string(surface)
 				}
 				catalog := packCatalog(pack.CatalogRef)
-				if name, ok := accessControlled[pack.CatalogRef.Repository]; ok {
-					catalog += " (" + name + ")"
+				if accessControlled[pack.CatalogRef.Repository] {
+					catalog += " (" + accessControlledName + ")"
 					weaker = true
 				}
 				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", pack.ID, pack.Version, catalog, pack.Description, strings.Join(surfaces, ", "))

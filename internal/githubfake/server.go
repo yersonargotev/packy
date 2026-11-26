@@ -62,8 +62,8 @@ type Release struct {
 	} `json:"author"`
 }
 
-// AssetHost serves release asset bytes at the URLs that the release asset API
-// redirects to.
+// AssetHost is the host that the release asset API redirects to, as GitHub's
+// does.
 const AssetHost = "release-assets.githubusercontent.com"
 
 type asset struct {
