@@ -358,7 +358,7 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 type earlierProjectLockError struct{ schemaVersion int }
 
 func (e earlierProjectLockError) Error() string {
-	return fmt.Sprintf("project lock at schema_version %d does not name the catalog of each Pack; follow docs/catalog-adoption.md to reinstall the project Packs", e.schemaVersion)
+	return fmt.Sprintf("project lock at schema_version %d does not name the catalog of each Pack; follow https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md to reinstall the project Packs", e.schemaVersion)
 }
 
 func supportedProjectLockVersion(lock ProjectLockProposal) bool {

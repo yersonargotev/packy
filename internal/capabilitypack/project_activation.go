@@ -500,7 +500,7 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID stri
 		return projectActivationDocument{}, false, err
 	}
 	if document.SchemaVersion < projectActivationDocumentSchemaVersion {
-		return projectActivationDocument{}, false, fmt.Errorf("personal project activation at schema_version %d does not name its catalog; follow docs/catalog-adoption.md to reactivate it", document.SchemaVersion)
+		return projectActivationDocument{}, false, fmt.Errorf("personal project activation at schema_version %d does not name its catalog; follow https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md to reactivate it", document.SchemaVersion)
 	}
 	if document.SchemaVersion != projectActivationDocumentSchemaVersion || document.State.SchemaVersion != projectActivationDocumentSchemaVersion || !document.State.CatalogRef.paired() || document.State.Surface != surface || document.State.ProjectRootDigest != rootDigest || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || len(document.Approvals) == 0 || len(document.Approvals) != len(document.Receipts) {
 		return projectActivationDocument{}, false, errors.New("project activation state is incomplete or unsupported")

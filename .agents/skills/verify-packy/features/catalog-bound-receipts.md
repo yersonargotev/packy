@@ -20,7 +20,7 @@ Preconditions: Doctor passed and the controlled transport from [Catalog refresh]
 
 - Refresh, activate, and install. Confirm that both files name `yersonargotev/packy-catalog` and the selected commit.
 - Point `PACKY_GITHUBFAKE_ADDR_FILE` at a missing file to block the network. Run `list --json`, `show <pack>`, `status`, `status --project`, `get skill <pack>:<skill> --surface agents`, and `export <pack> --surface agents --output <dir>`. Confirm exit 0 for each.
-- Copy a `packs.json` that still holds receipts, or a `packy.lock.json`, written by trunk Packy into the sandbox. Run `status` or `status --project`. Confirm exit 1, the adoption guide path, and byte-identical files.
+- Copy a `packs.json` that still holds receipts, or a `packy.lock.json`, written by a Packy release from before catalog-bound receipts into the sandbox. Run `status` or `status --project`. Confirm exit 1, the adoption guide path, and byte-identical files.
 
 ## Gotchas
 

@@ -182,7 +182,7 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 	// The previous Packy leaves an empty schema_version 1 document after its
 	// last deactivation, and that document holds no catalog state to reject.
 	if receipts.SchemaVersion == earliestInstalledReceiptSchemaVersion && len(receipts.Receipts) > 0 {
-		return activationDocument{}, fmt.Errorf("read capability-pack state %s: installed receipts at schema_version %d do not name their catalog; follow docs/catalog-adoption.md to reinstall them", s.path, receipts.SchemaVersion)
+		return activationDocument{}, fmt.Errorf("read capability-pack state %s: installed receipts at schema_version %d do not name their catalog; follow https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md to reinstall them", s.path, receipts.SchemaVersion)
 	}
 	if receipts.SchemaVersion != earliestInstalledReceiptSchemaVersion && receipts.SchemaVersion != installedReceiptSchemaVersion {
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: unsupported schema_version %d", s.path, receipts.SchemaVersion)
@@ -242,7 +242,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 			return activationDocument{}, err
 		}
 		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" || !receipt.Pack.CatalogRef.paired() {
-			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, surface, and a complete catalog reference")
+			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, surface, and a paired catalog repository and snapshot")
 		}
 		state := bySurface[receipt.Surface]
 		if state == nil {
