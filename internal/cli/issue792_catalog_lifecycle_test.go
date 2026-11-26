@@ -13,6 +13,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/catalogstore"
+	"github.com/yersonargotev/packy/internal/tui"
 )
 
 type catalogSourceFixture struct {
@@ -169,12 +170,17 @@ func TestIssue792TUIInitializationAcquiresSnapshotThenLoadsOffline(t *testing.T)
 	if source.calls != callsAfterInitialization {
 		t.Fatalf("TUI load discovered catalog updates online: calls %d -> %d", callsAfterInitialization, source.calls)
 	}
-	if dashboard.Catalog.SnapshotID != commit || dashboard.Catalog.Repository != "yersonargotev/packy-catalog" || dashboard.Catalog.Packs != 1 || !dashboard.Catalog.RefreshAvailable {
-		t.Fatalf("TUI catalog inspection = %#v", dashboard.Catalog)
+	if len(dashboard.Catalogs) != 1 || dashboard.Catalogs[0].Digest == "" || dashboard.Catalogs[0] != (tui.Catalog{Repository: "yersonargotev/packy-catalog", Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: commit, Digest: dashboard.Catalogs[0].Digest, Packs: 1}) {
+		t.Fatalf("TUI catalog inspection = %#v", dashboard.Catalogs)
 	}
 }
 
 func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.Fixture) catalogstore.Release {
+	t.Helper()
+	return catalogRepositoryReleaseFixture(t, "yersonargotev/packy-catalog", commit, fixtures...)
+}
+
+func catalogRepositoryReleaseFixture(t *testing.T, repository, commit string, fixtures ...testsupport.Fixture) catalogstore.Release {
 	t.Helper()
 	projectRoot := t.TempDir()
 	origins := catalogOriginFixture{}
@@ -195,7 +201,7 @@ func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.
 		t.Fatal(err)
 	}
 	result, err := cataloglayout.BuildCatalogSnapshot(context.Background(), projectRoot, validation, cataloglayout.CatalogSnapshotSource{
-		Repository: "yersonargotev/packy-catalog", Commit: commit, Builder: "yersonargotev/packy@" + strings.Repeat("c", 40),
+		Repository: repository, Commit: commit, Builder: "yersonargotev/packy@" + strings.Repeat("c", 40),
 	}, filepath.Join(t.TempDir(), "snapshot"))
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +215,7 @@ func catalogReleaseFixture(t *testing.T, commit string, fixtures ...testsupport.
 		t.Fatal(err)
 	}
 	return catalogstore.Release{
-		Repository: "yersonargotev/packy-catalog", Tag: "catalog-" + commit, Commit: commit,
+		Repository: repository, Tag: "catalog-" + commit, Commit: commit,
 		Publisher: "github-actions[bot]", Published: true, Immutable: true, AttestationVerified: true,
 		Assets: []catalogstore.Asset{
 			{Name: "catalog-snapshot.tar.gz", SHA256: catalogFixtureDigest(archive), Data: archive},

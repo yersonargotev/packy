@@ -330,7 +330,7 @@ func TestDashboardDirectEntryAndCancellation(t *testing.T) {
 func TestDashboardMinimumSizeKeepsSelectedPackAndControlsVisible(t *testing.T) {
 	pack := tui.Pack{ID: "focused", Description: "Context for this Pack", Resources: []tui.Resource{{Identity: "skill:review", Role: "operational"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "agents", Supported: true}}}
 	scope := tui.Scope{Available: true, Root: "/project", Packs: []tui.Pack{pack}}
-	backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope, Catalog: tui.Catalog{SnapshotID: "snapshot", Repository: "repository", Digest: "digest", Packs: 1}}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Global: scope, Project: scope, Catalogs: []tui.Catalog{{Repository: "repository", Trust: "attested", SnapshotID: "snapshot", Digest: "digest", Packs: 1}}}}
 	for _, size := range []tea.WindowSizeMsg{{Width: 48, Height: 14}, {Width: 80, Height: 24}} {
 		model := loadModel(t, backend)
 		model, _ = model.Update(size)

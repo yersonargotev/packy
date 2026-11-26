@@ -9,7 +9,7 @@ Start with [verify-packy](../SKILL.md). Each listed entry point needs its own pr
 - [Project verification](project-verification.md) covers the portable project contract check.
 - [Lifecycle preview](lifecycle-preview.md) covers project installation and global activation previews.
 - [Projection lifecycle and rollback](projection-lifecycle.md) covers project and global Apply, rejection, and restoration.
-- [TUI dashboard](tui-dashboard.md) covers the interactive dashboard and help.
+- [TUI dashboard](tui-dashboard.md) covers the interactive dashboard, registered catalogs and their refresh, and help.
 - [Development and release guidance](development-and-release.md) covers agent routing and authorization boundaries with controlled tool traces.
 
 The seed map is representative, not exhaustive. Add or update paths affected by a change. Run `/maintain-verification-skill` for a full source and live audit.

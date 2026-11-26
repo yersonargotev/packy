@@ -68,14 +68,23 @@ func panel(content string, width int, focused bool) string {
 	if focused {
 		border = mochaBlue
 	}
+	return panelStyle(width).BorderForeground(border).Render(content)
+}
+
+func panelStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Width(max(width-4, 1)).
 		Padding(0, 1).
 		Foreground(mochaText).
 		Background(mochaSurface0).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(border).
-		Render(content)
+		Border(lipgloss.RoundedBorder())
+}
+
+// panelTextWidth is the number of text cells a panel of the given width holds
+// inside its padding and border.
+func panelTextWidth(width int) int {
+	style := panelStyle(width)
+	return max(style.GetWidth()-style.GetHorizontalFrameSize(), 1)
 }
 
 func statusBadge(status string) string {
@@ -83,7 +92,7 @@ func statusBadge(status string) string {
 	switch strings.ToLower(status) {
 	case "healthy", "pass", "verified", "active", "supported":
 		label, background = "[OK] "+status, mochaGreen
-	case "warnings", "warn", "warning", "unknown", "unsupported":
+	case "warnings", "warn", "warning", "unknown", "unsupported", "partial":
 		label, background = "[WARN] "+status, mochaYellow
 	case "failures", "fail", "failed", "blocked", "unhealthy":
 		label, background = "[FAIL] "+status, mochaRed
@@ -145,21 +154,23 @@ func (m Model) renderDashboardViewport(content, footer string) string {
 }
 
 func (m Model) renderDashboardFooter(footer string) string {
-	width := m.width
-	if width <= 0 {
-		width = 100
-	}
 	return lipgloss.NewStyle().Padding(0, 2).Render(
-		lipgloss.NewStyle().Width(max(width-4, 44)).Foreground(mochaSubtext0).Render(footer),
+		lipgloss.NewStyle().Width(m.contentWidth()).Foreground(mochaSubtext0).Render(footer),
 	)
 }
 
-func (m Model) renderFramedScreen(title, subtitle, content, footer string, offset int, scrollHint string) string {
+// contentWidth is the screen width inside the two-cell side margins, the
+// outer width of every full-width panel.
+func (m Model) contentWidth() int {
 	width := m.width
 	if width <= 0 {
 		width = 100
 	}
-	contentWidth := max(width-4, 44)
+	return max(width-4, 44)
+}
+
+func (m Model) renderFramedScreen(title, subtitle, content, footer string, offset int, scrollHint string) string {
+	contentWidth := m.contentWidth()
 	lines := m.viewportLines(content)
 	visible := m.viewportVisibleLines()
 	maxOffset := max(len(lines)-visible, 0)
@@ -191,15 +202,13 @@ func (m Model) viewportMaxOffset(content string) int {
 }
 
 func (m Model) viewportLines(content string) []string {
-	width := m.width
-	if width <= 0 {
-		width = 100
-	}
-	// panel width includes its two padding cells and border, leaving ten cells
-	// less than the terminal for actual text after the screen margins.
-	innerWidth := max(width-10, 38)
-	wrapped := lipgloss.NewStyle().Width(innerWidth).Render(content)
+	wrapped := lipgloss.NewStyle().Width(m.viewportTextWidth()).Render(content)
 	return strings.Split(wrapped, "\n")
+}
+
+// viewportTextWidth is the text width inside the framed screen's panel.
+func (m Model) viewportTextWidth() int {
+	return panelTextWidth(m.contentWidth())
 }
 
 func (m Model) viewportVisibleLines() int {

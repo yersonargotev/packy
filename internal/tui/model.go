@@ -22,11 +22,12 @@ const postApplyInspectionTimeout = 30 * time.Second
 const dashboardWheelDelta = 3
 
 // Backend is the presentation-neutral seam through which the TUI loads Packy
-// state, initializes Packy's Installed Source, and applies consented previews.
+// state, initializes Packy's Installed Source, refreshes every registered
+// catalog, and applies consented previews.
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
 	Initialize(context.Context, func(string)) error
-	RefreshCatalog(context.Context, func(string)) error
+	RefreshCatalog(context.Context, func(string)) ([]CatalogRefresh, error)
 	Preview(context.Context, PreviewRequest) (Preview, error)
 	Apply(context.Context, ApplyRequest, func(ApplyProgress)) (ApplyResult, error)
 }
@@ -122,6 +123,7 @@ type Pack struct {
 	ID              string
 	Version         string
 	Description     string
+	Catalog         string
 	CatalogState    string
 	Surfaces        []string
 	Requirements    []string
@@ -214,19 +216,28 @@ type Scope struct {
 }
 
 type Dashboard struct {
-	Health  Health
-	Setup   Setup
-	Catalog Catalog
-	Global  Scope
-	Project Scope
+	Health   Health
+	Setup    Setup
+	Catalogs []Catalog
+	Global   Scope
+	Project  Scope
 }
 
 type Catalog struct {
-	SnapshotID       string
-	Repository       string
-	Digest           string
-	Packs            int
-	RefreshAvailable bool
+	Repository string
+	Trust      string
+	Workflow   string
+	SnapshotID string
+	Digest     string
+	Packs      int
+}
+
+// CatalogRefresh is the result of refreshing one registered catalog. A failed
+// refresh keeps its previous selection in SnapshotID.
+type CatalogRefresh struct {
+	Repository string
+	SnapshotID string
+	Err        error
 }
 
 type Setup struct {
@@ -249,7 +260,8 @@ type catalogOperationProgress struct {
 }
 
 type catalogOperationFinished struct {
-	err error
+	refreshes []CatalogRefresh
+	err       error
 }
 
 type catalogOperation uint8
@@ -332,6 +344,7 @@ type Model struct {
 	catalogOperation         catalogOperation
 	catalogOperationResult   bool
 	catalogOperationErr      error
+	catalogRefreshes         []CatalogRefresh
 	catalogOperationProgress []string
 	catalogOperationEvents   chan tea.Msg
 	help                     help.Model
@@ -423,6 +436,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.catalogOperationRunning = false
 		m.catalogOperationResult = true
 		m.catalogOperationErr = message.err
+		m.catalogRefreshes = message.refreshes
 		m.pagedScreenScroll = 0
 		m.catalogOperationEvents = nil
 		if message.err != nil && m.ctx.Err() != nil {
@@ -554,8 +568,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.catalogOperationResult = false
 				return m, nil
 			case key.Matches(message, dashboardKeys.Inspect):
-				if m.catalogOperationErr != nil {
-					if m.catalogOperation == catalogOperationRefresh && m.dashboard.Catalog.RefreshAvailable {
+				if m.catalogOperationFailed() {
+					if m.catalogOperation == catalogOperationRefresh && len(m.dashboard.Catalogs) > 0 {
 						return m.startCatalogRefresh()
 					}
 					if m.dashboard.Setup.InitializationAvailable {
@@ -695,7 +709,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.loaded, m.err, m.inspecting, m.selecting, m.preview = false, nil, false, false, nil
 			return m, m.Init()
 		case key.Matches(message, dashboardKeys.CatalogRefresh):
-			if m.dashboard.Catalog.RefreshAvailable {
+			if len(m.dashboard.Catalogs) > 0 {
 				return m.startCatalogRefresh()
 			}
 		case key.Matches(message, dashboardKeys.Help):
@@ -823,19 +837,22 @@ func (m Model) startCatalogOperation(operation catalogOperation) (tea.Model, tea
 	m.catalogOperation = operation
 	m.catalogOperationResult = false
 	m.catalogOperationErr = nil
+	m.catalogRefreshes = nil
 	m.catalogOperationProgress = nil
 	m.pagedScreenScroll = 0
 	m.catalogOperationEvents = make(chan tea.Msg, 64)
 	events := m.catalogOperationEvents
 	run := func() tea.Msg {
-		callback := m.backend.Initialize
-		if operation == catalogOperationRefresh {
-			callback = m.backend.RefreshCatalog
-		}
-		err := callback(m.ctx, func(detail string) {
+		progress := func(detail string) {
 			sendOperationEvent(m.ctx, events, catalogOperationProgress{detail: detail})
-		})
-		sendOperationEvent(m.ctx, events, catalogOperationFinished{err: err})
+		}
+		var finished catalogOperationFinished
+		if operation == catalogOperationRefresh {
+			finished.refreshes, finished.err = m.backend.RefreshCatalog(m.ctx, progress)
+		} else {
+			finished.err = m.backend.Initialize(m.ctx, progress)
+		}
+		sendOperationEvent(m.ctx, events, finished)
 		close(events)
 		return nil
 	}
@@ -1169,7 +1186,7 @@ func filteredPacks(packs []Pack, filter string) []Pack {
 }
 
 func packSearchText(pack Pack) string {
-	values := []string{pack.ID, pack.Description}
+	values := []string{pack.ID, pack.Description, pack.Catalog}
 	values = append(values, pack.Surfaces...)
 	values = append(values, pack.Requirements...)
 	for _, resource := range pack.Resources {
@@ -1212,7 +1229,7 @@ var dashboardKeys = keyMap{
 	Health:         key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "health")),
 	Help:           key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Reload:         key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
-	CatalogRefresh: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "refresh catalog")),
+	CatalogRefresh: key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "refresh catalogs")),
 	Quit:           key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
@@ -1302,7 +1319,7 @@ func (m Model) dashboardContent() (string, string) {
 	if width <= 0 {
 		width = 100
 	}
-	contentWidth := max(width-4, 44)
+	contentWidth := m.contentWidth()
 	header := m.renderDashboardHeader(contentWidth)
 	health := panel(m.renderHealth(), contentWidth, false)
 	setup := m.renderSetup()
@@ -1312,13 +1329,15 @@ func (m Model) dashboardContent() (string, string) {
 
 	globalPacks := filteredPacks(m.dashboard.Global.Packs, m.filter)
 	projectPacks := filteredPacks(m.dashboard.Project.Packs, m.filter)
-	global := panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty), contentWidth, !m.project)
-	project := panel(m.renderProjectScope(projectPacks, projectEmpty), contentWidth, m.project)
+	globalWidth, projectWidth := contentWidth, contentWidth
+	if width >= 96 {
+		globalWidth = (contentWidth - 2) / 2
+		projectWidth = contentWidth - globalWidth - 2
+	}
+	global := panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty, panelTextWidth(globalWidth)), globalWidth, !m.project)
+	project := panel(m.renderProjectScope(projectPacks, projectEmpty, panelTextWidth(projectWidth)), projectWidth, m.project)
 	scopes := global + "\n" + project
 	if width >= 96 {
-		columnWidth := (contentWidth - 2) / 2
-		global = panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty), columnWidth, !m.project)
-		project = panel(m.renderProjectScope(projectPacks, projectEmpty), contentWidth-columnWidth-2, m.project)
 		scopes = lipgloss.JoinHorizontal(lipgloss.Top, global, "  ", project)
 	}
 	filter := ""
@@ -1334,35 +1353,100 @@ func (m Model) dashboardContent() (string, string) {
 		help = m.help.ShortHelpView(setupHelpBindings())
 	}
 	if m.showHelp {
-		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter manage · i details · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · c refresh catalog · q/Ctrl+C quit"
+		help = "j/k or arrows select · Tab/Shift+Tab scope · Enter manage · i details · s health · wheel or PgUp/PgDn scroll · / filter · Esc back · ? hide · r reload · c refresh catalogs · q/Ctrl+C quit"
 	}
 	catalog := ""
-	if m.dashboard.Catalog.SnapshotID != "" {
-		catalog = "\n" + lipgloss.NewStyle().Width(contentWidth).Render(m.renderCatalog())
+	if len(m.dashboard.Catalogs) > 0 {
+		catalog = "\n" + lipgloss.NewStyle().Width(contentWidth).Render(m.renderCatalogs(contentWidth))
 	}
 	content := strings.Join([]string{header, "", health + setup, "", scopes + filter + catalog}, "\n")
 	return content, help
 }
 
-func (m Model) renderCatalog() string {
-	catalog := m.dashboard.Catalog
-	packLabel := "Packs"
-	if catalog.Packs == 1 {
-		packLabel = "Pack"
-	}
+func (m Model) renderCatalogs(width int) string {
 	if !m.showHelp {
-		return dimStyle.Render(fmt.Sprintf("Reviewed Pack catalog: %d %s · c refresh · ? details", catalog.Packs, packLabel))
+		lines := []string{sectionTitleStyle.Render("◇ Reviewed Pack catalogs") + "  " + dimStyle.Render("· c refresh · ? details")}
+		return strings.Join(append(lines, catalogRows(m.dashboard.Catalogs, width)...), "\n")
 	}
-	lines := []string{
-		sectionTitleStyle.Render("◇ Reviewed Pack catalog") + "  " + dimStyle.Render("· c refresh"),
-		"Repository: " + catalog.Repository,
-		"Selected snapshot: " + catalog.SnapshotID,
-		fmt.Sprintf("Inventory: %d %s", catalog.Packs, packLabel),
-	}
-	if catalog.Digest != "" {
-		lines = append(lines, "Catalog digest: "+catalog.Digest)
+	lines := []string{sectionTitleStyle.Render("◇ Reviewed Pack catalogs") + "  " + dimStyle.Render("· c refresh")}
+	for _, catalog := range m.dashboard.Catalogs {
+		trust := "  Trust: " + trustStyle(catalog.Trust).Render(trustLabel(catalog.Trust))
+		if catalog.Workflow != "" {
+			trust += " by " + catalog.Workflow
+		}
+		if catalog.Trust == weakerTrust {
+			trust += ". Packy relies on GitHub access control instead of build provenance."
+		}
+		lines = append(lines, catalog.Repository, trust, "  Selected snapshot: "+catalog.SnapshotID, "  Inventory: "+packCount(catalog.Packs))
+		if catalog.Digest != "" {
+			lines = append(lines, "  Catalog digest: "+catalog.Digest)
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// weakerTrust has no build-provenance attestation, so ADR 0046 shows it as
+// weaker than attested.
+const weakerTrust = "access-controlled"
+
+func trustLabel(trust string) string {
+	if trust == weakerTrust {
+		return trust + " (weaker)"
+	}
+	return trust
+}
+
+func trustStyle(trust string) lipgloss.Style {
+	if trust == weakerTrust {
+		return lipgloss.NewStyle().Foreground(mochaYellow)
+	}
+	return lipgloss.NewStyle().Foreground(mochaGreen)
+}
+
+func catalogRows(catalogs []Catalog, width int) []string {
+	repositoryWidth, trustWidth, snapshotWidth := 0, 0, 0
+	for _, catalog := range catalogs {
+		repositoryWidth = max(repositoryWidth, len(catalog.Repository))
+		trustWidth = max(trustWidth, len(trustLabel(catalog.Trust)))
+		snapshotWidth = max(snapshotWidth, len(catalog.SnapshotID))
+	}
+	if repositoryWidth+trustWidth+snapshotWidth+4 > width {
+		snapshotWidth = min(snapshotWidth, 12)
+	}
+	repositoryWidth = min(repositoryWidth, max(width-trustWidth-snapshotWidth-4, 1))
+	rows := make([]string, 0, len(catalogs))
+	for _, catalog := range catalogs {
+		repository := elideRepository(catalog.Repository, repositoryWidth)
+		trust := trustStyle(catalog.Trust).Render(fmt.Sprintf("%-*s", trustWidth, trustLabel(catalog.Trust)))
+		snapshot := catalog.SnapshotID[:min(snapshotWidth, len(catalog.SnapshotID))]
+		rows = append(rows, repository+strings.Repeat(" ", repositoryWidth-ansi.StringWidth(repository))+"  "+trust+"  "+snapshot)
+	}
+	return rows
+}
+
+func elideRepository(repository string, width int) string {
+	if fitted := fitRepository(repository, width); fitted != "" {
+		return fitted
+	}
+	_, name, _ := strings.Cut(repository, "/")
+	return "…/" + ansi.Truncate(name, max(width-2, 1), "…")
+}
+
+func fitRepository(repository string, width int) string {
+	if len(repository) <= width {
+		return repository
+	}
+	if _, name, ok := strings.Cut(repository, "/"); ok && len(name)+2 <= width {
+		return "…/" + name
+	}
+	return ""
+}
+
+func packCount(packs int) string {
+	if packs == 1 {
+		return "1 Pack"
+	}
+	return fmt.Sprintf("%d Packs", packs)
 }
 
 func (m Model) dashboardActive() bool {
@@ -1441,7 +1525,7 @@ func (m Model) renderHealth() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderProjectScope(packs []Pack, empty string) string {
+func (m Model) renderProjectScope(packs []Pack, empty string, width int) string {
 	if !m.dashboard.Project.Available {
 		return strings.Join([]string{
 			sectionTitleStyle.Render("Current project"),
@@ -1449,7 +1533,7 @@ func (m Model) renderProjectScope(packs []Pack, empty string) string {
 			mutedStyle.Render("Global inspection remains available"),
 		}, "\n")
 	}
-	content := m.renderScope("Current project", packs, m.projectRow, m.project, empty)
+	content := m.renderScope("Current project", packs, m.projectRow, m.project, empty, width)
 	return content + "\n" + dimStyle.Render(m.dashboard.Project.Root)
 }
 
@@ -1475,13 +1559,13 @@ func (m Model) renderSetup() string {
 }
 
 func (m Model) renderCatalogOperationProgress() string {
-	title, status, waiting := "Packy initialization", "Initialization in progress", "Packy will return when initialization finishes"
+	title, status, waiting, acquiring := "Packy initialization", "Initialization in progress", "Packy will return when initialization finishes", "Acquiring the latest official Catalog Snapshot…"
 	if m.catalogOperation == catalogOperationRefresh {
-		title, status, waiting = "Catalog refresh", "Catalog refresh in progress", "Packy will return when catalog refresh finishes"
+		title, status, waiting, acquiring = "Catalog refresh", "Catalog refresh in progress", "Packy will return when catalog refresh finishes", "Acquiring the latest Catalog Snapshot of every registered catalog…"
 	}
 	lines := []string{sectionHeading("Progress", 0)}
 	if len(m.catalogOperationProgress) == 0 {
-		lines = append(lines, "Acquiring the latest official Catalog Snapshot…")
+		lines = append(lines, acquiring)
 	} else {
 		for _, detail := range m.catalogOperationProgress {
 			lines = append(lines, "  "+detail)
@@ -1491,29 +1575,74 @@ func (m Model) renderCatalogOperationProgress() string {
 	return m.renderViewportScreen(title, status, content, waiting, m.viewportMaxOffset(content))
 }
 
+func (m Model) catalogOperationFailed() bool {
+	return m.catalogOperationErr != nil || slices.ContainsFunc(m.catalogRefreshes, func(refresh CatalogRefresh) bool { return refresh.Err != nil })
+}
+
 func (m Model) renderCatalogOperationResult() string {
-	title := "Packy initialization"
-	operation := "Initialization"
-	if m.catalogOperation == catalogOperationRefresh {
-		title, operation = "Catalog refresh", "Catalog refresh"
-	}
-	status := operation + " succeeded"
+	failed := m.catalogOperationFailed()
 	action := "Enter dashboard"
-	if m.catalogOperationErr != nil {
-		status = operation + " failed"
+	if failed {
 		action = "Enter retry"
 	}
-	lines := []string{statusBadge(map[bool]string{true: "failed", false: "verified"}[m.catalogOperationErr != nil]), sectionHeading("Activity", 0)}
+	lines := []string{statusBadge(map[bool]string{true: "failed", false: "verified"}[failed])}
+	if m.catalogOperation == catalogOperationRefresh {
+		if failed && m.catalogOperationErr == nil && slices.ContainsFunc(m.catalogRefreshes, func(refresh CatalogRefresh) bool { return refresh.Err == nil }) {
+			lines[0] = statusBadge("partial")
+		}
+		return m.renderPagedScreen("Catalog refresh", m.catalogRefreshStatus(), strings.Join(append(lines, m.catalogRefreshLines()...), "\n"), action+" · Esc dashboard · q quit")
+	}
+	status := "Initialization succeeded"
+	if failed {
+		status = "Initialization failed"
+	}
+	lines = append(lines, sectionHeading("Activity", 0))
 	for _, detail := range m.catalogOperationProgress {
 		lines = append(lines, "  "+detail)
 	}
 	if m.catalogOperationErr != nil {
 		lines = append(lines, "", m.catalogOperationErr.Error())
-		if m.catalogOperation == catalogOperationRefresh && m.dashboard.Catalog.SnapshotID != "" {
-			lines = append(lines, "", "The previous selected Catalog Snapshot remains available: "+m.dashboard.Catalog.SnapshotID)
+	}
+	return m.renderPagedScreen("Packy initialization", status, strings.Join(lines, "\n"), action+" · Esc dashboard · q quit")
+}
+
+func (m Model) catalogRefreshStatus() string {
+	if m.catalogOperationErr != nil {
+		return "Catalog refresh failed"
+	}
+	failed := 0
+	for _, refresh := range m.catalogRefreshes {
+		if refresh.Err != nil {
+			failed++
 		}
 	}
-	return m.renderPagedScreen(title, status, strings.Join(lines, "\n"), action+" · Esc dashboard · q quit")
+	if failed > 0 {
+		return fmt.Sprintf("Catalog refresh failed for %d of %d catalogs", failed, len(m.catalogRefreshes))
+	}
+	return "Catalog refresh succeeded"
+}
+
+func (m Model) catalogRefreshLines() []string {
+	lines := []string{sectionHeading("Catalogs", len(m.catalogRefreshes))}
+	header := func(severity, repository string) string {
+		marker := severityMarker(severity)
+		return marker + " " + elideRepository(repository, m.viewportTextWidth()-ansi.StringWidth(marker)-1)
+	}
+	for _, refresh := range m.catalogRefreshes {
+		if refresh.Err == nil {
+			lines = append(lines, header("PASS", refresh.Repository), "  selected Catalog Snapshot "+refresh.SnapshotID)
+			continue
+		}
+		lines = append(lines, header("FAIL", refresh.Repository))
+		if refresh.SnapshotID != "" {
+			lines = append(lines, "  failed and keeps Catalog Snapshot "+refresh.SnapshotID)
+		}
+		lines = append(lines, "  "+refresh.Err.Error())
+	}
+	if m.catalogOperationErr != nil {
+		lines = append(lines, "", m.catalogOperationErr.Error())
+	}
+	return lines
 }
 
 func (m Model) renderBody(content string) string {
@@ -1524,7 +1653,7 @@ func (m Model) renderBody(content string) string {
 	return style.Render(content)
 }
 
-func (m Model) renderScope(title string, packs []Pack, row int, selected bool, empty string) string {
+func (m Model) renderScope(title string, packs []Pack, row int, selected bool, empty string, width int) string {
 	if selected {
 		title += " · selected"
 	}
@@ -1538,13 +1667,26 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 	}
 	visible, offset := m.visibleScopePacks(packs, row, selected)
 	for index, pack := range visible {
-		actualIndex := offset + index
+		current := selected && offset+index == row
+		label := pack.ID + "  " + pack.Version
 		rowText := "  " + pack.ID + "  " + versionStyle.Render(pack.Version)
-		if selected && actualIndex == row {
-			rowText = selectedRowStyle.Padding(0, 1).Render("› "+pack.ID+"  "+pack.Version) + " · selected"
+		used := ansi.StringWidth(rowText)
+		if current {
+			used = ansi.StringWidth(" › " + label + "  · selected")
+		}
+		catalog := fitRepository(pack.Catalog, width-used-2)
+		if catalog != "" {
+			label += "  " + catalog
+			rowText += "  " + dimStyle.Render(catalog)
+		}
+		if current {
+			rowText = selectedRowStyle.Padding(0, 1).Render("› "+label) + " · selected"
 		}
 		lines = append(lines, rowText)
-		if selected && actualIndex == row && pack.Description != "" {
+		if current && catalog == "" && pack.Catalog != "" {
+			lines = append(lines, "    "+dimStyle.Render(elideRepository(pack.Catalog, width-4)))
+		}
+		if current && pack.Description != "" {
 			lines = append(lines, "  "+mutedStyle.Render(pack.Description))
 		}
 	}
@@ -1586,13 +1728,11 @@ func (m Model) renderDetail() string {
 }
 
 func (m Model) renderDetailContent(pack Pack) string {
-	lines := []string{
-		sectionHeading("About this Pack", 0),
-		pack.Description,
-		"Requirements: " + joinOrNone(pack.Requirements),
-		"",
-		sectionHeading("Resources", len(pack.Resources)),
+	lines := []string{sectionHeading("About this Pack", 0), pack.Description}
+	if pack.Catalog != "" {
+		lines = append(lines, "Catalog: "+pack.Catalog)
 	}
+	lines = append(lines, "Requirements: "+joinOrNone(pack.Requirements), "", sectionHeading("Resources", len(pack.Resources)))
 	if len(pack.Resources) == 0 {
 		lines = append(lines, dimStyle.Render("none"))
 	}

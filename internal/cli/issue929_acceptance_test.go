@@ -55,7 +55,7 @@ func TestIssue929(t *testing.T) {
 		{"A14", "A project lock naming an unregistered catalog fails and names it", "P4", testIssue929UnregisteredLock},
 		{"A15", "Offline operation from retained snapshots", "P3 for official, P4 for others", testIssue929Offline},
 		{"A16", "Earlier store, receipt, and lock schemas are rejected with adoption guidance", "P2 and P3", testIssue929EarlierSchemas},
-		{"A17", "The TUI shows catalogs, trust, snapshots, Pack catalogs, and refreshes", "P6", nil},
+		{"A17", "The TUI shows catalogs, trust, snapshots, Pack catalogs, and refreshes", "P6", testIssue929TUI},
 	} {
 		t.Run(scenario.id, func(t *testing.T) {
 			if scenario.run == nil {
