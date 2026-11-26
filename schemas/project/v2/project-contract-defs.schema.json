@@ -20,7 +20,7 @@
         },
         "catalog_repository": {
           "type": "string",
-          "pattern": "^[a-z0-9_.-]+/[a-z0-9_.-]+$"
+          "pattern": "^[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*/[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*$"
         },
         "catalog_snapshot": {
           "type": "string",

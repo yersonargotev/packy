@@ -494,15 +494,15 @@ func DiscoverValidatedForDurableIntents(ctx context.Context, catalogRoot string,
 	return discoverProductionCatalog(ctx, catalogRoot, false, validate)
 }
 
-// SnapshotResolver returns the validated root of the retained Catalog Snapshot
-// that a CatalogRef names.
+// SnapshotResolver validates the retained Catalog Snapshot that a CatalogRef
+// names and returns its root. It runs while a catalog observation lock is
+// held, so it must be read-only and must not acquire a catalog lock.
 type SnapshotResolver func(context.Context, CatalogRef) (string, error)
 
 // DiscoverRetainedForDurableIntents loads one immutable retained Catalog
 // Snapshot. Historical lifecycle reads resolve through the supplied snapshot
 // resolver instead of following the currently selected catalog. The resolver
-// also validates the selected snapshot before discovery and every observation;
-// it must be read-only and must not acquire a catalog lock.
+// also validates the selected snapshot before discovery and every observation.
 func DiscoverRetainedForDurableIntents(ctx context.Context, catalogRoot string, ref CatalogRef, resolveSnapshot SnapshotResolver) (Catalog, error) {
 	catalog, err := discoverProductionCatalog(ctx, catalogRoot, false, func(ctx context.Context) error {
 		root, err := resolveSnapshot(ctx, ref)

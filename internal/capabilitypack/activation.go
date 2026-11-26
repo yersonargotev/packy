@@ -1674,6 +1674,9 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if !current {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("unknown capability pack %q in the current catalog; run `packy list` to see available packs", request.PackID)
 	}
+	if hasIntent && intent.Active && intent.CatalogRef.Repository != "" && pack.CatalogRef.Repository != "" && intent.CatalogRef.Repository != pack.CatalogRef.Repository {
+		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q on %s is installed from catalog %s, not %s; deactivate it before you activate it from another catalog", request.PackID, request.Surface, intent.CatalogRef.Repository, pack.CatalogRef.Repository)
+	}
 	if operation == OperationActivate && hasIntent && intent.Active && intent.Version != pack.Version {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q is active at %s on %s; use explicit pack update to target catalog current %s", request.PackID, intent.Version, request.Surface, pack.Version)
 	}

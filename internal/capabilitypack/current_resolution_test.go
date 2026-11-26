@@ -244,3 +244,24 @@ func TestRetainedCatalogRejectsReceiptWithoutCatalogRef(t *testing.T) {
 		t.Fatalf("resolveIntentPackAt() error = %v", err)
 	}
 }
+
+func TestActivationRefusesAReceiptFromAnotherCatalog(t *testing.T) {
+	ctx := context.Background()
+	official := testCatalogRef("a")
+	elsewhere := CatalogRef{Repository: "someone/catalog", Commit: official.Commit}
+	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
+	explicit := true
+	intent := ActivationIntent{PackID: "app", Version: "1.0.0", CatalogRef: elsewhere, Surface: SurfaceAgents, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Explicit: &explicit}
+	if _, err := store.SaveSnapshot(ctx, SurfaceAgents, 0, ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}); err != nil {
+		t.Fatal(err)
+	}
+	pack := Pack{ID: "app", Version: "1.0.0", CatalogRef: official, Surfaces: []Surface{SurfaceAgents}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	facade := NewFacade(Catalog{ref: official, packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceAgents: &fakeSurfaceAdapter{}}))
+
+	if _, err := facade.Preview(ctx, ActivationRequest{PackID: "app", Surface: SurfaceAgents}); err == nil || !strings.Contains(err.Error(), "installed from catalog someone/catalog") {
+		t.Fatalf("activate over a receipt from another catalog = %v", err)
+	}
+	if _, err := facade.PreviewUpdate(ctx, UpdateRequest{PackID: "app", Surface: SurfaceAgents}); err == nil || !strings.Contains(err.Error(), "installed from catalog someone/catalog") {
+		t.Fatalf("update over a receipt from another catalog = %v", err)
+	}
+}

@@ -182,6 +182,11 @@ func testIssue929OfficialOffline(t *testing.T, transport string) {
 			t.Fatalf("%s does not bind its receipt to %v: %s %v", path, want, data, err)
 		}
 	}
+	lock, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProjectStructuredOutput(t, filepath.Join("..", ".."), "project-lock.schema.json", string(lock))
 	var provenance map[string]any
 	data, err = os.ReadFile(filepath.Join(exported, "packy-provenance.json"))
 	if err != nil || json.Unmarshal(data, &provenance) != nil || provenance["catalog_repository"] != issue929OfficialCatalog || provenance["snapshot_id"] != commit {

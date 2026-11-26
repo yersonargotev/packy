@@ -2180,7 +2180,10 @@ func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capa
 	if !sources.isDefault && sources.candidate == nil {
 		return capabilitypack.DiscoverForDurableIntents(ctx, catalogRoot)
 	}
-	selected := snapshotCatalogRef(sources.snapshot)
+	selected, err := snapshotCatalogRef(sources.snapshot)
+	if err != nil {
+		return capabilitypack.Catalog{}, err
+	}
 	if sources.candidate != nil {
 		return capabilitypack.DiscoverRetainedForDurableIntents(ctx, catalogRoot, selected, func(ctx context.Context, ref capabilitypack.CatalogRef) (string, error) {
 			if ref.Repository != selected.Repository {
@@ -2194,8 +2197,12 @@ func loadInvocationCatalog(ctx context.Context, sources invocationSources) (capa
 	})
 }
 
-func snapshotCatalogRef(snapshot catalogstore.Snapshot) capabilitypack.CatalogRef {
-	return capabilitypack.CatalogRef{Repository: snapshot.Index.Source.Repository, Commit: snapshot.Commit}
+func snapshotCatalogRef(snapshot catalogstore.Snapshot) (capabilitypack.CatalogRef, error) {
+	repository, err := catalogstore.ParseRepository(snapshot.Index.Source.Repository)
+	if err != nil {
+		return capabilitypack.CatalogRef{}, err
+	}
+	return capabilitypack.CatalogRef{Repository: repository.String(), Commit: snapshot.Commit}, nil
 }
 
 func resolveRetainedSnapshot(store *catalogstore.Store, ref capabilitypack.CatalogRef) (string, error) {

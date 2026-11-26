@@ -45,7 +45,7 @@ type intentPackContract struct {
 }
 
 func unboundReceiptError(id string) error {
-	return fmt.Errorf("capability pack %q receipt names no catalog; follow the adoption procedure in docs/catalog-adoption.md before using the independent catalog", id)
+	return fmt.Errorf("capability pack %q receipt names no catalog; follow the adoption procedure in docs/catalog-adoption.md to reinstall it", id)
 }
 
 func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pack, error) {

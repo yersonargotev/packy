@@ -53,11 +53,13 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 		var root string
 		var identity capabilitypack.CatalogRef
 		if opts.localCandidate != nil {
-			identity = snapshotCatalogRef(opts.localCandidate.Snapshot)
+			identity, err = snapshotCatalogRef(opts.localCandidate.Snapshot)
 			if snapshotID != "" {
 				identity.Commit = snapshotID
 			}
-			root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
+			if err == nil {
+				root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
+			}
 		} else {
 			store := catalogstore.New(catalogstore.DefaultDataRoot(station.Home()), nil)
 			if snapshotID != "" {
@@ -66,7 +68,10 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			} else {
 				var snapshot catalogstore.Snapshot
 				snapshot, err = store.Selected(catalogstore.Official().Repository)
-				root, identity = snapshot.Root, snapshotCatalogRef(snapshot)
+				if err == nil {
+					root = snapshot.Root
+					identity, err = snapshotCatalogRef(snapshot)
+				}
 			}
 		}
 		if err != nil {

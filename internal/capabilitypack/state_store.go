@@ -179,6 +179,8 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 		}
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid installed receipt document: %w", s.path, err)
 	}
+	// The previous Packy leaves an empty schema_version 1 document after its
+	// last deactivation, and that document holds no catalog state to reject.
 	if receipts.SchemaVersion == earliestInstalledReceiptSchemaVersion && len(receipts.Receipts) > 0 {
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: installed receipts at schema_version %d do not name their catalog; follow docs/catalog-adoption.md to reinstall them", s.path, receipts.SchemaVersion)
 	}

@@ -54,11 +54,13 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 			var root string
 			var identity capabilitypack.CatalogRef
 			if opts.localCandidate != nil {
-				identity = snapshotCatalogRef(opts.localCandidate.Snapshot)
+				identity, err = snapshotCatalogRef(opts.localCandidate.Snapshot)
 				if snapshotID != "" {
 					identity.Commit = snapshotID
 				}
-				root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
+				if err == nil {
+					root, err = opts.localCandidate.Resolve(cmd.Context(), identity.Commit)
+				}
 			} else {
 				store := catalogstore.New(dataRoot, nil)
 				if snapshotID != "" {
@@ -67,7 +69,10 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 				} else {
 					var selected catalogstore.Snapshot
 					selected, err = store.Selected(catalogstore.Official().Repository)
-					root, identity = selected.Root, snapshotCatalogRef(selected)
+					if err == nil {
+						root = selected.Root
+						identity, err = snapshotCatalogRef(selected)
+					}
 				}
 			}
 			if err != nil {

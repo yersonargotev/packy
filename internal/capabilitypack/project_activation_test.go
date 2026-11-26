@@ -160,3 +160,26 @@ func TestProjectSensitiveDisclosuresIncludeUnmatchedPackToolRequirement(t *testi
 		t.Fatalf("pack tool disclosures = %+v, want %+v", disclosures, want)
 	}
 }
+
+func TestProjectActivationRejectsEarlierStateWithAdoptionGuidance(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	directory, err := projectActivationDirectory(home, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, projectActivationStateFile("app", SurfaceAgents))
+	earlier := []byte(`{"schema_version":1,"state":{"schema_version":1,"pack_id":"app","version":"1.0.0","catalog_snapshot":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","surface":"agents","project_root_digest":"digest","sensitive_lock_identity":"lock","active":true},"approvals":[],"receipts":[],"sensitive_lock_identity":"lock"}`)
+	if err := os.WriteFile(path, earlier, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = loadProjectActivationDocumentForSurface(home, project, "app", SurfaceAgents)
+	if err == nil || !strings.Contains(err.Error(), "docs/catalog-adoption.md") {
+		t.Fatalf("earlier personal project activation error = %v", err)
+	}
+	if data, readErr := os.ReadFile(path); readErr != nil || string(data) != string(earlier) {
+		t.Fatalf("rejected personal project activation changed: %q %v", data, readErr)
+	}
+}

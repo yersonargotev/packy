@@ -50,10 +50,14 @@ func TestFileActivationStoreBindsReceiptsToTheirCatalog(t *testing.T) {
 }
 
 func TestFileActivationStoreRejectsEarlierReceiptsWithAdoptionGuidance(t *testing.T) {
-	for name, document := range map[string]string{
-		"schema version 1":   `{"schema_version":1,"revision":1,"receipts":[{"pack":{"id":"shared","version":"1.0.0","catalog_snapshot":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"surface":"agents","readiness_obligations":[],"external_requirements":[],"selection":{"mode":"all","roots":[]},"resources":[],"projections":[]}]}`,
-		"incomplete catalog": strings.Replace(catalogBoundReceipt, `"catalog_repository":"yersonargotev/packy-catalog",`, "", 1),
+	for name, test := range map[string]struct {
+		document     string
+		wantGuidance bool
+	}{
+		"schema version 1":   {`{"schema_version":1,"revision":1,"receipts":[{"pack":{"id":"shared","version":"1.0.0","catalog_snapshot":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"surface":"agents","readiness_obligations":[],"external_requirements":[],"selection":{"mode":"all","roots":[]},"resources":[],"projections":[]}]}`, true},
+		"incomplete catalog": {strings.Replace(catalogBoundReceipt, `"catalog_repository":"yersonargotev/packy-catalog",`, "", 1), false},
 	} {
+		document := test.document
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "packs.json")
 			if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
@@ -63,7 +67,7 @@ func TestFileActivationStoreRejectsEarlierReceiptsWithAdoptionGuidance(t *testin
 			if err == nil {
 				t.Fatal("store accepted a receipt that does not name its catalog")
 			}
-			if name == "schema version 1" && !strings.Contains(err.Error(), "docs/catalog-adoption.md") {
+			if test.wantGuidance && !strings.Contains(err.Error(), "docs/catalog-adoption.md") {
 				t.Fatalf("earlier receipt error names no adoption guidance: %v", err)
 			}
 			if data, readErr := os.ReadFile(path); readErr != nil || !bytes.Equal(data, []byte(document)) {

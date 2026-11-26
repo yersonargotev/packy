@@ -16,13 +16,11 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
+	"github.com/yersonargotev/packy/internal/catalogstore"
 	"github.com/yersonargotev/packy/internal/catalogtransaction"
 )
 
-var (
-	snapshotPattern   = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	repositoryPattern = regexp.MustCompile(`^[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*/[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*$`)
-)
+var snapshotPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // Error identifies an actionable retrieval failure without a partial success.
 type Error struct {
@@ -73,10 +71,11 @@ func Prepare(ctx context.Context, snapshotRoot string, ref capabilitypack.Catalo
 		return Result{}, err
 	}
 	snapshotID := ref.Commit
-	if !snapshotPattern.MatchString(snapshotID) || !repositoryPattern.MatchString(ref.Repository) {
+	repository, err := catalogstore.ParseRepository(ref.Repository)
+	if !snapshotPattern.MatchString(snapshotID) || err != nil || repository.String() != ref.Repository {
 		return Result{}, failure("snapshot_unavailable", "a retained immutable Catalog Snapshot identity is required")
 	}
-	dataRoot, err := filepath.Abs(dataRoot)
+	dataRoot, err = filepath.Abs(dataRoot)
 	if err != nil {
 		return Result{}, failure("preparation_failed", "resolve Packy data root: %v", err)
 	}
