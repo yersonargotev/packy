@@ -171,6 +171,34 @@ func TestDashboardListsEveryCatalogWithTrustSnapshotAndPackCatalog(t *testing.T)
 	}
 }
 
+const longCatalog = "acme-enterprise-platform-engineering/shared-agent-capability-packs"
+
+func TestNarrowCatalogRowsElideLongRepositoryNames(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{
+			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog}}},
+	}}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 60})
+	view := ansi.Strip(model.View().Content)
+	for _, line := range strings.Split(view, "\n") {
+		if width := ansi.StringWidth(line); width > 80 {
+			t.Fatalf("80-column dashboard line width = %d:\n%s", width, view)
+		}
+	}
+	assertCatalogRow(t, view, officialCatalog, "attested", strings.Repeat("a", 12))
+	assertCatalogRow(t, view, "…/shared-agent-capability-packs", "access-controlled \\(weaker\\)", strings.Repeat("e", 12))
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '?', Text: "?"}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, longCatalog) {
+		t.Fatalf("catalog details omit the full repository %s:\n%s", longCatalog, view)
+	}
+}
+
 func TestPartialCatalogRefreshReportsEachCatalogAndKeepsFailedSelection(t *testing.T) {
 	previous, failed := strings.Repeat("a", 40), strings.Repeat("c", 40)
 	refreshed := strings.Repeat("b", 40)

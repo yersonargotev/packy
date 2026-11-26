@@ -1364,11 +1364,7 @@ func (m Model) dashboardContent() (string, string) {
 func (m Model) renderCatalogs(width int) string {
 	if !m.showHelp {
 		lines := []string{sectionTitleStyle.Render("◇ Reviewed Pack catalogs") + "  " + dimStyle.Render("· c refresh · ? details")}
-		rows := catalogRows(m.dashboard.Catalogs, false)
-		if slices.ContainsFunc(rows, func(row string) bool { return ansi.StringWidth(row) > width }) {
-			rows = catalogRows(m.dashboard.Catalogs, true)
-		}
-		return strings.Join(append(lines, rows...), "\n")
+		return strings.Join(append(lines, catalogRows(m.dashboard.Catalogs, width)...), "\n")
 	}
 	lines := []string{sectionTitleStyle.Render("◇ Reviewed Pack catalogs") + "  " + dimStyle.Render("· c refresh")}
 	for _, catalog := range m.dashboard.Catalogs {
@@ -1405,22 +1401,43 @@ func trustStyle(trust string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(mochaGreen)
 }
 
-func catalogRows(catalogs []Catalog, short bool) []string {
-	repositoryWidth, trustWidth := 0, 0
+func catalogRows(catalogs []Catalog, width int) []string {
+	repositoryWidth, trustWidth, snapshotWidth := 0, 0, 0
 	for _, catalog := range catalogs {
 		repositoryWidth = max(repositoryWidth, len(catalog.Repository))
 		trustWidth = max(trustWidth, len(trustLabel(catalog.Trust)))
+		snapshotWidth = max(snapshotWidth, len(catalog.SnapshotID))
 	}
+	if repositoryWidth+trustWidth+snapshotWidth+4 > width {
+		snapshotWidth = min(snapshotWidth, 12)
+	}
+	repositoryWidth = min(repositoryWidth, max(width-trustWidth-snapshotWidth-4, 1))
 	rows := make([]string, 0, len(catalogs))
 	for _, catalog := range catalogs {
+		repository := elideRepository(catalog.Repository, repositoryWidth)
 		trust := trustStyle(catalog.Trust).Render(fmt.Sprintf("%-*s", trustWidth, trustLabel(catalog.Trust)))
-		snapshot := catalog.SnapshotID
-		if short {
-			snapshot = snapshot[:min(12, len(snapshot))]
-		}
-		rows = append(rows, fmt.Sprintf("%-*s  %s  %s", repositoryWidth, catalog.Repository, trust, snapshot))
+		snapshot := catalog.SnapshotID[:min(snapshotWidth, len(catalog.SnapshotID))]
+		rows = append(rows, repository+strings.Repeat(" ", repositoryWidth-ansi.StringWidth(repository))+"  "+trust+"  "+snapshot)
 	}
 	return rows
+}
+
+func elideRepository(repository string, width int) string {
+	if fitted := fitRepository(repository, width); fitted != "" {
+		return fitted
+	}
+	_, name, _ := strings.Cut(repository, "/")
+	return "…/" + ansi.Truncate(name, max(width-2, 1), "…")
+}
+
+func fitRepository(repository string, width int) string {
+	if len(repository) <= width {
+		return repository
+	}
+	if _, name, ok := strings.Cut(repository, "/"); ok && len(name)+2 <= width {
+		return "…/" + name
+	}
+	return ""
 }
 
 func packCount(packs int) string {
