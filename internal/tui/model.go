@@ -1385,6 +1385,15 @@ func (m Model) renderCatalogs(width int) string {
 	return strings.Join(lines, "\n")
 }
 
+func (m Model) catalogTrust(repository string) string {
+	for _, catalog := range m.dashboard.Catalogs {
+		if catalog.Repository == repository {
+			return catalog.Trust
+		}
+	}
+	return ""
+}
+
 // weakerTrust has no build-provenance attestation, so ADR 0046 shows it as
 // weaker than attested.
 const weakerTrust = "access-controlled"
@@ -1674,17 +1683,29 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 		if current {
 			used = ansi.StringWidth(" › " + label + "  · selected")
 		}
-		catalog := fitRepository(pack.Catalog, width-used-2)
+		marker := ""
+		if m.catalogTrust(pack.Catalog) == weakerTrust {
+			marker = " (" + weakerTrust + ")"
+		}
+		styledMarker := trustStyle(weakerTrust).Render(marker)
+		catalog := fitRepository(pack.Catalog, width-used-2-len(marker))
 		if catalog != "" {
-			label += "  " + catalog
-			rowText += "  " + dimStyle.Render(catalog)
+			label += "  " + catalog + marker
+			rowText += "  " + dimStyle.Render(catalog) + styledMarker
 		}
 		if current {
 			rowText = selectedRowStyle.Padding(0, 1).Render("› "+label) + " · selected"
 		}
 		lines = append(lines, rowText)
 		if current && catalog == "" && pack.Catalog != "" {
-			lines = append(lines, "    "+dimStyle.Render(elideRepository(pack.Catalog, width-4)))
+			if repository := fitRepository(pack.Catalog, width-4-len(marker)); repository != "" {
+				lines = append(lines, "    "+dimStyle.Render(repository)+styledMarker)
+			} else {
+				lines = append(lines, "    "+dimStyle.Render(elideRepository(pack.Catalog, width-4)))
+				if marker != "" {
+					lines = append(lines, "    "+trustStyle(weakerTrust).Render(strings.TrimSpace(marker)))
+				}
+			}
 		}
 		if current && pack.Description != "" {
 			lines = append(lines, "  "+mutedStyle.Render(pack.Description))
@@ -1730,7 +1751,16 @@ func (m Model) renderDetail() string {
 func (m Model) renderDetailContent(pack Pack) string {
 	lines := []string{sectionHeading("About this Pack", 0), pack.Description}
 	if pack.Catalog != "" {
-		lines = append(lines, "Catalog: "+pack.Catalog)
+		catalog := "Catalog: " + pack.Catalog
+		if trust := m.catalogTrust(pack.Catalog); trust == weakerTrust {
+			marker := trustStyle(trust).Render(trustLabel(trust))
+			if ansi.StringWidth(catalog+" · "+marker) <= m.viewportTextWidth() {
+				catalog += " · " + marker
+			} else {
+				catalog += "\nTrust: " + marker
+			}
+		}
+		lines = append(lines, catalog)
 	}
 	lines = append(lines, "Requirements: "+joinOrNone(pack.Requirements), "", sectionHeading("Resources", len(pack.Resources)))
 	if len(pack.Resources) == 0 {

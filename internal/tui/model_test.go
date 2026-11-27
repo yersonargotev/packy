@@ -221,14 +221,85 @@ func TestPackRowsFitPanelsWithoutCuttingRepositoryNames(t *testing.T) {
 				if current < 0 || !regexp.MustCompile(`(  |│ +)(`+regexp.QuoteMeta(pack.Catalog)+"|…/"+regexp.QuoteMeta(name)+")").MatchString(strings.Join(lines[current:current+2], "\n")) {
 					t.Fatalf("selected Pack %s does not show its catalog:\n%s", pack.ID, view)
 				}
-				if width == 160 {
-					for _, want := range []string{"fixture  1.0.0  " + officialCatalog, "shared  2.0.0  …/shared-agent-capability-packs"} {
+				if pack.Catalog == longCatalog && !strings.Contains(strings.Join(lines[current:current+3], "\n"), "(access-controlled)") {
+					t.Fatalf("selected Pack %s lacks the weaker-trust marker:\n%s", pack.ID, view)
+				}
+				if pack.Catalog != longCatalog && strings.Contains(lines[current], "access-controlled") {
+					t.Fatalf("selected attested Pack %s shows the weaker-trust marker:\n%s", pack.ID, view)
+				}
+				if width == 160 && row != 2 {
+					for _, want := range []string{"fixture  1.0.0  " + officialCatalog, "shared  2.0.0  …/shared-agent-capability-packs (access-controlled)"} {
 						if !strings.Contains(view, want) {
 							t.Fatalf("wide Pack row missing %q:\n%s", want, view)
 						}
 					}
 				}
 			})
+		}
+	}
+}
+
+func TestPacksFromAccessControlledCatalogsShowWeakerTrustAt80Columns(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Catalogs: []tui.Catalog{
+			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
+			{Repository: teamCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{
+			{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog},
+			{ID: "team", Version: "0.1.0", Catalog: teamCatalog},
+			{ID: "shared", Version: "2.0.0", Catalog: longCatalog},
+		}},
+	}}
+	for _, tc := range []struct {
+		row     int
+		rows    []string
+		details string
+	}{
+		{row: 0, rows: []string{"team  0.1.0  team/private-packs (access-controlled)", "shared  2.0.0  …/shared-agent-capability-packs (access-controlled)"}},
+		{row: 1, rows: []string{"› team  0.1.0  team/private-packs (access-controlled)  · selected"}, details: "Catalog: team/private-packs · access-controlled (weaker)"},
+		{row: 2, rows: []string{"› shared  2.0.0  · selected", "    …/shared-agent-capability-packs (access-controlled)"}, details: "Trust: access-controlled (weaker)"},
+	} {
+		model := loadModel(t, backend)
+		model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 60})
+		for range tc.row {
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+		}
+		view := ansi.Strip(model.View().Content)
+		assertLinesFit(t, view, 80)
+		for _, want := range tc.rows {
+			if !strings.Contains(view, want) {
+				t.Fatalf("Pack rows lack %q:\n%s", want, view)
+			}
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "fixture  1.0.0") && strings.Contains(line, "access-controlled") {
+				t.Fatalf("attested Pack row shows the weaker-trust marker:\n%s", view)
+			}
+		}
+
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 'i', Text: "i"}))
+		view = ansi.Strip(model.View().Content)
+		assertLinesFit(t, view, 80)
+		if tc.details == "" {
+			if !strings.Contains(view, "Catalog: "+officialCatalog) || strings.Contains(view, "access-controlled") {
+				t.Fatalf("attested Pack details show a weaker-trust marker:\n%s", view)
+			}
+			continue
+		}
+		if !regexp.MustCompile(regexp.QuoteMeta(tc.details) + ` *│`).MatchString(view) {
+			t.Fatalf("Pack details lack whole line %q:\n%s", tc.details, view)
+		}
+	}
+}
+
+func assertLinesFit(t *testing.T, view string, width int) {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if lineWidth := ansi.StringWidth(line); lineWidth > width {
+			t.Fatalf("line width = %d, want <= %d:\n%s", lineWidth, width, view)
 		}
 	}
 }
