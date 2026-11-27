@@ -423,9 +423,12 @@ func (s *Store) retainLatest(ctx context.Context, registration Registration) (Sn
 	}
 	destination := s.snapshot(repository, release.Commit)
 	if _, err := os.Lstat(destination); err == nil {
-		// Never replace retained immutable bytes; revalidate them before selection.
-		if _, validationErr := validateSnapshot(destination, repository, release.Commit); validationErr != nil {
-			return Snapshot{}, false, fmt.Errorf("retained Catalog Snapshot %s of %s conflicts with release: %w", release.Commit, repository, validationErr)
+		if _, validationErr := validateSnapshot(destination, repository, release.Commit); validationErr == nil {
+			return snapshotFrom(index, release.Tag, destination), false, nil
+		}
+		// The retained bytes changed on disk; the verified release restores them.
+		if err := restoreSnapshot(stage, destination); err != nil {
+			return Snapshot{}, false, fmt.Errorf("restore retained Catalog Snapshot %s of %s: %w", release.Commit, repository, err)
 		}
 		return snapshotFrom(index, release.Tag, destination), false, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -435,6 +438,18 @@ func (s *Store) retainLatest(ctx context.Context, registration Registration) (Sn
 		return Snapshot{}, false, fmt.Errorf("retain Catalog Snapshot: %w", err)
 	}
 	return snapshotFrom(index, release.Tag, destination), true, nil
+}
+
+func restoreSnapshot(stage, destination string) error {
+	discarded, err := os.MkdirTemp(filepath.Dir(destination), ".discarded-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(discarded)
+	if err := os.Rename(destination, filepath.Join(discarded, "snapshot")); err != nil {
+		return err
+	}
+	return os.Rename(stage, destination)
 }
 
 // checkPackIDs rejects a snapshot of one catalog that introduces a Pack ID
