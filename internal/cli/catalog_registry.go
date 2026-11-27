@@ -77,7 +77,8 @@ func addCatalog(cmd *cobra.Command, opts Options, resolver *workstation.Resolver
 	snapshot, err := store.Register(cmd.Context(), registration)
 	var rejected *catalogstore.AttestationRejectedError
 	if errors.As(err, &rejected) && rejected.Repository == repository.String() {
-		return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
+		_, publication := catalogstore.TrustPolicyName(policy)
+		return fmt.Errorf("no artifact attestation of %s verified for publication workflow %s\nif %s publishes from another workflow, run `packy catalog add %s --workflow <path>`\ncause: %w", repository, publication, repository, repository, rejected.Err)
 	}
 	if err != nil {
 		return err
