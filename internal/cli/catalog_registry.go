@@ -125,7 +125,11 @@ func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobr
 				for _, intent := range locked {
 					names = append(names, fmt.Sprintf("%s on %s in this project's lock", intent.PackID, intent.Surface))
 				}
-				return fmt.Errorf("catalog %s is in use by installed Packs %s; deactivate or uninstall them, then remove the catalog", repository, strings.Join(names, ", "))
+				packs, them := "Packs", "them"
+				if len(names) == 1 {
+					packs, them = "Pack", "it"
+				}
+				return fmt.Errorf("catalog %s is in use by installed %s %s; deactivate or uninstall %s, then remove the catalog", repository, packs, strings.Join(names, ", "), them)
 			}
 			if err := store.Unregister(cmd.Context(), repository, inUse); err != nil {
 				return err
