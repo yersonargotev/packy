@@ -88,7 +88,7 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
 	return &cobra.Command{
-		Use: "remove <owner/repo>", Short: "Unregister a catalog that no receipt or personal project activation names; retained Catalog Snapshots stay", Args: cobra.ExactArgs(1),
+		Use: "remove <owner/repo>", Short: "Unregister a catalog that no receipt, personal project activation, or lock of the current project names; retained Catalog Snapshots stay", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repository, err := catalogstore.ParseRepository(args[0])
 			if err != nil {
@@ -108,17 +108,24 @@ func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobr
 				if err != nil {
 					return fmt.Errorf("check personal project activations before removing catalog %s: %w", repository, err)
 				}
-				if len(installed) == 0 && len(activated) == 0 {
+				locked, err := currentProjectLockFromCatalog(station, repository.String())
+				if err != nil {
+					return fmt.Errorf("check the current project lock before removing catalog %s: %w", repository, err)
+				}
+				if len(installed) == 0 && len(activated) == 0 && len(locked) == 0 {
 					return nil
 				}
-				names := make([]string, 0, len(installed)+len(activated))
+				names := make([]string, 0, len(installed)+len(activated)+len(locked))
 				for _, intent := range installed {
 					names = append(names, fmt.Sprintf("%s on %s", intent.PackID, intent.Surface))
 				}
 				for _, intent := range activated {
 					names = append(names, fmt.Sprintf("%s on %s in a project", intent.PackID, intent.Surface))
 				}
-				return fmt.Errorf("catalog %s is in use by installed Packs %s; deactivate them, then remove the catalog", repository, strings.Join(names, ", "))
+				for _, intent := range locked {
+					names = append(names, fmt.Sprintf("%s on %s in this project's lock", intent.PackID, intent.Surface))
+				}
+				return fmt.Errorf("catalog %s is in use by installed Packs %s; deactivate or uninstall them, then remove the catalog", repository, strings.Join(names, ", "))
 			}
 			if err := store.Unregister(cmd.Context(), repository, inUse); err != nil {
 				return err
@@ -250,6 +257,21 @@ func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map
 		}
 	}
 	return result, nil
+}
+
+func currentProjectLockFromCatalog(station workstation.Snapshot, repository string) ([]capabilitypack.ActivationIntent, error) {
+	cwd, err := station.CurrentDirectory()
+	if err != nil {
+		return nil, fmt.Errorf("resolve current directory: %w", err)
+	}
+	projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+	if errors.As(err, new(capabilitypack.ProjectNotFoundError)) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return capabilitypack.ProjectLockFromCatalog(projectRoot, repository)
 }
 
 func registryStore(opts Options, resolver *workstation.Resolver) (*catalogstore.Store, workstation.Snapshot, error) {

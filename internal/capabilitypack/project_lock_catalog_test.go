@@ -45,6 +45,26 @@ func TestReadExistingProjectLockCanonicalizesTheCatalogRepository(t *testing.T) 
 	}
 }
 
+func TestProjectLockFromCatalogFindsLockedPacksOfTheCatalog(t *testing.T) {
+	root := writeProjectLockWithCatalog(t, CatalogRef{Repository: "Acme/Packs", Commit: strings.Repeat("c", 40)})
+	locked, err := ProjectLockFromCatalog(root, "acme/packs")
+	if err != nil || len(locked) != 1 || locked[0].PackID != "app" || locked[0].Surface != SurfaceAgents || locked[0].Version != "1.0.0" {
+		t.Fatalf("ProjectLockFromCatalog() = %+v, %v", locked, err)
+	}
+	if locked, err := ProjectLockFromCatalog(root, "other/packs"); err != nil || len(locked) != 0 {
+		t.Fatalf("ProjectLockFromCatalog() of another catalog = %+v, %v", locked, err)
+	}
+	if locked, err := ProjectLockFromCatalog(t.TempDir(), "acme/packs"); err != nil || len(locked) != 0 {
+		t.Fatalf("ProjectLockFromCatalog() without a lock = %+v, %v", locked, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packy.lock.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ProjectLockFromCatalog(root, "acme/packs"); err == nil {
+		t.Fatal("ProjectLockFromCatalog() accepted an invalid lock")
+	}
+}
+
 func TestReadExistingProjectLockRejectsAnUnpairedCatalogReference(t *testing.T) {
 	for name, ref := range map[string]CatalogRef{
 		"repository without snapshot": {Repository: "yersonargotev/packy-catalog"},

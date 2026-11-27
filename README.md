@@ -154,12 +154,12 @@ IDs. `packy catalog refresh` explicitly downloads and selects the newest
 compatible immutable snapshot of every registered catalog, or of one; ordinary
 inspection and lifecycle commands stay offline.
 `packy catalog remove` refuses while a workstation receipt in
-`~/.packy/packs.json` or an active personal project activation names the
-catalog, and keeps its retained snapshots. It does not see project locks. A
-project whose lock names a removed catalog fails later with an error that names
-the catalog and `packy catalog add`. Update targets the selected snapshot's Pack
-version in the catalog that the receipt names; arbitrary versions and downgrades
-are unsupported.
+`~/.packy/packs.json`, an active personal project activation, or the lock of
+the Git project it runs in names the catalog, and keeps its retained snapshots.
+Locks of other projects are not tracked. Such a project fails later with an
+error that names the catalog and `packy catalog add`. Update targets the
+selected snapshot's Pack version in the catalog that the receipt names;
+arbitrary versions and downgrades are unsupported.
 
 From a Git worktree, `packy verify` is the portable CI gate for the committed
 project Pack contract. It checks `packy.json`, `packy.lock.json`, required

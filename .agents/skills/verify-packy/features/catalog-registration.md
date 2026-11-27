@@ -10,7 +10,7 @@ Users register more GitHub catalogs next to the official one, refresh them, list
 - `packy catalog list` and `packy list` mark `access-controlled` as the weaker trust level.
 - `packy catalog list [--json]` shows repository, trust policy, workflow, and selected snapshot.
 - `packy catalog refresh [<owner/repo>] [--json]` refreshes every catalog or one. Each catalog refreshes on its own. The command prints every result and exits 1 when any failed. A failed catalog keeps its previous selection.
-- `packy catalog remove <owner/repo>` refuses the official catalog and any catalog that an installed Pack receipt in `~/.packy/packs.json` or an active personal project activation under `~/.packy/projects` names. It does not see project locks; a project whose lock names a removed catalog fails later with an error that names `packy catalog add`. Removal keeps the retained snapshots.
+- `packy catalog remove <owner/repo>` refuses the official catalog and any catalog that an installed Pack receipt in `~/.packy/packs.json` or an active personal project activation under `~/.packy/projects` names, and any catalog that the `packy.lock.json` of the Git project it runs in names. Locks of other projects are not tracked; such a project fails later with an error that names `packy catalog add`. Removal keeps the retained snapshots.
 - `packy list` and `packy status` name each Pack's catalog. New activations find Packs in every selected snapshot. Updates look only in the catalog that the receipt names.
 - `packy status --project`, `packy install`, `packy update --project`, and `packy activate --project` fail and name a catalog that the project lock uses but this workstation has not registered.
 
@@ -24,7 +24,9 @@ Preconditions: Doctor passed and the controlled transport from [Catalog refresh]
 
 - Run `catalog refresh`, then `catalog add acme/packs`. Confirm `catalog list --json` validates against `schemas/cli/v1/catalog-list.schema.json` and shows both catalogs as `attested` with their snapshots. Confirm `list --json` shows `acme` with `catalog_repository` `acme/packs`.
 - Run `catalog add evil/packs`. Confirm exit 1, a message that names Pack `fixture` and `yersonargotev/packy-catalog`, and an unchanged `find "$HOME/.local/share/packy" -type f`.
-- Activate `acme` in a private PTY, then run `catalog remove acme/packs`. Confirm exit 1. Deactivate it, remove again, and confirm exit 0 and that `catalog/v2/acme/packs/snapshots` still exists.
+- Activate `acme` in a private PTY, then run `catalog remove acme/packs`. Confirm exit 1. Deactivate it.
+- In a new Git project, install `acme --surface agents` in a private PTY, then run `catalog remove acme/packs` from the project. Confirm exit 1, a message that names `acme on agents in this project's lock`, and an unchanged `find "$HOME/.local/share/packy" -type f`.
+- Run `catalog remove acme/packs` from a directory outside the project. Confirm exit 0 and that `catalog/v2/acme/packs/snapshots` still exists.
 - Set `release_status` to 500 in `fixtures/acme/packs/repository.json` and publish a newer official snapshot. Run `catalog refresh`. Confirm exit 1, a result line for each catalog, an advanced official selection, and the previous `acme/packs` selection.
 
 ## Driving private catalogs with CLI
