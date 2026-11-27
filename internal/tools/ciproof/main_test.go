@@ -308,6 +308,19 @@ func TestProofRejectsRunRecreatedDuringVerification(t *testing.T) {
 	}
 }
 
+func TestProofRejectsListedRunChangedDuringVerification(t *testing.T) {
+	f := newFixture()
+	_, err := verify(context.Background(), testSHA, func(ctx context.Context, path string) ([]byte, error) {
+		if strings.Contains(path, "/runs?") && f.reads > 0 {
+			f.runs[0].CreatedAt = f.runs[0].CreatedAt.Add(time.Second)
+		}
+		return f.read(ctx, path)
+	})
+	if err == nil {
+		t.Fatal("accepted a listed run whose creation time changed between reads")
+	}
+}
+
 func TestNewerAttemptMustSucceed(t *testing.T) {
 	f := newFixture()
 	f.runs[0].Attempt = 2
