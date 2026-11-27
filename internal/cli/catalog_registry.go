@@ -81,7 +81,7 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 			return err
 		},
 	}
-	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested, or access-controlled for a private repository read with a GitHub token")
+	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested, or access-controlled for a private repository without artifact attestations")
 	command.Flags().StringVar(&workflow, "workflow", "", "publication workflow that must sign attested Catalog Snapshots (default "+catalogstore.DefaultWorkflow+")")
 	return command
 }

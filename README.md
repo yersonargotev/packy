@@ -123,7 +123,7 @@ packy activate <pack> --surface agents \
 
 ```text
 packy init
-packy catalog add <owner/repo> [--trust access-controlled]
+packy catalog add <owner/repo> [--trust attested|access-controlled] [--workflow <path>]
 packy catalog list
 packy catalog refresh [<owner/repo>]
 packy catalog remove <owner/repo>
@@ -144,8 +144,10 @@ packy uninstall <pack> [--surface <surface>]
 Inspection and `--dry-run` do not mutate Pack state or CLI surfaces. Lifecycle
 commands operate on one Pack and receipt at a time. `packy catalog add`
 registers another GitHub catalog next to the official one and selects its first
-snapshot. A private repository uses `--trust access-controlled` and a GitHub
-token; see [private catalogs](docs/private-catalogs.md). When the official
+snapshot. A private repository needs a GitHub token. It registers as `attested`
+when its releases carry GitHub artifact attestations, and as
+`--trust access-controlled` otherwise; see
+[private catalogs](docs/private-catalogs.md). When the official
 catalog has no selected snapshot yet, it selects the official catalog first and
 fails if it cannot, so every new catalog is checked against the official Pack
 IDs. `packy catalog refresh` explicitly downloads and selects the newest
