@@ -36,7 +36,7 @@ type fakeBackend struct {
 	applyFor        func(tui.ApplyRequest, func(tui.ApplyProgress)) (tui.ApplyResult, error)
 }
 
-func (b *fakeBackend) RefreshCatalog(_ context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
+func (b *fakeBackend) RefreshCatalogs(_ context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
 	b.refreshes++
 	if b.refresh != nil {
 		return b.refresh(progress)

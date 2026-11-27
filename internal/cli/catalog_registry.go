@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -153,9 +152,12 @@ func newCatalogListCommand(opts Options, resolver *workstation.Resolver) *cobra.
 			for _, registration := range registrations {
 				entry := catalogListEntry{Repository: registration.Repository.String(), Official: registration.Repository == catalogstore.Official().Repository}
 				entry.Trust, entry.Workflow = catalogstore.TrustPolicyName(registration.Trust)
-				entry.SnapshotID, err = selectedSnapshotID(store, registration.Repository)
+				id, err := store.SelectedID(registration.Repository)
 				if err != nil {
 					return err
+				}
+				if id != "" {
+					entry.SnapshotID = &id
 				}
 				report.Catalogs = append(report.Catalogs, entry)
 			}
@@ -182,16 +184,13 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 			if err != nil {
 				return err
 			}
-			var repositories []catalogstore.Repository
-			for _, registration := range registrations {
-				repositories = append(repositories, registration.Repository)
-			}
 			if len(args) == 1 {
 				repository, err := catalogstore.ParseRepository(args[0])
 				if err != nil {
 					return err
 				}
-				if !slices.Contains(repositories, repository) {
+				index := slices.IndexFunc(registrations, func(registration catalogstore.Registration) bool { return registration.Repository == repository })
+				if index < 0 {
 					err := fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
 					if jsonOutput {
 						report := catalogRefreshReport{SchemaVersion: 1, Report: "catalog-refresh", Catalogs: []catalogRefreshEntry{{Repository: repository.String(), Result: "failed", Error: err.Error()}}}
@@ -201,30 +200,27 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 					}
 					return err
 				}
-				repositories = []catalogstore.Repository{repository}
+				registrations = registrations[index : index+1]
 			}
 			report := catalogRefreshReport{SchemaVersion: 1, Report: "catalog-refresh", Catalogs: []catalogRefreshEntry{}}
 			failed := 0
-			for _, repository := range repositories {
-				entry := catalogRefreshEntry{Repository: repository.String(), Result: "selected"}
-				snapshot, refreshErr := store.AcquireLatest(cmd.Context(), repository)
-				if refreshErr == nil {
-					entry.SnapshotID = &snapshot.ID
-				} else {
+			err = store.RefreshCatalogs(cmd.Context(), registrations, func(catalogstore.Repository) {}, func(refresh catalogstore.Refresh) error {
+				entry := catalogRefreshEntry{Repository: refresh.Repository.String(), Result: "selected"}
+				if refresh.SnapshotID != "" {
+					entry.SnapshotID = &refresh.SnapshotID
+				}
+				if refresh.Err != nil {
 					failed++
-					entry.Result, entry.Error = "failed", refreshErr.Error()
-					previous, err := selectedSnapshotID(store, repository)
-					if err != nil {
-						entry.Error += "; the previous selection is unreadable: " + err.Error()
-					}
-					entry.SnapshotID = previous
+					entry.Result, entry.Error = "failed", refresh.Err.Error()
 				}
 				report.Catalogs = append(report.Catalogs, entry)
-				if !jsonOutput {
-					if err := renderCatalogRefresh(cmd.OutOrStdout(), entry); err != nil {
-						return err
-					}
+				if jsonOutput {
+					return nil
 				}
+				return renderCatalogRefresh(cmd.OutOrStdout(), entry)
+			})
+			if err != nil {
+				return err
 			}
 			if jsonOutput {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
@@ -232,7 +228,7 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 				}
 			}
 			if failed > 0 {
-				return fmt.Errorf("%d of %d catalogs failed to refresh and keep their previous Catalog Snapshot", failed, len(repositories))
+				return fmt.Errorf("%d of %d catalogs failed to refresh and keep their previous Catalog Snapshot", failed, len(registrations))
 			}
 			return nil
 		},
@@ -280,19 +276,6 @@ func registryStore(opts Options, resolver *workstation.Resolver) (*catalogstore.
 		return nil, workstation.Snapshot{}, err
 	}
 	return newCatalogStore(opts, station), station, nil
-}
-
-// selectedSnapshotID reports no selection when the catalog has never selected
-// a Catalog Snapshot, and fails on any other unreadable selection.
-func selectedSnapshotID(store *catalogstore.Store, repository catalogstore.Repository) (*string, error) {
-	snapshot, err := store.Selected(repository)
-	if errors.Is(err, fs.ErrNotExist) && !errors.Is(err, catalogstore.ErrEarlierLayout) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &snapshot.ID, nil
 }
 
 const accessControlledNote = "trusts GitHub access to a private repository in place of build provenance, a weaker trust level"
