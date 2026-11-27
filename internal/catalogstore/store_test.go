@@ -235,6 +235,96 @@ func TestRefreshRestoresATamperedRetainedSnapshot(t *testing.T) {
 	}
 }
 
+func TestReadsOfATamperedRetainedSnapshotNameTheRestoreCommand(t *testing.T) {
+	root := t.TempDir()
+	older, newer := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, commit := range []string{older, newer} {
+		if _, err := catalogstore.New(root, staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))}).AcquireLatest(context.Background(), official); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := catalogstore.New(root, nil)
+	for _, commit := range []string{older, newer} {
+		tamper(t, filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", commit))
+	}
+	hint := func(commit string) string {
+		return "run `packy catalog restore yersonargotev/packy-catalog " + commit + "`"
+	}
+	if _, err := store.Resolve(official, older); err == nil || !strings.Contains(err.Error(), hint(older)) {
+		t.Fatalf("Resolve() error = %v, want %q", err, hint(older))
+	}
+	if _, err := store.Providing("example", older); err == nil || !strings.Contains(err.Error(), hint(older)) {
+		t.Fatalf("Providing() error = %v, want %q", err, hint(older))
+	}
+	if _, err := store.Selected(official); err == nil || !strings.Contains(err.Error(), hint(newer)) {
+		t.Fatalf("Selected() error = %v, want %q", err, hint(newer))
+	}
+}
+
+func TestProvidingAnExactSnapshotReportsTheCatalogThatRetainsIt(t *testing.T) {
+	acme := mustRepository(t, "acme/packs")
+	commit := strings.Repeat("c", 40)
+	root := t.TempDir()
+	store := catalogstore.New(root, catalogSource{
+		official.String(): validRelease(t, strings.Repeat("a", 40), validManifest("example", "1.2.3")),
+		acme.String():     catalogRelease(t, "acme/packs", "acme/packs", commit, validManifest("tools", "1.0.0")),
+	})
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}); err != nil {
+		t.Fatal(err)
+	}
+	tamper(t, filepath.Join(root, "catalog", "v2", "acme", "packs", "snapshots", commit))
+	want := "run `packy catalog restore acme/packs " + commit + "`"
+	if _, err := store.Providing("tools", commit); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Providing() error = %v, want %q", err, want)
+	}
+}
+
+func TestPackIDCheckNamesTheRestoreOfAnUnreadableOtherIndex(t *testing.T) {
+	acme := mustRepository(t, "acme/packs")
+	officialCommit, acmeCommit := strings.Repeat("a", 40), strings.Repeat("c", 40)
+	root := t.TempDir()
+	store := catalogstore.New(root, catalogSource{
+		official.String(): validRelease(t, officialCommit, validManifest("example", "1.2.3")),
+		acme.String():     catalogRelease(t, "acme/packs", "acme/packs", acmeCommit, validManifest("tools", "1.0.0")),
+	})
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range []string{filepath.Join("yersonargotev", "packy-catalog", "snapshots", officialCommit), filepath.Join("acme", "packs", "snapshots", acmeCommit)} {
+		if err := os.WriteFile(filepath.Join(root, "catalog", "v2", snapshot, "catalog-index.json"), []byte("unreadable\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		refreshed catalogstore.Repository
+		want      string
+	}{
+		{official, "run `packy catalog restore acme/packs " + acmeCommit + "`"},
+		{acme, "run `packy catalog restore yersonargotev/packy-catalog " + officialCommit + "`"},
+	} {
+		if _, err := store.AcquireLatest(context.Background(), test.refreshed); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("AcquireLatest(%s) error = %v, want %q", test.refreshed, err, test.want)
+		}
+	}
+}
+
+func tamper(t *testing.T, snapshot string) {
+	t.Helper()
+	path := filepath.Join(snapshot, "packs")
+	entries, err := os.ReadDir(path)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("Packs of %s: %v %v", snapshot, entries, err)
+	}
+	manifest := filepath.Join(path, entries[0].Name(), "pack.json")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFailedSourceKeepsThePreviousSelection(t *testing.T) {
 	root := t.TempDir()
 	commit := strings.Repeat("a", 40)
