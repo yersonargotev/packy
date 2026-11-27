@@ -2,7 +2,7 @@
 
 Start with [verify-packy](../SKILL.md). Each listed entry point needs its own proof when affected. Use isolated state for every journey and capture commands, exit codes, visible results, and file effects. An unmet prerequisite is incomplete coverage, not a pass.
 
-- [CLI inspection](inspection.md) covers version, the Pack list, registered catalogs, and Pack details.
+- [CLI inspection](inspection.md) covers version, the Pack list, registered catalogs, Pack details, and Skill Search.
 - [Catalog refresh](catalog-refresh.md) covers acquisition, selection, and the per-catalog store layout.
 - [Catalog registration](catalog-registration.md) covers catalog add, list, refresh, and remove, and Packs from several catalogs.
 - [Catalog-bound receipts](catalog-bound-receipts.md) covers receipts and locks that name their catalog, earlier-schema rejection, and offline use.
