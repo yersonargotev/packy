@@ -6,6 +6,7 @@
 //	<root>/<owner>/<repo>/repository.json       optional Repository access and faults
 //	<root>/<owner>/<repo>/release/release.json  the latest Release
 //	<root>/<owner>/<repo>/release/<asset>       release asset bytes
+//	<root>/<owner>/<repo>/releases/<tag>/       an earlier Release, laid out as release/
 //
 // The release asset API answers with a redirect to an unauthenticated asset
 // host URL, as GitHub does.
@@ -31,6 +32,7 @@ import (
 
 const (
 	releaseDirectory = "release"
+	earlierDirectory = "releases"
 	releaseFile      = "release.json"
 	repositoryFile   = "repository.json"
 	publisher        = "github-actions[bot]"
@@ -48,7 +50,7 @@ type Repository struct {
 	AttestationWorkflow string `json:"attestation_workflow,omitempty"`
 }
 
-// Release holds the GitHub release fields that the fake serves for the latest
+// Release holds the GitHub release fields that the fake serves for one
 // release. The fake adds the assets from the release directory.
 type Release struct {
 	Tag         string `json:"tag_name"`
@@ -81,8 +83,8 @@ type attestation struct {
 
 // Publish makes the catalog-snapshot.tar.gz and SHA256SUMS in dist the latest
 // stable, immutable release of repository, tagged catalog-<commit> and
-// published by github-actions[bot]. It replaces the previous release and keeps
-// repository.json.
+// published by github-actions[bot]. The previous latest release stays
+// available by its tag below releases/, and repository.json stays.
 func Publish(root, repository, commit, dist string) error {
 	directory := filepath.Join(root, filepath.FromSlash(repository))
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -108,6 +110,23 @@ func Publish(root, repository, commit, dist string) error {
 		return err
 	}
 	current := filepath.Join(directory, releaseDirectory)
+	var previous Release
+	switch err := readJSON(filepath.Join(current, releaseFile), &previous); {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return err
+	case previous.Tag != release.Tag && filepath.IsLocal(previous.Tag):
+		earlier := filepath.Join(directory, earlierDirectory, previous.Tag)
+		if err := os.MkdirAll(filepath.Dir(earlier), 0o755); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(earlier); err != nil {
+			return err
+		}
+		if err := os.Rename(current, earlier); err != nil {
+			return err
+		}
+	}
 	if err := os.RemoveAll(current); err != nil {
 		return err
 	}
@@ -131,6 +150,7 @@ func Handler(root string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}", fixtures.repository)
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/releases/latest", fixtures.latestRelease)
+	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/releases/tags/{tag}", fixtures.taggedRelease)
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/attestations/{subject}", fixtures.attestations)
 	mux.HandleFunc("GET api.github.com/repos/{owner}/{repo}/releases/assets/{id}", fixtures.asset)
 	mux.HandleFunc("GET "+AssetHost+"/{owner}/{repo}/{tag}/{asset}", fixtures.download)
@@ -183,42 +203,66 @@ func (root fixtureRoot) find(w http.ResponseWriter, r *http.Request) (fixture, b
 	return result, true
 }
 
-func (f fixture) release(w http.ResponseWriter) (Release, []asset, bool) {
-	var release Release
-	if err := readJSON(filepath.Join(f.directory, releaseDirectory, releaseFile), &release); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			writeStatus(w, http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		return Release{}, nil, false
-	}
-	entries, err := os.ReadDir(filepath.Join(f.directory, releaseDirectory))
-	if err != nil {
+// published is one release with the assets of its directory.
+type published struct {
+	Release
+	directory string
+	assets    []asset
+}
+
+// releases returns the latest release first, then the earlier ones by tag.
+// Asset IDs are unique across them, as GitHub's are.
+func (f fixture) releases(w http.ResponseWriter) ([]published, bool) {
+	directories := []string{filepath.Join(f.directory, releaseDirectory)}
+	earlier, err := os.ReadDir(filepath.Join(f.directory, earlierDirectory))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return Release{}, nil, false
+		return nil, false
 	}
-	assets := []asset{}
-	for _, entry := range entries {
-		if entry.Name() == releaseFile || !entry.Type().IsRegular() {
-			continue
+	for _, entry := range earlier {
+		if entry.IsDir() {
+			directories = append(directories, filepath.Join(f.directory, earlierDirectory, entry.Name()))
 		}
-		id := int64(len(assets) + 1)
-		data, err := os.ReadFile(filepath.Join(f.directory, releaseDirectory, entry.Name()))
+	}
+	var result []published
+	var id int64
+	for _, directory := range directories {
+		release := published{directory: directory, assets: []asset{}}
+		if err := readJSON(filepath.Join(directory, releaseFile), &release.Release); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				writeStatus(w, http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return nil, false
+		}
+		entries, err := os.ReadDir(directory)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return Release{}, nil, false
+			return nil, false
 		}
-		sum := sha256.Sum256(data)
-		assets = append(assets, asset{
-			ID:     id,
-			Name:   entry.Name(),
-			Digest: "sha256:" + hex.EncodeToString(sum[:]),
-			URL:    fmt.Sprintf("https://api.github.com/repos/%s/releases/assets/%d", f.name, id),
-			Size:   int64(len(data)),
-		})
+		for _, entry := range entries {
+			if entry.Name() == releaseFile || !entry.Type().IsRegular() {
+				continue
+			}
+			id++
+			data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return nil, false
+			}
+			sum := sha256.Sum256(data)
+			release.assets = append(release.assets, asset{
+				ID:     id,
+				Name:   entry.Name(),
+				Digest: "sha256:" + hex.EncodeToString(sum[:]),
+				URL:    fmt.Sprintf("https://api.github.com/repos/%s/releases/assets/%d", f.name, id),
+				Size:   int64(len(data)),
+			})
+		}
+		result = append(result, release)
 	}
-	return release, assets, true
+	return result, true
 }
 
 func (root fixtureRoot) repository(w http.ResponseWriter, r *http.Request) {
@@ -242,14 +286,36 @@ func (root fixtureRoot) latestRelease(w http.ResponseWriter, r *http.Request) {
 		writeStatus(w, status)
 		return
 	}
-	release, assets, ok := f.release(w)
+	releases, ok := f.releases(w)
 	if !ok {
 		return
 	}
+	writeRelease(w, releases[0])
+}
+
+func (root fixtureRoot) taggedRelease(w http.ResponseWriter, r *http.Request) {
+	f, ok := root.open(w, r)
+	if !ok {
+		return
+	}
+	releases, ok := f.releases(w)
+	if !ok {
+		return
+	}
+	for _, release := range releases {
+		if release.Tag == r.PathValue("tag") {
+			writeRelease(w, release)
+			return
+		}
+	}
+	writeStatus(w, http.StatusNotFound)
+}
+
+func writeRelease(w http.ResponseWriter, release published) {
 	writeBody(w, struct {
 		Release
 		Assets []asset `json:"assets"`
-	}{release, assets})
+	}{release.Release, release.assets})
 }
 
 func (root fixtureRoot) attestations(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +323,7 @@ func (root fixtureRoot) attestations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, assets, ok := f.release(w)
+	releases, ok := f.releases(w)
 	if !ok {
 		return
 	}
@@ -265,11 +331,13 @@ func (root fixtureRoot) attestations(w http.ResponseWriter, r *http.Request) {
 	if workflow == "" {
 		workflow = f.name + "/.github/workflows/publish.yml"
 	}
-	for _, candidate := range assets {
-		if candidate.Digest == r.PathValue("subject") {
-			subject := strings.TrimPrefix(candidate.Digest, "sha256:")
-			writeBody(w, map[string]any{"attestations": []map[string]attestation{{"bundle": {SubjectSHA256: subject, SignerWorkflow: workflow}}}})
-			return
+	for _, release := range releases {
+		for _, candidate := range release.assets {
+			if candidate.Digest == r.PathValue("subject") {
+				subject := strings.TrimPrefix(candidate.Digest, "sha256:")
+				writeBody(w, map[string]any{"attestations": []map[string]attestation{{"bundle": {SubjectSHA256: subject, SignerWorkflow: workflow}}}})
+				return
+			}
 		}
 	}
 	writeStatus(w, http.StatusNotFound)
@@ -280,20 +348,22 @@ func (root fixtureRoot) asset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	release, assets, ok := f.release(w)
+	releases, ok := f.releases(w)
 	if !ok {
 		return
 	}
-	for _, candidate := range assets {
-		if strconv.FormatInt(candidate.ID, 10) != r.PathValue("id") {
-			continue
-		}
-		if r.Header.Get("Accept") != "application/octet-stream" {
-			writeBody(w, candidate)
+	for _, release := range releases {
+		for _, candidate := range release.assets {
+			if strconv.FormatInt(candidate.ID, 10) != r.PathValue("id") {
+				continue
+			}
+			if r.Header.Get("Accept") != "application/octet-stream" {
+				writeBody(w, candidate)
+				return
+			}
+			http.Redirect(w, r, "https://"+AssetHost+"/"+f.name+"/"+release.Tag+"/"+candidate.Name, http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "https://"+AssetHost+"/"+f.name+"/"+release.Tag+"/"+candidate.Name, http.StatusFound)
-		return
 	}
 	writeStatus(w, http.StatusNotFound)
 }
@@ -309,14 +379,17 @@ func (root fixtureRoot) download(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	release, assets, ok := f.release(w)
+	releases, ok := f.releases(w)
 	if !ok {
 		return
 	}
-	if r.PathValue("tag") == release.Tag {
-		for _, candidate := range assets {
+	for _, release := range releases {
+		if release.Tag != r.PathValue("tag") {
+			continue
+		}
+		for _, candidate := range release.assets {
 			if candidate.Name == r.PathValue("asset") {
-				http.ServeFile(w, r, filepath.Join(f.directory, releaseDirectory, candidate.Name))
+				http.ServeFile(w, r, filepath.Join(release.directory, candidate.Name))
 				return
 			}
 		}
