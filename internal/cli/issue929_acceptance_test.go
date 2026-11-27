@@ -1114,6 +1114,16 @@ func testIssue929RemoveCatalog(t *testing.T, transport string) {
 	if err := os.Remove(activation); err != nil {
 		t.Fatal(err)
 	}
+	locked := t.TempDir()
+	writeTestGitWorktree(t, locked)
+	approveIssue929(t, transport, environment, locked, "install", "acme", "--surface", "agents")
+	before = issue929StoreTree(t, environment)
+	if out, err := runIssue929At(t, transport, environment, locked, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in this project's lock") {
+		t.Fatalf("catalog remove from a project whose lock names the catalog: %v\n%s", err, out)
+	}
+	if after := issue929StoreTree(t, environment); after != before {
+		t.Fatalf("refused removal changed the Catalog Store:\n%s\nwant:\n%s", after, before)
+	}
 	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); err != nil || !strings.Contains(out, "removed catalog acme/packs") {
 		t.Fatalf("catalog remove: %v\n%s", err, out)
 	}

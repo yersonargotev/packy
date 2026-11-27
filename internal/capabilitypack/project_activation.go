@@ -575,6 +575,23 @@ func ProjectActivationsFromCatalog(packyHome, repository string) ([]ActivationIn
 	return activations, nil
 }
 
+// ProjectLockFromCatalog returns every receipt in the lock of projectRoot
+// whose catalog reference names the catalog repository. A project without a
+// lock has none.
+func ProjectLockFromCatalog(projectRoot, repository string) ([]ActivationIntent, error) {
+	lock, exists, err := readExistingProjectLock(projectRoot)
+	if err != nil || !exists {
+		return nil, err
+	}
+	var locked []ActivationIntent
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.CatalogRef.Repository == repository {
+			locked = append(locked, ActivationIntent{PackID: receipt.Pack.ID, Surface: receipt.Surface, Version: receipt.Pack.Version, CatalogRef: receipt.Pack.CatalogRef})
+		}
+	}
+	return locked, nil
+}
+
 func projectActivationStateFile(packID string, surface Surface) string {
 	return "state-" + packID + "-" + string(surface) + ".json"
 }
