@@ -116,7 +116,7 @@ func TestDashboardListsEveryCatalogWithTrustSnapshotAndPackCatalog(t *testing.T)
 		Catalogs: []tui.Catalog{
 			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
 			{Repository: acmeCatalog, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 2},
-			{Repository: teamCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: teamCatalog, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
 		},
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{
 			{ID: "acme", Version: "1.0.0", Catalog: acmeCatalog},
@@ -180,7 +180,7 @@ func TestPackRowsFitPanelsWithoutCuttingRepositoryNames(t *testing.T) {
 		Catalogs: []tui.Catalog{
 			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
 			{Repository: acmeCatalog, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 1},
-			{Repository: longCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
 		},
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{
 			{ID: "acme", Version: "1.0.0", Catalog: acmeCatalog, Description: "Fixture Pack"},
@@ -244,8 +244,8 @@ func TestPacksFromAccessControlledCatalogsShowWeakerTrustAt80Columns(t *testing.
 		Health: tui.Health{Status: "healthy"},
 		Catalogs: []tui.Catalog{
 			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
-			{Repository: teamCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
-			{Repository: longCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: teamCatalog, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
 		},
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{
 			{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog},
@@ -309,7 +309,7 @@ func TestNarrowCatalogRowsElideLongRepositoryNames(t *testing.T) {
 		Health: tui.Health{Status: "healthy"},
 		Catalogs: []tui.Catalog{
 			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
-			{Repository: longCatalog, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: longCatalog, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
 		},
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog}}},
 	}}
