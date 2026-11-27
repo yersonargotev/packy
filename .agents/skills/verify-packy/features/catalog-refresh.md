@@ -6,6 +6,7 @@ Users acquire and select the latest Catalog Snapshot of every registered catalog
 
 - Refresh downloads, verifies, retains, and selects the latest snapshot of each catalog. [Catalog registration](catalog-registration.md) covers several catalogs.
 - A refused refresh keeps the previous selection.
+- When the selected snapshot's files change on disk, reads fail with its digest mismatch and name `packy init` or `packy catalog refresh <owner/repo>`. If that commit is still the latest Catalog Publication, refresh restores it from the verified release; otherwise refresh selects the newer snapshot.
 - A store that has only the earlier `catalog/selected.json` layout fails reads and names `docs/catalog-adoption.md`.
 
 ## How to get to it (user POV)
@@ -18,6 +19,7 @@ Preconditions: Doctor passed. Build the controlled transport binary with `go bui
 
 - Run `"$PACKY_VERIFY_SCRATCH/packy" catalog refresh` and capture the selected snapshot. Confirm `catalog/v2/yersonargotev/packy-catalog/selected.json` names it.
 - Copy `packs/` of a Catalog Project, such as a `packy-catalog` checkout, into `"$PACKY_VERIFY_SCRATCH/fixture-project"` and change one Pack version. Run `"$PACKY_VERIFY_SCRATCH/packy" catalog build --project "$PACKY_VERIFY_SCRATCH/fixture-project" --source-repository yersonargotev/packy-catalog --source-commit <commit> --out-dir "$PACKY_VERIFY_SCRATCH/dist"`. Copy its two assets into `fixtures/yersonargotev/packy-catalog/release/`, and set `tag_name` and `target_commitish` in `release.json` to the new commit. Refresh again and inspect the selection and the retained `snapshots` directories.
+- Append a line to one file under the selected `snapshots/<commit>/packs/` and run `packy list`. Confirm exit 1 and the hinted command. Run that command, then confirm `packy list` succeeds, the file holds the released bytes, and `snapshots/` holds no leftover directory.
 - Seed `catalog/selected.json` in a fresh sandbox and run `packy list --json`. Confirm exit 1, the adoption guide path, and unchanged earlier files.
 
 ## Gotchas

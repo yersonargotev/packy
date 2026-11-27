@@ -197,7 +197,7 @@ func TestRetainedSnapshotReadsFailClosedAfterLocalTampering(t *testing.T) {
 	}
 }
 
-func TestRefreshOverATamperedRetainedSnapshotFailsAndKeepsTheSelection(t *testing.T) {
+func TestRefreshRestoresATamperedRetainedSnapshot(t *testing.T) {
 	commit := strings.Repeat("a", 40)
 	release := validRelease(t, commit, validManifest("example", "1.2.3"))
 	store := catalogstore.New(t.TempDir(), staticSource{release: release})
@@ -205,19 +205,33 @@ func TestRefreshOverATamperedRetainedSnapshotFailsAndKeepsTheSelection(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	selection := filepath.Join(filepath.Dir(filepath.Dir(snapshot.Root)), "selected.json")
-	before, err := os.ReadFile(selection)
+	manifest := filepath.Join(snapshot.Root, "packs", "example", "pack.json")
+	original, err := os.ReadFile(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(snapshot.Root, "packs", "example", "pack.json"), []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(manifest, []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AcquireLatest(context.Background(), official); err == nil || !strings.Contains(err.Error(), "conflicts with release") {
-		t.Fatalf("AcquireLatest() error = %v, want retained conflict", err)
+	if err := os.WriteFile(filepath.Join(snapshot.Root, "packs", "example", "extra.md"), []byte("added\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if after, err := os.ReadFile(selection); err != nil || !bytes.Equal(after, before) {
-		t.Fatalf("selection changed after a refused refresh: %s %v", after, err)
+	if _, err := store.Selected(official); err == nil {
+		t.Fatal("Selected() accepted a tampered snapshot")
+	}
+	restored, err := store.AcquireLatest(context.Background(), official)
+	if err != nil || restored.ID != commit || restored.Root != snapshot.Root {
+		t.Fatalf("AcquireLatest() = %#v, %v; want the restored snapshot %s", restored, err, commit)
+	}
+	if after, err := os.ReadFile(manifest); err != nil || !bytes.Equal(after, original) {
+		t.Fatalf("pack.json after refresh = %q, %v; want the released bytes", after, err)
+	}
+	if _, err := store.Selected(official); err != nil {
+		t.Fatalf("Selected() after refresh: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(snapshot.Root))
+	if err != nil || len(entries) != 1 || entries[0].Name() != commit {
+		t.Fatalf("snapshots after refresh = %v, %v; want only %s", entries, err, commit)
 	}
 }
 
