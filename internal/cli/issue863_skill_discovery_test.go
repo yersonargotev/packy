@@ -2,16 +2,13 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/catalogstore"
@@ -21,14 +18,7 @@ import (
 func TestIssue863SkillDiscoveryExecutable(t *testing.T) {
 	binary := os.Getenv("PACKY_ISSUE863_BINARY")
 	if binary == "" {
-		binary = filepath.Join(t.TempDir(), "packy")
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-		build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("build: %v %s", err, out)
-		}
+		binary = builtPackyExecutable(t)
 	}
 	t.Run("effective metadata and inert discovery", func(t *testing.T) { checkIssue863Discovery(t, binary) })
 	t.Run("incompatible candidates and errors", func(t *testing.T) { checkIssue863Failures(t, binary) })

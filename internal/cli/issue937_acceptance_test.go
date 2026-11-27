@@ -20,7 +20,7 @@ const (
 var issue937Snapshot = strings.Repeat("f", 40)
 
 func TestIssue937(t *testing.T) {
-	transport := buildIssue929Transport(t, t.TempDir())
+	transport := builtIssue929Transport(t)
 	issue929Dists.root = t.TempDir()
 	issue929Dists.built.Clear()
 	for _, scenario := range []struct {
