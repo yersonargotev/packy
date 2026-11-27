@@ -17,15 +17,7 @@ import (
 )
 
 func TestIssue880ClaudePluginExportExecutable(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, out)
-	}
+	binary := builtPackyExecutable(t)
 	claudeContracts := func(m map[string]any) {
 		for _, value := range m["resources"].([]any) {
 			r := value.(map[string]any)
