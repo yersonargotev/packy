@@ -21,15 +21,7 @@ import (
 )
 
 func TestIssue860SkillAccessExecutable(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build public executable: %v\n%s", err, out)
-	}
+	binary := builtPackyExecutable(t)
 	repository, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

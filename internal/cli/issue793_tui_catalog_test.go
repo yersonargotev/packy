@@ -48,12 +48,12 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	updated := pack.Candidate().WithExactCopyBytes("skill:guide", "SKILL.md", []byte("---\nname: guide\ndescription: Updated guide.\n---\n\nTUI refreshed catalog guidance\n"))
 	newPack := testsupport.SkillVariants("catalog-tui-new")
 	source.release = catalogReleaseFixture(t, updatedCommit, updated, newPack)
-	refreshes, err := backend.RefreshCatalog(context.Background(), func(string) {})
+	refreshes, err := backend.RefreshCatalogs(context.Background(), func(string) {})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []tui.CatalogRefresh{{Repository: "yersonargotev/packy-catalog", SnapshotID: updatedCommit}}; !reflect.DeepEqual(refreshes, want) {
-		t.Fatalf("RefreshCatalog() = %#v, want %#v", refreshes, want)
+		t.Fatalf("RefreshCatalogs() = %#v, want %#v", refreshes, want)
 	}
 	afterReceipts, err := os.ReadFile(filepath.Join(env["HOME"], ".packy", "packs.json"))
 	if err != nil {
@@ -81,7 +81,7 @@ func TestIssue793TUIRefreshUsesCatalogStoreAndPreservesActivePack(t *testing.T) 
 	}
 
 	source.err = errors.New("Catalog Snapshot requires a newer Packy engine; update Packy and retry")
-	refreshes, err = backend.RefreshCatalog(context.Background(), func(string) {})
+	refreshes, err = backend.RefreshCatalogs(context.Background(), func(string) {})
 	if err != nil || len(refreshes) != 1 || refreshes[0].SnapshotID != updatedCommit || refreshes[0].Err == nil || !strings.Contains(refreshes[0].Err.Error(), "update Packy and retry") {
 		t.Fatalf("incompatible refresh = %#v, %v", refreshes, err)
 	}
