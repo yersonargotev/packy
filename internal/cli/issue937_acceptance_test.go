@@ -140,5 +140,5 @@ func testIssue937MissingToken(t *testing.T, transport string) {
 func testIssue937ForeignWorkflow(t *testing.T, transport string) {
 	_, environment, _ := startIssue937(t, transport, githubfake.Repository{AttestationWorkflow: issue937Private + "/.github/workflows/other.yml"})
 	withToken := issue929Setenv(environment, "GH_TOKEN="+issue937Token)
-	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue937Private}, "packy catalog add: verify catalog team/attested-packs artifact attestation", "if team/attested-packs publishes from another workflow, run `packy catalog add team/attested-packs --workflow <path>`")
+	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue937Private}, "packy catalog add: no artifact attestation of team/attested-packs verified for publication workflow .github/workflows/publish.yml\nif team/attested-packs publishes from another workflow, run `packy catalog add team/attested-packs --workflow <path>`\ncause: no catalog attestation verified: no fixture attestation for team/attested-packs was signed by team/attested-packs/.github/workflows/publish.yml\n")
 }

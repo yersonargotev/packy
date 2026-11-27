@@ -881,7 +881,7 @@ func testIssue929FailedAttestation(t *testing.T, transport string) {
 	if err := githubfake.WriteRepository(fixtures, issue929Acme, githubfake.Repository{AttestationWorkflow: "acme/packs/.github/workflows/other.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "packy catalog add: verify catalog acme/packs artifact attestation", "if acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`")
+	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "packy catalog add: no artifact attestation of acme/packs verified for publication workflow .github/workflows/publish.yml\nif acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`\ncause: no catalog attestation verified: no fixture attestation for acme/packs was signed by acme/packs/.github/workflows/publish.yml\n")
 
 	// catalog add selects the official catalog first on a fresh store, and
 	// --workflow cannot fix the official catalog's attestation.
