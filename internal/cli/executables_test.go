@@ -40,6 +40,7 @@ type sharedExecutable struct {
 func (e *sharedExecutable) get(t *testing.T, name, pkg string, flags ...string) string {
 	t.Helper()
 	e.once.Do(func() {
+		e.err = fmt.Errorf("prepare the build environment in an earlier test")
 		e.path = filepath.Join(executablesRoot, name)
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
