@@ -14,6 +14,7 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy version --json` | `schemas/cli/v1/packy-version.schema.json` |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy show PACK --surface HOST --json` | `schemas/cli/v1/skill-discovery.schema.json` |
+| `packy search QUERY... --surface HOST --json` | `schemas/cli/v1/skill-search.schema.json` |
 | `packy catalog list --json` | `schemas/cli/v1/catalog-list.schema.json` |
 | `packy catalog refresh --json` | `schemas/cli/v1/catalog-refresh.schema.json` |
 | `packy list --json` | `schemas/cli/v2/pack-list.schema.json` |
@@ -43,6 +44,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 | `packy catalog refresh --json` | `catalog-refresh` |
 | `packy list --json` | `pack-list` |
 | `packy show PACK --surface HOST --json` | `skill-discovery` |
+| `packy search QUERY... --surface HOST --json` | `skill-search` |
 | `packy get skill PACK:SKILL --surface HOST --json` | `skill-access` |
 | `packy export PACK --surface agents|claude --output DIR --json` | `plugin-export` |
 | `packy doctor --json` | `doctor` |

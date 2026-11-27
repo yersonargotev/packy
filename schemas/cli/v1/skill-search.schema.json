@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v1/skill-search.schema.json",
+  "title": "Current catalog skill search v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "report": {
+      "const": "skill-search"
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+( \\S+)*$"
+    },
+    "surface": {
+      "enum": [
+        "claude",
+        "agents"
+      ]
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "qualified_skill": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "catalog": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*/[a-z0-9_.-]*[a-z0-9_-][a-z0-9_.-]*$"
+          },
+          "pack_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pack_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "compatible": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "qualified_skill",
+          "catalog",
+          "pack_id",
+          "pack_version",
+          "native_name",
+          "description",
+          "compatible",
+          "reason"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "compatible": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "native_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "const": ""
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "report",
+    "query",
+    "surface",
+    "skills"
+  ]
+}

@@ -146,6 +146,7 @@ and receive a new Preview. Packy never retries it automatically.
 		newAuditCommand(opts, workstationResolver),
 		newPackListCommand(opts, workstationResolver),
 		newPackShowCommand(opts, workstationResolver),
+		newSkillSearchCommand(opts, workstationResolver),
 		newProjectVerifyCommand(opts.Getwd),
 		newPackStatusCommand(opts, workstationResolver),
 		newControlledCheckCommand(opts, workstationResolver),
