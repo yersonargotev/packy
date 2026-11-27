@@ -15,7 +15,7 @@ import (
 )
 
 func testIssue929TUI(t *testing.T, transport string) {
-	fixtures, environment := startIssue929Catalogs(t, transport)
+	fixtures, environment := startIssue929Catalogs(t, transport, "TERM=xterm-256color", "PYTHONDONTWRITEBYTECODE=1")
 	publishIssue929Fixture(t, transport, fixtures, issue929OfficialCatalog, strings.Repeat("b", 40), githubfake.Pack{ID: "fixture", Version: "2.0.0"})
 	if err := githubfake.WriteRepository(fixtures, issue929Acme, githubfake.Repository{ReleaseStatus: 500}); err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func driveIssue929TUI(t *testing.T, transport string, environment []string, step
 	defer cancel()
 	command := exec.CommandContext(ctx, "python3", args...)
 	command.Dir = t.TempDir()
-	command.Env = append(append([]string(nil), environment...), "TERM=xterm-256color", "PYTHONDONTWRITEBYTECODE=1")
+	command.Env = environment
 	out, err := command.CombinedOutput()
 	raw, _ := os.ReadFile(transcript)
 	if err != nil {

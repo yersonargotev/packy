@@ -130,14 +130,14 @@ func buildAccessCatalog(t *testing.T, executable string, environment []string, p
 		t.Fatalf("build access catalog: %v %s %s", err, out, diagnostic)
 	}
 	validateCatalogCLISchema(t, "catalog-build", out)
-	return assets, strings.Fields(string(readIssue798File(t, filepath.Join(assets, "SHA256SUMS"))))[0]
+	return assets, strings.Fields(string(readFileBytes(t, filepath.Join(assets, "SHA256SUMS"))))[0]
 }
 
 func editAccessManifest(t *testing.T, project, pack string, edit func(map[string]any)) {
 	t.Helper()
 	path := filepath.Join(project, "packs", pack, "pack.json")
 	var m map[string]any
-	if err := json.Unmarshal(readIssue798File(t, path), &m); err != nil {
+	if err := json.Unmarshal(readFileBytes(t, path), &m); err != nil {
 		t.Fatal(err)
 	}
 	edit(m)

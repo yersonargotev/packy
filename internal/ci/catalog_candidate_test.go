@@ -35,7 +35,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 		// Locally authored generic content needs no upstream transport.
 		path := filepath.Join(project, "packs", id, "pack.json")
 		var manifest map[string]any
-		if err := json.Unmarshal(readIssue798File(t, path), &manifest); err != nil {
+		if err := json.Unmarshal(readFileBytes(t, path), &manifest); err != nil {
 			t.Fatal(err)
 		}
 		manifest["origins"] = []any{}
@@ -123,7 +123,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 				t.Fatalf("verify installed candidate: %v %s %s", err, out, diagnostic)
 			}
 			beforeFailure := catalogTreeState(t, []string{workspace})
-			changed := catalogBuildArchive(t, readIssue798File(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
+			changed := catalogBuildArchive(t, readFileBytes(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
 			changed["catalog-index.json"] = bytes.Replace(changed["catalog-index.json"], []byte(strings.Repeat("a", 40)), []byte(strings.Repeat("b", 40)), 1)
 			differentCandidate := writeCandidateArchive(t, changed)
 			out, diagnostic, err = runCatalogCLI(t, environment, directory, executable, "catalog", "candidate", "--snapshot", differentCandidate, "--workspace", workspace, "--", "list", "--json")
@@ -146,7 +146,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 			}
 			for path, want := range retainedDocuments {
 				// Marked-file lifecycle retains its existing separator newlines.
-				if got := readIssue798File(t, path); strings.TrimRight(string(got), "\n") != strings.TrimRight(string(want), "\n") {
+				if got := readFileBytes(t, path); strings.TrimRight(string(got), "\n") != strings.TrimRight(string(want), "\n") {
 					t.Fatalf("retirement did not restore complete retained document %s: %s", path, got)
 				}
 			}
@@ -163,7 +163,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 				}
 			}
 			for _, name := range []string{"AGENTS.md", "CLAUDE.md", "unrelated.txt"} {
-				if got := string(readIssue798File(t, filepath.Join(ownedProject, name))); strings.TrimRight(got, "\n") != "Personal project guidance" {
+				if got := string(readFileBytes(t, filepath.Join(ownedProject, name))); strings.TrimRight(got, "\n") != "Personal project guidance" {
 					t.Fatalf("final unrelated document %s = %q", name, got)
 				}
 			}
@@ -211,7 +211,7 @@ func testCatalogCandidateExecutable(t *testing.T, executable string) {
 		}
 	})
 	t.Run("candidate rejection", func(t *testing.T) {
-		files := catalogBuildArchive(t, readIssue798File(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
+		files := catalogBuildArchive(t, readFileBytes(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
 		for _, tc := range []struct {
 			name string
 			edit func(map[string][]byte)

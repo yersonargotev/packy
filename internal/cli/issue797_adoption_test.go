@@ -75,14 +75,7 @@ func TestIssue797CleanAdoptionRehearsesPreviousCLIHandoffWithoutTouchingPersonal
 		}
 	}
 
-	executableDir := t.TempDir()
-	catalogSnapshotCLI := filepath.Join(executableDir, "packy-catalog-snapshot-mode")
-	build := exec.Command("go", "build", "-o", catalogSnapshotCLI, "./cmd/packy")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build previous CLI: %v\n%s", err, output)
-	}
+	catalogSnapshotCLI := builtPackyExecutable(t)
 	run := func(binary string, args ...string) (string, error) {
 		t.Helper()
 		command := exec.Command(binary, args...)

@@ -315,7 +315,7 @@ func mutateCatalogManifest(t *testing.T, root string, mutate func(map[string]any
 	t.Helper()
 	path := filepath.Join(root, "packs", "alpha", "pack.json")
 	var manifest map[string]any
-	if err := json.Unmarshal(readIssue798File(t, path), &manifest); err != nil {
+	if err := json.Unmarshal(readFileBytes(t, path), &manifest); err != nil {
 		t.Fatal(err)
 	}
 	mutate(manifest)
@@ -348,7 +348,7 @@ func catalogTreeState(t *testing.T, roots []string) map[string]string {
 				}
 				state[path] += target
 			} else if !entry.IsDir() {
-				state[path] += string(readIssue798File(t, path))
+				state[path] += string(readFileBytes(t, path))
 			}
 			return nil
 		}); err != nil {
