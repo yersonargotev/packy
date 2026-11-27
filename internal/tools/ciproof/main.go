@@ -253,7 +253,7 @@ func verify(ctx context.Context, sha string, read readAPI) (p proof, resultErr e
 	if err := get(ctx, read, path, &final); err != nil {
 		return p, err
 	}
-	if !sameRun(latest, again, sha) || !sameRun(latest, final, sha) || !success(again.Status, again.Conclusion) || !success(final.Status, final.Conclusion) {
+	if !sameRun(selected, again, sha) || !again.CreatedAt.Equal(selected.CreatedAt) || !sameRun(latest, final, sha) || !final.CreatedAt.Equal(latest.CreatedAt) || !success(again.Status, again.Conclusion) || !success(final.Status, final.Conclusion) {
 		return p, errors.New("newest run or latest attempt changed during verification; retry")
 	}
 	url := fmt.Sprintf("https://github.com/%s/actions/runs/%d", canonical.repository, latest.ID)
@@ -269,7 +269,7 @@ func verify(ctx context.Context, sha string, read readAPI) (p proof, resultErr e
 }
 
 func sameRun(a, b run, sha string) bool {
-	return runOK(a, sha) && runOK(b, sha) && a.ID == b.ID && a.Attempt == b.Attempt && a.CreatedAt.Equal(b.CreatedAt)
+	return runOK(a, sha) && runOK(b, sha) && a.ID == b.ID && a.Attempt == b.Attempt
 }
 
 func newestRun(ctx context.Context, read readAPI, sha string) (run, error) {
