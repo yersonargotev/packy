@@ -1681,7 +1681,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Pack details · Workstation · global", "About this Pack", "orchestrate 1.0.0", "Coordination workflow",
 		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
 		"Requirements: git", "windows — POSIX shell required",
-		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported) — Agents",
+		"skill:orchestrate (surface=claude", "mode=unsupported",
 		"claude: unsupported", "agents: supported", "configured=yes authorized=yes usable=no",
 		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
@@ -1690,6 +1690,9 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		if !strings.Contains(allDetailViews, want) {
 			t.Fatalf("Pack detail missing %q after scrolling:\n%s", want, allDetailViews)
 		}
+	}
+	if text := strings.Join(strings.Fields(strings.ReplaceAll(allDetailViews, "│", "")), " "); !strings.Contains(text, "code=surface-unsupported) — Agents only") {
+		t.Fatalf("Pack detail cut the exclusion reason:\n%s", allDetailViews)
 	}
 	for _, line := range strings.Split(current.View().Content, "\n") {
 		if width := ansi.StringWidth(line); width > 64 {
