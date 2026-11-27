@@ -56,6 +56,6 @@ func renderSkillSearch(w io.Writer, report capabilitypack.SkillSearchReport, str
 	if err := writer.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintln(w, report.Limitation)
+	_, err := fmt.Fprintln(w, capabilitypack.SkillDiscoveryLimitation)
 	return err
 }

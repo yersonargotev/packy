@@ -85,10 +85,10 @@ The identity of a logical skill within its owning Pack, written `<pack>:<skill>`
 
 ### Skill Search
 
-A deterministic text filter over the current catalog's skills for one explicit
-CLI surface. It reports qualified candidates and their reviewed on-demand
-compatibility without ranking them, preparing resources, or reading
-instruction bodies.
+A deterministic text filter over the skills in the selected Catalog Snapshot of
+every registered catalog for one explicit CLI surface. It reports qualified
+candidates and their reviewed on-demand compatibility without ranking them,
+preparing resources, or reading instruction bodies.
 
 ### Prepared skill resources
 

@@ -37,7 +37,7 @@ type SkillDiscoveryReport struct {
 	Limitation            string           `json:"limitation"`
 }
 
-const skillDiscoveryLimitation = "Prerequisites are known declarations, not verified; unknown requirements may exist. Compatibility describes resource access, not native registration, runtime readiness, or workflow success."
+const SkillDiscoveryLimitation = "Prerequisites are known declarations, not verified; unknown requirements may exist. Compatibility describes resource access, not native registration, runtime readiness, or workflow success."
 
 func validateDiscoverySurface(surface Surface) error {
 	if surface != SurfaceAgents && surface != SurfaceClaude {
@@ -58,7 +58,7 @@ func (c Catalog) DiscoverSkills(ctx context.Context, id string, surface Surface)
 	}
 	for _, pack := range packs {
 		if pack.ID == id {
-			return SkillDiscoveryReport{PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Skills: skillCandidates(packs, pack, surface), Limitation: skillDiscoveryLimitation}, nil
+			return SkillDiscoveryReport{PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Skills: skillCandidates(packs, pack, surface), Limitation: SkillDiscoveryLimitation}, nil
 		}
 	}
 	return SkillDiscoveryReport{}, fmt.Errorf("unknown current capability pack %q; run `packy list` to see available packs", id)

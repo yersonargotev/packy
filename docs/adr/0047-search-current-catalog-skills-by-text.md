@@ -33,9 +33,10 @@ are sorted by qualified skill and carry no score.
 Skill Search covers the same Packs as `packy list`, the selected Catalog
 Snapshot of every registered catalog. It reuses the effective-resource and
 compatibility facts of `show --surface`. It returns incompatible candidates
-with their reason. When two catalogs provide the same qualified skill, both
-candidates appear with their catalog, and `get skill` keeps its ambiguity
-failure.
+with their reason. Each candidate names its catalog. Pack IDs are global
+across registered catalogs per
+[ADR 0046](0046-support-multiple-and-private-pack-catalogs.md), so a qualified
+skill appears once.
 
 The versioned `skill-search` report holds the query, the surface, and a
 compact candidate list. Dependencies, definitions, and prerequisites stay in

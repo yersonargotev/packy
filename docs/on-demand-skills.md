@@ -68,9 +68,8 @@ joined and split on whitespace into terms, so quoting does not change results.
 A skill matches when every term is a case-insensitive substring of its qualified
 skill, its native name on the surface, or its effective description on the
 surface. Pack descriptions and instruction bodies are never searched; synonyms
-and fuzzy matches are not found. Results are sorted by qualified skill, then by
-catalog, and carry no score. Incompatible and excluded candidates remain, with
-their reason.
+and fuzzy matches are not found. Results are sorted by qualified skill and
+carry no score. Incompatible and excluded candidates remain, with their reason.
 
 `--json` emits `schema_version: 1`, `report: "skill-search"`, the normalized
 `query`, the `surface`, and `skills`; see

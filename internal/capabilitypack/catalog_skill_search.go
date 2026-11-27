@@ -1,7 +1,6 @@
 package capabilitypack
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"slices"
@@ -22,10 +21,9 @@ type SkillSearchCandidate struct {
 }
 
 type SkillSearchReport struct {
-	Query      string                 `json:"query"`
-	Surface    Surface                `json:"surface"`
-	Skills     []SkillSearchCandidate `json:"skills"`
-	Limitation string                 `json:"-"`
+	Query   string                 `json:"query"`
+	Surface Surface                `json:"surface"`
+	Skills  []SkillSearchCandidate `json:"skills"`
 }
 
 // SkillSearch is a validated text query over one surface.
@@ -35,9 +33,6 @@ type SkillSearch struct {
 }
 
 func NewSkillSearch(query []string, surface Surface) (SkillSearch, error) {
-	if surface == "" {
-		return SkillSearch{}, errors.New("a surface is required; use --surface agents or --surface claude")
-	}
 	if err := validateDiscoverySurface(surface); err != nil {
 		return SkillSearch{}, err
 	}
@@ -66,22 +61,16 @@ func (c Catalog) SearchSkills(ctx context.Context, search SkillSearch) (SkillSea
 	if err != nil {
 		return SkillSearchReport{}, err
 	}
-	// get skill resolves an access graph only inside the Catalog Snapshot that
-	// provides the Pack, so compatibility must not see other catalogs' Packs.
-	byCatalog := map[string][]Pack{}
+	report := SkillSearchReport{Query: strings.Join(search.terms, " "), Surface: search.surface, Skills: []SkillSearchCandidate{}}
 	for _, pack := range packs {
-		byCatalog[pack.CatalogRef.Repository] = append(byCatalog[pack.CatalogRef.Repository], pack)
-	}
-	report := SkillSearchReport{Query: strings.Join(search.terms, " "), Surface: search.surface, Skills: []SkillSearchCandidate{}, Limitation: skillDiscoveryLimitation}
-	for _, pack := range packs {
-		for _, candidate := range skillCandidates(byCatalog[pack.CatalogRef.Repository], pack, search.surface) {
+		for _, candidate := range skillCandidates(packs, pack, search.surface) {
 			if search.matches(candidate) {
 				report.Skills = append(report.Skills, SkillSearchCandidate{QualifiedSkill: candidate.QualifiedSkill, Catalog: pack.CatalogRef.Repository, PackID: pack.ID, PackVersion: pack.Version, NativeName: candidate.NativeName, Description: candidate.Description, Compatible: candidate.Compatible, Reason: candidate.Reason})
 			}
 		}
 	}
 	slices.SortFunc(report.Skills, func(a, b SkillSearchCandidate) int {
-		return cmp.Or(strings.Compare(a.QualifiedSkill, b.QualifiedSkill), strings.Compare(a.Catalog, b.Catalog))
+		return strings.Compare(a.QualifiedSkill, b.QualifiedSkill)
 	})
 	return report, nil
 }
