@@ -93,9 +93,10 @@ against that instance's trusted root, refreshed over TUF from
 publisher identity as for the public instance. An `attested` catalog is read
 without a token first, and Packy reads a token only when GitHub answers 404.
 
-Packy never stores credentials. Only explicit network operations (registration
-and Catalog Refresh) read `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`, and a
-missing or insufficient credential fails with an explanation.
+Packy never stores credentials. Only explicit network operations (registration,
+Catalog Refresh, and `packy catalog restore`) read `GH_TOKEN`, `GITHUB_TOKEN`,
+or `gh auth token`, and a missing or insufficient credential fails with an
+explanation.
 
 ## Pack identity across catalogs
 
@@ -132,7 +133,10 @@ supported.
 Downloaded Catalog Snapshots are retained without automatic cleanup.
 Activations keep referencing their immutable source snapshot until their own
 explicit lifecycle update, and refreshing a catalog never rewrites the content
-behind active references. A Pack removed from a catalog's current snapshot can
+behind active references. `packy catalog restore <owner/repo> <snapshot>`
+repairs a retained snapshot whose files changed on disk by downloading the
+verified release of that exact commit again. It never changes a selection, so
+it skips the Pack ID check. A Pack removed from a catalog's current snapshot can
 no longer be newly activated from that catalog, but existing installations stay
 inspectable and deactivatable. A defective Pack is corrected by a newer Pack
 version in a new Catalog Publication. Downgrades and automatic uninstall are out

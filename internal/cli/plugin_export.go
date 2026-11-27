@@ -64,14 +64,13 @@ func newPluginExportCommand(opts Options, resolver *workstation.Resolver) *cobra
 			root, identity, err = packSnapshot(catalogstore.New(catalogstore.DefaultDataRoot(station.Home()), nil), args[0], snapshotID)
 		}
 		if err != nil {
-			code := "catalog_unavailable"
-			if snapshotID != "" {
-				code = "snapshot_unavailable"
-			}
 			if errors.Is(err, catalogstore.ErrEarlierLayout) || errors.Is(err, catalogstore.ErrAmbiguousPack) {
 				return failure(cmd, "catalog_unavailable", err)
 			}
-			return failure(cmd, code, fmt.Errorf("local retained Catalog Snapshot unavailable; acquire explicitly with packy init or packy catalog refresh, or restore the exact requested snapshot: %w", err))
+			if snapshotID != "" {
+				return failure(cmd, "snapshot_unavailable", fmt.Errorf("required retained snapshot %s is unavailable, and a newer revision does not substitute for it: %w", snapshotID, err))
+			}
+			return failure(cmd, "catalog_unavailable", fmt.Errorf("local Catalog Snapshot unavailable; run `packy init` or `packy catalog refresh` to acquire it explicitly: %w", err))
 		}
 		destination := output
 		if !filepath.IsAbs(destination) {

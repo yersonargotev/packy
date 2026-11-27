@@ -187,7 +187,7 @@ stderr may also contain a readable diagnostic. Argument errors honor `--json`.
 | `invalid_identity` | Use lowercase kebab-case `<pack>:<skill>`. |
 | `unsupported_surface` | Select `agents` or `claude` and a skill supporting it. |
 | `catalog_unavailable` | Explicitly acquire with `packy init` or `packy catalog refresh`; inspect invalid local content. |
-| `snapshot_unavailable` | Restore the exact retained revision; do not substitute a newer one. |
+| `snapshot_unavailable` | Run the `packy catalog restore <owner/repo> <snapshot>` command that the message names; do not substitute a newer revision. |
 | `unknown_skill` | Inspect `packy list` and `packy show <pack>`. |
 | `incompatible_resource` | Ask the Catalog maintainer for a reviewed standalone on-demand tree. |
 | `preparation_failed` | Inspect filesystem access or prepared-tree drift; preserve sources and use writable scratch/output elsewhere. |

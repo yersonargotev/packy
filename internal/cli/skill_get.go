@@ -71,7 +71,7 @@ func newGetCommand(opts Options, resolver *workstation.Resolver) *cobra.Command 
 					return failure(cmd, "catalog_unavailable", err)
 				}
 				if snapshotID != "" {
-					return failure(cmd, "snapshot_unavailable", fmt.Errorf("required retained snapshot %s is unavailable; restore its exact content, without substituting a newer revision: %w", snapshotID, err))
+					return failure(cmd, "snapshot_unavailable", fmt.Errorf("required retained snapshot %s is unavailable, and a newer revision does not substitute for it: %w", snapshotID, err))
 				}
 				return failure(cmd, "catalog_unavailable", fmt.Errorf("local Catalog Snapshot unavailable; run `packy init` or `packy catalog refresh` to acquire it explicitly: %w", err))
 			}

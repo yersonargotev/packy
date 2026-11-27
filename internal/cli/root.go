@@ -203,7 +203,7 @@ func initializeCatalog(ctx context.Context, opts Options, resolver *workstation.
 
 func newCatalogCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
 	command := &cobra.Command{Use: "catalog", Short: "Manage registered Pack catalogs and author Catalog Projects", Args: cobra.NoArgs}
-	command.AddCommand(newCatalogAddCommand(opts, resolver), newCatalogRemoveCommand(opts, resolver), newCatalogListCommand(opts, resolver), newCatalogRefreshCommand(opts, resolver))
+	command.AddCommand(newCatalogAddCommand(opts, resolver), newCatalogRemoveCommand(opts, resolver), newCatalogListCommand(opts, resolver), newCatalogRefreshCommand(opts, resolver), newCatalogRestoreCommand(opts, resolver))
 	command.AddCommand(newCatalogValidateCommand(opts), newCatalogBuildCommand(opts), newCatalogPublishCommand(), newCatalogCandidateCommand(opts), newCatalogCreateCommand(opts), newCatalogImportCommand(opts), newCatalogUpstreamRefreshCommand(opts))
 	return command
 }

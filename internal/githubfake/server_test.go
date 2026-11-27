@@ -120,6 +120,75 @@ func TestHandlerRoutesGitHubEndpointsFromFixtures(t *testing.T) {
 	}
 }
 
+func TestHandlerServesEarlierReleasesByTag(t *testing.T) {
+	root, client := startFake(t)
+	newer := strings.Repeat("d", 40)
+	newerArchive := []byte("newer archive bytes\n")
+	dist := t.TempDir()
+	sum := sha256.Sum256(newerArchive)
+	if err := os.WriteFile(filepath.Join(dist, "catalog-snapshot.tar.gz"), newerArchive, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(hex.EncodeToString(sum[:])+"  catalog-snapshot.tar.gz\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := githubfake.Publish(root, official, newer, dist); err != nil {
+		t.Fatal(err)
+	}
+	type served struct {
+		Tag    string `json:"tag_name"`
+		Commit string `json:"target_commitish"`
+		Assets []struct {
+			ID     int64  `json:"id"`
+			Name   string `json:"name"`
+			Digest string `json:"digest"`
+			URL    string `json:"url"`
+		} `json:"assets"`
+	}
+	read := func(path string) served {
+		t.Helper()
+		status, body := get(t, client, "https://api.github.com/repos/"+official+path, "")
+		var release served
+		if err := json.Unmarshal(body, &release); status != http.StatusOK || err != nil {
+			t.Fatalf("GET %s = %d %s (%v)", path, status, body, err)
+		}
+		return release
+	}
+	if latest := read("/releases/latest"); latest.Commit != newer {
+		t.Fatalf("releases/latest names %s, want %s", latest.Commit, newer)
+	}
+	ids := map[int64]bool{}
+	for _, want := range []struct {
+		commit  string
+		archive []byte
+	}{{newer, newerArchive}, {commit, archive}} {
+		release := read("/releases/tags/catalog-" + want.commit)
+		if release.Tag != "catalog-"+want.commit || release.Commit != want.commit || len(release.Assets) != 2 {
+			t.Fatalf("release of %s = %+v", want.commit, release)
+		}
+		for _, asset := range release.Assets {
+			if ids[asset.ID] {
+				t.Fatalf("asset ID %d repeats across releases", asset.ID)
+			}
+			ids[asset.ID] = true
+			status, _, data := fetch(t, client, asset.URL, http.Header{"Accept": {"application/octet-stream"}})
+			sum := sha256.Sum256(data)
+			if status != http.StatusOK || asset.Digest != "sha256:"+hex.EncodeToString(sum[:]) {
+				t.Fatalf("download %s = %d with digest %x, want %s", asset.URL, status, sum, asset.Digest)
+			}
+			if asset.Name == "catalog-snapshot.tar.gz" && string(data) != string(want.archive) {
+				t.Fatalf("archive of %s = %q", want.commit, data)
+			}
+			if status, _ := get(t, client, "https://api.github.com/repos/"+official+"/attestations/"+asset.Digest, ""); status != http.StatusOK {
+				t.Fatalf("attestations of %s = %d", asset.Name, status)
+			}
+		}
+	}
+	if status, body := get(t, client, "https://api.github.com/repos/"+official+"/releases/tags/catalog-"+strings.Repeat("e", 40), ""); status != http.StatusNotFound {
+		t.Fatalf("an unknown tag = %d %s, want 404", status, body)
+	}
+}
+
 func TestHandlerAnswersUnknownPathsWith404(t *testing.T) {
 	_, client := startFake(t)
 	for _, url := range []string{
@@ -197,14 +266,14 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 		})
 	})
 	privateRegistration := catalogstore.Registration{Repository: mustRepository(t, private), Trust: catalogstore.AccessControlled{}}
-	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || release.AttestationVerified || release.Commit != commit || len(release.Assets) != 2 {
-		t.Fatalf("Latest() of the private catalog = %+v, %v", release, err)
+	if release, err := source.Release(context.Background(), privateRegistration, ""); err != nil || release.AttestationVerified || release.Commit != commit || len(release.Assets) != 2 {
+		t.Fatalf("Release() of the private catalog = %+v, %v", release, err)
 	}
 	privateRegistration.Trust = catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}
-	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || !release.AttestationVerified || release.Commit != commit {
-		t.Fatalf("Latest() of the private attested catalog = %+v, %v", release, err)
+	if release, err := source.Release(context.Background(), privateRegistration, ""); err != nil || !release.AttestationVerified || release.Commit != commit {
+		t.Fatalf("Release() of the private attested catalog = %+v, %v", release, err)
 	}
-	release, err := source.Latest(context.Background(), catalogstore.Official())
+	release, err := source.Release(context.Background(), catalogstore.Official(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,15 +284,15 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	if err := githubfake.WriteRepository(root, official, githubfake.Repository{AttestationWorkflow: "example/fork/.github/workflows/publish.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "attestation") {
-		t.Fatalf("Latest() with a foreign signer workflow = %v", err)
+	if _, err := source.Release(context.Background(), catalogstore.Official(), ""); err == nil || !strings.Contains(err.Error(), "attestation") {
+		t.Fatalf("Release() with a foreign signer workflow = %v", err)
 	}
 
 	if err := githubfake.WriteRepository(root, official, githubfake.Repository{ReleaseStatus: http.StatusInternalServerError}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "500") {
-		t.Fatalf("Latest() with a failing releases/latest = %v", err)
+	if _, err := source.Release(context.Background(), catalogstore.Official(), ""); err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("Release() with a failing releases/latest = %v", err)
 	}
 }
 

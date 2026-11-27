@@ -235,6 +235,181 @@ func TestRefreshRestoresATamperedRetainedSnapshot(t *testing.T) {
 	}
 }
 
+func TestReadsOfATamperedRetainedSnapshotNameTheRestoreCommand(t *testing.T) {
+	root := t.TempDir()
+	older, newer := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, commit := range []string{older, newer} {
+		if _, err := catalogstore.New(root, staticSource{release: validRelease(t, commit, validManifest("example", "1.2.3"))}).AcquireLatest(context.Background(), official); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := catalogstore.New(root, nil)
+	for _, commit := range []string{older, newer} {
+		tamper(t, filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", commit))
+	}
+	hint := func(commit string) string {
+		return "run `packy catalog restore yersonargotev/packy-catalog " + commit + "`"
+	}
+	if _, err := store.Resolve(official, older); err == nil || !strings.Contains(err.Error(), hint(older)) {
+		t.Fatalf("Resolve() error = %v, want %q", err, hint(older))
+	}
+	if _, err := store.Providing("example", older); err == nil || !strings.Contains(err.Error(), hint(older)) {
+		t.Fatalf("Providing() error = %v, want %q", err, hint(older))
+	}
+	if _, err := store.Selected(official); err == nil || !strings.Contains(err.Error(), hint(newer)) {
+		t.Fatalf("Selected() error = %v, want %q", err, hint(newer))
+	}
+}
+
+func TestProvidingAnExactSnapshotReportsTheCatalogThatRetainsIt(t *testing.T) {
+	acme := mustRepository(t, "acme/packs")
+	commit := strings.Repeat("c", 40)
+	root := t.TempDir()
+	store := catalogstore.New(root, catalogSource{
+		official.String(): validRelease(t, strings.Repeat("a", 40), validManifest("example", "1.2.3")),
+		acme.String():     catalogRelease(t, "acme/packs", "acme/packs", commit, validManifest("tools", "1.0.0")),
+	})
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}); err != nil {
+		t.Fatal(err)
+	}
+	tamper(t, filepath.Join(root, "catalog", "v2", "acme", "packs", "snapshots", commit))
+	want := "run `packy catalog restore acme/packs " + commit + "`"
+	if _, err := store.Providing("tools", commit); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Providing() error = %v, want %q", err, want)
+	}
+}
+
+func TestPackIDCheckNamesTheRestoreOfAnUnreadableOtherIndex(t *testing.T) {
+	acme := mustRepository(t, "acme/packs")
+	officialCommit, acmeCommit := strings.Repeat("a", 40), strings.Repeat("c", 40)
+	root := t.TempDir()
+	store := catalogstore.New(root, catalogSource{
+		official.String(): validRelease(t, officialCommit, validManifest("example", "1.2.3")),
+		acme.String():     catalogRelease(t, "acme/packs", "acme/packs", acmeCommit, validManifest("tools", "1.0.0")),
+	})
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range []string{filepath.Join("yersonargotev", "packy-catalog", "snapshots", officialCommit), filepath.Join("acme", "packs", "snapshots", acmeCommit)} {
+		if err := os.WriteFile(filepath.Join(root, "catalog", "v2", snapshot, "catalog-index.json"), []byte("unreadable\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		refreshed catalogstore.Repository
+		want      string
+	}{
+		{official, "run `packy catalog restore acme/packs " + acmeCommit + "`"},
+		{acme, "run `packy catalog restore yersonargotev/packy-catalog " + officialCommit + "`"},
+	} {
+		if _, err := store.AcquireLatest(context.Background(), test.refreshed); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("AcquireLatest(%s) error = %v, want %q", test.refreshed, err, test.want)
+		}
+	}
+	if _, restored, err := store.Restore(context.Background(), acme, acmeCommit); err != nil || !restored {
+		t.Fatalf("Restore(acme/packs) = %t, %v", restored, err)
+	}
+	if _, err := store.AcquireLatest(context.Background(), official); err != nil {
+		t.Fatalf("AcquireLatest(official) after restoring acme/packs: %v", err)
+	}
+	for _, repository := range []catalogstore.Repository{official, acme} {
+		if _, err := store.Selected(repository); err != nil {
+			t.Fatalf("Selected(%s) after both repairs: %v", repository, err)
+		}
+	}
+}
+
+func TestRestoreRepairsAnOlderRetainedSnapshotAndKeepsTheSelection(t *testing.T) {
+	root := t.TempDir()
+	older, newer := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	releases := releasesSource{validRelease(t, older, validManifest("example", "1.0.0")), validRelease(t, newer, validManifest("example", "2.0.0"))}
+	if _, err := catalogstore.New(root, staticSource{release: releases[0]}).AcquireLatest(context.Background(), official); err != nil {
+		t.Fatal(err)
+	}
+	store := catalogstore.New(root, releases)
+	if _, err := store.AcquireLatest(context.Background(), official); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", older)
+	manifest := filepath.Join(snapshot, "packs", "example", "pack.json")
+	released, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamper(t, snapshot)
+	if err := os.WriteFile(filepath.Join(snapshot, "packs", "example", "extra.md"), []byte("added\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, changed, err := store.Restore(context.Background(), official, older)
+	if err != nil || !changed || restored.ID != older || restored.Root != snapshot {
+		t.Fatalf("Restore() = %#v, %t, %v; want the restored snapshot %s", restored, changed, err, older)
+	}
+	if after, err := os.ReadFile(manifest); err != nil || !bytes.Equal(after, released) {
+		t.Fatalf("pack.json after restore = %q, %v; want the released bytes", after, err)
+	}
+	if _, err := store.Resolve(official, older); err != nil {
+		t.Fatalf("Resolve() after restore: %v", err)
+	}
+	if selected, err := store.Selected(official); err != nil || selected.ID != newer {
+		t.Fatalf("Selected() after restore = %#v, %v; want %s", selected, err, newer)
+	}
+	entries, err := os.ReadDir(filepath.Dir(snapshot))
+	if err != nil || len(entries) != 2 || entries[0].Name() != older || entries[1].Name() != newer {
+		t.Fatalf("snapshots after restore = %v, %v; want only %s and %s", entries, err, older, newer)
+	}
+	if _, changed, err := store.Restore(context.Background(), official, older); err != nil || changed {
+		t.Fatalf("Restore() of an intact snapshot = %t, %v; want no change", changed, err)
+	}
+	if err := os.RemoveAll(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, changed, err := store.Restore(context.Background(), official, older); err != nil || !changed {
+		t.Fatalf("Restore() of a missing snapshot = %t, %v", changed, err)
+	}
+	if _, err := store.Resolve(official, older); err != nil {
+		t.Fatalf("Resolve() after restoring a missing snapshot: %v", err)
+	}
+}
+
+func TestRestoreRefusesAnotherCommitAndInvalidRequests(t *testing.T) {
+	root := t.TempDir()
+	older, newer := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	store := catalogstore.New(root, staticSource{release: validRelease(t, newer, validManifest("example", "2.0.0"))})
+	if _, _, err := store.Restore(context.Background(), official, older); err == nil || !strings.Contains(err.Error(), "release of commit "+older+" names commit "+newer) {
+		t.Fatalf("Restore() of a release that names another commit = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "snapshots", newer)); !os.IsNotExist(err) {
+		t.Fatalf("Restore() retained the release of another commit: %v", err)
+	}
+	if _, _, err := store.Restore(context.Background(), official, "catalog-"+older); err == nil || !strings.Contains(err.Error(), "invalid Catalog Snapshot identity") {
+		t.Fatalf("Restore() of an invalid identity = %v", err)
+	}
+	if _, _, err := store.Restore(context.Background(), mustRepository(t, "acme/packs"), older); err == nil || !strings.Contains(err.Error(), "catalog acme/packs is not registered") {
+		t.Fatalf("Restore() of an unregistered catalog = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "yersonargotev", "packy-catalog", "selected.json")); !os.IsNotExist(err) {
+		t.Fatalf("Restore() wrote a selection: %v", err)
+	}
+}
+
+func tamper(t *testing.T, snapshot string) {
+	t.Helper()
+	path := filepath.Join(snapshot, "packs")
+	entries, err := os.ReadDir(path)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("Packs of %s: %v %v", snapshot, entries, err)
+	}
+	manifest := filepath.Join(path, entries[0].Name(), "pack.json")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFailedSourceKeepsThePreviousSelection(t *testing.T) {
 	root := t.TempDir()
 	commit := strings.Repeat("a", 40)
@@ -625,7 +800,7 @@ type orderedSource struct {
 	calls         int
 }
 
-func (s *orderedSource) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
+func (s *orderedSource) Release(context.Context, catalogstore.Registration, string) (catalogstore.Release, error) {
 	s.mu.Lock()
 	call := s.calls
 	s.calls++
@@ -642,13 +817,29 @@ func (s *orderedSource) Latest(context.Context, catalogstore.Registration) (cata
 	return s.releases[call], nil
 }
 
-func (s staticSource) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
+func (s staticSource) Release(context.Context, catalogstore.Registration, string) (catalogstore.Release, error) {
 	return s.release, s.err
+}
+
+// releasesSource serves each release of the official catalog by its commit,
+// and the last one as the latest.
+type releasesSource []catalogstore.Release
+
+func (s releasesSource) Release(_ context.Context, _ catalogstore.Registration, commit string) (catalogstore.Release, error) {
+	if commit == "" {
+		return s[len(s)-1], nil
+	}
+	for _, release := range s {
+		if release.Commit == commit {
+			return release, nil
+		}
+	}
+	return catalogstore.Release{}, fmt.Errorf("no release of commit %s", commit)
 }
 
 type catalogSource map[string]catalogstore.Release
 
-func (s catalogSource) Latest(_ context.Context, registration catalogstore.Registration) (catalogstore.Release, error) {
+func (s catalogSource) Release(_ context.Context, registration catalogstore.Registration, _ string) (catalogstore.Release, error) {
 	release, ok := s[registration.Repository.String()]
 	if !ok {
 		return catalogstore.Release{}, fmt.Errorf("no release for %s", registration.Repository)

@@ -1043,7 +1043,7 @@ type catalogSnapshotFixtureSource struct {
 	release catalogstore.Release
 }
 
-func (s catalogSnapshotFixtureSource) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
+func (s catalogSnapshotFixtureSource) Release(context.Context, catalogstore.Registration, string) (catalogstore.Release, error) {
 	return s.release, nil
 }
 

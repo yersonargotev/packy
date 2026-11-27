@@ -201,9 +201,8 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 				if err != nil {
 					return err
 				}
-				index := slices.IndexFunc(registrations, func(registration catalogstore.Registration) bool { return registration.Repository == repository })
-				if index < 0 {
-					err := fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
+				index, err := registeredIndex(registrations, repository)
+				if err != nil {
 					if jsonOutput {
 						report := catalogRefreshReport{SchemaVersion: 1, Report: "catalog-refresh", Catalogs: []catalogRefreshEntry{{Repository: repository.String(), Result: "failed", Error: err.Error()}}}
 						if encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(report); encodeErr != nil {
@@ -247,6 +246,47 @@ func newCatalogRefreshCommand(opts Options, resolver *workstation.Resolver) *cob
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit versioned catalog-refresh JSON")
 	return command
+}
+
+func newCatalogRestoreCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
+	return &cobra.Command{
+		Use: "restore <owner/repo> <snapshot>", Short: "Download one exact Catalog Snapshot again and restore its retained files if they changed; the selection stays", Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repository, err := catalogstore.ParseRepository(args[0])
+			if err != nil {
+				return err
+			}
+			store, _, err := registryStore(opts, resolver)
+			if err != nil {
+				return err
+			}
+			registrations, err := store.Registrations()
+			if err != nil {
+				return err
+			}
+			if _, err := registeredIndex(registrations, repository); err != nil {
+				return err
+			}
+			snapshot, restored, err := store.Restore(cmd.Context(), repository, args[1])
+			if err != nil {
+				return err
+			}
+			if !restored {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog restore: Catalog Snapshot %s of %s is intact\n", snapshot.ID, repository)
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog restore: restored Catalog Snapshot %s of %s\n", snapshot.ID, repository)
+			return err
+		},
+	}
+}
+
+func registeredIndex(registrations []catalogstore.Registration, repository catalogstore.Repository) (int, error) {
+	index := slices.IndexFunc(registrations, func(registration catalogstore.Registration) bool { return registration.Repository == repository })
+	if index < 0 {
+		return -1, fmt.Errorf("catalog %s is not registered; run `packy catalog list` to see registered catalogs, or `packy catalog add %s` to register it", repository, repository)
+	}
+	return index, nil
 }
 
 func accessControlledCatalogs(opts Options, resolver *workstation.Resolver) (map[string]bool, error) {

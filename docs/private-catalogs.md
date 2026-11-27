@@ -29,17 +29,18 @@ GitHub signs the attestations of a private repository with its own Sigstore
 instance, so the repository and workflow names never reach a public
 transparency log. Packy verifies them against the trusted root of that
 instance, which it refreshes from `https://tuf-repo.github.com` during
-registration and refresh. A public catalog's attestations come from the public
-Sigstore instance. The publisher identity that Packy requires is the same for
-both instances.
+registration, refresh, and restore. A public catalog's attestations come from
+the public Sigstore instance. The publisher identity that Packy requires is the
+same for both instances.
 
-Packy reads the latest release of an `attested` catalog without a token first.
-GitHub answers 404 for a private repository, and only then does Packy read a
-token and repeat the request with it. The release assets and the attestations
-are then read with the same token. A public `attested` catalog with a
-published release never reads a token. A missing repository or a repository
-without a stable release also answers 404, so Packy reads a token for it too,
-and the error then says that the token needs read access.
+Packy reads the release of an `attested` catalog without a token first. That
+is the latest release, or for `packy catalog restore` the release of one exact
+commit. GitHub answers 404 for a private repository, and only then does Packy
+read a token and repeat the request with it. The release assets and the
+attestations are then read with the same token. A public `attested` catalog
+with a published release never reads a token. A missing repository or a
+repository without a stable release also answers 404, so Packy reads a token
+for it too, and the error then says that the token needs read access.
 
 ## Know what access-controlled trusts
 
@@ -50,8 +51,9 @@ repository as private. Register a public repository with `--trust attested`.
 
 ## Provide a GitHub token
 
-Packy reads a token only when `packy catalog add` or `packy catalog refresh`
-reaches a private catalog. It takes the first token from this list:
+Packy reads a token only when `packy catalog add`, `packy catalog refresh`, or
+`packy catalog restore` reaches a private catalog. It takes the first token
+from this list:
 
 1. The `GH_TOKEN` environment variable.
 2. The `GITHUB_TOKEN` environment variable.

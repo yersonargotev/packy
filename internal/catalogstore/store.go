@@ -50,7 +50,9 @@ var ErrEarlierLayout = errors.New("the Catalog Store holds only the layout that 
 
 // Source is the network boundary used only by explicit acquisition.
 type Source interface {
-	Latest(context.Context, Registration) (Release, error)
+	// Release reads the release of one commit of a catalog, or its latest
+	// release when commit is empty.
+	Release(ctx context.Context, registration Registration, commit string) (Release, error)
 }
 
 // Release is the complete downloaded evidence for one GitHub release.
@@ -118,7 +120,7 @@ func (s *Store) selectLatest(ctx context.Context, repository Repository) (Snapsh
 	if err != nil {
 		return Snapshot{}, err
 	}
-	snapshot, _, err := s.retainLatest(ctx, registration)
+	snapshot, _, err := s.retain(ctx, registration, "")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -197,7 +199,7 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 	}
 	_, statErr := os.Lstat(directory)
 	fresh := errors.Is(statErr, fs.ErrNotExist)
-	snapshot, created, err := s.retainLatest(ctx, registration)
+	snapshot, placed, err := s.retain(ctx, registration, "")
 	if err == nil {
 		err = writeDocument(directory, selectionFile, newSelection(registration.Repository, snapshot.ID))
 	}
@@ -210,13 +212,34 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 			_ = os.Remove(filepath.Dir(directory))
 		} else {
 			_ = os.Remove(filepath.Join(directory, selectionFile))
-			if created {
+			if placed == created {
 				_ = os.RemoveAll(snapshot.Root)
 			}
 		}
 		return Snapshot{}, err
 	}
 	return snapshot, nil
+}
+
+// Restore downloads and validates the release of one exact commit of a
+// registered catalog. When the retained snapshot of that commit is changed or
+// missing, Restore puts the verified release in its place. It never changes
+// the selection. restored reports whether the retained snapshot changed.
+func (s *Store) Restore(ctx context.Context, repository Repository, commit string) (snapshot Snapshot, restored bool, err error) {
+	if !commitPattern.MatchString(commit) {
+		return Snapshot{}, false, fmt.Errorf("invalid Catalog Snapshot identity %q", commit)
+	}
+	guard, err := s.lock(ctx)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	defer guard.Release()
+	registration, err := s.registration(repository)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	snapshot, placed, err := s.retain(ctx, registration, commit)
+	return snapshot, placed != kept, err
 }
 
 // Unregister removes a catalog registration and its selection. Retained
@@ -282,7 +305,7 @@ func (s *Store) Selected(repository Repository) (Snapshot, error) {
 	root := s.snapshot(repository, id)
 	index, err := validateSnapshot(root, repository, id)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("selected Catalog Snapshot %s of %s: %w", id, repository, err)
+		return Snapshot{}, fmt.Errorf("selected Catalog Snapshot %s of %s: %w", id, repository, restorable(repository, id, err))
 	}
 	return snapshotFrom(index, "catalog-"+id, root), nil
 }
@@ -316,16 +339,17 @@ var ErrAmbiguousPack = errors.New("several registered catalogs provide the Pack"
 // lists packID, reading each catalog's selected snapshot, or its retained
 // snapshot snapshotID when one is given. It fails with ErrAmbiguousPack when
 // several catalogs provide the Pack there, as forks that share a commit can.
-// When no catalog provides the Pack it returns the official catalog's
-// snapshot, or the error from reading it, so the caller reports the unknown
-// Pack against the official catalog.
+// When no catalog provides the Pack, it returns the error from reading
+// snapshotID in the first catalog that retains it on disk. Otherwise it
+// returns the official catalog's snapshot, or the error from reading it, so
+// the caller reports the unknown Pack against the official catalog.
 func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 	registrations, err := s.Registrations()
 	if err != nil {
 		return Snapshot{}, err
 	}
 	var official Snapshot
-	var officialErr error
+	var officialErr, unreadable error
 	var providing []Snapshot
 	for _, registration := range registrations {
 		var snapshot Snapshot
@@ -341,6 +365,11 @@ func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("catalog %s: %w", registration.Repository, err)
 		}
 		if err != nil {
+			if snapshotID != "" && unreadable == nil {
+				if _, statErr := os.Lstat(s.snapshot(registration.Repository, snapshotID)); statErr == nil {
+					unreadable = err
+				}
+			}
 			continue
 		}
 		for _, pack := range snapshot.Index.Packs {
@@ -349,10 +378,12 @@ func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 			}
 		}
 	}
-	switch len(providing) {
-	case 0:
+	switch {
+	case len(providing) == 0 && unreadable != nil:
+		return Snapshot{}, unreadable
+	case len(providing) == 0:
 		return official, officialErr
-	case 1:
+	case len(providing) == 1:
 		return providing[0], nil
 	}
 	catalogs := make([]string, len(providing))
@@ -372,7 +403,7 @@ func (s *Store) retained(repository Repository, snapshotID string) (Snapshot, er
 	root := s.snapshot(repository, snapshotID)
 	index, err := validateSnapshot(root, repository, snapshotID)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, s.earlierLayout(repository, err))
+		return Snapshot{}, fmt.Errorf("resolve Catalog Snapshot %s of %s: %w", snapshotID, repository, restorable(repository, snapshotID, s.earlierLayout(repository, err)))
 	}
 	return snapshotFrom(index, "catalog-"+snapshotID, root), nil
 }
@@ -434,60 +465,86 @@ func (s *Store) earlierLayout(repository Repository, err error) error {
 	return fmt.Errorf("%s: %w", s.root, ErrEarlierLayout)
 }
 
-// retainLatest validates the latest release of a catalog into its retained
-// snapshots without selecting it. created reports a newly retained snapshot.
-func (s *Store) retainLatest(ctx context.Context, registration Registration) (Snapshot, bool, error) {
+// placement reports what retain did to the retained snapshot of a release.
+type placement int
+
+const (
+	kept     placement = iota // the retained snapshot already held the release
+	replaced                  // the release replaced changed retained files
+	created                   // the release became a new retained snapshot
+)
+
+// retain validates the release of commit, or the latest release when commit
+// is empty, into the retained snapshots of a catalog without selecting it.
+// Only the latest release is checked against the Pack IDs of other catalogs,
+// because only it can become a new selection, and ADR 0046 checks Pack IDs
+// only against selections.
+func (s *Store) retain(ctx context.Context, registration Registration, commit string) (Snapshot, placement, error) {
 	if s.source == nil {
-		return Snapshot{}, false, errors.New("catalog Source is required")
+		return Snapshot{}, kept, errors.New("catalog Source is required")
 	}
 	repository := registration.Repository
-	release, err := s.source.Latest(ctx, registration)
+	release, err := s.source.Release(ctx, registration, commit)
 	if err != nil {
-		return Snapshot{}, false, err
+		return Snapshot{}, kept, err
+	}
+	if commit != "" && release.Commit != commit {
+		return Snapshot{}, kept, fmt.Errorf("catalog %s release of commit %s names commit %s", repository, commit, release.Commit)
 	}
 	assets, err := validateRelease(registration, release)
 	if err != nil {
-		return Snapshot{}, false, err
+		return Snapshot{}, kept, err
 	}
 	if err := ctx.Err(); err != nil {
-		return Snapshot{}, false, err
+		return Snapshot{}, kept, err
 	}
 	snapshots := filepath.Join(s.catalog(repository), "snapshots")
 	if err := os.MkdirAll(snapshots, 0o755); err != nil {
-		return Snapshot{}, false, fmt.Errorf("prepare catalog %s snapshots: %w", repository, err)
+		return Snapshot{}, kept, fmt.Errorf("prepare catalog %s snapshots: %w", repository, err)
 	}
 	stage, err := os.MkdirTemp(snapshots, ".staging-")
 	if err != nil {
-		return Snapshot{}, false, fmt.Errorf("stage Catalog Snapshot: %w", err)
+		return Snapshot{}, kept, fmt.Errorf("stage Catalog Snapshot: %w", err)
 	}
 	defer os.RemoveAll(stage)
 	if err := extractSnapshot(ctx, assets[archiveAsset].Data, stage); err != nil {
-		return Snapshot{}, false, err
+		return Snapshot{}, kept, err
 	}
 	index, err := validateSnapshot(stage, repository, release.Commit)
 	if err != nil {
-		return Snapshot{}, false, err
+		return Snapshot{}, kept, err
 	}
-	if err := s.checkPackIDs(repository, index); err != nil {
-		return Snapshot{}, false, err
+	if commit == "" {
+		if err := s.checkPackIDs(repository, index); err != nil {
+			return Snapshot{}, kept, err
+		}
 	}
 	destination := s.snapshot(repository, release.Commit)
 	if _, err := os.Lstat(destination); err == nil {
 		if _, validationErr := validateSnapshot(destination, repository, release.Commit); validationErr == nil {
-			return snapshotFrom(index, release.Tag, destination), false, nil
+			return snapshotFrom(index, release.Tag, destination), kept, nil
 		}
 		// The retained bytes changed on disk; the verified release restores them.
 		if err := restoreSnapshot(stage, destination); err != nil {
-			return Snapshot{}, false, fmt.Errorf("restore retained Catalog Snapshot %s of %s: %w", release.Commit, repository, err)
+			return Snapshot{}, kept, fmt.Errorf("restore retained Catalog Snapshot %s of %s: %w", release.Commit, repository, err)
 		}
-		return snapshotFrom(index, release.Tag, destination), false, nil
+		return snapshotFrom(index, release.Tag, destination), replaced, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return Snapshot{}, false, fmt.Errorf("inspect retained Catalog Snapshot: %w", err)
+		return Snapshot{}, kept, fmt.Errorf("inspect retained Catalog Snapshot: %w", err)
 	}
 	if err := os.Rename(stage, destination); err != nil {
-		return Snapshot{}, false, fmt.Errorf("retain Catalog Snapshot: %w", err)
+		return Snapshot{}, kept, fmt.Errorf("retain Catalog Snapshot: %w", err)
 	}
-	return snapshotFrom(index, release.Tag, destination), true, nil
+	return snapshotFrom(index, release.Tag, destination), created, nil
+}
+
+// restorable names the command that restores a retained snapshot that fails
+// to read. A store that holds only the earlier layout needs adoption instead.
+func restorable(repository Repository, id string, err error) error {
+	if errors.Is(err, ErrEarlierLayout) {
+		return err
+	}
+	return fmt.Errorf("%w; run `packy catalog restore %s %s` to restore it", err, repository, id)
 }
 
 func restoreSnapshot(stage, destination string) error {
@@ -526,7 +583,7 @@ func (s *Store) checkPackIDs(repository Repository, index cataloglayout.CatalogS
 		}
 		selected, err := readIndex(s.snapshot(other.Repository, id))
 		if err != nil {
-			return fmt.Errorf("check Pack IDs against catalog %s: %w", other.Repository, err)
+			return fmt.Errorf("check Pack IDs against catalog %s: %w", other.Repository, restorable(other.Repository, id, err))
 		}
 		for _, pack := range selected.Packs {
 			if !introduced[pack.ID] {
