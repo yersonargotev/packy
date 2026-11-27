@@ -154,10 +154,10 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 	}
 	if _, err := s.readSelection(Official().Repository); errors.Is(err, fs.ErrNotExist) {
 		if _, err := s.selectLatest(ctx, Official().Repository); err != nil {
-			return Snapshot{}, fmt.Errorf("register catalog %s: select the official catalog first: %w", registration.Repository, err)
+			return Snapshot{}, fmt.Errorf("select the official catalog first: %w", err)
 		}
 	} else if err != nil {
-		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
+		return Snapshot{}, err
 	}
 	_, statErr := os.Lstat(directory)
 	fresh := errors.Is(statErr, fs.ErrNotExist)
@@ -178,7 +178,7 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 				_ = os.RemoveAll(snapshot.Root)
 			}
 		}
-		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
+		return Snapshot{}, err
 	}
 	return snapshot, nil
 }
@@ -393,7 +393,7 @@ func (s *Store) retainLatest(ctx context.Context, registration Registration) (Sn
 	repository := registration.Repository
 	release, err := s.source.Latest(ctx, registration)
 	if err != nil {
-		return Snapshot{}, false, fmt.Errorf("acquire latest release of catalog %s: %w", repository, err)
+		return Snapshot{}, false, err
 	}
 	assets, err := validateRelease(registration, release)
 	if err != nil {

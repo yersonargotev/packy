@@ -49,41 +49,48 @@ func newCatalogAddCommand(opts Options, resolver *workstation.Resolver) *cobra.C
 	command := &cobra.Command{
 		Use: "add <owner/repo>", Short: "Register a GitHub catalog and select its first Catalog Snapshot", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repository, err := catalogstore.ParseRepository(args[0])
-			if err != nil {
-				return err
+			if err := addCatalog(cmd, opts, resolver, args[0], trust, workflow); err != nil {
+				return fmt.Errorf("packy catalog add: %w", err)
 			}
-			policy, err := catalogstore.ParseTrustPolicy(trust, workflow)
-			if err != nil {
-				return err
-			}
-			registration := catalogstore.Registration{Repository: repository, Trust: policy}
-			store, _, err := registryStore(opts, resolver)
-			if err != nil {
-				return err
-			}
-			snapshot, err := store.Register(cmd.Context(), registration)
-			var rejected *catalogstore.AttestationRejectedError
-			if errors.As(err, &rejected) && rejected.Repository == repository.String() {
-				return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
-			}
-			if err != nil {
-				return err
-			}
-			var evidence string
-			switch policy := policy.(type) {
-			case catalogstore.Attested:
-				evidence = "attested by " + policy.Workflow
-			case catalogstore.AccessControlled:
-				evidence = accessControlledName + ", " + accessControlledNote
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (%s) and selected Catalog Snapshot %s\n", repository, evidence, snapshot.ID)
-			return err
+			return nil
 		},
 	}
 	command.Flags().StringVar(&trust, "trust", "attested", "trust policy of the catalog: attested, or access-controlled for a private repository without artifact attestations")
 	command.Flags().StringVar(&workflow, "workflow", "", "publication workflow that must sign attested Catalog Snapshots (default "+catalogstore.DefaultWorkflow+")")
 	return command
+}
+
+func addCatalog(cmd *cobra.Command, opts Options, resolver *workstation.Resolver, name, trust, workflow string) error {
+	repository, err := catalogstore.ParseRepository(name)
+	if err != nil {
+		return err
+	}
+	policy, err := catalogstore.ParseTrustPolicy(trust, workflow)
+	if err != nil {
+		return err
+	}
+	registration := catalogstore.Registration{Repository: repository, Trust: policy}
+	store, _, err := registryStore(opts, resolver)
+	if err != nil {
+		return err
+	}
+	snapshot, err := store.Register(cmd.Context(), registration)
+	var rejected *catalogstore.AttestationRejectedError
+	if errors.As(err, &rejected) && rejected.Repository == repository.String() {
+		return fmt.Errorf("%w; if %s publishes from another workflow, run `packy catalog add %s --workflow <path>`", err, repository, repository)
+	}
+	if err != nil {
+		return err
+	}
+	var evidence string
+	switch policy := policy.(type) {
+	case catalogstore.Attested:
+		evidence = "attested by " + policy.Workflow
+	case catalogstore.AccessControlled:
+		evidence = accessControlledName + ", " + accessControlledNote
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy catalog add: registered %s (%s) and selected Catalog Snapshot %s\n", repository, evidence, snapshot.ID)
+	return err
 }
 
 func newCatalogRemoveCommand(opts Options, resolver *workstation.Resolver) *cobra.Command {
