@@ -18,11 +18,12 @@ The previous stable release is `v0.2.37`.
   project activation, or the lock of the current Git project names the catalog.
 - Private GitHub repositories can be catalogs. The default `attested` trust
   policy requires a GitHub build-provenance attestation signed by the registered
-  publication workflow on `refs/heads/main` on a GitHub-hosted runner, including attestations from
-  GitHub's private Sigstore instance. Use `--workflow <path>` when that workflow
-  is not `.github/workflows/publish.yml`. `--trust access-controlled` trusts
+  publication workflow on `refs/heads/main` on a GitHub-hosted runner,
+  including attestations from GitHub's private Sigstore instance. Use
+  `--workflow <path>` when that workflow is not `.github/workflows/publish.yml`. `--trust access-controlled` trusts
   GitHub access control to a private repository instead. `packy catalog list`,
-  the new `CATALOG` column of `packy list`, and the TUI show it as weaker trust. See [private catalogs](https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md).
+  the new `CATALOG` column of `packy list`, and the TUI show it as weaker trust.
+  See [private catalogs](https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md).
 - Packy reads a GitHub token only when `packy catalog add` or
   `packy catalog refresh` reaches a private catalog. It takes the first of
   `GH_TOKEN`, `GITHUB_TOKEN`, and `gh auth token`, sends it only to
