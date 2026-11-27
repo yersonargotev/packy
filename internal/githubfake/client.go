@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -112,43 +111,16 @@ func (t *redirectTransport) RoundTrip(request *http.Request) (*http.Response, er
 }
 
 // AttestationVerifier stands in for Sigstore verification of GitHub build
-// provenance. It accepts an archive when the fake serves an attestation for its
-// digest that names the expected signer workflow.
-type AttestationVerifier struct {
-	client *http.Client
-}
+// provenance. It accepts an archive when a fixture bundle names its digest and
+// the expected signer workflow.
+type AttestationVerifier struct{}
 
-// NewAttestationVerifier returns a verifier that reads attestations through client.
-func NewAttestationVerifier(client *http.Client) *AttestationVerifier {
-	return &AttestationVerifier{client: client}
-}
+var _ catalogstore.AttestationVerifier = AttestationVerifier{}
 
-var _ catalogstore.AttestationVerifier = (*AttestationVerifier)(nil)
-
-func (v *AttestationVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+repository+"/attestations/sha256:"+subjectSHA256, nil)
-	if err != nil {
-		return err
-	}
-	response, err := v.client.Do(request)
-	if err != nil {
-		return fmt.Errorf("fetch fixture attestations: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, response.Body)
-		return fmt.Errorf("fetch fixture attestations: GitHub returned %s", response.Status)
-	}
-	var wire struct {
-		Attestations []struct {
-			Bundle attestation `json:"bundle"`
-		} `json:"attestations"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&wire); err != nil {
-		return fmt.Errorf("decode fixture attestations: %w", err)
-	}
-	for _, candidate := range wire.Attestations {
-		if candidate.Bundle.SubjectSHA256 == subjectSHA256 && candidate.Bundle.SignerWorkflow == signerWorkflow {
+func (AttestationVerifier) Verify(_ context.Context, bundles []json.RawMessage, repository, subjectSHA256, signerWorkflow string) error {
+	for _, raw := range bundles {
+		var candidate attestation
+		if json.Unmarshal(raw, &candidate) == nil && candidate.SubjectSHA256 == subjectSHA256 && candidate.SignerWorkflow == signerWorkflow {
 			return nil
 		}
 	}

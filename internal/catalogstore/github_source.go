@@ -17,10 +17,16 @@ const privateCatalogGuide = "https://github.com/yersonargotev/packy/blob/main/do
 
 var assetHosts = map[string]bool{"release-assets.githubusercontent.com": true, "objects.githubusercontent.com": true}
 
-// AttestationVerifier verifies GitHub build-provenance cryptography and binds
-// the subject digest to the expected repository and signer workflow.
+const (
+	maxAPIResponseBytes  = 1 << 20
+	maxAttestationsBytes = 8 << 20
+)
+
+// AttestationVerifier verifies the GitHub build-provenance bundles of an
+// archive and binds the subject digest to the expected repository and signer
+// workflow.
 type AttestationVerifier interface {
-	Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error
+	Verify(ctx context.Context, bundles []json.RawMessage, repository, subjectSHA256, signerWorkflow string) error
 }
 
 // AttestationRejectedError reports that the verifier read the attestations of
@@ -107,7 +113,7 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 			Size   int64  `json:"size"`
 		} `json:"assets"`
 	}
-	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", token, &wire); err != nil {
+	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", token, &wire, maxAPIResponseBytes); err != nil {
 		var status *statusErr
 		if token == nil && errors.As(err, &status) && status.code == http.StatusNotFound {
 			err = fmt.Errorf("%w; if the repository is private, it needs --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
@@ -137,7 +143,20 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 	if err != nil {
 		return Release{}, err
 	}
-	if err := source.verifier.Verify(ctx, repository, digest(assets[archiveAsset].Data), repository+"/"+attested.Workflow); err != nil {
+	subject := digest(assets[archiveAsset].Data)
+	var attestations struct {
+		Attestations []struct {
+			Bundle json.RawMessage `json:"bundle"`
+		} `json:"attestations"`
+	}
+	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/attestations/sha256:"+subject, token, &attestations, maxAttestationsBytes); err != nil {
+		return Release{}, fmt.Errorf("verify catalog %s artifact attestation: fetch catalog artifact attestations: %w", repository, err)
+	}
+	bundles := make([]json.RawMessage, 0, len(attestations.Attestations))
+	for _, attestation := range attestations.Attestations {
+		bundles = append(bundles, attestation.Bundle)
+	}
+	if err := source.verifier.Verify(ctx, bundles, repository, subject, repository+"/"+attested.Workflow); err != nil {
 		if errors.Is(err, ErrNoAttestationVerified) {
 			return Release{}, &AttestationRejectedError{Repository: repository, Err: err}
 		}
@@ -158,7 +177,7 @@ func (source *gitHubSource) privateAccess(ctx context.Context, repository string
 	var visibility struct {
 		Private *bool `json:"private"`
 	}
-	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository, &token, &visibility); err != nil {
+	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository, &token, &visibility, maxAPIResponseBytes); err != nil {
 		return githubauth.Token{}, fmt.Errorf("read repository visibility: %w", err)
 	}
 	if visibility.Private == nil {
@@ -170,7 +189,7 @@ func (source *gitHubSource) privateAccess(ctx context.Context, repository string
 	return token, nil
 }
 
-func (source *gitHubSource) getJSON(ctx context.Context, url string, token *githubauth.Token, result any) error {
+func (source *gitHubSource) getJSON(ctx context.Context, url string, token *githubauth.Token, result any, limit int64) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -190,7 +209,7 @@ func (source *gitHubSource) getJSON(ctx context.Context, url string, token *gith
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
 		return statusError(response, token)
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	decoder := json.NewDecoder(io.LimitReader(response.Body, limit))
 	if err := decoder.Decode(result); err != nil {
 		return err
 	}

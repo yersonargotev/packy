@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"strings"
 
@@ -28,23 +26,16 @@ var ErrNoAttestationVerified = errors.New("no catalog attestation verified")
 // NewGitHubAttestationVerifier constructs the production verifier for GitHub
 // build provenance. Trust roots are refreshed from Sigstore for this explicit
 // network operation and are not written into the user's configuration paths.
-func NewGitHubAttestationVerifier(client *http.Client) AttestationVerifier {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	return &githubAttestationVerifier{client: client}
+func NewGitHubAttestationVerifier() AttestationVerifier {
+	return githubAttestationVerifier{}
 }
 
-type githubAttestationVerifier struct{ client *http.Client }
+type githubAttestationVerifier struct{}
 
-func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subjectSHA256, signerWorkflow string) error {
+func (githubAttestationVerifier) Verify(ctx context.Context, bundles []json.RawMessage, repository, subjectSHA256, signerWorkflow string) error {
 	digestBytes, err := hex.DecodeString(subjectSHA256)
 	if err != nil || len(digestBytes) != sha256.Size {
 		return errors.New("artifact attestation subject has an invalid SHA-256")
-	}
-	attestations, err := v.fetch(ctx, repository, subjectSHA256)
-	if err != nil {
-		return err
 	}
 
 	options := tuf.DefaultOptions()
@@ -76,8 +67,12 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 	policy := verify.NewPolicy(verify.WithArtifactDigest("sha256", digestBytes), verify.WithCertificateIdentity(identity))
 	expectedRepository := "https://github.com/" + repository
 	var lastErr error
-	for _, attestation := range attestations {
-		result, verifyErr := verifier.Verify(attestation, policy)
+	for _, raw := range bundles {
+		var attestation bundle.Bundle
+		if err := attestation.UnmarshalJSON(raw); err != nil {
+			continue
+		}
+		result, verifyErr := verifier.Verify(&attestation, policy)
 		if verifyErr != nil {
 			lastErr = verifyErr
 			continue
@@ -93,41 +88,4 @@ func (v *githubAttestationVerifier) Verify(ctx context.Context, repository, subj
 		lastErr = errors.New("no build-provenance attestations were returned")
 	}
 	return fmt.Errorf("%w: %w", ErrNoAttestationVerified, lastErr)
-}
-
-func (v *githubAttestationVerifier) fetch(ctx context.Context, repository, digest string) ([]*bundle.Bundle, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+repository+"/attestations/sha256:"+digest, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	request.Header.Set("User-Agent", "packy-catalog-consumer")
-	response, err := v.client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("fetch catalog artifact attestations: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
-		return nil, fmt.Errorf("fetch catalog artifact attestations: GitHub returned %s", response.Status)
-	}
-	var wire struct {
-		Attestations []struct {
-			Bundle json.RawMessage `json:"bundle"`
-		} `json:"attestations"`
-	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 8<<20))
-	if err := decoder.Decode(&wire); err != nil {
-		return nil, fmt.Errorf("decode catalog artifact attestations: %w", err)
-	}
-	result := make([]*bundle.Bundle, 0, len(wire.Attestations))
-	for _, candidate := range wire.Attestations {
-		var parsed bundle.Bundle
-		if err := parsed.UnmarshalJSON(candidate.Bundle); err != nil {
-			continue
-		}
-		result = append(result, &parsed)
-	}
-	return result, nil
 }

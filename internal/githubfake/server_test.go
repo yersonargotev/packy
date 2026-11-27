@@ -184,7 +184,7 @@ func TestClientRefusesHostsOutsideGitHub(t *testing.T) {
 
 func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	root, client := startFake(t)
-	source := catalogstore.NewGitHubSource(client, githubfake.NewAttestationVerifier(client), func(ctx context.Context) (githubauth.Token, error) {
+	source := catalogstore.NewGitHubSource(client, githubfake.AttestationVerifier{}, func(ctx context.Context) (githubauth.Token, error) {
 		return githubauth.Lookup(ctx, func(name string) string {
 			if name == "GH_TOKEN" {
 				return "secret"

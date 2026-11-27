@@ -2,6 +2,7 @@ package catalogstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,11 +15,15 @@ import (
 )
 
 type recordingVerifier struct {
+	bundles                      []string
 	repository, digest, workflow string
 	err                          error
 }
 
-func (v *recordingVerifier) Verify(_ context.Context, repository, digest, workflow string) error {
+func (v *recordingVerifier) Verify(_ context.Context, bundles []json.RawMessage, repository, digest, workflow string) error {
+	for _, bundle := range bundles {
+		v.bundles = append(v.bundles, string(bundle))
+	}
 	v.repository, v.digest, v.workflow = repository, digest, workflow
 	return v.err
 }
@@ -42,7 +47,7 @@ func TestGitHubSourceDownloadsExactReleaseAssetsAndVerifiesArchiveAttestation(t 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !release.AttestationVerified || release.Repository != repository || verifier.repository != repository || verifier.digest != digest(github.archive) || verifier.workflow != test.signer {
+			if !release.AttestationVerified || release.Repository != repository || verifier.repository != repository || verifier.digest != digest(github.archive) || verifier.workflow != test.signer || !slices.Equal(verifier.bundles, []string{fakeBundle}) {
 				t.Fatalf("release/verifier = %#v / %#v", release, verifier)
 			}
 			if github.credentialCalls != 0 {
@@ -65,14 +70,17 @@ func TestGitHubSourceMarksOnlyUnverifiedAttestationsAsRejected(t *testing.T) {
 	if !errors.As(err, &rejected) || rejected.Repository != "acme/packs" || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation: no catalog attestation verified: signed by another workflow") {
 		t.Fatalf("Latest() error = %v", err)
 	}
-	for _, failure := range []error{
-		errors.New("fetch catalog artifact attestations: GitHub returned 503 Service Unavailable"),
-		fmt.Errorf("initialize Sigstore trust metadata: %w", context.DeadlineExceeded),
-	} {
-		_, err := NewGitHubSource(newFakeGitHub(t, "acme/packs", false).client(), &recordingVerifier{err: failure}, nil).Latest(context.Background(), registration)
-		if errors.As(err, &rejected) || !errors.Is(err, failure) || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation") {
-			t.Fatalf("Latest() with %v = %v", failure, err)
-		}
+	failure := fmt.Errorf("initialize Sigstore trust metadata: %w", context.DeadlineExceeded)
+	_, err = NewGitHubSource(newFakeGitHub(t, "acme/packs", false).client(), &recordingVerifier{err: failure}, nil).Latest(context.Background(), registration)
+	if errors.As(err, &rejected) || !errors.Is(err, failure) || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation") {
+		t.Fatalf("Latest() with %v = %v", failure, err)
+	}
+	github := newFakeGitHub(t, "acme/packs", false)
+	github.attestationStatus = http.StatusServiceUnavailable
+	verifier := &recordingVerifier{}
+	_, err = NewGitHubSource(github.client(), verifier, nil).Latest(context.Background(), registration)
+	if errors.As(err, &rejected) || verifier.repository != "" || !strings.Contains(err.Error(), "verify catalog acme/packs artifact attestation: fetch catalog artifact attestations: GitHub returned 503") {
+		t.Fatalf("Latest() with unavailable attestations = %v", err)
 	}
 }
 
@@ -232,24 +240,27 @@ func TestGitHubSourcePointsAnAnonymous404ToPrivateCatalogs(t *testing.T) {
 
 type fakeRequest struct{ url, authorization, accept string }
 
+const fakeBundle = `{"fixture":"bundle"}`
+
 // fakeGitHub answers as GitHub does for one repository whose latest release
 // holds a valid archive and checksum. A private repository answers 404 to a
 // request without the token.
 type fakeGitHub struct {
-	repository      string
-	private         bool
-	archive         []byte
-	responses       map[string]string
-	status          int
-	releaseStatus   int
-	rateLimited     bool
-	assetHostDown   bool
-	redirectScheme  string
-	redirectHost    string
-	apiRedirect     string
-	credentialErr   error
-	credentialCalls int
-	requests        []fakeRequest
+	repository        string
+	private           bool
+	archive           []byte
+	responses         map[string]string
+	status            int
+	releaseStatus     int
+	attestationStatus int
+	rateLimited       bool
+	assetHostDown     bool
+	redirectScheme    string
+	redirectHost      string
+	apiRedirect       string
+	credentialErr     error
+	credentialCalls   int
+	requests          []fakeRequest
 }
 
 func newFakeGitHub(t *testing.T, repository string, private bool) *fakeGitHub {
@@ -263,6 +274,7 @@ func newFakeGitHub(t *testing.T, repository string, private bool) *fakeGitHub {
 		api + "/releases/latest": fmt.Sprintf(
 			`{"tag_name":"catalog-%s","target_commitish":"%s","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-09-14T00:00:00Z","author":{"login":"github-actions[bot]"},"assets":[{"id":11,"name":"%s","digest":"sha256:%s","size":%d},{"id":12,"name":"%s","digest":"sha256:%s","size":%d}]}`,
 			commit, commit, archiveAsset, digest(archive), len(archive), checksumAsset, digest(checksum), len(checksum)),
+		api + "/attestations/sha256:" + digest(archive): `{"attestations":[{"bundle":` + fakeBundle + `}]}`,
 		"/11": string(archive),
 		"/12": string(checksum),
 	}}
@@ -304,6 +316,8 @@ func (g *fakeGitHub) roundTrip(request *http.Request) (*http.Response, error) {
 			return response(http.StatusNotFound, nil, `{"message":"Not Found"}`), nil
 		case g.releaseStatus != 0 && url == api+"/releases/latest":
 			return response(g.releaseStatus, nil, `{"message":"Not Found"}`), nil
+		case g.attestationStatus != 0 && strings.HasPrefix(url, api+"/attestations/"):
+			return response(g.attestationStatus, nil, ""), nil
 		}
 	}
 	if id, ok := strings.CutPrefix(url, api+"/releases/assets/"); ok {

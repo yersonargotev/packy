@@ -356,7 +356,7 @@ func newCatalogStore(opts Options, snapshot workstation.Snapshot) *catalogstore.
 		}
 		verifier := opts.AttestationVerifier
 		if verifier == nil {
-			verifier = catalogstore.NewGitHubAttestationVerifier(client)
+			verifier = catalogstore.NewGitHubAttestationVerifier()
 		}
 		source = catalogstore.NewGitHubSource(client, verifier, func(ctx context.Context) (githubauth.Token, error) {
 			return githubauth.Lookup(ctx, opts.Env.Getenv)
