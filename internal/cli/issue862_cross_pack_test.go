@@ -9,12 +9,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/yersonargotev/packy/internal/cataloglayout"
@@ -101,17 +99,10 @@ func editCrossPackManifest(t *testing.T, project, id string, edit func(map[strin
 func TestIssue862CrossPackExecutable(t *testing.T) {
 	binary := os.Getenv("PACKY_ISSUE862_BINARY")
 	if binary == "" {
-		binary = filepath.Join(t.TempDir(), "packy")
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-		build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("build: %v %s", err, out)
-		}
+		binary = builtPackyExecutable(t)
 	}
-	// All executable cases consume identical engine bytes. Keep the build owned by
-	// this parent so child fixtures remain isolated without repeated linking in CI.
+	// All executable cases consume identical engine bytes; child fixtures stay
+	// isolated without repeated linking in CI.
 	t.Run("procedures", func(t *testing.T) { checkCrossPackProcedure(t, binary) })
 	t.Run("invalid catalogs", func(t *testing.T) { checkInvalidCrossPackCatalog(t, binary) })
 	t.Run("invalid unselected Pack preserves selection", func(t *testing.T) { checkInvalidUnselectedPack(t, binary) })

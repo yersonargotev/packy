@@ -101,6 +101,12 @@ func TestTokenFormatsAsItsSource(t *testing.T) {
 	}
 }
 
+func TestZeroTokenSendsNoCredential(t *testing.T) {
+	if got := authorization(Token{}); got != "" {
+		t.Fatalf("zero Token sent Authorization %q", got)
+	}
+}
+
 func TestTokenRenewalNamesItsSource(t *testing.T) {
 	bin, _ := stubGH(t, "echo gh-value")
 	for env, want := range map[string]string{"GITHUB_TOKEN": "replace or unset GITHUB_TOKEN", "": "sign in again with `gh auth login`"} {

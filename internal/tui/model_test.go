@@ -173,24 +173,28 @@ func TestDashboardListsEveryCatalogWithTrustSnapshotAndPackCatalog(t *testing.T)
 
 const longCatalog = "acme-enterprise-platform-engineering/shared-agent-capability-packs"
 
+const longestCatalog = "acme/platform-engineering-shared-agent-capability-packs-for-all"
+
 func TestPackRowsFitPanelsWithoutCuttingRepositoryNames(t *testing.T) {
-	repositories := []string{officialCatalog, acmeCatalog, longCatalog}
+	repositories := []string{officialCatalog, acmeCatalog, longCatalog, longestCatalog}
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "healthy"},
 		Catalogs: []tui.Catalog{
 			{Repository: officialCatalog, Trust: "attested", SnapshotID: strings.Repeat("a", 40), Packs: 1},
 			{Repository: acmeCatalog, Trust: "attested", SnapshotID: strings.Repeat("c", 40), Packs: 1},
 			{Repository: longCatalog, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
+			{Repository: longestCatalog, Trust: "attested", SnapshotID: strings.Repeat("f", 40), Packs: 1},
 		},
 		Global: tui.Scope{Available: true, Packs: []tui.Pack{
 			{ID: "acme", Version: "1.0.0", Catalog: acmeCatalog, Description: "Fixture Pack"},
 			{ID: "fixture", Version: "1.0.0", Catalog: officialCatalog},
 			{ID: "shared", Version: "2.0.0", Catalog: longCatalog},
+			{ID: "everyone", Version: "3.0.0", Catalog: longestCatalog},
 		}},
 	}}
 	repositoryToken := regexp.MustCompile(`^(…|[a-z0-9-]+)/[a-z0-9.-]*$`)
 	for _, width := range []int{80, 100, 110, 160} {
-		for _, row := range []int{0, 1, 2} {
+		for _, row := range []int{0, 1, 2, 3} {
 			t.Run(fmt.Sprintf("width=%d/row=%d", width, row), func(t *testing.T) {
 				model := loadModel(t, backend)
 				model, _ = model.Update(tea.WindowSizeMsg{Width: width, Height: 60})
@@ -206,26 +210,28 @@ func TestPackRowsFitPanelsWithoutCuttingRepositoryNames(t *testing.T) {
 						if !repositoryToken.MatchString(token) {
 							continue
 						}
-						if !slices.ContainsFunc(repositories, func(repository string) bool {
-							_, name, _ := strings.Cut(repository, "/")
-							return token == repository || token == "…/"+name
-						}) {
+						if !slices.ContainsFunc(repositories, func(repository string) bool { return identifiesCatalog(token, repository) }) {
 							t.Fatalf("repository name cut to %q:\n%s", token, view)
 						}
 					}
 				}
-				pack := backend.dashboard.Global.Packs[row]
-				_, name, _ := strings.Cut(pack.Catalog, "/")
 				lines := strings.Split(view, "\n")
-				current := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "› "+pack.ID+"  "+pack.Version) })
-				if current < 0 || !regexp.MustCompile(`(  |│ +)(`+regexp.QuoteMeta(pack.Catalog)+"|…/"+regexp.QuoteMeta(name)+")").MatchString(strings.Join(lines[current:current+2], "\n")) {
-					t.Fatalf("selected Pack %s does not show its catalog:\n%s", pack.ID, view)
-				}
-				if pack.Catalog == longCatalog && !strings.Contains(strings.Join(lines[current:current+3], "\n"), "(access-controlled)") {
-					t.Fatalf("selected Pack %s lacks the weaker-trust marker:\n%s", pack.ID, view)
-				}
-				if pack.Catalog != longCatalog && strings.Contains(lines[current], "access-controlled") {
-					t.Fatalf("selected attested Pack %s shows the weaker-trust marker:\n%s", pack.ID, view)
+				for index, pack := range backend.dashboard.Global.Packs {
+					prefix := "  "
+					if index == row {
+						prefix = "› "
+					}
+					current := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, prefix+pack.ID+"  "+pack.Version) })
+					if current < 0 || !slices.ContainsFunc(shownCatalogs.FindAllStringSubmatch(strings.Join(lines[current:current+2], "\n"), -1), func(match []string) bool { return identifiesCatalog(match[1], pack.Catalog) }) {
+						t.Fatalf("Pack %s does not show its catalog:\n%s", pack.ID, view)
+					}
+					weaker := pack.Catalog == longCatalog
+					if weaker && !strings.Contains(strings.Join(lines[current:current+3], "\n"), "(access-controlled)") {
+						t.Fatalf("Pack %s lacks the weaker-trust marker:\n%s", pack.ID, view)
+					}
+					if !weaker && strings.Contains(lines[current], "access-controlled") {
+						t.Fatalf("attested Pack %s shows the weaker-trust marker:\n%s", pack.ID, view)
+					}
 				}
 				if width == 160 && row != 2 {
 					for _, want := range []string{"fixture  1.0.0  " + officialCatalog, "shared  2.0.0  …/shared-agent-capability-packs (access-controlled)"} {
@@ -237,6 +243,17 @@ func TestPackRowsFitPanelsWithoutCuttingRepositoryNames(t *testing.T) {
 			})
 		}
 	}
+}
+
+var shownCatalogs = regexp.MustCompile(`(?:  |│ +)(\S+)`)
+
+func identifiesCatalog(token, repository string) bool {
+	_, name, _ := strings.Cut(repository, "/")
+	if token == repository || token == "…/"+name {
+		return true
+	}
+	prefix, truncated := strings.CutSuffix(token, "…")
+	return truncated && len(prefix) > len("…/") && strings.HasPrefix("…/"+name, prefix)
 }
 
 func TestPacksFromAccessControlledCatalogsShowWeakerTrustAt80Columns(t *testing.T) {
@@ -1664,7 +1681,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Pack details · Workstation · global", "About this Pack", "orchestrate 1.0.0", "Coordination workflow",
 		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
 		"Requirements: git", "windows — POSIX shell required",
-		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported) — Agents",
+		"skill:orchestrate (surface=claude", "mode=unsupported",
 		"claude: unsupported", "agents: supported", "configured=yes authorized=yes usable=no",
 		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
@@ -1673,6 +1690,9 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		if !strings.Contains(allDetailViews, want) {
 			t.Fatalf("Pack detail missing %q after scrolling:\n%s", want, allDetailViews)
 		}
+	}
+	if text := strings.Join(strings.Fields(strings.ReplaceAll(allDetailViews, "│", "")), " "); !strings.Contains(text, "code=surface-unsupported) — Agents only") {
+		t.Fatalf("Pack detail cut the exclusion reason:\n%s", allDetailViews)
 	}
 	for _, line := range strings.Split(current.View().Content, "\n") {
 		if width := ansi.StringWidth(line); width > 64 {

@@ -1696,7 +1696,7 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 			rowText = selectedRowStyle.Padding(0, 1).Render("› "+label) + " · selected"
 		}
 		lines = append(lines, rowText)
-		if current && catalog == "" && pack.Catalog != "" {
+		if catalog == "" && pack.Catalog != "" {
 			if repository := fitRepository(pack.Catalog, width-4-len(marker)); repository != "" {
 				lines = append(lines, "    "+dimStyle.Render(repository)+styledMarker)
 			} else {

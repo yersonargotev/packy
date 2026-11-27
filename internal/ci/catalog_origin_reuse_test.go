@@ -41,7 +41,7 @@ func testCatalogOriginReuse(t *testing.T, executable string) {
 			t.Fatalf("build: %v stdout=%s stderr=%s", err, out, stderr)
 		}
 		validateCatalogCLISchema(t, "catalog-build", out)
-		return readIssue798File(t, filepath.Join(dist, "catalog-snapshot.tar.gz")), readIssue798File(t, filepath.Join(dist, "SHA256SUMS"))
+		return readFileBytes(t, filepath.Join(dist, "catalog-snapshot.tar.gz")), readFileBytes(t, filepath.Join(dist, "SHA256SUMS"))
 	}
 	coldValidation := validate(true)
 	warmValidation := validate(true)

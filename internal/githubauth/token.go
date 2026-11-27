@@ -27,7 +27,8 @@ var ghEnvironment = []string{"PATH", "HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR",
 
 // Token is a GitHub credential. It formats as the name of its source, never as
 // its value. The value sits behind a pointer because fmt prints the fields of
-// a Token held in an unexported field without calling its methods.
+// a Token held in an unexported field without calling its methods. The zero
+// Token holds no credential.
 type Token struct {
 	value  *string
 	source string
@@ -54,9 +55,12 @@ func (t Token) Renewal() string {
 	return "replace or unset " + t.source
 }
 
-// Authorize sends the token as the bearer credential of request.
+// Authorize sends the token as the bearer credential of request. The zero
+// Token leaves request without a credential.
 func (t Token) Authorize(request *http.Request) {
-	request.Header.Set("Authorization", "Bearer "+*t.value)
+	if t.value != nil {
+		request.Header.Set("Authorization", "Bearer "+*t.value)
+	}
 }
 
 // Lookup returns the token from GH_TOKEN, then GITHUB_TOKEN, then

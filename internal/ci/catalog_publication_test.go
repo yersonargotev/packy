@@ -28,9 +28,9 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 
 	bin := t.TempDir()
 	buildEnvironment := testprocess.GoOfflineEnv(t)
-	buildIssue798Executable(t, root, buildEnvironment, filepath.Join(bin, "packy"), "./internal/cli/testdata/packytransport")
+	buildGoExecutable(t, root, buildEnvironment, filepath.Join(bin, "packy"), "./internal/cli/testdata/packytransport")
 
-	validation := runIssue798Process(t, testprocess.Env(t), root, catalogCLI,
+	validation := runProcess(t, testprocess.Env(t), root, catalogCLI,
 		"catalog", "validate", "--project", candidate, "--baseline", baseline)
 	for _, want := range []string{"validated Catalog Project packs=3", "alpha@1.1.0", "beta@1.0.0", "stable@2.0.0"} {
 		if !strings.Contains(validation, want) {
@@ -45,7 +45,7 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 	for _, snapshot := range []struct {
 		project, commit, dist string
 	}{{baseline, baselineCommit, baselineDist}, {candidate, candidateCommit, candidateDist}} {
-		output := runIssue798Process(t, testprocess.Env(t), root, catalogCLI, "catalog", "build",
+		output := runProcess(t, testprocess.Env(t), root, catalogCLI, "catalog", "build",
 			"--project", snapshot.project,
 			"--source-repository", "yersonargotev/packy-catalog",
 			"--source-commit", snapshot.commit,
@@ -57,8 +57,8 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 
 	fakeGH, baselineReleaseRoot := catalogPublicationFixture(t)
 	candidateReleaseRoot := t.TempDir()
-	publishIssue798Snapshot(t, catalogCLI, fakeGH, baselineReleaseRoot, baselineCommit, baselineDist)
-	publishIssue798Snapshot(t, catalogCLI, fakeGH, candidateReleaseRoot, candidateCommit, candidateDist)
+	publishCatalogSnapshot(t, catalogCLI, fakeGH, baselineReleaseRoot, baselineCommit, baselineDist)
+	publishCatalogSnapshot(t, catalogCLI, fakeGH, candidateReleaseRoot, candidateCommit, candidateDist)
 
 	fixtures := t.TempDir()
 	if err := githubfake.Publish(fixtures, "yersonargotev/packy-catalog", baselineCommit, filepath.Join(baselineReleaseRoot, "release")); err != nil {
@@ -72,15 +72,15 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 	}
 	packyEnvironment := testprocess.Env(t, "PACKY_GITHUBFAKE_ADDR_FILE="+addressFile)
 	packy := filepath.Join(bin, "packy")
-	executableDigest := issue798Digest(readIssue798File(t, packy))
-	if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, "init"); !strings.Contains(output, baselineCommit) {
+	executableDigest := sha256Hex(readFileBytes(t, packy))
+	if output := runProcess(t, packyEnvironment, t.TempDir(), packy, "init"); !strings.Contains(output, baselineCommit) {
 		t.Fatalf("initialization omitted baseline snapshot %s:\n%s", baselineCommit, output)
 	}
 
 	if err := githubfake.Publish(fixtures, "yersonargotev/packy-catalog", candidateCommit, filepath.Join(candidateReleaseRoot, "release")); err != nil {
 		t.Fatal(err)
 	}
-	if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, "catalog", "refresh"); !strings.Contains(output, candidateCommit) {
+	if output := runProcess(t, packyEnvironment, t.TempDir(), packy, "catalog", "refresh"); !strings.Contains(output, candidateCommit) {
 		t.Fatalf("refresh omitted candidate snapshot %s:\n%s", candidateCommit, output)
 	}
 	github.Close()
@@ -94,11 +94,11 @@ func TestCatalogPublicationAndConsumption(t *testing.T) {
 		{"alpha", []string{"activate", "alpha", "--surface", "agents", "--dry-run"}},
 		{"beta", []string{"activate", "beta", "--surface", "agents", "--dry-run"}},
 	} {
-		if output := runIssue798Process(t, packyEnvironment, t.TempDir(), packy, check.args...); !strings.Contains(output, check.want) {
+		if output := runProcess(t, packyEnvironment, t.TempDir(), packy, check.args...); !strings.Contains(output, check.want) {
 			t.Fatalf("offline Packy %v omitted %q:\n%s", check.args, check.want, output)
 		}
 	}
-	if finalDigest := issue798Digest(readIssue798File(t, packy)); finalDigest != executableDigest {
+	if finalDigest := sha256Hex(readFileBytes(t, packy)); finalDigest != executableDigest {
 		t.Fatalf("installed Packy executable changed across Catalog Publications: %s -> %s", executableDigest, finalDigest)
 	}
 }
@@ -185,7 +185,7 @@ func testCatalogPublicationExecutable(t *testing.T, executable string) {
 	}
 }
 
-func buildIssue798Executable(t *testing.T, root string, environment []string, output, packagePath string) {
+func buildGoExecutable(t *testing.T, root string, environment []string, output, packagePath string) {
 	t.Helper()
 	command := exec.Command("go", "build", "-o", output, packagePath)
 	command.Dir = root
@@ -195,7 +195,7 @@ func buildIssue798Executable(t *testing.T, root string, environment []string, ou
 	}
 }
 
-func runIssue798Process(t *testing.T, environment []string, directory, executable string, args ...string) string {
+func runProcess(t *testing.T, environment []string, directory, executable string, args ...string) string {
 	t.Helper()
 	command := exec.Command(executable, args...)
 	command.Dir = directory
@@ -207,7 +207,7 @@ func runIssue798Process(t *testing.T, environment []string, directory, executabl
 	return string(output)
 }
 
-func publishIssue798Snapshot(t *testing.T, executable, fakeGH, releaseRoot, commit, dist string) {
+func publishCatalogSnapshot(t *testing.T, executable, fakeGH, releaseRoot, commit, dist string) {
 	t.Helper()
 	environment := testprocess.Env(t, "PATH="+filepath.Dir(fakeGH), "FAKE_RELEASE_ROOT="+releaseRoot, "FAKE_CATALOG_COMMIT="+commit)
 	stdout, stderr, err := runCatalogCLI(t, environment, t.TempDir(), executable,
@@ -217,15 +217,15 @@ func publishIssue798Snapshot(t *testing.T, executable, fakeGH, releaseRoot, comm
 		t.Fatalf("publish Catalog Snapshot %s: %v\n%s", commit, err, output)
 	}
 	for _, asset := range []string{"catalog-snapshot.tar.gz", "SHA256SUMS"} {
-		published := readIssue798File(t, filepath.Join(releaseRoot, "release", asset))
-		built := readIssue798File(t, filepath.Join(dist, asset))
+		published := readFileBytes(t, filepath.Join(releaseRoot, "release", asset))
+		built := readFileBytes(t, filepath.Join(dist, asset))
 		if string(published) != string(built) {
 			t.Fatalf("published %s differs from validated candidate", asset)
 		}
 	}
 }
 
-func readIssue798File(t *testing.T, path string) []byte {
+func readFileBytes(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -234,7 +234,7 @@ func readIssue798File(t *testing.T, path string) []byte {
 	return data
 }
 
-func issue798Digest(data []byte) string {
+func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
