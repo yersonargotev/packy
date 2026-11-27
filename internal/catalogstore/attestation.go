@@ -19,15 +19,14 @@ import (
 
 const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
 
-// ErrNoAttestationVerified reports that a verifier read the catalog's
-// attestations and none verified for the expected signer workflow. Transport
-// and Sigstore trust-root failures do not wrap it.
+// ErrNoAttestationVerified reports that none of the attestation bundles passed
+// to a verifier verified for the expected signer workflow. Sigstore trust-root
+// failures do not wrap it.
 var ErrNoAttestationVerified = errors.New("no catalog attestation verified")
 
 //go:embed sigstore/tuf-repo.github.com/root.json
 var githubTUFRoot []byte
 
-// sigstoreInstance is a Sigstore deployment that signs GitHub build provenance.
 type sigstoreInstance struct {
 	trustedRoot func(context.Context) (root.TrustedMaterial, error)
 	options     []verify.VerifierOption

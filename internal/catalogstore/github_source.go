@@ -29,9 +29,9 @@ type AttestationVerifier interface {
 	Verify(ctx context.Context, bundles []json.RawMessage, repository, subjectSHA256, signerWorkflow string) error
 }
 
-// AttestationRejectedError reports that the verifier read the attestations of
-// a catalog's archive and none verified, as ErrNoAttestationVerified marks.
-// A transport or Sigstore failure is not a rejection.
+// AttestationRejectedError reports that none of the attestation bundles of a
+// catalog's archive verified, as ErrNoAttestationVerified marks. A failure to
+// fetch the bundles or to load a Sigstore trust root is not a rejection.
 type AttestationRejectedError struct {
 	Repository string
 	Err        error

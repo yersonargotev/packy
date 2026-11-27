@@ -36,8 +36,10 @@ both instances.
 Packy reads the latest release of an `attested` catalog without a token first.
 GitHub answers 404 for a private repository, and only then does Packy read a
 token and repeat the request with it. The release assets and the attestations
-are then read with the same token. A public `attested` catalog never reads a
-token.
+are then read with the same token. A public `attested` catalog with a
+published release never reads a token. A missing repository or a repository
+without a stable release also answers 404, so Packy reads a token for it too,
+and the error then says that the token needs read access.
 
 ## Know what access-controlled trusts
 
