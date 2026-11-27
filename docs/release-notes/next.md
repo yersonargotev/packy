@@ -18,11 +18,11 @@ The previous stable release is `v0.2.37`.
   project activation, or the lock of the current Git project names the catalog.
 - Private GitHub repositories can be catalogs. The default `attested` trust
   policy requires a GitHub build-provenance attestation signed by the registered
-  publication workflow on `refs/heads/main`, including attestations from
+  publication workflow on `refs/heads/main` on a GitHub-hosted runner, including attestations from
   GitHub's private Sigstore instance. Use `--workflow <path>` when that workflow
   is not `.github/workflows/publish.yml`. `--trust access-controlled` trusts
-  GitHub access control to a private repository instead, and Packy shows it as
-  weaker trust. See [private catalogs](https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md).
+  GitHub access control to a private repository instead. `packy catalog list`,
+  the new `CATALOG` column of `packy list`, and the TUI show it as weaker trust. See [private catalogs](https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md).
 - Packy reads a GitHub token only when `packy catalog add` or
   `packy catalog refresh` reaches a private catalog. It takes the first of
   `GH_TOKEN`, `GITHUB_TOKEN`, and `gh auth token`, sends it only to
@@ -34,7 +34,8 @@ The previous stable release is `v0.2.37`.
   record `catalog_repository`, and plugin `packy-provenance.json` records the
   catalog repository.
 - `packy catalog refresh` restores a tampered retained Catalog Snapshot.
-- Catalog errors lead with the command and the cause.
+- `packy catalog add` errors lead with the command and the cause, and catalog
+  refresh errors are shorter.
 - The TUI catalog panel lists every registered catalog with its repository, trust
   policy, and selected snapshot. Each Pack row names its catalog, and Packs from
   an `access-controlled` catalog show weaker trust. `?` adds each catalog's full
@@ -46,8 +47,8 @@ The previous stable release is `v0.2.37`.
   project lock v2. See [structured output](https://github.com/yersonargotev/packy/blob/main/docs/structured-output.md).
 - Third-party catalog authors follow the
   [catalog publication guide](https://github.com/yersonargotev/packy/blob/main/docs/catalog-project.md#publish-a-third-party-catalog).
-- Repository development skills now live in the Packy home repo, and release
-  closeout retires completed local proof.
+- For contributors, repository development skills are now installed from a
+  separate home repository, and release cleanup removes completed local evidence.
 
 Catalog content and Pack versions are published independently. This engine
 release does not publish a Catalog Snapshot or change installed Packs.
@@ -58,8 +59,9 @@ This release changes the catalog store and receipt formats. Packy keeps each
 catalog under `~/.local/share/packy/catalog/v2/<owner>/<repo>` and no longer
 reads the earlier `catalog/selected.json` and `catalog/snapshots` layout.
 Packy reads receipts, project locks, and personal project activations only at
-`schema_version` 2. It rejects earlier files that still hold receipts with an
-error that names the adoption guide, and no converter exists.
+`schema_version` 2. It rejects an earlier `packs.json` that still holds
+receipts, an earlier `packy.lock.json`, or an earlier personal project
+activation with an error that names the adoption guide. No converter exists.
 
 Before you replace the binary, deactivate every global and personal project
 activation and uninstall every shared project installation with the previous
