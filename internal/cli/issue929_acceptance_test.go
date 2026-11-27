@@ -788,7 +788,7 @@ func assertIssue929RefusedAdd(t *testing.T, transport string, environment []stri
 	t.Helper()
 	before := issue929StoreTree(t, environment)
 	out, err := runIssue929(t, transport, environment, args...)
-	if !issue929Exit(err, 1) {
+	if !issue929Exit(err, 1) || !strings.HasPrefix(out, "packy catalog add: ") {
 		t.Fatalf("%v: %v\n%s", args, err, out)
 	}
 	for _, fragment := range want {
@@ -822,7 +822,7 @@ func testIssue929InvalidRegistration(t *testing.T, transport string) {
 	if err := githubfake.Publish(fixtures, issue929Acme, commit, buildIssue929Dist(t, transport, "acme/elsewhere", commit, githubfake.Pack{ID: "acme", Version: "1.0.0"})); err != nil {
 		t.Fatal(err)
 	}
-	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "index names acme/elsewhere")
+	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "packy catalog add: Catalog Snapshot index names acme/elsewhere")
 }
 
 func testIssue929PackIDCollisions(t *testing.T, transport string) {
@@ -881,7 +881,7 @@ func testIssue929FailedAttestation(t *testing.T, transport string) {
 	if err := githubfake.WriteRepository(fixtures, issue929Acme, githubfake.Repository{AttestationWorkflow: "acme/packs/.github/workflows/other.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "attestation", "if acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`")
+	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "packy catalog add: verify catalog acme/packs artifact attestation", "if acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`")
 
 	// catalog add selects the official catalog first on a fresh store, and
 	// --workflow cannot fix the official catalog's attestation.
@@ -1310,12 +1310,12 @@ func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
 func testIssue929PublicAccessControlled(t *testing.T, transport string) {
 	withToken := issue929Setenv(startIssue929Private(t, transport), "GH_TOKEN="+issue929PrivateToken)
 	assertIssue929RefusedAdd(t, transport, withToken, append(issue929AddPrivate, "--workflow", ".github/workflows/publish.yml"), "an access-controlled catalog names no publication workflow")
-	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "register catalog acme/packs", "public", "--trust attested")
+	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "packy catalog add: the repository is public, and access-controlled is only for private repositories; a public repository uses --trust attested")
 }
 
 func testIssue929MissingToken(t *testing.T, transport string) {
 	withoutGH := issue929Setenv(startIssue929Private(t, transport), "PATH="+t.TempDir())
-	assertIssue929RefusedAdd(t, transport, withoutGH, issue929AddPrivate, "register catalog team/private-packs", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
+	assertIssue929RefusedAdd(t, transport, withoutGH, issue929AddPrivate, "packy catalog add: a private catalog needs a GitHub token that can read its repository: ", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
 
 	gh := t.TempDir()
 	if err := os.WriteFile(filepath.Join(gh, "gh"), []byte("#!/bin/sh\necho "+issue929PrivateToken+"\n"), 0o755); err != nil {

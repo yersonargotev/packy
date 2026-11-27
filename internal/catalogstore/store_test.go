@@ -415,7 +415,7 @@ func TestRegisterSelectsTheOfficialCatalogFirst(t *testing.T) {
 	}
 	store := catalogstore.New(root, source)
 	attested := catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}
-	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: attested}); err == nil || !strings.Contains(err.Error(), "register catalog acme/packs: select the official catalog first") || !strings.Contains(err.Error(), "no release for "+official.String()) {
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: attested}); err == nil || !strings.HasPrefix(err.Error(), "select the official catalog first: ") || !strings.Contains(err.Error(), "no release for "+official.String()) {
 		t.Fatalf("Register() while the official catalog cannot be selected = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "acme")); !os.IsNotExist(err) {

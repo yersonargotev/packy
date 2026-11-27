@@ -134,11 +134,11 @@ func testIssue937RegisterPrivateAttestedCatalog(t *testing.T, transport string) 
 
 func testIssue937MissingToken(t *testing.T, transport string) {
 	_, environment, _ := startIssue937(t, transport, githubfake.Repository{})
-	assertIssue929RefusedAdd(t, transport, environment, []string{"catalog", "add", issue937Private, "--trust", "attested"}, "register catalog team/attested-packs", "404", "a private catalog needs a GitHub token", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
+	assertIssue929RefusedAdd(t, transport, environment, []string{"catalog", "add", issue937Private, "--trust", "attested"}, "packy catalog add: read latest catalog release of team/attested-packs: GitHub returned 404 Not Found; if the repository is private, a private catalog needs a GitHub token", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
 }
 
 func testIssue937ForeignWorkflow(t *testing.T, transport string) {
 	_, environment, _ := startIssue937(t, transport, githubfake.Repository{AttestationWorkflow: issue937Private + "/.github/workflows/other.yml"})
 	withToken := issue929Setenv(environment, "GH_TOKEN="+issue937Token)
-	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue937Private}, "register catalog team/attested-packs", "attestation", "if team/attested-packs publishes from another workflow, run `packy catalog add team/attested-packs --workflow <path>`")
+	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue937Private}, "packy catalog add: verify catalog team/attested-packs artifact attestation", "if team/attested-packs publishes from another workflow, run `packy catalog add team/attested-packs --workflow <path>`")
 }
