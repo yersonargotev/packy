@@ -133,7 +133,7 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 				if step.surface == "claude" {
 					targetRoot = claude
 				}
-				if got := readIssue798File(t, filepath.Join(targetRoot, "guide", "references", "detail.md")); string(got) != step.surface+" 2.0.0\n" {
+				if got := readFileBytes(t, filepath.Join(targetRoot, "guide", "references", "detail.md")); string(got) != step.surface+" 2.0.0\n" {
 					t.Fatalf("%s update did not materialize candidate: %s", step.surface, got)
 				}
 				var receipt struct {
@@ -159,7 +159,7 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 			// Both owned scopes retain standard helper drift rejection. A global link
 			// exposes retained-source drift; project copies expose projection drift.
 			helper := filepath.Join(agents, "helper", "references", "detail.md")
-			original := readIssue798File(t, helper)
+			original := readFileBytes(t, helper)
 			if err := os.WriteFile(helper, []byte("helper drift\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -196,7 +196,7 @@ func testCatalogCandidateTransitionsExecutable(t *testing.T, executable string) 
 			if _, err := os.Lstat(filepath.Join(claude, "guide")); !os.IsNotExist(err) {
 				t.Fatalf("retired Claude guide remains after reinstallation: %v", err)
 			}
-			if got := readIssue798File(t, unrelated); string(got) != "preserve unrelated\n" {
+			if got := readFileBytes(t, unrelated); string(got) != "preserve unrelated\n" {
 				t.Fatalf("unrelated bytes changed: %s", got)
 			}
 			info, err := os.Stat(unrelated)
@@ -224,7 +224,7 @@ func candidateReceipt(t *testing.T, path, surface string) json.RawMessage {
 	var document struct {
 		Receipts []json.RawMessage `json:"receipts"`
 	}
-	if err := json.Unmarshal(readIssue798File(t, path), &document); err != nil {
+	if err := json.Unmarshal(readFileBytes(t, path), &document); err != nil {
 		t.Fatal(err)
 	}
 	for _, value := range document.Receipts {
@@ -278,7 +278,7 @@ func buildTransitionCandidate(t *testing.T, executable string, environment []str
 	}
 	manifestPath := filepath.Join(project, "packs", "transition", "pack.json")
 	var manifest map[string]any
-	if err := json.Unmarshal(readIssue798File(t, manifestPath), &manifest); err != nil {
+	if err := json.Unmarshal(readFileBytes(t, manifestPath), &manifest); err != nil {
 		t.Fatal(err)
 	}
 	manifest["origins"] = []any{}
@@ -304,7 +304,7 @@ func buildTransitionCandidate(t *testing.T, executable string, environment []str
 				if entry.IsDir() {
 					return os.MkdirAll(target, 0o755)
 				}
-				data := bytes.ReplaceAll(readIssue798File(t, path), []byte("reviewed common"), []byte("reviewed claude"))
+				data := bytes.ReplaceAll(readFileBytes(t, path), []byte("reviewed common"), []byte("reviewed claude"))
 				return os.WriteFile(target, data, 0o644)
 			})
 			if err != nil {
@@ -387,7 +387,7 @@ func testCandidateTransitionRejections(t *testing.T, executable string, environm
 				}
 			case "retained index drift":
 				path := filepath.Join(workspace, "snapshots", strings.Repeat("a", 40), "catalog-index.json")
-				data := append(readIssue798File(t, path), '\n')
+				data := append(readFileBytes(t, path), '\n')
 				if err := os.WriteFile(path, data, 0o644); err != nil {
 					t.Fatal(err)
 				}
@@ -396,7 +396,7 @@ func testCandidateTransitionRejections(t *testing.T, executable string, environm
 					t.Fatal(err)
 				}
 			case "incompatible snapshot", "invalid snapshot":
-				files := catalogBuildArchive(t, readIssue798File(t, filepath.Join(candidate, "catalog-snapshot.tar.gz")))
+				files := catalogBuildArchive(t, readFileBytes(t, filepath.Join(candidate, "catalog-snapshot.tar.gz")))
 				if scenario == "incompatible snapshot" {
 					files["catalog-index.json"] = bytes.Replace(files["catalog-index.json"], []byte(`"schema_version": 3`), []byte(`"schema_version": 999`), 1)
 				} else {
@@ -486,7 +486,7 @@ func testCandidateStaleApply(t *testing.T, executable string, environment []stri
 	edited := []byte("---\nname: guide\ndescription: Foreign conflict.\n---\nForeign\n")
 	if indexDrift {
 		unrelated = filepath.Join(workspace, "snapshots", strings.Repeat("a", 40), "catalog-index.json")
-		edited = append(readIssue798File(t, unrelated), '\n')
+		edited = append(readFileBytes(t, unrelated), '\n')
 	}
 	var editErr error
 	if ownershipDrift {

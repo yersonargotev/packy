@@ -47,10 +47,10 @@ func testCatalogBuildExecutable(t *testing.T, executable, builderCommit string) 
 		if err != nil {
 			t.Fatalf("build: %v stdout=%s stderr=%s", err, stdout, stderr)
 		}
-		archive := readIssue798File(t, filepath.Join(out, "catalog-snapshot.tar.gz"))
+		archive := readFileBytes(t, filepath.Join(out, "catalog-snapshot.tar.gz"))
 		digest := sha256.Sum256(archive)
 		archiveSHA := hex.EncodeToString(digest[:])
-		if got := string(readIssue798File(t, filepath.Join(out, "SHA256SUMS"))); got != archiveSHA+"  catalog-snapshot.tar.gz\n" {
+		if got := string(readFileBytes(t, filepath.Join(out, "SHA256SUMS"))); got != archiveSHA+"  catalog-snapshot.tar.gz\n" {
 			t.Fatalf("checksum = %q", got)
 		}
 		files := catalogBuildArchive(t, archive)
@@ -263,7 +263,7 @@ func assertCatalogBuildFailure(t *testing.T, stdout, stderr []byte, runErr error
 func TestUnstampedCatalogBuilderCannotClaimAnIdentity(t *testing.T) {
 	root := repositoryRoot(t)
 	executable := filepath.Join(t.TempDir(), "packy")
-	buildIssue798Executable(t, root, testprocess.GoOfflineEnv(t), executable, "./cmd/packy")
+	buildGoExecutable(t, root, testprocess.GoOfflineEnv(t), executable, "./cmd/packy")
 	project := t.TempDir()
 	writePublicationCatalogPack(t, project, "alpha", "1.0.0", "valid\n")
 	out := filepath.Join(t.TempDir(), "dist")
