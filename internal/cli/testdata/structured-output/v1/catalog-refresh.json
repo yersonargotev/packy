@@ -11,7 +11,7 @@
       "repository": "acme/packs",
       "result": "failed",
       "snapshot_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "error": "acquire latest release of catalog acme/packs: GitHub returned 500 Internal Server Error"
+      "error": "read latest catalog release of acme/packs: GitHub returned 500 Internal Server Error"
     }
   ]
 }

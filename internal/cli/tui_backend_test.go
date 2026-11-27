@@ -169,7 +169,7 @@ func TestCatalogRefreshReportsTheSameOutcomesInCLIAndTUI(t *testing.T) {
 	source.releases[official] = catalogReleaseFixture(t, b, officialPack)
 	source.releases[private] = catalogRepositoryReleaseFixture(t, private, f, privatePack)
 	source.errs[acme] = errors.New("latest release of acme/packs returned HTTP 500")
-	acmeErr := "acquire latest release of catalog acme/packs: latest release of acme/packs returned HTTP 500"
+	acmeErr := "latest release of acme/packs returned HTTP 500"
 	refresh("1 of 3 catalogs failed to refresh and keep their previous Catalog Snapshot",
 		"packy catalog refresh: selected Catalog Snapshot "+b+" of "+official+"\n"+
 			"packy catalog refresh: acme/packs failed and keeps Catalog Snapshot "+c+": "+acmeErr+"\n"+
@@ -187,7 +187,7 @@ func TestCatalogRefreshReportsTheSameOutcomesInCLIAndTUI(t *testing.T) {
 	}
 	unreadable := "selected Catalog Snapshot of zeta/private has invalid identity"
 	officialErr := "check Pack IDs against catalog zeta/private: " + unreadable
-	privateErr := "acquire latest release of catalog zeta/private: latest release of zeta/private returned HTTP 404; the previous selection is unreadable: " + unreadable
+	privateErr := "latest release of zeta/private returned HTTP 404; the previous selection is unreadable: " + unreadable
 	refresh("3 of 3 catalogs failed to refresh and keep their previous Catalog Snapshot",
 		"packy catalog refresh: "+official+" failed and keeps Catalog Snapshot "+b+": "+officialErr+"\n"+
 			"packy catalog refresh: acme/packs failed and keeps Catalog Snapshot "+c+": "+acmeErr+"\n"+
