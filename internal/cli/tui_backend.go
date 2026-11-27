@@ -252,9 +252,9 @@ func catalogsForTUI(sources invocationSources) ([]tui.Catalog, error) {
 	return catalogs, nil
 }
 
-// RefreshCatalog refreshes every registered catalog. A failed catalog does not
+// RefreshCatalogs refreshes every registered catalog. A failed catalog does not
 // stop the refresh of the others.
-func (b *tuiBackend) RefreshCatalog(ctx context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
+func (b *tuiBackend) RefreshCatalogs(ctx context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
 	store, _, err := registryStore(b.opts, b.resolver)
 	if err != nil {
 		return nil, err

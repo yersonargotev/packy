@@ -71,17 +71,17 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 	source.releases[private] = catalogRepositoryReleaseFixture(t, private, strings.Repeat("f", 40), privatePack)
 	source.errs[acme] = errors.New("latest release of acme/packs returned HTTP 500")
 	var progress []string
-	refreshes, err := backend.RefreshCatalog(ctx, func(message string) { progress = append(progress, message) })
+	refreshes, err := backend.RefreshCatalogs(ctx, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"Acquiring the latest Catalog Snapshot of " + official, "Acquiring the latest Catalog Snapshot of " + acme, "Acquiring the latest Catalog Snapshot of " + private}; !reflect.DeepEqual(progress, want) {
-		t.Fatalf("RefreshCatalog() progress = %q, want %q", progress, want)
+		t.Fatalf("RefreshCatalogs() progress = %q, want %q", progress, want)
 	}
 	if len(refreshes) != 3 || refreshes[0] != (tui.CatalogRefresh{Repository: official, SnapshotID: strings.Repeat("b", 40)}) ||
 		refreshes[1].Repository != acme || refreshes[1].SnapshotID != strings.Repeat("c", 40) || refreshes[1].Err == nil || !strings.Contains(refreshes[1].Err.Error(), "HTTP 500") ||
 		refreshes[2] != (tui.CatalogRefresh{Repository: private, SnapshotID: strings.Repeat("f", 40)}) {
-		t.Fatalf("RefreshCatalog() = %#v", refreshes)
+		t.Fatalf("RefreshCatalogs() = %#v", refreshes)
 	}
 	if got, want := catalogs(), []tui.Catalog{
 		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("b", 40), Packs: 1},
@@ -148,7 +148,7 @@ func TestCatalogRefreshReportsTheSameOutcomesInCLIAndTUI(t *testing.T) {
 		if err == nil || err.Error() != wantErr || out != wantJSON+"\n" {
 			t.Fatalf("catalog refresh --json = %v\n%s\nwant\n%s", err, out, wantJSON)
 		}
-		refreshes, err := backend.RefreshCatalog(context.Background(), func(string) {})
+		refreshes, err := backend.RefreshCatalogs(context.Background(), func(string) {})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +161,7 @@ func TestCatalogRefreshReportsTheSameOutcomesInCLIAndTUI(t *testing.T) {
 			got = append(got, outcome)
 		}
 		if !slices.Equal(got, wantTUI) {
-			t.Fatalf("RefreshCatalog() = %q, want %q", got, wantTUI)
+			t.Fatalf("RefreshCatalogs() = %q, want %q", got, wantTUI)
 		}
 	}
 

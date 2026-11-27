@@ -27,7 +27,7 @@ const dashboardWheelDelta = 3
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
 	Initialize(context.Context, func(string)) error
-	RefreshCatalog(context.Context, func(string)) ([]CatalogRefresh, error)
+	RefreshCatalogs(context.Context, func(string)) ([]CatalogRefresh, error)
 	Preview(context.Context, PreviewRequest) (Preview, error)
 	Apply(context.Context, ApplyRequest, func(ApplyProgress)) (ApplyResult, error)
 }
@@ -848,7 +848,7 @@ func (m Model) startCatalogOperation(operation catalogOperation) (tea.Model, tea
 		}
 		var finished catalogOperationFinished
 		if operation == catalogOperationRefresh {
-			finished.refreshes, finished.err = m.backend.RefreshCatalog(m.ctx, progress)
+			finished.refreshes, finished.err = m.backend.RefreshCatalogs(m.ctx, progress)
 		} else {
 			finished.err = m.backend.Initialize(m.ctx, progress)
 		}
