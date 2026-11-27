@@ -1091,7 +1091,7 @@ func testIssue929RemoveCatalog(t *testing.T, transport string) {
 	approveIssue929(t, transport, environment, project, "activate", "acme", "--surface", "agents")
 	directory := issue929CatalogDirectory(t, environment, issue929Acme)
 	before := issue929StoreTree(t, environment)
-	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents") {
+	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Pack acme on agents; deactivate or uninstall it, then remove the catalog") {
 		t.Fatalf("catalog remove with an installed Pack: %v\n%s", err, out)
 	}
 	if after := issue929StoreTree(t, environment); after != before {
@@ -1108,21 +1108,21 @@ func testIssue929RemoveCatalog(t *testing.T, transport string) {
 	if err := os.WriteFile(activation, []byte(`{"schema_version":2,"state":{"pack_id":"acme","version":"1.0.0","catalog_repository":"acme/packs","catalog_snapshot":"`+strings.Repeat("c", 40)+`","surface":"agents","active":true}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in a project") {
+	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Pack acme on agents in a project; deactivate or uninstall it, then remove the catalog") {
 		t.Fatalf("catalog remove with an active personal project activation: %v\n%s", err, out)
-	}
-	if err := os.Remove(activation); err != nil {
-		t.Fatal(err)
 	}
 	locked := t.TempDir()
 	writeTestGitWorktree(t, locked)
 	approveIssue929(t, transport, environment, locked, "install", "acme", "--surface", "agents")
 	before = issue929StoreTree(t, environment)
-	if out, err := runIssue929At(t, transport, environment, locked, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in this project's lock") {
+	if out, err := runIssue929At(t, transport, environment, locked, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in a project, acme on agents in this project's lock; deactivate or uninstall them, then remove the catalog") {
 		t.Fatalf("catalog remove from a project whose lock names the catalog: %v\n%s", err, out)
 	}
 	if after := issue929StoreTree(t, environment); after != before {
 		t.Fatalf("refused removal changed the Catalog Store:\n%s\nwant:\n%s", after, before)
+	}
+	if err := os.Remove(activation); err != nil {
+		t.Fatal(err)
 	}
 	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); err != nil || !strings.Contains(out, "removed catalog acme/packs") {
 		t.Fatalf("catalog remove: %v\n%s", err, out)
