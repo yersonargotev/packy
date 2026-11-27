@@ -29,8 +29,8 @@ const (
 
 // seeds are the fixture catalogs of a new fixture directory. They are the
 // official catalog, a second public attested catalog, a catalog whose snapshot
-// reuses an official Pack ID, and a private catalog that only privateToken
-// reads.
+// reuses an official Pack ID, and two private catalogs that only privateToken
+// reads, one for each trust policy.
 var seeds = []struct {
 	repository, commit, token string
 	pack                      githubfake.Pack
@@ -39,10 +39,11 @@ var seeds = []struct {
 	{"acme/packs", "3333333333333333333333333333333333333333", "", githubfake.Pack{ID: "acme", Version: "1.0.0"}},
 	{"evil/packs", "4444444444444444444444444444444444444444", "", githubfake.Pack{ID: "fixture", Version: "9.0.0"}},
 	{"team/private-packs", "5555555555555555555555555555555555555555", privateToken, githubfake.Pack{ID: "team", Version: "1.0.0", Portable: true}},
+	{"team/attested-packs", "6666666666666666666666666666666666666666", privateToken, githubfake.Pack{ID: "vault", Version: "1.0.0"}},
 }
 
 func main() {
-	fixtures := flag.String("fixtures", "", "fixture directory; an absent directory is created with the official, acme/packs, evil/packs, and team/private-packs fixture catalogs, and GH_TOKEN="+privateToken+" reads the private one")
+	fixtures := flag.String("fixtures", "", "fixture directory; an absent directory is created with the official, acme/packs, evil/packs, team/private-packs, and team/attested-packs fixture catalogs, and GH_TOKEN="+privateToken+" reads the private ones")
 	addressFile := flag.String("addr-file", "", "file that receives the server address for PACKY_GITHUBFAKE_ADDR_FILE")
 	requestLog := flag.String("request-log", "", "file that receives one JSON line per request with its host, path, and header names")
 	flag.Parse()

@@ -13,7 +13,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	client := githubfake.NewClient(os.Getenv("PACKY_GITHUBFAKE_ADDR_FILE"))
-	command := cli.NewRootCommand(cli.Options{HTTPClient: client, AttestationVerifier: githubfake.NewAttestationVerifier(client)})
+	command := cli.NewRootCommand(cli.Options{HTTPClient: client, AttestationVerifier: githubfake.AttestationVerifier{}})
 	err := command.ExecuteContext(ctx)
 	stop()
 	if err != nil {

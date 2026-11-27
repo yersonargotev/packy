@@ -85,6 +85,14 @@ publish private repository and workflow identities to a public transparency
 log. There is no mode that skips verification, and a public repository cannot use
 `access-controlled`.
 
+A private repository can also be `attested` when GitHub attests its releases.
+GitHub signs those attestations with its own Sigstore instance, which uses a
+timestamp authority instead of a public transparency log. Packy verifies them
+against that instance's trusted root, refreshed over TUF from
+`https://tuf-repo.github.com` with an embedded TUF root, and requires the same
+publisher identity as for the public instance. An `attested` catalog is read
+without a token first, and Packy reads a token only when GitHub answers 404.
+
 Packy never stores credentials. Only explicit network operations (registration
 and Catalog Refresh) read `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`, and a
 missing or insufficient credential fails with an explanation.
@@ -148,8 +156,8 @@ old source directories are not deleted automatically.
 
 The main acceptance seam is the real installed CLI against a controlled GitHub
 transport. That transport serves the official catalog, a second public
-`attested` catalog, and a private `access-controlled` catalog that requires a
-token. The CLI must cover registration, refresh, and removal. It must also show
+`attested` catalog, a private `access-controlled` catalog that requires a
+token, and a private `attested` catalog that requires a token. The CLI must cover registration, refresh, and removal. It must also show
 that a Pack ID collision, a missing credential, and an incompatible snapshot are
 rejected without partial changes, that offline consumption works, that a project
 lock naming an unregistered catalog fails, and that the TUI behaves the same. A
