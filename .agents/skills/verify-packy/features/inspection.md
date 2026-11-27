@@ -15,7 +15,7 @@ Run `packy version --json`, `packy catalog list --json`, `packy list --json`, or
 
 ## Driving it with CLI
 
-Preconditions: Doctor passed. List and show require a selected reviewed Catalog Snapshot containing the named Pack.
+Preconditions: Doctor passed. List, show, and search require a selected reviewed Catalog Snapshot containing the named Pack.
 
 - Run `"$PACKY_VERIFY_SCRATCH/packy" version --json` and capture the JSON and exit status. Compare its identity with Doctor.
 - Run `"$PACKY_VERIFY_SCRATCH/packy" catalog list --json` and confirm each registered catalog and its selected snapshot.

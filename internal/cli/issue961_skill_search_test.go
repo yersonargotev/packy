@@ -272,7 +272,6 @@ func TestIssue961SkillSearchExecutable(t *testing.T) {
 			}
 		}
 	})
-
 }
 
 func assertIssue961Unchanged(t *testing.T, protected map[string]string, env MapEnv) {

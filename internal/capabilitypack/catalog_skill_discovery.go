@@ -65,9 +65,9 @@ func (c Catalog) DiscoverSkills(ctx context.Context, id string, surface Surface)
 }
 
 // skillCandidates describes every skill of pack on surface. On-demand
-// compatibility is resolved against catalogPacks, the Packs that an access
-// dependency of pack may name.
-func skillCandidates(catalogPacks []Pack, pack Pack, surface Surface) []SkillDiscovery {
+// compatibility is resolved against all current Packs; catalog validation keeps
+// access dependencies inside one snapshot.
+func skillCandidates(currentPacks []Pack, pack Pack, surface Surface) []SkillDiscovery {
 	effective := ResolvePackForSurface(pack, surface)
 	candidates := []SkillDiscovery{}
 	for _, description := range descriptiveResourceInventory(effective) {
@@ -92,7 +92,7 @@ func skillCandidates(catalogPacks []Pack, pack Pack, surface Surface) []SkillDis
 		if exclusion, ok := exclusionFor(resource, surface); ok {
 			candidate.Exclusion = &exclusion
 		}
-		_, accessErr := ResolveOnDemand(catalogPacks, candidate.QualifiedSkill, surface)
+		_, accessErr := ResolveOnDemand(currentPacks, candidate.QualifiedSkill, surface)
 		candidate.Compatible = accessErr == nil
 		if accessErr != nil {
 			candidate.Reason = accessErr.Error()
