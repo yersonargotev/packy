@@ -252,8 +252,6 @@ func catalogsForTUI(sources invocationSources) ([]tui.Catalog, error) {
 	return catalogs, nil
 }
 
-// RefreshCatalogs refreshes every registered catalog. A failed catalog does not
-// stop the refresh of the others.
 func (b *tuiBackend) RefreshCatalogs(ctx context.Context, progress func(string)) ([]tui.CatalogRefresh, error) {
 	store, _, err := registryStore(b.opts, b.resolver)
 	if err != nil {
@@ -264,27 +262,13 @@ func (b *tuiBackend) RefreshCatalogs(ctx context.Context, progress func(string))
 		return nil, err
 	}
 	refreshes := make([]tui.CatalogRefresh, 0, len(registrations))
-	for _, registration := range registrations {
-		if err := ctx.Err(); err != nil {
-			return refreshes, err
-		}
-		refresh := tui.CatalogRefresh{Repository: registration.Repository.String()}
-		progress("Acquiring the latest Catalog Snapshot of " + refresh.Repository)
-		snapshot, err := store.AcquireLatest(ctx, registration.Repository)
-		if err == nil {
-			refresh.SnapshotID = snapshot.ID
-		} else {
-			refresh.Err = err
-			previous, selectionErr := selectedSnapshotID(store, registration.Repository)
-			if selectionErr != nil {
-				refresh.Err = fmt.Errorf("%w; the previous selection is unreadable: %v", err, selectionErr)
-			} else if previous != nil {
-				refresh.SnapshotID = *previous
-			}
-		}
-		refreshes = append(refreshes, refresh)
-	}
-	return refreshes, nil
+	err = store.RefreshCatalogs(ctx, registrations, func(repository catalogstore.Repository) {
+		progress("Acquiring the latest Catalog Snapshot of " + repository.String())
+	}, func(refresh catalogstore.Refresh) error {
+		refreshes = append(refreshes, tui.CatalogRefresh{Repository: refresh.Repository.String(), SnapshotID: refresh.SnapshotID, Err: refresh.Err})
+		return ctx.Err()
+	})
+	return refreshes, err
 }
 
 func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (tui.Preview, error) {
