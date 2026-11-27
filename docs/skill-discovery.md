@@ -11,6 +11,12 @@ surface discovers its own roots, so distinct surface bodies can coexist.
 | Agents | `$HOME/.agents/skills/<name>` | `.agents/skills/<name>` |
 | Claude Code | `$HOME/.claude/skills/<name>` | `.claude/skills/<name>` |
 
+To find a reviewed catalog skill without installing it, run
+`packy search <query>... --surface <surface>` first, then inspect it with
+`packy show <pack> --surface <surface>` and obtain it with `packy get skill`.
+`list` and `show` remain the fallback when search finds nothing. See
+[on-demand skill access](on-demand-skills.md#discover-current-candidates).
+
 Names above are projected names; the logical resource ID remains the Pack
 selection and dependency identity. Skills include their entire selected tree,
 including references, helper files, and metadata.

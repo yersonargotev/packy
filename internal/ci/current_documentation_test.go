@@ -34,6 +34,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0044-provide-on-demand-skill-access.md"),
 		filepath.Join(root, "docs", "adr", "0045-focus-surfaces-on-agents-and-claude.md"),
 		filepath.Join(root, "docs", "adr", "0046-support-multiple-and-private-pack-catalogs.md"),
+		filepath.Join(root, "docs", "adr", "0047-search-current-catalog-skills-by-text.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
