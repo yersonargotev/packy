@@ -3,6 +3,7 @@ package capabilitypack
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,6 +58,40 @@ func TestCatalogSpansEverySelectedSnapshot(t *testing.T) {
 	}
 	if _, err := catalog.ResolveIntentPackAt(context.Background(), "gamma", "1.0.0", CatalogRef{Repository: "gone/packs", Commit: official.Commit}); err == nil || !strings.Contains(err.Error(), "catalog gone/packs, which is not registered") || !strings.Contains(err.Error(), "packy catalog add gone/packs") {
 		t.Fatalf("ResolveIntentPackAt(unregistered catalog) = %v", err)
+	}
+}
+
+func TestCatalogObservationReadsOneCatalogGeneration(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "bundle")
+	manifest := filepath.Join(writeCurrentPackFixture(t, root, "alpha"), "pack.json")
+	catalog, err := DiscoverRetainedForDurableIntents(ctx, []SelectedSnapshot{{Root: root, Ref: testCatalogRef("a")}}, func(context.Context, CatalogRef) (string, error) { return root, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(original), `"description": "Example Pack"`, `"description": "Changed Pack"`, 1)
+	_, err = withCatalogObservation(ctx, NewFacade(catalog), func(facade Facade) (bool, error) {
+		if err := os.WriteFile(manifest, []byte(changed), 0o600); err != nil {
+			return false, err
+		}
+		pack, err := facade.catalog.Show(ctx, "alpha")
+		if err != nil {
+			return false, err
+		}
+		if pack.Description != "Example Pack" {
+			t.Fatalf("Show inside the observation = %q, want the observed generation", pack.Description)
+		}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack, err := catalog.Show(ctx, "alpha"); err != nil || pack.Description != "Changed Pack" {
+		t.Fatalf("Show in the next observation = %q, %v; want the new generation", pack.Description, err)
 	}
 }
 
