@@ -500,6 +500,7 @@ type Catalog struct {
 	entries               []catalogEntry
 	deferSourceValidation bool
 	transactionHeld       bool
+	discoveredUnderLock   bool
 	validateSource        func(context.Context) error
 }
 
@@ -638,7 +639,7 @@ func discoverCurrentCatalogUnlocked(catalogRoot string, validateSources bool) ([
 }
 
 func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
-	if len(c.roots()) == 0 {
+	if len(c.roots()) == 0 || c.discoveredUnderLock {
 		return c, nil
 	}
 	var refreshed Catalog
@@ -646,6 +647,7 @@ func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
 		var err error
 		refreshed, err = discoverSnapshotsUnlocked(c.snapshots, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
+		refreshed.discoveredUnderLock = true
 		refreshed.validateSource = locked.validateSource
 		refreshed.resolveSnapshot = locked.resolveSnapshot
 		return err
