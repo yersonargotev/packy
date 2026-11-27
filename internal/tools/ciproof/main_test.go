@@ -268,6 +268,59 @@ func TestProofRejectsIncompleteResponses(t *testing.T) {
 	}
 }
 
+func TestProofAcceptsAttemptTimestampsThatDifferFromTheRun(t *testing.T) {
+	runCreated := time.Date(2026, 11, 27, 18, 46, 14, 0, time.UTC)
+	for name, c := range map[string]struct {
+		attempt        int
+		attemptCreated time.Time
+	}{
+		"first attempt drift": {1, time.Date(2026, 11, 27, 18, 46, 15, 0, time.UTC)},
+		"rerun of all jobs":   {2, time.Date(2026, 11, 27, 18, 54, 27, 0, time.UTC)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture()
+			f.runs[0].CreatedAt, f.runs[0].Attempt = runCreated, c.attempt
+			f.direct.CreatedAt, f.direct.Attempt = runCreated, c.attempt
+			f.attempt.CreatedAt, f.attempt.Attempt = c.attemptCreated, c.attempt
+			f.jobs[0].RunAttempt = c.attempt
+			p, err := verify(context.Background(), testSHA, f.read)
+			if err != nil || p.Attempt != c.attempt || !p.RunCreatedAt.Equal(runCreated) {
+				t.Fatalf("proof %+v: %v", p, err)
+			}
+		})
+	}
+}
+
+func TestProofRejectsRunRecreatedDuringVerification(t *testing.T) {
+	f := newFixture()
+	reads := 0
+	_, err := verify(context.Background(), testSHA, func(ctx context.Context, path string) ([]byte, error) {
+		if strings.HasSuffix(path, "/actions/runs/10") {
+			reads++
+			if reads > 1 {
+				f.direct.CreatedAt = f.direct.CreatedAt.Add(time.Second)
+			}
+		}
+		return f.read(ctx, path)
+	})
+	if err == nil {
+		t.Fatal("accepted a run whose creation time changed between reads")
+	}
+}
+
+func TestProofRejectsListedRunChangedDuringVerification(t *testing.T) {
+	f := newFixture()
+	_, err := verify(context.Background(), testSHA, func(ctx context.Context, path string) ([]byte, error) {
+		if strings.Contains(path, "/runs?") && f.reads > 0 {
+			f.runs[0].CreatedAt = f.runs[0].CreatedAt.Add(time.Second)
+		}
+		return f.read(ctx, path)
+	})
+	if err == nil {
+		t.Fatal("accepted a listed run whose creation time changed between reads")
+	}
+}
+
 func TestNewerAttemptMustSucceed(t *testing.T) {
 	f := newFixture()
 	f.runs[0].Attempt = 2
