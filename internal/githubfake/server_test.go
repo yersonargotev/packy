@@ -266,14 +266,14 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 		})
 	})
 	privateRegistration := catalogstore.Registration{Repository: mustRepository(t, private), Trust: catalogstore.AccessControlled{}}
-	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || release.AttestationVerified || release.Commit != commit || len(release.Assets) != 2 {
-		t.Fatalf("Latest() of the private catalog = %+v, %v", release, err)
+	if release, err := source.Release(context.Background(), privateRegistration, ""); err != nil || release.AttestationVerified || release.Commit != commit || len(release.Assets) != 2 {
+		t.Fatalf("Release() of the private catalog = %+v, %v", release, err)
 	}
 	privateRegistration.Trust = catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}
-	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || !release.AttestationVerified || release.Commit != commit {
-		t.Fatalf("Latest() of the private attested catalog = %+v, %v", release, err)
+	if release, err := source.Release(context.Background(), privateRegistration, ""); err != nil || !release.AttestationVerified || release.Commit != commit {
+		t.Fatalf("Release() of the private attested catalog = %+v, %v", release, err)
 	}
-	release, err := source.Latest(context.Background(), catalogstore.Official())
+	release, err := source.Release(context.Background(), catalogstore.Official(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,15 +284,15 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	if err := githubfake.WriteRepository(root, official, githubfake.Repository{AttestationWorkflow: "example/fork/.github/workflows/publish.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "attestation") {
-		t.Fatalf("Latest() with a foreign signer workflow = %v", err)
+	if _, err := source.Release(context.Background(), catalogstore.Official(), ""); err == nil || !strings.Contains(err.Error(), "attestation") {
+		t.Fatalf("Release() with a foreign signer workflow = %v", err)
 	}
 
 	if err := githubfake.WriteRepository(root, official, githubfake.Repository{ReleaseStatus: http.StatusInternalServerError}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Latest(context.Background(), catalogstore.Official()); err == nil || !strings.Contains(err.Error(), "500") {
-		t.Fatalf("Latest() with a failing releases/latest = %v", err)
+	if _, err := source.Release(context.Background(), catalogstore.Official(), ""); err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("Release() with a failing releases/latest = %v", err)
 	}
 }
 

@@ -22,7 +22,7 @@ type catalogSourceFixture struct {
 	err     error
 }
 
-func (s *catalogSourceFixture) Latest(context.Context, catalogstore.Registration) (catalogstore.Release, error) {
+func (s *catalogSourceFixture) Release(context.Context, catalogstore.Registration, string) (catalogstore.Release, error) {
 	s.calls++
 	return s.release, s.err
 }

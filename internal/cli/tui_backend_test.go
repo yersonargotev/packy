@@ -21,7 +21,7 @@ type registeredCatalogSources struct {
 	errs     map[string]error
 }
 
-func (s *registeredCatalogSources) Latest(_ context.Context, registration catalogstore.Registration) (catalogstore.Release, error) {
+func (s *registeredCatalogSources) Release(_ context.Context, registration catalogstore.Registration, _ string) (catalogstore.Release, error) {
 	repository := registration.Repository.String()
 	return s.releases[repository], s.errs[repository]
 }

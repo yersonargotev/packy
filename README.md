@@ -126,6 +126,7 @@ packy init
 packy catalog add <owner/repo> [--trust attested|access-controlled] [--workflow <path>]
 packy catalog list
 packy catalog refresh [<owner/repo>]
+packy catalog restore <owner/repo> <snapshot>
 packy catalog remove <owner/repo>
 packy doctor
 packy audit
@@ -153,6 +154,10 @@ fails if it cannot, so every new catalog is checked against the official Pack
 IDs. `packy catalog refresh` explicitly downloads and selects the newest
 compatible immutable snapshot of every registered catalog, or of one; ordinary
 inspection and lifecycle commands stay offline.
+`packy catalog restore <owner/repo> <snapshot>` downloads one exact snapshot
+again and restores its retained files when they changed on disk or are missing.
+It keeps the selection. A read of a changed retained snapshot, such as one that
+`--snapshot`, a receipt, or a project lock names, fails and names this command.
 `packy catalog remove` refuses while a workstation receipt in
 `~/.packy/packs.json`, an active personal project activation, or the lock of
 the Git project it runs in names the catalog, and keeps its retained snapshots.

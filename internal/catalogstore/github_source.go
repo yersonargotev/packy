@@ -50,7 +50,7 @@ type Credential func(context.Context) (githubauth.Token, error)
 // owns HTTP timeouts. Acquisition of an attested catalog fails closed when
 // verifier is nil or cannot verify the archive's build-provenance attestation.
 // Acquisition of an access-controlled catalog always calls credential. An
-// attested catalog calls it only after an anonymous read of its latest release
+// attested catalog calls it only after an anonymous read of the release
 // answers 404, as GitHub does for a private repository, and then reads its
 // release, assets, and attestations with the token. Only requests to
 // api.github.com carry the token. NewGitHubSource replaces the CheckRedirect
@@ -84,7 +84,7 @@ type gitHubSource struct {
 	credential Credential
 }
 
-func (source *gitHubSource) Latest(ctx context.Context, registration Registration) (Release, error) {
+func (source *gitHubSource) Release(ctx context.Context, registration Registration, commit string) (Release, error) {
 	repository := registration.Repository.String()
 	var token *githubauth.Token
 	switch registration.Trust.(type) {
@@ -118,19 +118,23 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 			Size   int64  `json:"size"`
 		} `json:"assets"`
 	}
-	latest := "https://api.github.com/repos/" + repository + "/releases/latest"
-	err := source.getJSON(ctx, latest, token, &wire, maxAPIResponseBytes)
+	endpoint, name := "/releases/latest", "latest catalog release"
+	if commit != "" {
+		endpoint, name = "/releases/tags/catalog-"+commit, "catalog release catalog-"+commit
+	}
+	address := "https://api.github.com/repos/" + repository + endpoint
+	err := source.getJSON(ctx, address, token, &wire, maxAPIResponseBytes)
 	var status *statusErr
 	if token == nil && errors.As(err, &status) && status.code == http.StatusNotFound {
 		found, tokenErr := source.token(ctx)
 		if tokenErr != nil {
-			return Release{}, fmt.Errorf("read latest catalog release of %s: %w; if the repository is private, %w", repository, err, tokenErr)
+			return Release{}, fmt.Errorf("read %s of %s: %w; if the repository is private, %w", name, repository, err, tokenErr)
 		}
 		token = &found
-		err = source.getJSON(ctx, latest, token, &wire, maxAPIResponseBytes)
+		err = source.getJSON(ctx, address, token, &wire, maxAPIResponseBytes)
 	}
 	if err != nil {
-		return Release{}, fmt.Errorf("read latest catalog release of %s: %w", repository, err)
+		return Release{}, fmt.Errorf("read %s of %s: %w", name, repository, err)
 	}
 	release := Release{
 		Repository: repository, Tag: wire.Tag, Commit: wire.Target, Publisher: wire.Author.Login,
