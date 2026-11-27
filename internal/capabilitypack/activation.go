@@ -1525,11 +1525,6 @@ func priorCombinedPack(plan ReconciliationPlan, requested Pack) Pack {
 }
 
 func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (planPreflight, error) {
-	freshCatalog, err := f.catalog.refreshed(ctx)
-	if err != nil {
-		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("catalog or manifest changed after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
-	}
-	f.catalog = freshCatalog
 	pack, adapter, state, err := f.activationInputsForOperation(ctx, ActivationRequest{PackID: plan.pack.ID, Surface: plan.surface, Selection: plan.selection}, plan.operation)
 	if err != nil {
 		return planPreflight{}, err
