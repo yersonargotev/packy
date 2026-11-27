@@ -365,8 +365,10 @@ func (s *Store) Providing(packID, snapshotID string) (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("catalog %s: %w", registration.Repository, err)
 		}
 		if err != nil {
-			if _, statErr := os.Lstat(s.snapshot(registration.Repository, snapshotID)); unreadable == nil && statErr == nil {
-				unreadable = err
+			if snapshotID != "" && unreadable == nil {
+				if _, statErr := os.Lstat(s.snapshot(registration.Repository, snapshotID)); statErr == nil {
+					unreadable = err
+				}
 			}
 			continue
 		}
@@ -475,8 +477,8 @@ const (
 // retain validates the release of commit, or the latest release when commit
 // is empty, into the retained snapshots of a catalog without selecting it.
 // Only the latest release is checked against the Pack IDs of other catalogs,
-// because only it can become a new selection. A release of an exact commit
-// restores a snapshot that something already references.
+// because only it can become a new selection, and ADR 0046 checks Pack IDs
+// only against selections.
 func (s *Store) retain(ctx context.Context, registration Registration, commit string) (Snapshot, placement, error) {
 	if s.source == nil {
 		return Snapshot{}, kept, errors.New("catalog Source is required")

@@ -281,8 +281,6 @@ func newCatalogRestoreCommand(opts Options, resolver *workstation.Resolver) *cob
 	}
 }
 
-// registeredIndex finds a catalog among the registrations, or explains how to
-// register it.
 func registeredIndex(registrations []catalogstore.Registration, repository catalogstore.Repository) (int, error) {
 	index := slices.IndexFunc(registrations, func(registration catalogstore.Registration) bool { return registration.Repository == repository })
 	if index < 0 {

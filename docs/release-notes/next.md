@@ -24,17 +24,22 @@ The previous stable release is `v0.2.37`.
   GitHub access control to a private repository instead. `packy catalog list`,
   the new `CATALOG` column of `packy list`, and the TUI show it as weaker trust.
   See [private catalogs](https://github.com/yersonargotev/packy/blob/main/docs/private-catalogs.md).
-- Packy reads a GitHub token only when `packy catalog add` or
-  `packy catalog refresh` reaches a private catalog. It takes the first of
-  `GH_TOKEN`, `GITHUB_TOKEN`, and `gh auth token`, sends it only to
-  `https://api.github.com`, and never writes it to disk. Installation, status,
-  `packy get skill`, and `packy export` read retained snapshots and need no
-  token.
+- Packy reads a GitHub token only when `packy catalog add`,
+  `packy catalog refresh`, or `packy catalog restore` reaches a private
+  catalog. It takes the first of `GH_TOKEN`, `GITHUB_TOKEN`, and
+  `gh auth token`, sends it only to `https://api.github.com`, and never writes
+  it to disk. Installation, status, `packy get skill`, and `packy export` read
+  retained snapshots and need no token.
 - Lookups, status, installation, update, and project locks use the catalog that
   provides each Pack. Receipts in `~/.packy/packs.json` and `packy.lock.json`
   record `catalog_repository`, and plugin `packy-provenance.json` records the
   catalog repository.
 - `packy catalog refresh` restores a tampered retained Catalog Snapshot.
+- `packy catalog restore <owner/repo> <snapshot>` downloads one exact Catalog
+  Snapshot again and restores its retained files when they changed or are
+  missing, without changing the selection. A command that needs a changed older
+  snapshot, through `--snapshot`, a receipt, or a project lock, names this
+  command.
 - `packy catalog add` errors lead with the command and the cause, and catalog
   refresh errors are shorter.
 - The TUI catalog panel lists every registered catalog with its repository, trust

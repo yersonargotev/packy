@@ -7,7 +7,7 @@ Users acquire and select the latest Catalog Snapshot of every registered catalog
 - Refresh downloads, verifies, retains, and selects the latest snapshot of each catalog. [Catalog registration](catalog-registration.md) covers several catalogs.
 - A refused refresh keeps the previous selection.
 - When the selected snapshot's files change on disk, reads fail with its digest mismatch and name `packy init` or `packy catalog refresh <owner/repo>`, and `packy catalog restore <owner/repo> <commit>`. If that commit is still the latest Catalog Publication, refresh restores it from the verified release; otherwise refresh selects the newer snapshot.
-- When a retained snapshot of an older commit changes on disk, reads that name it through `--snapshot`, a receipt, or a project lock fail and name `packy catalog restore <owner/repo> <commit>`. Restore downloads that exact release, verifies it, and replaces the retained files without changing the selection.
+- When a retained snapshot of an older commit changes on disk, commands that need it through `--snapshot`, a receipt, or a project lock fail and name `packy catalog restore <owner/repo> <commit>`. Restore downloads that exact release, verifies it, and replaces the retained files without changing the selection.
 - When the Pack ID check of a refresh cannot read another catalog's selected index, the error names `packy catalog restore` for that catalog.
 - A store that has only the earlier `catalog/selected.json` layout fails reads and names `docs/catalog-adoption.md`.
 

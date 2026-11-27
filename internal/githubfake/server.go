@@ -203,7 +203,6 @@ func (root fixtureRoot) find(w http.ResponseWriter, r *http.Request) (fixture, b
 	return result, true
 }
 
-// published is one release with the assets of its directory.
 type published struct {
 	Release
 	directory string

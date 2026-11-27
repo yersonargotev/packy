@@ -156,8 +156,9 @@ compatible immutable snapshot of every registered catalog, or of one; ordinary
 inspection and lifecycle commands stay offline.
 `packy catalog restore <owner/repo> <snapshot>` downloads one exact snapshot
 again and restores its retained files when they changed on disk or are missing.
-It keeps the selection. A read of a changed retained snapshot, such as one that
-`--snapshot`, a receipt, or a project lock names, fails and names this command.
+It keeps the selection. A command that needs a changed retained snapshot, such
+as one that `--snapshot`, a receipt, or a project lock names, fails and names
+this command.
 `packy catalog remove` refuses while a workstation receipt in
 `~/.packy/packs.json`, an active personal project activation, or the lock of
 the Git project it runs in names the catalog, and keeps its retained snapshots.
