@@ -7,29 +7,20 @@ import (
 	"github.com/yersonargotev/packy/internal/skillaccess"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/yersonargotev/packy/internal/cataloglayout"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestIssue861SkillDependenciesExecutable(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./cmd/packy")
-	build.Dir, build.Env = filepath.Join("..", ".."), testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v %s", err, out)
-	}
-	// Both focused slices consume the same executable; the parent owns its
-	// lifetime while each child keeps independent catalog and workstation state.
+	binary := builtPackyExecutable(t)
+	// Both focused slices consume the same executable while each child keeps
+	// independent catalog and workstation state.
 	t.Run("procedures", func(t *testing.T) { checkIssue861SkillDependencies(t, binary) })
 	t.Run("invalid dependencies", func(t *testing.T) { checkIssue861InvalidDependencies(t, binary) })
 }

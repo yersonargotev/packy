@@ -10,7 +10,7 @@ import (
 )
 
 func TestIssue938TamperedOfficialSnapshotIsRestoredByTheHintedCommand(t *testing.T) {
-	transport := buildIssue929Transport(t, t.TempDir())
+	transport := builtIssue929Transport(t)
 	issue929Dists.root = t.TempDir()
 	issue929Dists.built.Clear()
 	commit := strings.Repeat("a", 40)

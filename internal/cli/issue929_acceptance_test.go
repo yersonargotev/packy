@@ -31,7 +31,7 @@ import (
 const issue929OfficialCatalog = "yersonargotev/packy-catalog"
 
 func TestIssue929(t *testing.T) {
-	transport := buildIssue929Transport(t, t.TempDir())
+	transport := builtIssue929Transport(t)
 	issue929Dists.root = t.TempDir()
 	issue929Dists.built.Clear()
 	for _, scenario := range []struct {
@@ -477,20 +477,6 @@ func rewriteIssue929Manifest(t *testing.T, dist, packID string, mutate func(stri
 	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(catalogFixtureDigest(output.Bytes())+"  catalog-snapshot.tar.gz\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func buildIssue929Transport(t *testing.T, directory string) string {
-	t.Helper()
-	binary := filepath.Join(directory, "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-ldflags=-X github.com/yersonargotev/packy/internal/version.SourceCommit="+strings.Repeat("2", 40), "-o", binary, "./internal/cli/testdata/packytransport")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build transport executable: %v\n%s", err, out)
-	}
-	return binary
 }
 
 func publishIssue929Fixture(t *testing.T, transport, fixtures, repository, commit string, packs ...githubfake.Pack) {
