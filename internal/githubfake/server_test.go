@@ -23,13 +23,15 @@ const (
 	private  = "example/private-catalog"
 )
 
-var commit = strings.Repeat("c", 40)
+var (
+	commit  = strings.Repeat("c", 40)
+	archive = []byte("archive bytes\n")
+)
 
 func startFake(t *testing.T) (string, *http.Client) {
 	t.Helper()
 	root := t.TempDir()
 	dist := t.TempDir()
-	archive := []byte("archive bytes\n")
 	sum := sha256.Sum256(archive)
 	if err := os.WriteFile(filepath.Join(dist, "catalog-snapshot.tar.gz"), archive, 0o644); err != nil {
 		t.Fatal(err)
@@ -137,10 +139,12 @@ func TestHandlerAnswersUnknownPathsWith404(t *testing.T) {
 
 func TestHandlerHidesPrivateFixturesWithoutTheirToken(t *testing.T) {
 	_, client := startFake(t)
+	sum := sha256.Sum256(archive)
 	for _, url := range []string{
 		"https://api.github.com/repos/" + private,
 		"https://api.github.com/repos/" + private + "/releases/latest",
 		"https://api.github.com/repos/" + private + "/releases/assets/1",
+		"https://api.github.com/repos/" + private + "/attestations/sha256:" + hex.EncodeToString(sum[:]),
 	} {
 		if status, _ := get(t, client, url, ""); status != http.StatusNotFound {
 			t.Errorf("GET %s without a token = %d, want 404", url, status)
@@ -195,6 +199,10 @@ func TestProductionGitHubSourceAcquiresThroughTheFake(t *testing.T) {
 	privateRegistration := catalogstore.Registration{Repository: mustRepository(t, private), Trust: catalogstore.AccessControlled{}}
 	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || release.AttestationVerified || release.Commit != commit || len(release.Assets) != 2 {
 		t.Fatalf("Latest() of the private catalog = %+v, %v", release, err)
+	}
+	privateRegistration.Trust = catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}
+	if release, err := source.Latest(context.Background(), privateRegistration); err != nil || !release.AttestationVerified || release.Commit != commit {
+		t.Fatalf("Latest() of the private attested catalog = %+v, %v", release, err)
 	}
 	release, err := source.Latest(context.Background(), catalogstore.Official())
 	if err != nil {

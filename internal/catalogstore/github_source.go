@@ -43,14 +43,17 @@ func (e *AttestationRejectedError) Error() string {
 
 func (e *AttestationRejectedError) Unwrap() error { return e.Err }
 
-// Credential returns the GitHub token that reads an access-controlled catalog.
+// Credential returns the GitHub token that reads a private catalog.
 type Credential func(context.Context) (githubauth.Token, error)
 
 // NewGitHubSource constructs the production GitHub release source. The caller
 // owns HTTP timeouts. Acquisition of an attested catalog fails closed when
 // verifier is nil or cannot verify the archive's build-provenance attestation.
-// Only acquisition of an access-controlled catalog calls credential, and only
-// requests to api.github.com carry its token.
+// Acquisition of an access-controlled catalog always calls credential. An
+// attested catalog calls it only after an anonymous read of its latest release
+// answers 404, as GitHub does for a private repository, and then reads its
+// release, assets, and attestations with the token. Only requests to
+// api.github.com carry the token.
 func NewGitHubSource(client *http.Client, verifier AttestationVerifier, credential Credential) Source {
 	if client == nil {
 		client = http.DefaultClient
@@ -113,11 +116,18 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 			Size   int64  `json:"size"`
 		} `json:"assets"`
 	}
-	if err := source.getJSON(ctx, "https://api.github.com/repos/"+repository+"/releases/latest", token, &wire, maxAPIResponseBytes); err != nil {
-		var status *statusErr
-		if token == nil && errors.As(err, &status) && status.code == http.StatusNotFound {
-			err = fmt.Errorf("%w; if the repository is private, it needs --trust access-controlled and a GitHub token, as %s explains", err, privateCatalogGuide)
+	latest := "https://api.github.com/repos/" + repository + "/releases/latest"
+	err := source.getJSON(ctx, latest, token, &wire, maxAPIResponseBytes)
+	var status *statusErr
+	if token == nil && errors.As(err, &status) && status.code == http.StatusNotFound {
+		found, tokenErr := source.token(ctx)
+		if tokenErr != nil {
+			return Release{}, fmt.Errorf("read latest catalog release of %s: %w; if the repository is private, %w", repository, err, tokenErr)
 		}
+		token = &found
+		err = source.getJSON(ctx, latest, token, &wire, maxAPIResponseBytes)
+	}
+	if err != nil {
 		return Release{}, fmt.Errorf("read latest catalog release of %s: %w", repository, err)
 	}
 	release := Release{
@@ -166,13 +176,21 @@ func (source *gitHubSource) Latest(ctx context.Context, registration Registratio
 	return release, nil
 }
 
-func (source *gitHubSource) privateAccess(ctx context.Context, repository string) (githubauth.Token, error) {
+func (source *gitHubSource) token(ctx context.Context) (githubauth.Token, error) {
 	if source.credential == nil {
-		return githubauth.Token{}, errors.New("GitHub catalog Source requires a credential for access-controlled catalogs")
+		return githubauth.Token{}, errors.New("GitHub catalog Source requires a credential for private catalogs")
 	}
 	token, err := source.credential(ctx)
 	if err != nil {
-		return githubauth.Token{}, fmt.Errorf("an access-controlled catalog needs a GitHub token that can read its repository: %w; see %s", err, privateCatalogGuide)
+		return githubauth.Token{}, fmt.Errorf("a private catalog needs a GitHub token that can read its repository: %w; see %s", err, privateCatalogGuide)
+	}
+	return token, nil
+}
+
+func (source *gitHubSource) privateAccess(ctx context.Context, repository string) (githubauth.Token, error) {
+	token, err := source.token(ctx)
+	if err != nil {
+		return githubauth.Token{}, err
 	}
 	var visibility struct {
 		Private *bool `json:"private"`

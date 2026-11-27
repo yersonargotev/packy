@@ -139,7 +139,7 @@ func TestGitHubSourceExplainsRefusedPrivateAccess(t *testing.T) {
 		prepare func(*fakeGitHub)
 		want    []string
 	}{
-		{"missing token", true, func(g *fakeGitHub) { g.credentialErr = githubauth.ErrMissing }, []string{"an access-controlled catalog needs a GitHub token", "GH_TOKEN or GITHUB_TOKEN", "gh auth login", privateCatalogGuide}},
+		{"missing token", true, func(g *fakeGitHub) { g.credentialErr = githubauth.ErrMissing }, []string{"a private catalog needs a GitHub token", "GH_TOKEN or GITHUB_TOKEN", "gh auth login", privateCatalogGuide}},
 		{"rejected token", true, func(g *fakeGitHub) { g.status = http.StatusUnauthorized }, []string{"401", "GitHub rejected the token from GH_TOKEN, so replace or unset GH_TOKEN", privateCatalogGuide}},
 		{"insufficient token", true, func(g *fakeGitHub) { g.status = http.StatusNotFound }, []string{"404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
 		{"contents hidden from the token", true, func(g *fakeGitHub) { g.releaseStatus = http.StatusNotFound }, []string{"read latest catalog release", "404", "the token from GH_TOKEN needs read access", privateCatalogGuide}},
@@ -217,7 +217,7 @@ func TestGitHubSourceFollowsAnAuthenticatedRedirectOnlyWithinTheAPI(t *testing.T
 func TestGitHubSourceWithoutACredentialRefusesAccessControlledCatalogs(t *testing.T) {
 	github := newFakeGitHub(t, "team/private", true)
 	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, nil).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: AccessControlled{}})
-	if err == nil || !strings.Contains(err.Error(), "requires a credential for access-controlled catalogs") || len(github.requests) != 0 {
+	if err == nil || !strings.Contains(err.Error(), "requires a credential for private catalogs") || len(github.requests) != 0 {
 		t.Fatalf("Latest() error = %v after %d requests", err, len(github.requests))
 	}
 }
@@ -230,11 +230,60 @@ func TestGitHubSourceRefusesAnUnknownTrustPolicy(t *testing.T) {
 	}
 }
 
-func TestGitHubSourcePointsAnAnonymous404ToPrivateCatalogs(t *testing.T) {
+func TestGitHubSourceReadsAPrivateAttestedCatalogWithTheToken(t *testing.T) {
 	github := newFakeGitHub(t, "team/private", true)
-	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, github.credential).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: Attested{Workflow: DefaultWorkflow}})
-	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "if the repository is private, it needs --trust access-controlled") {
-		t.Fatalf("Latest() error = %v", err)
+	verifier := &recordingVerifier{}
+	release, err := NewGitHubSource(github.client(), verifier, github.credential).Latest(context.Background(), Registration{Repository: mustRepository(t, "team/private"), Trust: Attested{Workflow: DefaultWorkflow}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !release.AttestationVerified || github.credentialCalls != 1 || verifier.digest != digest(github.archive) || !slices.Equal(verifier.bundles, []string{fakeBundle}) {
+		t.Fatalf("release/verifier = %#v / %#v after %d credential calls", release, verifier, github.credentialCalls)
+	}
+	api := "https://api.github.com/repos/team/private"
+	if first := github.requests[0]; first.url != api+"/releases/latest" || first.authorization != "" {
+		t.Fatalf("first request = %#v, want an anonymous read of the latest release", first)
+	}
+	attestations := 0
+	for _, request := range github.requests[1:] {
+		switch {
+		case request.url == api:
+			t.Errorf("an attested catalog read the repository visibility")
+		case strings.HasPrefix(request.url, "https://api.github.com/"):
+			if request.authorization != "Bearer "+testToken {
+				t.Errorf("API request %s carried authorization %q", request.url, request.authorization)
+			}
+			if strings.HasPrefix(request.url, api+"/attestations/sha256:") {
+				attestations++
+			}
+		case request.authorization != "":
+			t.Errorf("request %s off the API carried the token", request.url)
+		}
+	}
+	if attestations != 1 {
+		t.Fatalf("the attestations API received %d authorized requests, want 1", attestations)
+	}
+}
+
+func TestGitHubSourceExplainsARefusedPrivateAttestedCatalog(t *testing.T) {
+	registration := Registration{Repository: mustRepository(t, "team/private"), Trust: Attested{Workflow: DefaultWorkflow}}
+	github := newFakeGitHub(t, "team/private", true)
+	github.credentialErr = githubauth.ErrMissing
+	_, err := NewGitHubSource(github.client(), &recordingVerifier{}, github.credential).Latest(context.Background(), registration)
+	if err == nil || len(github.requests) != 1 || strings.Count(err.Error(), privateCatalogGuide) != 1 {
+		t.Fatalf("Latest() without a token = %v after %d requests", err, len(github.requests))
+	}
+	for _, want := range []string{"read latest catalog release of team/private", "404", "if the repository is private, a private catalog needs a GitHub token", "gh auth login"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Latest() without a token = %v, want %q", err, want)
+		}
+	}
+
+	github = newFakeGitHub(t, "team/private", true)
+	github.status = http.StatusNotFound
+	_, err = NewGitHubSource(github.client(), &recordingVerifier{}, github.credential).Latest(context.Background(), registration)
+	if err == nil || !strings.Contains(err.Error(), "the token from GH_TOKEN needs read access") || strings.Contains(err.Error(), testToken) {
+		t.Fatalf("Latest() with an insufficient token = %v", err)
 	}
 }
 
