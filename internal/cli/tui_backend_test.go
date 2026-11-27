@@ -37,32 +37,8 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 		},
 		errs: map[string]error{},
 	}
-	opts := newSyntheticCLIFixture(t, &fakeTerminal{}, officialPack).options
-	env := MapEnv{}
-	for key, value := range opts.Env.(MapEnv) {
-		env[key] = value
-	}
-	opts.catalogRootOverride, opts.Env, opts.CatalogSource = "", env, source
-	opts = opts.withDefaults()
-	resolver := newWorkstationResolver(opts)
-	backend := newTUIBackend(opts, resolver)
+	_, backend := registeredCatalogsBackend(t, source, officialPack)
 	ctx := context.Background()
-	if err := backend.Initialize(ctx, func(string) {}); err != nil {
-		t.Fatal(err)
-	}
-	store, _, err := registryStore(opts, resolver)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for repository, trust := range map[string]catalogstore.TrustPolicy{acme: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}, private: catalogstore.AccessControlled{}} {
-		parsed, err := catalogstore.ParseRepository(repository)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := store.Register(ctx, catalogstore.Registration{Repository: parsed, Trust: trust}); err != nil {
-			t.Fatal(err)
-		}
-	}
 
 	catalogs := func() []tui.Catalog {
 		t.Helper()
@@ -86,7 +62,7 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 	if got, want := catalogs(), []tui.Catalog{
 		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("a", 40), Packs: 1},
 		{Repository: acme, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("c", 40), Packs: 1},
-		{Repository: private, Trust: "access-controlled", SnapshotID: strings.Repeat("e", 40), Packs: 1},
+		{Repository: private, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("e", 40), Packs: 1},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() catalogs = %#v, want %#v", got, want)
 	}
@@ -95,26 +71,135 @@ func TestTUIBackendListsEveryCatalogAndRefreshesEachIndependently(t *testing.T) 
 	source.releases[private] = catalogRepositoryReleaseFixture(t, private, strings.Repeat("f", 40), privatePack)
 	source.errs[acme] = errors.New("latest release of acme/packs returned HTTP 500")
 	var progress []string
-	refreshes, err := backend.RefreshCatalog(ctx, func(message string) { progress = append(progress, message) })
+	refreshes, err := backend.RefreshCatalogs(ctx, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"Acquiring the latest Catalog Snapshot of " + official, "Acquiring the latest Catalog Snapshot of " + acme, "Acquiring the latest Catalog Snapshot of " + private}; !reflect.DeepEqual(progress, want) {
-		t.Fatalf("RefreshCatalog() progress = %q, want %q", progress, want)
+		t.Fatalf("RefreshCatalogs() progress = %q, want %q", progress, want)
 	}
 	if len(refreshes) != 3 || refreshes[0] != (tui.CatalogRefresh{Repository: official, SnapshotID: strings.Repeat("b", 40)}) ||
 		refreshes[1].Repository != acme || refreshes[1].SnapshotID != strings.Repeat("c", 40) || refreshes[1].Err == nil || !strings.Contains(refreshes[1].Err.Error(), "HTTP 500") ||
 		refreshes[2] != (tui.CatalogRefresh{Repository: private, SnapshotID: strings.Repeat("f", 40)}) {
-		t.Fatalf("RefreshCatalog() = %#v", refreshes)
+		t.Fatalf("RefreshCatalogs() = %#v", refreshes)
 	}
 	if got, want := catalogs(), []tui.Catalog{
 		{Repository: official, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("b", 40), Packs: 1},
 		{Repository: acme, Trust: "attested", Workflow: catalogstore.DefaultWorkflow, SnapshotID: strings.Repeat("c", 40), Packs: 1},
-		{Repository: private, Trust: "access-controlled", SnapshotID: strings.Repeat("f", 40), Packs: 1},
+		{Repository: private, Trust: "access-controlled", WeakerTrust: true, SnapshotID: strings.Repeat("f", 40), Packs: 1},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() after a partial refresh = %#v, want %#v", got, want)
 	}
 }
+
+func registeredCatalogsBackend(t *testing.T, source catalogstore.Source, officialPack testsupport.Fixture) (Options, *tuiBackend) {
+	t.Helper()
+	opts := newSyntheticCLIFixture(t, &fakeTerminal{}, officialPack).options
+	env := MapEnv{}
+	for key, value := range opts.Env.(MapEnv) {
+		env[key] = value
+	}
+	opts.catalogRootOverride, opts.Env, opts.CatalogSource = "", env, source
+	opts = opts.withDefaults()
+	resolver := newWorkstationResolver(opts)
+	backend := newTUIBackend(opts, resolver)
+	ctx := context.Background()
+	if err := backend.Initialize(ctx, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	store, _, err := registryStore(opts, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, registration := range []struct {
+		repository string
+		trust      catalogstore.TrustPolicy
+	}{{"acme/packs", catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}, {"zeta/private", catalogstore.AccessControlled{}}} {
+		parsed, err := catalogstore.ParseRepository(registration.repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Register(ctx, catalogstore.Registration{Repository: parsed, Trust: registration.trust}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return opts, backend
+}
+
+func TestCatalogRefreshReportsTheSameOutcomesInCLIAndTUI(t *testing.T) {
+	const official, acme, private = "yersonargotev/packy-catalog", "acme/packs", "zeta/private"
+	officialPack, privatePack := testsupport.SkillVariants("refresh-official"), testsupport.SkillVariants("refresh-private")
+	source := &registeredCatalogSources{
+		releases: map[string]catalogstore.Release{
+			official: catalogReleaseFixture(t, strings.Repeat("a", 40), officialPack),
+			acme:     catalogRepositoryReleaseFixture(t, acme, strings.Repeat("c", 40), testsupport.SkillVariants("refresh-acme")),
+			private:  catalogRepositoryReleaseFixture(t, private, strings.Repeat("e", 40), privatePack),
+		},
+		errs: map[string]error{},
+	}
+	opts, backend := registeredCatalogsBackend(t, source, officialPack)
+	refresh := func(wantErr, want, wantJSON string, wantTUI []string) {
+		t.Helper()
+		out, err := executeCommand(t, NewRootCommand(opts), "catalog", "refresh")
+		if err == nil || err.Error() != wantErr || out != want {
+			t.Fatalf("catalog refresh = %v\n%s\nwant\n%s", err, out, want)
+		}
+		out, err = executeCommand(t, NewRootCommand(opts), "catalog", "refresh", "--json")
+		if err == nil || err.Error() != wantErr || out != wantJSON+"\n" {
+			t.Fatalf("catalog refresh --json = %v\n%s\nwant\n%s", err, out, wantJSON)
+		}
+		refreshes, err := backend.RefreshCatalogs(context.Background(), func(string) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]string, 0, len(refreshes))
+		for _, refresh := range refreshes {
+			outcome := refresh.Repository + " " + refresh.SnapshotID
+			if refresh.Err != nil {
+				outcome += " " + refresh.Err.Error()
+			}
+			got = append(got, outcome)
+		}
+		if !slices.Equal(got, wantTUI) {
+			t.Fatalf("RefreshCatalogs() = %q, want %q", got, wantTUI)
+		}
+	}
+
+	b, c, f := strings.Repeat("b", 40), strings.Repeat("c", 40), strings.Repeat("f", 40)
+	source.releases[official] = catalogReleaseFixture(t, b, officialPack)
+	source.releases[private] = catalogRepositoryReleaseFixture(t, private, f, privatePack)
+	source.errs[acme] = errors.New("latest release of acme/packs returned HTTP 500")
+	acmeErr := "latest release of acme/packs returned HTTP 500"
+	refresh("1 of 3 catalogs failed to refresh and keep their previous Catalog Snapshot",
+		"packy catalog refresh: selected Catalog Snapshot "+b+" of "+official+"\n"+
+			"packy catalog refresh: acme/packs failed and keeps Catalog Snapshot "+c+": "+acmeErr+"\n"+
+			"packy catalog refresh: selected Catalog Snapshot "+f+" of "+private+"\n",
+		`{"schema_version":1,"report":"catalog-refresh","catalogs":[`+
+			`{"repository":"`+official+`","result":"selected","snapshot_id":"`+b+`"},`+
+			`{"repository":"acme/packs","result":"failed","snapshot_id":"`+c+`","error":"`+acmeErr+`"},`+
+			`{"repository":"`+private+`","result":"selected","snapshot_id":"`+f+`"}]}`,
+		[]string{official + " " + b, acme + " " + c + " " + acmeErr, private + " " + f},
+	)
+
+	source.errs[private] = errors.New("latest release of zeta/private returned HTTP 404")
+	if err := os.WriteFile(filepath.Join(opts.Env.(MapEnv)["HOME"], ".local", "share", "packy", "catalog", "v2", "zeta", "private", "selected.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := "selected Catalog Snapshot of zeta/private has invalid identity"
+	officialErr := "check Pack IDs against catalog zeta/private: " + unreadable
+	privateErr := "latest release of zeta/private returned HTTP 404; the previous selection is unreadable: " + unreadable
+	refresh("3 of 3 catalogs failed to refresh and keep their previous Catalog Snapshot",
+		"packy catalog refresh: "+official+" failed and keeps Catalog Snapshot "+b+": "+officialErr+"\n"+
+			"packy catalog refresh: acme/packs failed and keeps Catalog Snapshot "+c+": "+acmeErr+"\n"+
+			"packy catalog refresh: zeta/private failed: "+privateErr+"\n",
+		`{"schema_version":1,"report":"catalog-refresh","catalogs":[`+
+			`{"repository":"`+official+`","result":"failed","snapshot_id":"`+b+`","error":"`+officialErr+`"},`+
+			`{"repository":"acme/packs","result":"failed","snapshot_id":"`+c+`","error":"`+acmeErr+`"},`+
+			`{"repository":"`+private+`","result":"failed","snapshot_id":null,"error":"`+privateErr+`"}]}`,
+		[]string{official + " " + b + " " + officialErr, acme + " " + c + " " + acmeErr, private + "  " + privateErr},
+	)
+}
+
 func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 	details := []capabilitypack.CatalogDetail{{
 		Pack: capabilitypack.Pack{

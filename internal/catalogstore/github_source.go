@@ -53,7 +53,8 @@ type Credential func(context.Context) (githubauth.Token, error)
 // attested catalog calls it only after an anonymous read of its latest release
 // answers 404, as GitHub does for a private repository, and then reads its
 // release, assets, and attestations with the token. Only requests to
-// api.github.com carry the token.
+// api.github.com carry the token. NewGitHubSource replaces the CheckRedirect
+// of client with one that enforces that rule.
 func NewGitHubSource(client *http.Client, verifier AttestationVerifier, credential Credential) Source {
 	if client == nil {
 		client = http.DefaultClient
@@ -65,7 +66,8 @@ func NewGitHubSource(client *http.Client, verifier AttestationVerifier, credenti
 
 // keepTokenOnAPI refuses a redirect of a request that carries the token unless
 // it stays on https://api.github.com, because http.Client keeps Authorization
-// on a downgrade to http and on a subdomain.
+// on a downgrade to http and on a subdomain. It repeats the 10-redirect limit
+// of http.Client, because net/http does not export its default policy.
 func keepTokenOnAPI(request *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return errors.New("stopped after 10 redirects")

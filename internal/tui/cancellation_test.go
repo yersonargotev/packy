@@ -30,7 +30,7 @@ func (b *blockingLifecycleBackend) Initialize(ctx context.Context, progress func
 	return ctx.Err()
 }
 
-func (b *blockingLifecycleBackend) RefreshCatalog(ctx context.Context, progress func(string)) ([]CatalogRefresh, error) {
+func (b *blockingLifecycleBackend) RefreshCatalogs(ctx context.Context, progress func(string)) ([]CatalogRefresh, error) {
 	return nil, b.Initialize(ctx, progress)
 }
 
@@ -58,7 +58,7 @@ func (b *cancellationBackend) Load(ctx context.Context) (Dashboard, error) {
 
 func (*cancellationBackend) Initialize(context.Context, func(string)) error { return nil }
 
-func (*cancellationBackend) RefreshCatalog(context.Context, func(string)) ([]CatalogRefresh, error) {
+func (*cancellationBackend) RefreshCatalogs(context.Context, func(string)) ([]CatalogRefresh, error) {
 	return nil, nil
 }
 

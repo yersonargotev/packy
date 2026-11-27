@@ -290,13 +290,7 @@ func (r issue823ClaudeRunner) Run(_ context.Context, command claudecode.Command)
 }
 
 func TestIssue823BuiltCLIConsumesAllKindVariantSnapshot(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "packy")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/packy")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build CLI: %v\n%s", err, output)
-	}
+	binary := builtPackyExecutable(t)
 	for _, surface := range []string{"agents", "claude"} {
 		t.Run(surface, func(t *testing.T) {
 			environment := testprocess.Env(t)

@@ -128,6 +128,42 @@ func (s *Store) selectLatest(ctx context.Context, repository Repository) (Snapsh
 	return snapshot, nil
 }
 
+// Refresh is the outcome of refreshing one registered catalog. SnapshotID
+// names the selection after the refresh. A failed refresh keeps the previous
+// selection. SnapshotID is empty when the catalog had none or when Err reports
+// it unreadable.
+type Refresh struct {
+	Repository Repository
+	SnapshotID string
+	Err        error
+}
+
+// RefreshCatalogs acquires and selects the latest Catalog Snapshot of each
+// given registered catalog in order. A failed catalog keeps its previous selection
+// and does not stop the others. acquiring runs before each acquisition and
+// refreshed after it. RefreshCatalogs stops at the first error from refreshed.
+func (s *Store) RefreshCatalogs(ctx context.Context, registrations []Registration, acquiring func(Repository), refreshed func(Refresh) error) error {
+	for _, registration := range registrations {
+		acquiring(registration.Repository)
+		refresh := Refresh{Repository: registration.Repository}
+		snapshot, err := s.AcquireLatest(ctx, registration.Repository)
+		if err == nil {
+			refresh.SnapshotID = snapshot.ID
+		} else {
+			refresh.Err = err
+			previous, selectionErr := s.SelectedID(registration.Repository)
+			if selectionErr != nil {
+				refresh.Err = fmt.Errorf("%w; the previous selection is unreadable: %v", err, selectionErr)
+			}
+			refresh.SnapshotID = previous
+		}
+		if err := refreshed(refresh); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Register acquires, validates, and selects the initial snapshot of a new
 // catalog, then records its registration. When the official catalog has no
 // selection, Register first selects its latest snapshot, so the new catalog's
@@ -154,10 +190,10 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 	}
 	if _, err := s.readSelection(Official().Repository); errors.Is(err, fs.ErrNotExist) {
 		if _, err := s.selectLatest(ctx, Official().Repository); err != nil {
-			return Snapshot{}, fmt.Errorf("register catalog %s: select the official catalog first: %w", registration.Repository, err)
+			return Snapshot{}, fmt.Errorf("select the official catalog first: %w", err)
 		}
 	} else if err != nil {
-		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
+		return Snapshot{}, err
 	}
 	_, statErr := os.Lstat(directory)
 	fresh := errors.Is(statErr, fs.ErrNotExist)
@@ -178,7 +214,7 @@ func (s *Store) Register(ctx context.Context, registration Registration) (Snapsh
 				_ = os.RemoveAll(snapshot.Root)
 			}
 		}
-		return Snapshot{}, fmt.Errorf("register catalog %s: %w", registration.Repository, err)
+		return Snapshot{}, err
 	}
 	return snapshot, nil
 }
@@ -249,6 +285,20 @@ func (s *Store) Selected(repository Repository) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("selected Catalog Snapshot %s of %s: %w", id, repository, err)
 	}
 	return snapshotFrom(index, "catalog-"+id, root), nil
+}
+
+// SelectedID returns the ID of the selected Catalog Snapshot of a registered
+// catalog, or an empty ID when the catalog has never selected one. Any other
+// unreadable selection fails.
+func (s *Store) SelectedID(repository Repository) (string, error) {
+	snapshot, err := s.Selected(repository)
+	if errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrEarlierLayout) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return snapshot.ID, nil
 }
 
 // Resolve returns one retained snapshot root of a registered catalog without
@@ -393,7 +443,7 @@ func (s *Store) retainLatest(ctx context.Context, registration Registration) (Sn
 	repository := registration.Repository
 	release, err := s.source.Latest(ctx, registration)
 	if err != nil {
-		return Snapshot{}, false, fmt.Errorf("acquire latest release of catalog %s: %w", repository, err)
+		return Snapshot{}, false, err
 	}
 	assets, err := validateRelease(registration, release)
 	if err != nil {

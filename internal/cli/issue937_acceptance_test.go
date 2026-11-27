@@ -20,7 +20,7 @@ const (
 var issue937Snapshot = strings.Repeat("f", 40)
 
 func TestIssue937(t *testing.T) {
-	transport := buildIssue929Transport(t, t.TempDir())
+	transport := builtIssue929Transport(t)
 	issue929Dists.root = t.TempDir()
 	issue929Dists.built.Clear()
 	for _, scenario := range []struct {
@@ -134,11 +134,11 @@ func testIssue937RegisterPrivateAttestedCatalog(t *testing.T, transport string) 
 
 func testIssue937MissingToken(t *testing.T, transport string) {
 	_, environment, _ := startIssue937(t, transport, githubfake.Repository{})
-	assertIssue929RefusedAdd(t, transport, environment, []string{"catalog", "add", issue937Private, "--trust", "attested"}, "register catalog team/attested-packs", "404", "a private catalog needs a GitHub token", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
+	assertIssue929RefusedAdd(t, transport, environment, []string{"catalog", "add", issue937Private, "--trust", "attested"}, "packy catalog add: read latest catalog release of team/attested-packs: GitHub returned 404 Not Found; if the repository is private, a private catalog needs a GitHub token", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
 }
 
 func testIssue937ForeignWorkflow(t *testing.T, transport string) {
 	_, environment, _ := startIssue937(t, transport, githubfake.Repository{AttestationWorkflow: issue937Private + "/.github/workflows/other.yml"})
 	withToken := issue929Setenv(environment, "GH_TOKEN="+issue937Token)
-	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue937Private}, "register catalog team/attested-packs", "attestation", "if team/attested-packs publishes from another workflow, run `packy catalog add team/attested-packs --workflow <path>`")
+	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue937Private}, "packy catalog add: no artifact attestation of team/attested-packs verified for publication workflow .github/workflows/publish.yml\nif team/attested-packs publishes from another workflow, run `packy catalog add team/attested-packs --workflow <path>`\ncause: no catalog attestation verified: no fixture attestation for team/attested-packs was signed by team/attested-packs/.github/workflows/publish.yml\n")
 }

@@ -40,12 +40,12 @@ If no lifecycle action is available, Enter shows Pack diagnostics and blockers.
 The catalog panel lists every registered catalog with its repository, trust
 policy, and selected snapshot. `access-controlled` shows as weaker trust. Each
 Pack row names its catalog, and a Pack from an `access-controlled` catalog
-shows that weaker trust in its row or details. When a repository name does
-not fit, Packy elides its owner first or leaves it to Pack details, and
-truncates the name with an ellipsis only as a last resort. Press `?` to add
-each catalog's full name, signing workflow, Pack count, and digest. Press `c` to refresh every
-registered catalog. The result lists each catalog, and a catalog that fails
-keeps its previous snapshot.
+shows that weaker trust in its row and details. When a repository name does
+not fit, Packy elides its owner first, moves a Pack row's catalog to the next
+line, and truncates the name with an ellipsis only as a last resort. Press
+`?` to add each catalog's full name, signing workflow, Pack count, and digest.
+Press `c` to refresh every registered catalog. The result lists each catalog,
+and a catalog that fails keeps its previous snapshot.
 
 Use the arrow keys to focus a resource and Space or Enter to toggle it. Tab
 focuses Apply changes, which creates a preview; the existing consent flow must

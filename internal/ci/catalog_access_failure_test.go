@@ -50,7 +50,7 @@ func testAccessCatalogFailures(t *testing.T, executable string, buildEnvironment
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			files := catalogBuildArchive(t, readIssue798File(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
+			files := catalogBuildArchive(t, readFileBytes(t, filepath.Join(assets, "catalog-snapshot.tar.gz")))
 			pack := "beta"
 			if strings.Contains(tc.name, "unrelated") {
 				pack = "zulu"

@@ -250,6 +250,51 @@ func TestFailedSourceKeepsThePreviousSelection(t *testing.T) {
 	}
 }
 
+func TestRefreshCatalogsKeepsAFailedSelectionAndRefreshesTheOthers(t *testing.T) {
+	acme := mustRepository(t, "acme/packs")
+	source := catalogSource{
+		official.String(): validRelease(t, strings.Repeat("a", 40), validManifest("example", "1.2.3")),
+		acme.String():     catalogRelease(t, "acme/packs", "acme/packs", strings.Repeat("b", 40), validManifest("tools", "1.0.0")),
+	}
+	store := catalogstore.New(t.TempDir(), source)
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}}); err != nil {
+		t.Fatal(err)
+	}
+	registrations, err := store.Registrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(source, official.String())
+	source[acme.String()] = catalogRelease(t, "acme/packs", "acme/packs", strings.Repeat("c", 40), validManifest("tools", "2.0.0"))
+
+	var acquiring []catalogstore.Repository
+	var refreshes []catalogstore.Refresh
+	err = store.RefreshCatalogs(context.Background(), registrations, func(repository catalogstore.Repository) {
+		acquiring = append(acquiring, repository)
+	}, func(refresh catalogstore.Refresh) error {
+		refreshes = append(refreshes, refresh)
+		return nil
+	})
+	if err != nil || len(acquiring) != 2 || acquiring[0] != official || acquiring[1] != acme {
+		t.Fatalf("RefreshCatalogs() = %v, acquired %v", err, acquiring)
+	}
+	if len(refreshes) != 2 || refreshes[0].Repository != official || refreshes[0].SnapshotID != strings.Repeat("a", 40) || refreshes[0].Err == nil || !strings.Contains(refreshes[0].Err.Error(), "no release for "+official.String()) ||
+		refreshes[1] != (catalogstore.Refresh{Repository: acme, SnapshotID: strings.Repeat("c", 40)}) {
+		t.Fatalf("RefreshCatalogs() refreshes = %#v", refreshes)
+	}
+	if selected, err := store.SelectedID(acme); err != nil || selected != strings.Repeat("c", 40) {
+		t.Fatalf("SelectedID(%s) = %q, %v", acme, selected, err)
+	}
+
+	stop := errors.New("stop")
+	acquiring = nil
+	if err := store.RefreshCatalogs(context.Background(), registrations, func(repository catalogstore.Repository) {
+		acquiring = append(acquiring, repository)
+	}, func(catalogstore.Refresh) error { return stop }); !errors.Is(err, stop) || len(acquiring) != 1 {
+		t.Fatalf("RefreshCatalogs() with a failing caller = %v, acquired %v", err, acquiring)
+	}
+}
+
 func TestRegistrationLifecycleKeepsRetainedSnapshots(t *testing.T) {
 	root := t.TempDir()
 	acme := mustRepository(t, "Acme/Packs")
@@ -415,7 +460,7 @@ func TestRegisterSelectsTheOfficialCatalogFirst(t *testing.T) {
 	}
 	store := catalogstore.New(root, source)
 	attested := catalogstore.Attested{Workflow: catalogstore.DefaultWorkflow}
-	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: attested}); err == nil || !strings.Contains(err.Error(), "register catalog acme/packs: select the official catalog first") || !strings.Contains(err.Error(), "no release for "+official.String()) {
+	if _, err := store.Register(context.Background(), catalogstore.Registration{Repository: acme, Trust: attested}); err == nil || !strings.HasPrefix(err.Error(), "select the official catalog first: ") || !strings.Contains(err.Error(), "no release for "+official.String()) {
 		t.Fatalf("Register() while the official catalog cannot be selected = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "catalog", "v2", "acme")); !os.IsNotExist(err) {

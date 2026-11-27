@@ -27,7 +27,7 @@ const dashboardWheelDelta = 3
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
 	Initialize(context.Context, func(string)) error
-	RefreshCatalog(context.Context, func(string)) ([]CatalogRefresh, error)
+	RefreshCatalogs(context.Context, func(string)) ([]CatalogRefresh, error)
 	Preview(context.Context, PreviewRequest) (Preview, error)
 	Apply(context.Context, ApplyRequest, func(ApplyProgress)) (ApplyResult, error)
 }
@@ -224,12 +224,13 @@ type Dashboard struct {
 }
 
 type Catalog struct {
-	Repository string
-	Trust      string
-	Workflow   string
-	SnapshotID string
-	Digest     string
-	Packs      int
+	Repository  string
+	Trust       string
+	WeakerTrust bool
+	Workflow    string
+	SnapshotID  string
+	Digest      string
+	Packs       int
 }
 
 // CatalogRefresh is the result of refreshing one registered catalog. A failed
@@ -848,7 +849,7 @@ func (m Model) startCatalogOperation(operation catalogOperation) (tea.Model, tea
 		}
 		var finished catalogOperationFinished
 		if operation == catalogOperationRefresh {
-			finished.refreshes, finished.err = m.backend.RefreshCatalog(m.ctx, progress)
+			finished.refreshes, finished.err = m.backend.RefreshCatalogs(m.ctx, progress)
 		} else {
 			finished.err = m.backend.Initialize(m.ctx, progress)
 		}
@@ -1370,11 +1371,11 @@ func (m Model) renderCatalogs(width int) string {
 	}
 	lines := []string{sectionTitleStyle.Render("◇ Reviewed Pack catalogs") + "  " + dimStyle.Render("· c refresh")}
 	for _, catalog := range m.dashboard.Catalogs {
-		trust := "  Trust: " + trustStyle(catalog.Trust).Render(trustLabel(catalog.Trust))
+		trust := "  Trust: " + trustStyle(catalog).Render(trustLabel(catalog))
 		if catalog.Workflow != "" {
 			trust += " by " + catalog.Workflow
 		}
-		if catalog.Trust == weakerTrust {
+		if catalog.WeakerTrust {
 			trust += ". Packy relies on GitHub access control instead of build provenance."
 		}
 		lines = append(lines, catalog.Repository, trust, "  Selected snapshot: "+catalog.SnapshotID, "  Inventory: "+packCount(catalog.Packs))
@@ -1385,29 +1386,27 @@ func (m Model) renderCatalogs(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) catalogTrust(repository string) string {
+func (m Model) packCatalog(repository string) Catalog {
 	for _, catalog := range m.dashboard.Catalogs {
 		if catalog.Repository == repository {
-			return catalog.Trust
+			return catalog
 		}
 	}
-	return ""
+	return Catalog{}
 }
 
-// weakerTrust has no build-provenance attestation, so ADR 0046 shows it as
-// weaker than attested.
-const weakerTrust = "access-controlled"
-
-func trustLabel(trust string) string {
-	if trust == weakerTrust {
-		return trust + " (weaker)"
+func trustLabel(catalog Catalog) string {
+	if catalog.WeakerTrust {
+		return catalog.Trust + " (weaker)"
 	}
-	return trust
+	return catalog.Trust
 }
 
-func trustStyle(trust string) lipgloss.Style {
-	if trust == weakerTrust {
-		return lipgloss.NewStyle().Foreground(mochaYellow)
+var weakerTrustStyle = lipgloss.NewStyle().Foreground(mochaYellow)
+
+func trustStyle(catalog Catalog) lipgloss.Style {
+	if catalog.WeakerTrust {
+		return weakerTrustStyle
 	}
 	return lipgloss.NewStyle().Foreground(mochaGreen)
 }
@@ -1416,7 +1415,7 @@ func catalogRows(catalogs []Catalog, width int) []string {
 	repositoryWidth, trustWidth, snapshotWidth := 0, 0, 0
 	for _, catalog := range catalogs {
 		repositoryWidth = max(repositoryWidth, len(catalog.Repository))
-		trustWidth = max(trustWidth, len(trustLabel(catalog.Trust)))
+		trustWidth = max(trustWidth, len(trustLabel(catalog)))
 		snapshotWidth = max(snapshotWidth, len(catalog.SnapshotID))
 	}
 	if repositoryWidth+trustWidth+snapshotWidth+4 > width {
@@ -1426,7 +1425,7 @@ func catalogRows(catalogs []Catalog, width int) []string {
 	rows := make([]string, 0, len(catalogs))
 	for _, catalog := range catalogs {
 		repository := elideRepository(catalog.Repository, repositoryWidth)
-		trust := trustStyle(catalog.Trust).Render(fmt.Sprintf("%-*s", trustWidth, trustLabel(catalog.Trust)))
+		trust := trustStyle(catalog).Render(fmt.Sprintf("%-*s", trustWidth, trustLabel(catalog)))
 		snapshot := catalog.SnapshotID[:min(snapshotWidth, len(catalog.SnapshotID))]
 		rows = append(rows, repository+strings.Repeat(" ", repositoryWidth-ansi.StringWidth(repository))+"  "+trust+"  "+snapshot)
 	}
@@ -1684,10 +1683,10 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 			used = ansi.StringWidth(" › " + label + "  · selected")
 		}
 		marker := ""
-		if m.catalogTrust(pack.Catalog) == weakerTrust {
-			marker = " (" + weakerTrust + ")"
+		if registered := m.packCatalog(pack.Catalog); registered.WeakerTrust {
+			marker = " (" + registered.Trust + ")"
 		}
-		styledMarker := trustStyle(weakerTrust).Render(marker)
+		styledMarker := weakerTrustStyle.Render(marker)
 		catalog := fitRepository(pack.Catalog, width-used-2-len(marker))
 		if catalog != "" {
 			label += "  " + catalog + marker
@@ -1697,13 +1696,13 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 			rowText = selectedRowStyle.Padding(0, 1).Render("› "+label) + " · selected"
 		}
 		lines = append(lines, rowText)
-		if current && catalog == "" && pack.Catalog != "" {
+		if catalog == "" && pack.Catalog != "" {
 			if repository := fitRepository(pack.Catalog, width-4-len(marker)); repository != "" {
 				lines = append(lines, "    "+dimStyle.Render(repository)+styledMarker)
 			} else {
 				lines = append(lines, "    "+dimStyle.Render(elideRepository(pack.Catalog, width-4)))
 				if marker != "" {
-					lines = append(lines, "    "+trustStyle(weakerTrust).Render(strings.TrimSpace(marker)))
+					lines = append(lines, "    "+weakerTrustStyle.Render(strings.TrimSpace(marker)))
 				}
 			}
 		}
@@ -1752,8 +1751,8 @@ func (m Model) renderDetailContent(pack Pack) string {
 	lines := []string{sectionHeading("About this Pack", 0), pack.Description}
 	if pack.Catalog != "" {
 		catalog := "Catalog: " + pack.Catalog
-		if trust := m.catalogTrust(pack.Catalog); trust == weakerTrust {
-			marker := trustStyle(trust).Render(trustLabel(trust))
+		if registered := m.packCatalog(pack.Catalog); registered.WeakerTrust {
+			marker := weakerTrustStyle.Render(trustLabel(registered))
 			if ansi.StringWidth(catalog+" · "+marker) <= m.viewportTextWidth() {
 				catalog += " · " + marker
 			} else {

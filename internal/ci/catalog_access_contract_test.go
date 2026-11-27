@@ -271,7 +271,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 	}
 	// Prepared content is not a fallback for missing or invalid retained sources.
 	source := filepath.Join(workspace, "snapshots", firstID, "packs/beta/skills/leaf-"+host, "ACCESS.md")
-	sourceBytes := readIssue798File(t, source)
+	sourceBytes := readFileBytes(t, source)
 	for _, damage := range []string{"missing", "invalid"} {
 		if damage == "missing" {
 			if err := os.Remove(source); err != nil {
@@ -299,7 +299,7 @@ func testAccessProcedure(t *testing.T, executable, host, project, nextProject, a
 
 func assertAccessBytes(t *testing.T, path string, want []byte, mode os.FileMode) {
 	t.Helper()
-	got := readIssue798File(t, path)
+	got := readFileBytes(t, path)
 	info, err := os.Stat(path)
 	if !bytes.Equal(got, want) || err != nil || info.Mode().Perm() != mode {
 		t.Fatalf("resource %s bytes/mode: %q %v %v; want %q %v", path, got, info, err, want, mode)
@@ -353,7 +353,7 @@ func verifyAccessProcedure(t *testing.T, result skillaccess.Result, host, snapsh
 		assertAccessBytes(t, filepath.Join(skill.ResourceRoot, "references/detail.md"), []byte("Complete "+pack+" "+host+" "+id+" "+revision+"\n"), 0644)
 		assertAccessBytes(t, filepath.Join(skill.ResourceRoot, "scripts/run.sh"), []byte(accessContractScript), 0755)
 		packRoot := filepath.Join(skill.ResourceRoot, "../..")
-		assertAccessBytes(t, filepath.Join(packRoot, "pack.json"), readIssue798File(t, filepath.Join(project, "packs", pack, "pack.json")), 0644)
+		assertAccessBytes(t, filepath.Join(packRoot, "pack.json"), readFileBytes(t, filepath.Join(project, "packs", pack, "pack.json")), 0644)
 		assertAccessBytes(t, filepath.Join(skill.ResourceRoot, "assets/data.bin"), []byte{0, 255, 7, 10}, 0644)
 		assertAccessBytes(t, filepath.Join(packRoot, "notices/mit"), []byte("MIT License\nFixture Authors\n"), 0644)
 		for _, relative := range []string{"SKILL.md", "ACCESS.md", "references/detail.md", "scripts/run.sh", "assets/data.bin"} {
@@ -392,7 +392,7 @@ func verifyAccessProcedure(t *testing.T, result skillaccess.Result, host, snapsh
 	linkPattern := regexp.MustCompile(`\[(Left|Right|Again|Leaf|Foreign)\]\(([^)]+)\)`)
 	for qualified, entry := range entries {
 		pack := strings.Split(qualified, ":")[0]
-		for _, link := range linkPattern.FindAllSubmatch(readIssue798File(t, entry), -1) {
+		for _, link := range linkPattern.FindAllSubmatch(readFileBytes(t, entry), -1) {
 			label := string(link[1])
 			id := strings.ToLower(label)
 			owner := pack

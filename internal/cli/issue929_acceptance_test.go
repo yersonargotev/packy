@@ -31,7 +31,7 @@ import (
 const issue929OfficialCatalog = "yersonargotev/packy-catalog"
 
 func TestIssue929(t *testing.T) {
-	transport := buildIssue929Transport(t, t.TempDir())
+	transport := builtIssue929Transport(t)
 	issue929Dists.root = t.TempDir()
 	issue929Dists.built.Clear()
 	for _, scenario := range []struct {
@@ -479,20 +479,6 @@ func rewriteIssue929Manifest(t *testing.T, dist, packID string, mutate func(stri
 	}
 }
 
-func buildIssue929Transport(t *testing.T, directory string) string {
-	t.Helper()
-	binary := filepath.Join(directory, "packy")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-ldflags=-X github.com/yersonargotev/packy/internal/version.SourceCommit="+strings.Repeat("2", 40), "-o", binary, "./internal/cli/testdata/packytransport")
-	build.Dir = filepath.Join("..", "..")
-	build.Env = testprocess.GoOfflineEnv(t)
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build transport executable: %v\n%s", err, out)
-	}
-	return binary
-}
-
 func publishIssue929Fixture(t *testing.T, transport, fixtures, repository, commit string, packs ...githubfake.Pack) {
 	t.Helper()
 	dist := cachedIssue929Dist(t, fmt.Sprint("fixture", repository, commit, packs), func() string {
@@ -556,7 +542,7 @@ func buildIssue929Dist(t *testing.T, transport, repository, commit string, packs
 	return dist
 }
 
-func startIssue929GitHub(t *testing.T, fixtures string) []string {
+func startIssue929GitHub(t *testing.T, fixtures string, additions ...string) []string {
 	t.Helper()
 	server := httptest.NewTLSServer(githubfake.Handler(fixtures))
 	t.Cleanup(server.Close)
@@ -564,7 +550,7 @@ func startIssue929GitHub(t *testing.T, fixtures string) []string {
 	if err := githubfake.AddressOf(server).Write(addressFile); err != nil {
 		t.Fatal(err)
 	}
-	return testprocess.Env(t, "PACKY_GITHUBFAKE_ADDR_FILE="+addressFile)
+	return testprocess.Env(t, append([]string{"PACKY_GITHUBFAKE_ADDR_FILE=" + addressFile}, additions...)...)
 }
 
 func runIssue929(t *testing.T, transport string, environment []string, args ...string) (string, error) {
@@ -628,12 +614,12 @@ const issue929Acme = "acme/packs"
 // startIssue929Catalogs serves the official catalog with Pack fixture and
 // acme/packs with Pack acme, refreshes the official catalog, and registers
 // acme/packs.
-func startIssue929Catalogs(t *testing.T, transport string) (fixtures string, environment []string) {
+func startIssue929Catalogs(t *testing.T, transport string, additions ...string) (fixtures string, environment []string) {
 	t.Helper()
 	fixtures = t.TempDir()
 	publishIssue929Portable(t, transport, fixtures, issue929OfficialCatalog, strings.Repeat("a", 40), githubfake.Pack{ID: "fixture", Version: "1.0.0"})
 	publishIssue929Portable(t, transport, fixtures, issue929Acme, strings.Repeat("c", 40), githubfake.Pack{ID: "acme", Version: "1.0.0"})
-	environment = startIssue929GitHub(t, fixtures)
+	environment = startIssue929GitHub(t, fixtures, additions...)
 	if out, err := runIssue929(t, transport, environment, "catalog", "refresh"); err != nil {
 		t.Fatalf("catalog refresh: %v\n%s", err, out)
 	}
@@ -788,7 +774,7 @@ func assertIssue929RefusedAdd(t *testing.T, transport string, environment []stri
 	t.Helper()
 	before := issue929StoreTree(t, environment)
 	out, err := runIssue929(t, transport, environment, args...)
-	if !issue929Exit(err, 1) {
+	if !issue929Exit(err, 1) || !strings.HasPrefix(out, "packy catalog add: ") {
 		t.Fatalf("%v: %v\n%s", args, err, out)
 	}
 	for _, fragment := range want {
@@ -822,7 +808,7 @@ func testIssue929InvalidRegistration(t *testing.T, transport string) {
 	if err := githubfake.Publish(fixtures, issue929Acme, commit, buildIssue929Dist(t, transport, "acme/elsewhere", commit, githubfake.Pack{ID: "acme", Version: "1.0.0"})); err != nil {
 		t.Fatal(err)
 	}
-	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "index names acme/elsewhere")
+	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "packy catalog add: Catalog Snapshot index names acme/elsewhere")
 }
 
 func testIssue929PackIDCollisions(t *testing.T, transport string) {
@@ -881,7 +867,7 @@ func testIssue929FailedAttestation(t *testing.T, transport string) {
 	if err := githubfake.WriteRepository(fixtures, issue929Acme, githubfake.Repository{AttestationWorkflow: "acme/packs/.github/workflows/other.yml"}); err != nil {
 		t.Fatal(err)
 	}
-	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "register catalog acme/packs", "attestation", "if acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`")
+	assertIssue929RefusedRegistration(t, transport, environment, issue929Acme, "packy catalog add: no artifact attestation of acme/packs verified for publication workflow .github/workflows/publish.yml\nif acme/packs publishes from another workflow, run `packy catalog add acme/packs --workflow <path>`\ncause: no catalog attestation verified: no fixture attestation for acme/packs was signed by acme/packs/.github/workflows/publish.yml\n")
 
 	// catalog add selects the official catalog first on a fresh store, and
 	// --workflow cannot fix the official catalog's attestation.
@@ -1091,7 +1077,7 @@ func testIssue929RemoveCatalog(t *testing.T, transport string) {
 	approveIssue929(t, transport, environment, project, "activate", "acme", "--surface", "agents")
 	directory := issue929CatalogDirectory(t, environment, issue929Acme)
 	before := issue929StoreTree(t, environment)
-	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents") {
+	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Pack acme on agents; deactivate or uninstall it, then remove the catalog") {
 		t.Fatalf("catalog remove with an installed Pack: %v\n%s", err, out)
 	}
 	if after := issue929StoreTree(t, environment); after != before {
@@ -1108,21 +1094,21 @@ func testIssue929RemoveCatalog(t *testing.T, transport string) {
 	if err := os.WriteFile(activation, []byte(`{"schema_version":2,"state":{"pack_id":"acme","version":"1.0.0","catalog_repository":"acme/packs","catalog_snapshot":"`+strings.Repeat("c", 40)+`","surface":"agents","active":true}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in a project") {
+	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Pack acme on agents in a project; deactivate or uninstall it, then remove the catalog") {
 		t.Fatalf("catalog remove with an active personal project activation: %v\n%s", err, out)
-	}
-	if err := os.Remove(activation); err != nil {
-		t.Fatal(err)
 	}
 	locked := t.TempDir()
 	writeTestGitWorktree(t, locked)
 	approveIssue929(t, transport, environment, locked, "install", "acme", "--surface", "agents")
 	before = issue929StoreTree(t, environment)
-	if out, err := runIssue929At(t, transport, environment, locked, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in this project's lock") {
+	if out, err := runIssue929At(t, transport, environment, locked, "catalog", "remove", issue929Acme); !issue929Exit(err, 1) || !strings.Contains(out, "catalog acme/packs is in use by installed Packs acme on agents in a project, acme on agents in this project's lock; deactivate or uninstall them, then remove the catalog") {
 		t.Fatalf("catalog remove from a project whose lock names the catalog: %v\n%s", err, out)
 	}
 	if after := issue929StoreTree(t, environment); after != before {
 		t.Fatalf("refused removal changed the Catalog Store:\n%s\nwant:\n%s", after, before)
+	}
+	if err := os.Remove(activation); err != nil {
+		t.Fatal(err)
 	}
 	if out, err := runIssue929(t, transport, environment, "catalog", "remove", issue929Acme); err != nil || !strings.Contains(out, "removed catalog acme/packs") {
 		t.Fatalf("catalog remove: %v\n%s", err, out)
@@ -1310,12 +1296,12 @@ func testIssue929RegisterPrivateCatalog(t *testing.T, transport string) {
 func testIssue929PublicAccessControlled(t *testing.T, transport string) {
 	withToken := issue929Setenv(startIssue929Private(t, transport), "GH_TOKEN="+issue929PrivateToken)
 	assertIssue929RefusedAdd(t, transport, withToken, append(issue929AddPrivate, "--workflow", ".github/workflows/publish.yml"), "an access-controlled catalog names no publication workflow")
-	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "register catalog acme/packs", "public", "--trust attested")
+	assertIssue929RefusedAdd(t, transport, withToken, []string{"catalog", "add", issue929Acme, "--trust", "access-controlled"}, "packy catalog add: the repository is public, and access-controlled is only for private repositories; a public repository uses --trust attested")
 }
 
 func testIssue929MissingToken(t *testing.T, transport string) {
 	withoutGH := issue929Setenv(startIssue929Private(t, transport), "PATH="+t.TempDir())
-	assertIssue929RefusedAdd(t, transport, withoutGH, issue929AddPrivate, "register catalog team/private-packs", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
+	assertIssue929RefusedAdd(t, transport, withoutGH, issue929AddPrivate, "packy catalog add: a private catalog needs a GitHub token that can read its repository: ", "GH_TOKEN", "gh auth login", "docs/private-catalogs.md")
 
 	gh := t.TempDir()
 	if err := os.WriteFile(filepath.Join(gh, "gh"), []byte("#!/bin/sh\necho "+issue929PrivateToken+"\n"), 0o755); err != nil {
