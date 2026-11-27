@@ -542,7 +542,7 @@ func buildIssue929Dist(t *testing.T, transport, repository, commit string, packs
 	return dist
 }
 
-func startIssue929GitHub(t *testing.T, fixtures string) []string {
+func startIssue929GitHub(t *testing.T, fixtures string, additions ...string) []string {
 	t.Helper()
 	server := httptest.NewTLSServer(githubfake.Handler(fixtures))
 	t.Cleanup(server.Close)
@@ -550,7 +550,7 @@ func startIssue929GitHub(t *testing.T, fixtures string) []string {
 	if err := githubfake.AddressOf(server).Write(addressFile); err != nil {
 		t.Fatal(err)
 	}
-	return testprocess.Env(t, "PACKY_GITHUBFAKE_ADDR_FILE="+addressFile)
+	return testprocess.Env(t, append([]string{"PACKY_GITHUBFAKE_ADDR_FILE=" + addressFile}, additions...)...)
 }
 
 func runIssue929(t *testing.T, transport string, environment []string, args ...string) (string, error) {
@@ -614,12 +614,12 @@ const issue929Acme = "acme/packs"
 // startIssue929Catalogs serves the official catalog with Pack fixture and
 // acme/packs with Pack acme, refreshes the official catalog, and registers
 // acme/packs.
-func startIssue929Catalogs(t *testing.T, transport string) (fixtures string, environment []string) {
+func startIssue929Catalogs(t *testing.T, transport string, additions ...string) (fixtures string, environment []string) {
 	t.Helper()
 	fixtures = t.TempDir()
 	publishIssue929Portable(t, transport, fixtures, issue929OfficialCatalog, strings.Repeat("a", 40), githubfake.Pack{ID: "fixture", Version: "1.0.0"})
 	publishIssue929Portable(t, transport, fixtures, issue929Acme, strings.Repeat("c", 40), githubfake.Pack{ID: "acme", Version: "1.0.0"})
-	environment = startIssue929GitHub(t, fixtures)
+	environment = startIssue929GitHub(t, fixtures, additions...)
 	if out, err := runIssue929(t, transport, environment, "catalog", "refresh"); err != nil {
 		t.Fatalf("catalog refresh: %v\n%s", err, out)
 	}

@@ -110,10 +110,10 @@ func testCatalogPublicationContract(t *testing.T, executable string) {
 			t.Fatal(err)
 		}
 		run(environment("FAKE_UPLOAD_FAILURE=catalog-snapshot.tar.gz"), "failed", "transport_failed")
-		if string(readIssue798File(t, filepath.Join(release, "draft"))) != "true\n" {
+		if string(readFileBytes(t, filepath.Join(release, "draft"))) != "true\n" {
 			t.Fatal("failed upload published draft")
 		}
-		if string(readIssue798File(t, filepath.Join(release, "SHA256SUMS"))) != string(checksum) {
+		if string(readFileBytes(t, filepath.Join(release, "SHA256SUMS"))) != string(checksum) {
 			t.Fatal("first uploaded asset missing")
 		}
 		run(environment(), "resumed", "")
