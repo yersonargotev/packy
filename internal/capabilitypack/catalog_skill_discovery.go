@@ -37,58 +37,72 @@ type SkillDiscoveryReport struct {
 	Limitation            string           `json:"limitation"`
 }
 
+const SkillDiscoveryLimitation = "Prerequisites are known declarations, not verified; unknown requirements may exist. Compatibility describes resource access, not native registration, runtime readiness, or workflow success."
+
+func validateDiscoverySurface(surface Surface) error {
+	if surface != SurfaceAgents && surface != SurfaceClaude {
+		return fmt.Errorf("unsupported on-demand discovery surface %q; use --surface agents or --surface claude", surface)
+	}
+	return nil
+}
+
 // DiscoverSkills inspects only the current local catalog. An installed or
 // retained Pack never substitutes for a current candidate.
 func (c Catalog) DiscoverSkills(ctx context.Context, id string, surface Surface) (SkillDiscoveryReport, error) {
-	if surface != SurfaceAgents && surface != SurfaceClaude {
-		return SkillDiscoveryReport{}, fmt.Errorf("unsupported on-demand discovery surface %q; use --surface agents or --surface claude", surface)
+	if err := validateDiscoverySurface(surface); err != nil {
+		return SkillDiscoveryReport{}, err
 	}
 	packs, err := c.ListCurrent(ctx)
 	if err != nil {
 		return SkillDiscoveryReport{}, err
 	}
 	for _, pack := range packs {
-		if pack.ID != id {
-			continue
+		if pack.ID == id {
+			return SkillDiscoveryReport{PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Skills: skillCandidates(packs, pack, surface), Limitation: SkillDiscoveryLimitation}, nil
 		}
-		effective := ResolvePackForSurface(pack, surface)
-		report := SkillDiscoveryReport{PackID: pack.ID, PackVersion: pack.Version, Surface: surface, Skills: []SkillDiscovery{}, Limitation: "Prerequisites are known declarations, not verified; unknown requirements may exist. Compatibility describes resource access, not native registration, runtime readiness, or workflow success."}
-		inventory := descriptiveResourceInventory(effective)
-		for _, description := range inventory {
-			if description.Resource.Kind != "skill" {
-				continue
-			}
-			resource := effective.Resources[slices.IndexFunc(effective.Resources, func(r Resource) bool { return r.Kind == "skill" && r.ID == description.Resource.ID })]
-			definition := "common"
-			if resource.ResolvedVariant != "" {
-				definition = "surface_variant"
-			}
-			candidate := SkillDiscovery{DescriptiveResource: description, QualifiedSkill: pack.ID + ":" + resource.ID, PackID: pack.ID, PackVersion: pack.Version,
-				Definition:        ResourceDefinition{Resource: description.Resource, Surface: surface, Definition: definition, Source: resource.Source, Origin: resource.Origin, Notices: description.Notices},
-				SupportedSurfaces: []Surface{}, PluginExports: clonePluginExports(resource.PluginExports), OnDemand: cloneOnDemand(resource.OnDemand), Prerequisites: DeclaredSkillPrerequisites(pack, resource)}
-			for _, binding := range resource.Bindings {
-				candidate.SupportedSurfaces = append(candidate.SupportedSurfaces, binding.Surface)
-				if binding.Surface == surface {
-					candidate.NativeName = binding.Name
-				}
-			}
-			slices.Sort(candidate.SupportedSurfaces)
-			if exclusion, ok := exclusionFor(resource, surface); ok {
-				candidate.Exclusion = &exclusion
-			}
-			_, accessErr := ResolveOnDemand(packs, candidate.QualifiedSkill, surface)
-			candidate.Compatible = accessErr == nil
-			if accessErr != nil {
-				candidate.Reason = accessErr.Error()
-				if candidate.Exclusion != nil {
-					candidate.Reason += ": " + candidate.Exclusion.Reason
-				}
-			}
-			report.Skills = append(report.Skills, candidate)
-		}
-		return report, nil
 	}
 	return SkillDiscoveryReport{}, fmt.Errorf("unknown current capability pack %q; run `packy list` to see available packs", id)
+}
+
+// skillCandidates describes every skill of pack on surface. On-demand
+// compatibility is resolved against all current Packs; catalog validation keeps
+// access dependencies inside one snapshot.
+func skillCandidates(currentPacks []Pack, pack Pack, surface Surface) []SkillDiscovery {
+	effective := ResolvePackForSurface(pack, surface)
+	candidates := []SkillDiscovery{}
+	for _, description := range descriptiveResourceInventory(effective) {
+		if description.Resource.Kind != "skill" {
+			continue
+		}
+		resource := effective.Resources[slices.IndexFunc(effective.Resources, func(r Resource) bool { return r.Kind == "skill" && r.ID == description.Resource.ID })]
+		definition := "common"
+		if resource.ResolvedVariant != "" {
+			definition = "surface_variant"
+		}
+		candidate := SkillDiscovery{DescriptiveResource: description, QualifiedSkill: pack.ID + ":" + resource.ID, PackID: pack.ID, PackVersion: pack.Version,
+			Definition:        ResourceDefinition{Resource: description.Resource, Surface: surface, Definition: definition, Source: resource.Source, Origin: resource.Origin, Notices: description.Notices},
+			SupportedSurfaces: []Surface{}, PluginExports: clonePluginExports(resource.PluginExports), OnDemand: cloneOnDemand(resource.OnDemand), Prerequisites: DeclaredSkillPrerequisites(pack, resource)}
+		for _, binding := range resource.Bindings {
+			candidate.SupportedSurfaces = append(candidate.SupportedSurfaces, binding.Surface)
+			if binding.Surface == surface {
+				candidate.NativeName = binding.Name
+			}
+		}
+		slices.Sort(candidate.SupportedSurfaces)
+		if exclusion, ok := exclusionFor(resource, surface); ok {
+			candidate.Exclusion = &exclusion
+		}
+		_, accessErr := ResolveOnDemand(currentPacks, candidate.QualifiedSkill, surface)
+		candidate.Compatible = accessErr == nil
+		if accessErr != nil {
+			candidate.Reason = accessErr.Error()
+			if candidate.Exclusion != nil {
+				candidate.Reason += ": " + candidate.Exclusion.Reason
+			}
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates
 }
 
 // DeclaredSkillPrerequisites combines known skill and Pack declarations, without

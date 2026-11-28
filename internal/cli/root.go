@@ -108,6 +108,7 @@ and receive a new Preview. Packy never retries it automatically.
   packy audit --json
   packy show matty
   packy show engram --json
+  packy search code review --surface agents
   packy status
   packy status engram --surface claude
   packy status engram --surface claude --require usable --json
@@ -146,6 +147,7 @@ and receive a new Preview. Packy never retries it automatically.
 		newAuditCommand(opts, workstationResolver),
 		newPackListCommand(opts, workstationResolver),
 		newPackShowCommand(opts, workstationResolver),
+		newSkillSearchCommand(opts, workstationResolver),
 		newProjectVerifyCommand(opts.Getwd),
 		newPackStatusCommand(opts, workstationResolver),
 		newControlledCheckCommand(opts, workstationResolver),

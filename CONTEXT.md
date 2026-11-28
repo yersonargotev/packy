@@ -83,6 +83,13 @@ an explicit CLI surface without installation or workflow execution.
 
 The identity of a logical skill within its owning Pack, written `<pack>:<skill>`.
 
+### Skill Search
+
+A deterministic text filter over the skills in the selected Catalog Snapshot of
+every registered catalog for one explicit CLI surface. It reports qualified
+candidates and their reviewed on-demand compatibility without ranking them,
+preparing resources, or reading instruction bodies.
+
 ### Prepared skill resources
 
 Packy-owned copies of a reviewed skill's effective resource tree and declared

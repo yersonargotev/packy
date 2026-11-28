@@ -47,7 +47,13 @@ The previous stable release is `v0.2.37`.
   an `access-controlled` catalog show weaker trust. `?` adds each catalog's full
   name, signing workflow, Pack count, and digest. `c` refreshes every catalog and
   marks a partial refresh.
-- Structured output adds `catalog-list` and `catalog-refresh` v1 schemas.
+- `packy search <query>... --surface agents|claude` finds current catalog skills
+  by text in one call, across every registered catalog. A skill matches when
+  every term is a case-insensitive substring of its qualified skill, native
+  name, or effective description. Results are sorted, carry no score, and keep
+  incompatible candidates with their reason. See
+  [on-demand skill access](https://github.com/yersonargotev/packy/blob/main/docs/on-demand-skills.md#discover-current-candidates).
+- Structured output adds `catalog-list`, `catalog-refresh`, and `skill-search` v1 schemas.
   `packy list --json` moves to Pack list v2 with `catalog_repository`, project
   installation and update previews move to v5, and `packy.lock.json` follows
   project lock v2. See [structured output](https://github.com/yersonargotev/packy/blob/main/docs/structured-output.md).

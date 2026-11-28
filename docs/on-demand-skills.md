@@ -8,8 +8,8 @@ packy get skill example:guide --surface agents
 packy get skill example:guide --surface claude --json
 ```
 
-`example:guide` is illustrative. Use `packy list` and `packy show <pack>` to
-inspect your local catalog. The skill must explicitly declare reviewed on-demand
+`example:guide` is illustrative. Use `packy search <query>... --surface <surface>`
+to find a skill in your local catalog. The skill must explicitly declare reviewed on-demand
 compatibility; a native binding or an installed copy is insufficient. Surface
 selection is mandatory. Supported surfaces are Agents and Claude, using
 their respective Effective Resources. The retired `codex` surface is rejected
@@ -46,16 +46,41 @@ reuse rather than being silently overwritten.
 ## Discover current candidates
 
 ```sh
-packy list --json
+packy search code review --surface agents --json
 packy show example --surface agents --json
-packy show example --surface claude
+packy get skill example:guide --surface agents --json
 ```
 
-Enumerate the current Packs with `list`, then inspect each relevant Pack with
-`show --surface`. This local/offline protocol works outside Git after explicit
-acquisition. It does not refresh, prepare resource trees, inspect installed
+Search first with two or three terms, inspect a candidate with
+`show --surface` when you need its dependencies, definition, or prerequisites,
+then obtain it with `get skill`. When search misses, fall back to enumerating
+the current Packs with `packy list --json` and inspecting each relevant Pack
+with `show --surface`. This local/offline protocol works outside Git after
+explicit acquisition. It does not refresh, prepare resource trees, inspect installed
 copies, execute content, or change project/installation state. Omitting
 `--surface` keeps the existing Pack lifecycle inspection contract.
+
+### Search
+
+Skill Search covers the skills of every Pack that `packy list` reports, across
+the selected Catalog Snapshot of every registered catalog. Query arguments are
+joined and split on whitespace into terms, so quoting does not change results.
+A skill matches when every term is a case-insensitive substring of its qualified
+skill, its native name on the surface, or its effective description on the
+surface. Pack descriptions and instruction bodies are never searched; synonyms
+and fuzzy matches are not found. Results are sorted by qualified skill and
+carry no score. Incompatible and excluded candidates remain, with their reason.
+
+`--json` emits `schema_version: 1`, `report: "skill-search"`, the normalized
+`query`, the `surface`, and `skills`; see
+[the search schema](../schemas/cli/v1/skill-search.schema.json). Each skill holds
+`qualified_skill`, `catalog`, `pack_id`, `pack_version`, `native_name`,
+`description`, `compatible`, and `reason`, with the same facts as
+`show --surface`. Readable output is a table of skill, catalog, compatibility,
+and full description, followed by the discovery limitation note. No matches is
+a successful empty result. An empty query is an argument error.
+
+### Inspect
 
 Surface-specific inspection emits `schema_version: 1`, `report: "skill-discovery"`;
 see [the discovery schema](../schemas/cli/v1/skill-discovery.schema.json).
@@ -84,7 +109,7 @@ and local customizations do not rank or replace current catalog candidates.
 The consuming agent owns this choice; deterministic CLI tests validate candidate
 metadata, not natural-language selection.
 
-Discovery follows existing `list`/`show` error conventions: failure exits
+Search and discovery follow existing `list`/`show` error conventions: failure exits
 nonzero with a readable diagnostic on stderr and no successful JSON document.
 An unavailable catalog identifies `packy init` or `packy catalog refresh`;
 unknown Packs identify `packy list`, and unsupported hosts identify supported
