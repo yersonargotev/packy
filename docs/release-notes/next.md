@@ -44,6 +44,8 @@ The explicit selection includes the skill and its legal notice, without
 project-only instructions or a concrete `--client`. Configured projections do
 not prove runtime authorization or execution.
 
+## Adoption
+
 Upgrades from `v0.2.38` need no adoption steps. Upgrades from `v0.2.37` or
 earlier change the catalog store and receipt formats; follow the
 [clean adoption procedure](https://github.com/yersonargotev/packy/blob/main/docs/catalog-adoption.md)
