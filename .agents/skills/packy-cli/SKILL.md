@@ -12,8 +12,25 @@ host-specific inspection and retrieval, including nested calls.
 
 ## Discover and select
 
-1. Run `packy list --json` to enumerate the selected local catalog. Inspect
-   relevant Packs with `packy show <pack> --surface agents --json`.
+1. Search the selected local catalog first:
+
+   ```sh
+   packy search <terms> --surface agents --json
+   ```
+
+   A skill matches when every term is a case-insensitive substring of its
+   qualified skill, native name, or effective description; there are no
+   synonyms or ranking. Use the request's distinctive words, and try two or
+   three terms (alone or combined) before falling back. Results include
+   incompatible candidates with `compatible: false` and their `reason`. When a
+   candidate's dependencies, definition, or prerequisites matter, inspect its Pack
+   with `packy show <pack> --surface agents --json`.
+
+   If search finds nothing relevant, run `packy list --json` and inspect each
+   relevant Pack with `packy show <pack> --surface agents --json`. Capture each
+   inspection in writable scratch space and display only identity/description
+   summaries, for example with
+   `jq '.skills[] | {qualified_skill, description}' <scratch>/pack.json`.
    Match the request against qualified identities, effective descriptions,
    reviewed compatibility, dependencies, and known prerequisites. Preserve each
    `<pack>:<skill>` identity throughout selection.
@@ -89,7 +106,8 @@ do not automatically provision it or any content runtime.
 ## Project ownership
 
 This project-owned adaptation derives from `packy:packy-cli` 1.0.0 in Catalog
-Snapshot `bbf3eecfd7afb85d36586e6f4e18801d2eef47b6`. Its former `codex` project
+Snapshot `bbf3eecfd7afb85d36586e6f4e18801d2eef47b6`, with search-first
+discovery adapted from yersonargotev/packy-catalog#158. Its former `codex` project
 receipt was retired with the previous binary before adopting the Agents surface.
 It is maintained in this repository rather than represented as an installation
 from a newer Catalog Snapshot. See [LICENSE](LICENSE) for the retained MIT notice.
